@@ -1,11 +1,11 @@
-using System.Threading.Channels;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
 /// In-process hand-off from the import endpoint to <see cref="ReleaseImportWorker"/>
 /// for the DVD-scale paths (folder-ZIP upload, URL download). A bounded
-/// <see cref="Channel{T}"/> — not an external queue — keeps the "no external
+/// <see cref="System.Threading.Channels.Channel{T}"/> — not an external queue — keeps the "no external
 /// services" fence intact while giving the worker a clean back-pressure point.
 ///
 /// <para>
@@ -18,22 +18,15 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// "restart lost the upload" message instead of stranding them.
 /// </para>
 /// </summary>
-public sealed class ReleaseImportQueue
+public sealed class ReleaseImportQueue : JobQueue<ReleaseImportJob>
 {
     // Small bound: each job can hold a multi-GB temp file and the worker
     // processes one at a time, so we never want a deep backlog. Writers wait
-    // briefly rather than the queue growing unbounded.
-    private readonly Channel<ReleaseImportJob> _channel =
-        Channel.CreateBounded<ReleaseImportJob>(new BoundedChannelOptions(16)
-        {
-            SingleReader = true,
-            FullMode = BoundedChannelFullMode.Wait,
-        });
-
-    public ChannelReader<ReleaseImportJob> Reader => _channel.Reader;
-
-    public ValueTask EnqueueAsync(ReleaseImportJob job, CancellationToken ct = default) =>
-        _channel.Writer.WriteAsync(job, ct);
+    // briefly rather than the queue growing unbounded. No dedupe gate, unlike
+    // the sibling queues: the durable oe_import_jobs row is this queue's guard
+    // against a duplicate run, and a re-import of the same release is a
+    // legitimate request rather than a double-click to coalesce.
+    public ReleaseImportQueue() : base(capacity: 16) { }
 }
 
 /// <summary>

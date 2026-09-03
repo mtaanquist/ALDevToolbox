@@ -1,0 +1,23 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /artifacts, /artifacts/{ProjectId:int}
+   New route: /pipelines, /projects/{id}
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/artifacts"
+@page "/artifacts/{ProjectId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject NavigationManager Nav
+
+@*
+    Back-compat redirect for the pre-Pipelines URLs. /artifacts -> /pipelines (the
+    landing); /artifacts/{id} pointed at a solution's builds, which now live under its
+    pipelines, so it lands on the solution. Server-side redirect (no interactive
+    render). See .design/artifacts.md.
+*@
+
+@code {
+    [Parameter] public int? ProjectId { get; set; }
+
+    protected override void OnInitialized() =>
+        Nav.NavigateTo(ProjectId is { } pid ? $"/solutions/{pid}" : "/pipelines", replace: true);
+}

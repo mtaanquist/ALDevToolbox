@@ -15,6 +15,9 @@ namespace ALDevToolbox.Tests.Routing;
 /// in production is <c>AmbiguousMatchException</c> at request time, which is
 /// the exact failure mode this test surfaces at build time instead.
 /// </summary>
+// Boots the app and sets ConnectionStrings__DefaultConnection, a process-wide
+// variable; serialise with every other app-booting class or two hosts race it.
+[Collection(EndpointFactoryCollection.Name)]
 public class EndpointAmbiguityTests : IClassFixture<TestDb>
 {
     private readonly TestDb _db;

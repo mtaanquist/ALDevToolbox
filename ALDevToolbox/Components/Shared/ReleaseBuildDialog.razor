@@ -27,11 +27,12 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="send" Width="17" Height="17" />
                 </span>
-                <h2 id="rb-title" class="confirm-dialog__title">Release to @_envName</h2>
+                <h2 id="rb-title" class="confirm-dialog__title">Release to @_customerName — @_envName</h2>
             </div>
             <div class="confirm-dialog__body">
                 <p>
-                    Uploads the build's apps to <b>@_envName</b>. Business Central installs them
+                    Uploads the build's apps to <b>@_envName</b> in <b>@_customerName</b>'s Business Central.
+                    Business Central installs them
                     <b>@DeliveryModeDisplay.Schedule(_deploymentSchedule).ToLowerInvariant()</b>@(_schemaSyncMode == BcSyncMode.ForceSync ? ", using Force sync (which can drop columns)" : "").
                 </p>
 
@@ -64,13 +65,26 @@
                     </small>
                     @if (_hasWindow && IsOutsideWindow)
                     {
-                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window - this will be recorded on the delivery.</span>
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />This is outside the customer's agreed update window. It will still run at the time you pick - the release history will show it ran outside the window.</span>
                     }
                     @if (SecretWarning is { } secretWarn)
                     {
                         <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</span>
                     }
                 </div>
+
+                @if (SelectedApps.Count > 0)
+                {
+                    <div class="rb-apps">
+                        <span class="rb-apps__label">This build installs</span>
+                        <ul class="rb-apps__list">
+                            @foreach (var app in SelectedApps)
+                            {
+                                <li><span class="rb-apps__name">@app.Name</span> <span class="rb-apps__ver">@app.Version</span></li>
+                            }
+                        </ul>
+                    </div>
+                }
 
                 @if (_isProduction)
                 {
@@ -80,11 +94,11 @@
                         <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                         @if (_envNameIsProduction)
                         {
-                            <span>I understand this installs the apps into the live <b>Production</b> environment.</span>
+                            <span>I understand this installs the apps into <b>@_customerName</b>'s live <b>Production</b> environment.</span>
                         }
                         else
                         {
-                            <span>I understand this installs the apps into <b>@_envName</b>, a live <b>Production</b> environment.</span>
+                            <span>I understand this installs the apps into <b>@_envName</b>, <b>@_customerName</b>'s live <b>Production</b> environment.</span>
                         }
                     </label>
                 }
@@ -113,6 +127,7 @@
     private bool _focusPending;
     private ElementReference _root;
     private int _releasePipelineId;
+    private string _customerName = string.Empty;
     private string _envName = string.Empty;
     private bool _isProduction;
     private bool _envNameIsProduction;
@@ -133,7 +148,11 @@
     private DateTime _scheduledLocal; // Unspecified kind = customer-tz wall-clock
     private DateTime? _secretExpiresAt; // UTC instant the BC client secret lapses, if known
 
-    private string WindowLabel => _hasWindow ? $"{_winStart:HH:mm}–{_winEnd:HH:mm}" : "";
+    private string WindowLabel => _hasWindow ? $"{_winStart:HH:mm}-{_winEnd:HH:mm}" : "";
+
+    /// <summary>The apps the currently-picked build would install, shown before the confirm.</summary>
+    private IReadOnlyList<ReleasableBuildApp> SelectedApps =>
+        _builds.FirstOrDefault(b => b.Id == _buildId)?.Apps ?? [];
 
     /// <summary>The picked customer-tz wall-clock as a UTC instant.</summary>
     private DateTime ScheduledUtc => TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_scheduledLocal, DateTimeKind.Unspecified), _tz);
@@ -187,12 +206,16 @@
     /// IANA tz; <paramref name="windowStart"/>/<paramref name="windowEnd"/> the target
     /// environment's update window (both null = none).
     /// </summary>
-    public Task OpenAsync(int releasePipelineId, string envName, string envType, string deploymentSchedule, string schemaSyncMode,
+    public Task OpenAsync(int releasePipelineId, string customerName, string envName, string envType, string deploymentSchedule, string schemaSyncMode,
         IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd,
         DateTime? secretExpiresAt = null)
     {
         _releasePipelineId = releasePipelineId;
         _secretExpiresAt = secretExpiresAt;
+        // The customer's project name is what tells a consultant with several projects
+        // open *whose* tenant this writes to - an environment is often literally named
+        // "Production" (#714).
+        _customerName = string.IsNullOrWhiteSpace(customerName) ? "this project" : customerName;
         _envName = envName;
         _isProduction = string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase);
         _envNameIsProduction = string.Equals(envName, "Production", StringComparison.OrdinalIgnoreCase);
@@ -267,6 +290,9 @@
         }
     }
 
-    /// <summary>A successful build offered in the picker.</summary>
-    public sealed record ReleasableBuildOption(int Id, string Label);
+    /// <summary>A successful build offered in the picker, with the apps it would install.</summary>
+    public sealed record ReleasableBuildOption(int Id, string Label, IReadOnlyList<ReleasableBuildApp> Apps);
+
+    /// <summary>One app in a build: what goes into the customer's tenant, and at which version.</summary>
+    public sealed record ReleasableBuildApp(string Name, string Version);
 }

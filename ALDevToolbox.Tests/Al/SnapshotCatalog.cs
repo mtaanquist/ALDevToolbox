@@ -139,7 +139,10 @@ internal static class SnapshotCatalog
 
     private sealed class InMemoryResolver : IAlTypeResolver
     {
-        private readonly Dictionary<string, AlTypeRef> _types = new(StringComparer.OrdinalIgnoreCase);
+        // Name -> candidates. Same shape as the unit-test StubResolver:
+        // several kinds can share a name and the caller's kind hint picks
+        // between them (issue #712).
+        private readonly Dictionary<string, List<AlTypeRef>> _types = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<AlMember>> _members = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _sourceTables = new(StringComparer.OrdinalIgnoreCase);
         // baseName → list of extension type names targeting it. Mirrors
@@ -149,7 +152,17 @@ internal static class SnapshotCatalog
         private readonly Dictionary<string, List<string>> _extensionsByBase =
             new(StringComparer.OrdinalIgnoreCase);
 
-        public void AddType(string name, AlTypeRef type) => _types[name] = type;
+        public void AddType(string name, AlTypeRef type)
+        {
+            if (!_types.TryGetValue(name, out var candidates))
+            {
+                candidates = new List<AlTypeRef>();
+                _types[name] = candidates;
+            }
+            var existing = candidates.FindIndex(c =>
+                string.Equals(c.Kind, type.Kind, StringComparison.OrdinalIgnoreCase));
+            if (existing >= 0) candidates[existing] = type; else candidates.Add(type);
+        }
 
         public void AddMember(string ownerName, AlMember member)
         {
@@ -174,8 +187,24 @@ internal static class SnapshotCatalog
             list.Add(extensionName);
         }
 
-        public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
-            _types.TryGetValue(typeName, out var t) ? t : null;
+        /// <summary>
+        /// Ranks candidates the way the production CatalogResolver does:
+        /// exact kind match, then a non-extension kind, then insertion
+        /// order.
+        /// </summary>
+        public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null)
+        {
+            if (!_types.TryGetValue(typeName, out var candidates) || candidates.Count == 0) return null;
+            var expectedKind = AlKindKeywords.MapKeywordToKind(expectedKeyword);
+            if (expectedKind is not null)
+            {
+                var exact = candidates.FirstOrDefault(c =>
+                    string.Equals(c.Kind, expectedKind, StringComparison.OrdinalIgnoreCase));
+                if (exact is not null) return exact;
+            }
+            return candidates.FirstOrDefault(c => !AlKindKeywords.IsExtensionKind(c.Kind))
+                ?? candidates[0];
+        }
 
         public AlMember? ResolveMember(AlTypeRef owner, string memberName)
         {
@@ -197,7 +226,10 @@ internal static class SnapshotCatalog
                     var match = extList.FirstOrDefault(m =>
                         string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
                     if (match is null) continue;
-                    _types.TryGetValue(extName, out var extType);
+                    var extType = _types.TryGetValue(extName, out var extCandidates)
+                        ? extCandidates.FirstOrDefault(c => AlKindKeywords.IsExtensionKind(c.Kind))
+                            ?? extCandidates.FirstOrDefault()
+                        : null;
                     return match with { DeclaringType = extType };
                 }
             }

@@ -1,0 +1,21 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /site-admin/access-tokens
+   New route: /site-admin/connections/access-tokens
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/site-admin/access-tokens"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /site-admin/access-tokens moved under the unified
+    /site-admin/connections/access-tokens route. POST endpoints kept
+    their original paths.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/connections/access-tokens", replace: true);
+    }
+}

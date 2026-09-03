@@ -255,8 +255,10 @@ populated; one primary button per page.
   (name + default country, with a read-only audit trail), **Repositories** (allowed-provider editor),
   **Business Central** (the SaaS connection + environments, owner/admin only), **Pipelines** (links
   into the Pipelines tool), and a **Danger zone** delete. Create mode (`/solutions/new`) shows just
-  General + Repositories until the solution exists. *Setup only — Save solution is the single primary
-  action; building moved to Pipelines.*
+  General + Repositories until the solution exists, and starts with no repository rows so the empty
+  state and **Add repository** carry the first run. *Setup only — the single primary action is
+  **Create solution** in create mode and **Save solution** once it exists; building moved to
+  Pipelines.*
 - **Pipelines** (`Components/Pages/Pipelines/`, renamed from Artifacts): `PipelinesBrowser`
   (`/pipelines`, alias `/artifacts`) — cross-project landing summarising each project's latest build
   with a quick `Download all` (latest *successful* build); `PipelineBuilds`
@@ -264,7 +266,7 @@ populated; one primary button per page.
   (cache-backed extension picker with Refresh, a `.confirm-modal` panel), latest-build card with per-`.app`
   download + Download all (outline), the per-repo changelog, build history (failures shown
   honestly), the BUILD LOG card with `Raw log`, project-scoped Compare builds, and the OE deep-link.
-- Shared: `RowStateIcon` (the row-state glyph; `BuildStatusPill` was retired in PR 18c once every caller moved onto `.status-pill` or the row keyline), `CommitRef` (mono short hash + branch) under `Components/Shared/`.
+- Shared: `RowStateIcon` (the row-state glyph; `BuildStatusPill` was retired in PR 18c once every caller moved onto `.status-pill` or the row keyline) under `Components/Shared/`. `CommitRef` (mono short hash + branch) was sketched here but never used by a page, and has since been deleted.
 
 Each user-facing page states the CLAUDE.md "UX definition of done" and gets a fresh-eyes
 `design-review` pass on the rendered screens (light + dark).

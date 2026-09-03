@@ -290,15 +290,23 @@ public sealed class CalImportService
                 foreach (var p in parsed.Procedures)
                 {
                     if (!symByLine.TryGetValue(p.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, p.Body, p.BodyLine,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, p.Body, p.BodyLine, p.BodyColumn,
                         globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
                 foreach (var t in parsed.Triggers)
                 {
                     if (!symByLine.TryGetValue(t.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, t.Body, t.BodyLine,
-                        globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref emitted,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, t.Body, t.BodyLine, t.BodyColumn,
+                        globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId,
+                        TriggerRec(t, recRef), ref emitted,
+                        systemReferencesOnly: true);
+                }
+                foreach (var ex in parsed.Expressions)
+                {
+                    EmitBodyReferences(orgId, moduleId, appId, obj, null, ex.Text, ex.LineNumber, ex.Column,
+                        globalVars, Array.Empty<CalVariable>(), Array.Empty<CalVariable>(), parsed.Kind, ownerId,
+                        ex.RecTableId is int exId ? new CalTypeRef("table", exId) : recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
             }
@@ -405,7 +413,7 @@ public sealed class CalImportService
                 EndLine = p.EndLine,
             };
             _db.OeModuleSymbols.Add(procSym);
-            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body, p.BodyLine,
+            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body, p.BodyLine, p.BodyColumn,
                 globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
         }
 
@@ -422,8 +430,39 @@ public sealed class CalImportService
                 EndLine = CalScanEndLine(t),
             };
             _db.OeModuleSymbols.Add(trigSym);
-            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body, t.BodyLine,
-                globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
+            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body, t.BodyLine, t.BodyColumn,
+                globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId,
+                TriggerRec(t, recRef), ref referencesImported);
+        }
+
+        // A report data item's DataItemTable / an xmlport element's SourceTable
+        // binds an object as declaratively as a `Record 18` global does, so it
+        // emits the same variable_type reference (#713).
+        foreach (var or in parsed.ObjectRefs)
+        {
+            _db.OeModuleReferences.Add(new OeModuleReference
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                SourceObject = obj,
+                TargetAppId = appId,
+                TargetObjectKind = or.Kind,
+                TargetObjectId = or.TargetId,
+                TargetObjectName = string.Empty,   // resolved in the id post-pass
+                ReferenceKind = "variable_type",
+                LineNumber = or.LineNumber,
+            });
+            referencesImported++;
+        }
+
+        // A column's / xmlport field's SourceExpr is executable C/AL: walk it
+        // with the owning data item's Rec so `"No."` and `MyCodeunit.Calc` land
+        // as references. It hangs off no symbol, so the row is object-scoped.
+        foreach (var ex in parsed.Expressions)
+        {
+            EmitBodyReferences(orgId, moduleId, appId, obj, null, ex.Text, ex.LineNumber, ex.Column,
+                globalVars, Array.Empty<CalVariable>(), Array.Empty<CalVariable>(), parsed.Kind, ownerId,
+                ex.RecTableId is int exId ? new CalTypeRef("table", exId) : recRef, ref referencesImported);
         }
 
         foreach (var g in parsed.Globals)
@@ -477,7 +516,7 @@ public sealed class CalImportService
     /// </summary>
     private void EmitBodyReferences(
         int orgId, long moduleId, Guid appId,
-        OeModuleObject obj, OeModuleSymbol sourceSym, string body, int bodyLine,
+        OeModuleObject obj, OeModuleSymbol? sourceSym, string body, int bodyLine, int bodyColumn,
         IReadOnlyDictionary<string, CalTypeRef> globals,
         IEnumerable<CalVariable> parameters, IEnumerable<CalVariable> locals,
         string ownerKind, int ownerId, CalTypeRef? recRef, ref int referencesImported,
@@ -508,12 +547,15 @@ public sealed class CalImportService
                 TargetAppId = appId,
                 TargetObjectKind = r.TargetKind,
                 TargetObjectId = r.TargetId,
-                TargetObjectName = string.Empty,   // resolved in the id post-pass
+                // A static object receiver (CODEUNIT::"Sales-Post") names its
+                // target but carries no id; everything else is the other way
+                // round. The post-pass fills in whichever half is missing.
+                TargetObjectName = r.TargetName ?? string.Empty,
                 TargetMemberName = r.MemberName,
                 TargetMemberKind = r.MemberKind,
                 ReferenceKind = r.ReferenceKind,
                 LineNumber = bodyLine + r.Line - 1,
-                ColumnNumber = r.Column,
+                ColumnNumber = FileColumn(r.Line, r.Column, bodyColumn),
             });
             referencesImported++;
         }
@@ -537,11 +579,29 @@ public sealed class CalImportService
                 SystemMethodName = sr.MemberName ?? string.Empty,
                 ReferenceKind = sr.ReferenceKind,
                 LineNumber = bodyLine + sr.Line - 1,
-                ColumnNumber = sr.Column,
+                ColumnNumber = FileColumn(sr.Line, sr.Column, bodyColumn),
             });
             referencesImported++;
         }
     }
+
+    /// <summary>
+    /// Shifts a walker column onto the file. The walker numbers columns from 1
+    /// within the body text it was handed, and that text starts at the body's
+    /// <c>BEGIN</c> (or at a SourceExpr's first character) — so only its first
+    /// line is offset; every later line already starts at file column 1. Before
+    /// #713 the offset was dropped, and code written on the <c>BEGIN</c> line
+    /// pointed at the wrong place.
+    /// </summary>
+    private static int FileColumn(int walkerLine, int walkerColumn, int bodyColumn)
+        => walkerLine == 1 ? bodyColumn + walkerColumn - 1 : walkerColumn;
+
+    /// <summary>
+    /// The <c>Rec</c> binding for one trigger: a report data item's or xmlport
+    /// element's own table when it has one, otherwise the owner object's.
+    /// </summary>
+    private static CalTypeRef? TriggerRec(CalTrigger t, CalTypeRef? ownerRec)
+        => t.RecTableId is int id ? new CalTypeRef("table", id) : ownerRec;
 
     private static Dictionary<string, CalTypeRef> BuildVarMap(IEnumerable<CalVariable> vars)
     {
@@ -582,6 +642,30 @@ public sealed class CalImportService
             "AND r.target_object_id IS NOT NULL " +
             "AND o.object_id = r.target_object_id AND o.kind = r.target_object_kind " +
             "AND (r.target_object_name = '' OR r.target_object_name IS NULL)", p, ct).ConfigureAwait(false);
+
+        // The mirror image for static object receivers (CODEUNIT::"Sales-Post"),
+        // which name their target but carry no id — see #713.
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_references r SET target_object_id = o.object_id " +
+            "FROM oe_module_objects o " +
+            "WHERE r.module_id = {0} AND o.module_id = {0} " +
+            "AND r.target_object_id IS NULL AND r.target_object_name <> '' " +
+            "AND o.name = r.target_object_name AND o.kind = r.target_object_kind", p, ct).ConfigureAwait(false);
+
+        // Paren-less member access (`Cust.MyProc;`) reads exactly like a field
+        // read in C/AL, so the walker emits field_access for both. Now that the
+        // module's symbols are stored, a name that matches a procedure on the
+        // target object is a call — reclassify those rows (issue #712).
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_references r " +
+            "SET reference_kind = 'method_call', target_member_kind = 'procedure' " +
+            "FROM oe_module_objects o JOIN oe_module_symbols s ON s.object_id = o.id " +
+            "WHERE r.module_id = {0} AND o.module_id = {0} " +
+            "AND r.reference_kind = 'field_access' AND r.target_member_name IS NOT NULL " +
+            "AND r.target_object_id IS NOT NULL " +
+            "AND o.object_id = r.target_object_id AND o.kind = r.target_object_kind " +
+            "AND s.kind IN ('procedure', 'local_procedure') " +
+            "AND lower(s.name) = lower(r.target_member_name)", p, ct).ConfigureAwait(false);
 
         await _db.Database.ExecuteSqlRawAsync(
             "UPDATE oe_module_variables v SET target_object_name = o.name " +

@@ -541,8 +541,11 @@
         // top so the standalone preview can walk the template's scaffold
         // extension and the sibling-workspace preview can render real module
         // trees alongside the new extension.
-        await FolderTree.HydrateExtensionFolderTreeAsync(templates);
-        await FolderTree.HydrateModuleExtensionFolderTreeAsync(modules);
+        // Paths only: the preview draws the layout, never a file's body, and
+        // reading every example AL file to render a list of names is the whole
+        // template's text pulled across for nothing.
+        await FolderTree.HydrateExtensionFolderTreeAsync(templates, pathsOnly: true);
+        await FolderTree.HydrateModuleExtensionFolderTreeAsync(modules, pathsOnly: true);
         var applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         var orgConfig = await OrgConfig.GetCurrentAsync();
         // Prefer the per-org default template; fall back to the first row so

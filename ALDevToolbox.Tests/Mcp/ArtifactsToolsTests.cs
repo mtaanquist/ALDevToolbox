@@ -19,11 +19,16 @@ public sealed class ArtifactsToolsTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private ArtifactsTools NewTools(Data.AppDbContext ctx) =>
-        new(new ArtifactService(ctx, new ProjectAccess(ctx, _db.OrgContext)),
-            new ReleaseComparisonService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleaseComparisonService>.Instance),
-            new ProjectAccess(ctx, _db.OrgContext),
-            ctx);
+    private ArtifactsTools NewTools(Data.AppDbContext ctx)
+    {
+        var access = new ProjectAccess(ctx, _db.OrgContext);
+        var discovery = new ProjectDiscoveryService(ctx, _db.OrgContext, access, new ProjectDiscoveryQueue(),
+            NullLogger<ProjectDiscoveryService>.Instance);
+        return new ArtifactsTools(
+            new ArtifactService(ctx, access),
+            new ReleaseComparisonService(ctx, access, NullLogger<ReleaseComparisonService>.Instance),
+            new ProjectService(ctx, _db.OrgContext, access, discovery, NullLogger<ProjectService>.Instance));
+    }
 
     [Fact]
     public async Task List_projects_and_builds_round_trip_by_name_and_id()

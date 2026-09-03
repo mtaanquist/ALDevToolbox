@@ -7,6 +7,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject NavigationManager Nav
 @inject ILogger<ReleasePipelineDetail> Log
+@inject IServiceScopeFactory ScopeFactory
+@using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
@@ -139,10 +141,13 @@
                 @foreach (var d in _deliveries)
                 {
                     <div class="run-row run-row--@RowStateIcon.RunState(d.Status)">
-                        <span class="run-row__id">#@d.ProjectBuildId</span>
+                        @* The build number reads once, in the id track the run-list
+                           archetype reserves for it - the title line says what the
+                           release carried instead of repeating the number (#714). *@
+                        <span class="run-row__id" title="Build #@d.ProjectBuildId">#@d.ProjectBuildId</span>
                         <div class="run-row__main">
                             <span class="run-row__title">
-                                Build #@d.ProjectBuildId
+                                @RowTitle(d)
                                 @if (d.ScheduledOutsideWindow)
                                 {
                                     <span class="rp-outside" title="Scheduled outside the environment's update window"><Icon Name="triangle-alert" Width="12" Height="12" />outside window</span>
@@ -207,7 +212,8 @@
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnEditedAsync" />
 <ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
 <ConfirmDialog @ref="_cancelConfirm" Title="Cancel this delivery?"
-               ConfirmLabel="Cancel delivery" ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
+               ConfirmLabel="Cancel delivery" CancelLabel="Keep it scheduled"
+               ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
 
 @if (_rescheduleId is not null)
 {
@@ -297,10 +303,20 @@
 
         // The releasable builds are the source build pipeline's successful builds, newest first.
         var builds = await Artifacts.ListBuildsAsync(_rp.BuildPipelineId);
+        // The apps each build carries, so the release dialog can show what is about
+        // to be installed before the consultant confirms (#714).
+        var appsByBuild = await Artifacts.ListBuildAppsAsync(_rp.BuildPipelineId);
         _successfulBuilds = builds
             .Where(b => b.Status == "ready")
             .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
-            .Select(b => new ReleaseBuildDialog.ReleasableBuildOption(b.Id, BuildLabel(b)))
+            .Select(b =>
+            {
+                var apps = appsByBuild.TryGetValue(b.Id, out var found) ? found : [];
+                return new ReleaseBuildDialog.ReleasableBuildOption(
+                    b.Id,
+                    BuildLabel(b, apps.Count),
+                    apps.Select(a => new ReleaseBuildDialog.ReleasableBuildApp(a.AppName, a.AppVersion)).ToList());
+            })
             .ToList();
 
         _loading = false;
@@ -324,7 +340,7 @@
     {
         if (_releaseDialog is null || _rp is null || _successfulBuilds.Count == 0) return;
         await _releaseDialog.OpenAsync(
-            _rp.Id, _rp.ProjectEnvironment!.Name, _rp.ProjectEnvironment.Type,
+            _rp.Id, _rp.Project?.Name ?? "", _rp.ProjectEnvironment!.Name, _rp.ProjectEnvironment.Type,
             _rp.DeploymentSchedule, _rp.SchemaSyncMode, _successfulBuilds,
             _rp.Project?.BcTimeZone, _rp.ProjectEnvironment.UpdateWindowStart, _rp.ProjectEnvironment.UpdateWindowEnd,
             _rp.Project?.BcClientSecretExpiresAt);
@@ -446,12 +462,25 @@
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id, token);
-                await InvokeAsync(StateHasChanged);
-                if (!_deliveries.Any(d => d.IsActive)) { StopPoll(); break; }
+                // Own DI scope per tick: this runs on a thread-pool continuation, not the
+                // circuit's dispatcher, so sharing the circuit's DbContext would let a tick
+                // and a click have two commands in flight on one context. See #679.
+                List<DeliveryHistoryRow> rows;
+                await using (var scope = ScopeFactory.CreateAsyncScope())
+                {
+                    rows = await scope.ServiceProvider.GetRequiredService<DeliveryService>()
+                        .ListDeliveryHistoryAsync(Id, token);
+                }
+
+                // Disposal can happen while we were parked on the query; touching the
+                // renderer after that logs an error for what is a normal navigate-away.
+                if (token.IsCancellationRequested) break;
+                await InvokeAsync(() => { _deliveries = rows; StateHasChanged(); });
+                if (!rows.Any(d => d.IsActive)) { StopPoll(); break; }
             }
         }
         catch (OperationCanceledException) { /* navigating away */ }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { /* torn down mid-poll */ }
         catch (Exception ex)
         {
             Log.LogError(ex, "Delivery poll failed for release pipeline {ReleasePipelineId}.", Id);
@@ -462,13 +491,18 @@
         }
     }
 
+    /// <summary>
+    /// Idempotent, single-shot teardown: disposal (renderer thread) and the poll loop's
+    /// finally (thread pool) both call this, so the fields are claimed atomically to avoid
+    /// a double Dispose / Cancel-on-disposed race.
+    /// </summary>
     private void StopPoll()
     {
-        _poll?.Dispose();
-        _poll = null;
-        _pollCts?.Cancel();
-        _pollCts?.Dispose();
-        _pollCts = null;
+        var cts = Interlocked.Exchange(ref _pollCts, null);
+        var timer = Interlocked.Exchange(ref _poll, null);
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
     }
 
     public ValueTask DisposeAsync()
@@ -479,12 +513,41 @@
 
     // ── Display helpers ───────────────────────────────────────────────────────
 
-    private static string BuildLabel(BuildRow b)
+    /// <summary>
+    /// The picker label for one releasable build: what it is, not just when it ran.
+    /// A consultant picking a build for a customer's live tenant needs the branch,
+    /// the commit it was built at and how many apps it carries (#714) - e.g.
+    /// "#412 · main @a3f9c21 · 3 apps · built 29 Aug 14:21". Parts the build has no
+    /// value for are dropped rather than shown empty.
+    /// </summary>
+    private static string BuildLabel(BuildRow b, int appCount)
     {
-        var ver = string.IsNullOrEmpty(b.BcVersion) ? "" : $" · BC {b.BcVersion}";
-        var when = (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
-        return $"#{b.Id}{ver} · {when}";
+        var parts = new List<string> { $"#{b.Id}" };
+
+        var source = string.Join(" ", new[]
+        {
+            b.Branch,
+            string.IsNullOrEmpty(b.HeadCommitShort) ? null : $"@{b.HeadCommitShort}",
+        }.Where(s => !string.IsNullOrEmpty(s)));
+        if (!string.IsNullOrEmpty(source)) parts.Add(source);
+
+        if (appCount > 0) parts.Add(appCount == 1 ? "1 app" : $"{appCount} apps");
+        if (!string.IsNullOrEmpty(b.BcVersion)) parts.Add($"BC {b.BcVersion}");
+        parts.Add("built " + (b.FinishedAt ?? b.StartedAt).ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+
+        return string.Join(" · ", parts);
     }
+
+    /// <summary>
+    /// The history row's title line. The build number is already in the row's id
+    /// chip, so the title says what the release carried instead of repeating it.
+    /// </summary>
+    private static string RowTitle(DeliveryHistoryRow d) => d.Apps.Count switch
+    {
+        0 => d.IsScheduled ? "Scheduled release" : "Release",
+        1 => "1 app",
+        var n => $"{n} apps",
+    };
 
     /// <summary>
     /// A per-app result in the run-family vocabulary, so its glyph comes off the

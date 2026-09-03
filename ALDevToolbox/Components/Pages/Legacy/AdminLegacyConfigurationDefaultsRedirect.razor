@@ -1,0 +1,17 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/configuration/defaults
+   New route: /admin/templates/defaults
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/admin/configuration/defaults"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    The Defaults page moved to /admin/templates/defaults along with the rest of
+    the template-shaping pages. This stub keeps the legacy bookmark working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/defaults", replace: true);
+}

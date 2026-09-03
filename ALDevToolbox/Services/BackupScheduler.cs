@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services.SingleTenant;
+using ALDevToolbox.Services.Workers;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
@@ -19,65 +20,32 @@ namespace ALDevToolbox.Services;
 /// backup a minute late than skip a day entirely.
 /// </para>
 /// </summary>
-public sealed class BackupScheduler : BackgroundService
+public sealed class BackupScheduler : PolledScheduler
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
-
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ISingleTenantMode _singleTenant;
     private readonly MaintenanceModeState _maintenance;
     private readonly ILogger<BackupScheduler> _logger;
-    private readonly WorkerHeartbeat _heartbeat;
 
     public BackupScheduler(IServiceProvider services, TimeProvider clock, ISingleTenantMode singleTenant, MaintenanceModeState maintenance, ILogger<BackupScheduler> logger, WorkerHeartbeatRegistry heartbeats)
+        // Poll every minute; flag stale if no tick has landed in 5 (~3x the poll
+        // interval). Active-duration ceiling matches the longest legitimate backup run
+        // we'd allow — pg_dump on a large Postgres takes a while, so keep it generous.
+        : base(logger, heartbeats, nameof(BackupScheduler),
+            pollInterval: TimeSpan.FromMinutes(1),
+            maxActiveDuration: TimeSpan.FromHours(2),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_BACKUP_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _singleTenant = singleTenant;
         _maintenance = maintenance;
         _logger = logger;
-        // Poll every minute; flag stale if no tick has landed in 5 (~3× the
-        // poll interval). Active-duration ceiling matches the longest legitimate
-        // backup run we'd allow — pg_dump on a large Postgres takes a while, so
-        // keep the ceiling generous.
-        _heartbeat = heartbeats.Register(nameof(BackupScheduler),
-            maxActiveDuration: TimeSpan.FromHours(2),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Burn a few seconds before the first poll so startup migrations and
-        // seed have finished — both touch the same connection pool we're
-        // about to read from.
-        try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "BackupScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -182,6 +150,8 @@ public sealed class BackupScheduler : BackgroundService
             try
             {
                 var lastPerTenant = await db.PerTenantBackups
+                    // Fence category 3 (scheduler, no request org): pinned to b.OrganizationId == orgId
+                    // from the sweep's own org enumeration.
                     .IgnoreQueryFilters()
                     .AsNoTracking()
                     .Where(b => b.OrganizationId == orgId && b.Kind == BackupKind.Scheduled)

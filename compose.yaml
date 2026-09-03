@@ -1,12 +1,16 @@
 # AL Dev Toolbox stack. Two services: Postgres (`db`) and the app
-# (`aldevtoolbox`). Three named volumes — see the `volumes` block at the
-# bottom for the layout reference.
+# (`aldevtoolbox`). Four named volumes (`pg-data`, `app-keys`, `app-backups`,
+# `app-altool`) — see the `volumes` block at the bottom for the layout reference.
 services:
   db:
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aldevtoolbox}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aldevtoolbox}
+      # Required — no default. A missing password used to fall back to the
+      # project name, which silently handed the operator a working stack with
+      # a guessable password. `:?` stops the stack instead, the same pattern
+      # ACME_EMAIL uses on the optional caddy service below.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a database password in .env}
       POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
     volumes:
       # postgres:18+ places data under /var/lib/postgresql/<major>/docker/ so
@@ -47,8 +51,9 @@ services:
 
   aldevtoolbox:
     # Official images are published to GHCR on every release tag — see
-    # CLAUDE.md "Releases and image publishing". Moving tags `latest`, `6`
-    # (major) and `6.0` (minor) plus the exact `6.0.0` are all pushed; pin as
+    # PROJECT.md "Releases and image publishing". For a release vX.Y.Z the
+    # moving tags `latest`, `X` (major) and `X.Y` (minor) plus the exact
+    # `X.Y.Z` are all pushed; pin as
     # loosely or tightly as you like via ALDEVTOOLBOX_TAG. To build from source
     # instead, comment out `image:` and uncomment `build: .`.
     image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}
@@ -60,10 +65,22 @@ services:
       - "${HOST_PORT:-8080}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      # Who may set X-Forwarded-For / X-Forwarded-Proto. Left unset the app
+      # ignores those headers from anything but loopback, so per-IP rate limits
+      # and the login audit see the real connection address. Uncomment when you
+      # enable the `caddy` service below (or any other proxy) — it sits on the
+      # compose bridge network, so trust that subnet:
+      # TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      # The public address this install is reached on. Credential email links
+      # (password reset, magic link, invite, email verification) are built from
+      # it; unset, they fall back to the request's Host header. Set AllowedHosts
+      # alongside it so a foreign Host is refused before any handler runs.
+      # PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://toolbox.cronus.example}
+      # AllowedHosts: ${ALLOWED_HOSTS:-toolbox.cronus.example}
       # Compose builds the connection string from the POSTGRES_* knobs so the
       # operator only manages credentials in one place. The `db` host name is
       # the compose service name above.
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD:-aldevtoolbox}"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD:?set a database password in .env}"
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       # Single-tenant mode. Set to 1 when one organisation runs the toolbox
@@ -137,6 +154,16 @@ services:
     # picks it up automatically; we don't restate it here to avoid the two
     # drifting.
     restart: unless-stopped
+    # The image runs as the non-root `app` user (see Dockerfile), so the
+    # process needs no Linux capabilities at all, and nothing it launches
+    # (git, pg_dump, the AL compiler) may regain privileges via setuid.
+    # `read_only: true` is deliberately NOT set: the build pipeline clones
+    # customer repositories and stages multi-GB .app / DVD downloads under
+    # /tmp, and a tmpfs there would charge all of that to RAM.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     # Resource ceilings. The memory limit is sized for Object Explorer
     # ingestion: parsing Microsoft's Base Application .app peaks around
     # 2-3 GiB of managed heap (full .app buffered, SymbolReference.json

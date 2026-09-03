@@ -9,6 +9,7 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
 @using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.Translation
 @using ALDevToolbox.Services.Translation.Providers
 @using ALDevToolbox.Domain.ValueObjects
@@ -18,6 +19,7 @@
 @inject MachineTranslationService Mt
 @inject TranslationSuggestionCoordinator Coordinator
 @inject ILogger<Translator> Log
+@inject IServiceScopeFactory ScopeFactory
 
 <PageTitle>Translator · AL Dev Toolbox</PageTitle>
 
@@ -1203,7 +1205,12 @@ else
         MtTranslation? res = null;
         try
         {
-            res = await Mt.TranslateAsync(source, _sourceLang, _targetLang, context);
+            // Own DI scope: the auto path fires this off the circuit's dispatcher, and
+            // MachineTranslationService reaches the shared DbContext through
+            // OrganizationConfigService on a cold cache. See #679.
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            res = await scope.ServiceProvider.GetRequiredService<MachineTranslationService>()
+                .TranslateAsync(source, _sourceLang, _targetLang, context);
         }
         catch (Exception ex)
         {
@@ -1277,7 +1284,13 @@ else
             {
                 try
                 {
-                    var hits = await Coordinator.LookupGatedAsync(src, _sourceLang, _targetLang);
+                    // Own DI scope: this prefetch runs on the thread pool, so it must not
+                    // query through the circuit's DbContext — the coordinator's gate only
+                    // serialises calls made through the circuit's own instance. See #679.
+                    await using var scope = ScopeFactory.CreateAsyncScope();
+                    var hits = await scope.ServiceProvider
+                        .GetRequiredService<TranslationSuggestionCoordinator>()
+                        .LookupGatedAsync(src, _sourceLang, _targetLang);
                     await InvokeAsync(() =>
                     {
                         Coordinator.Cache(src, hits);

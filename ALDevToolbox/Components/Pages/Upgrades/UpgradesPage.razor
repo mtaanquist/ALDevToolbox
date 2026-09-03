@@ -77,19 +77,21 @@
     }
     else if (_rows is null)
     {
+        <div class="upg-scroll">
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="upg__pick"><span class="u-sr">Select</span></th>
                 <th scope="col">Customer</th>
                 <th scope="col">Environment</th>
                 <th scope="col">Status</th>
-                <th scope="col">Now on</th>
+                <th scope="col">Current version</th>
                 <th scope="col">Next update</th>
-                <th scope="col">Latest possible date</th>
+                <th scope="col">Latest Microsoft allows</th>
                 <th scope="col">Last checked</th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="8" /></tbody>
         </table>
+        </div>
         <div class="loading-block loading-block--under-table">
             <span class="spinner"></span><span>Loading environments...</span>
         </div>
@@ -150,9 +152,11 @@
 
         <div class="upg-bar">
             <span class="upg-bar__count">
+                @* The hint used to live in a title on the disabled buttons, where no
+                   browser shows it. It belongs here, on screen, where the count is. *@
                 @if (_selected.Count == 0)
                 {
-                    <text>Nothing selected</text>
+                    <text>@PickFirstHint</text>
                 }
                 else
                 {
@@ -161,17 +165,16 @@
             </span>
             <span class="upg-bar__acts">
                 <button type="button" class="btn btn--sm" disabled="@ActionsDisabled"
-                        title="@(ActionsDisabled ? PickFirstHint : null)"
                         @onclick="ConfirmPushAsync">
                     <Icon Name="calendar" Width="14" Height="14" />
-                    <span>Move dates to the latest</span>
+                    <span>Move dates to the latest allowed</span>
                 </button>
-                @* The one control here that acts at once and cannot be taken back. *@
+                @* The one control here that acts at once and cannot be taken back -
+                   though its dialog can also book the run for later. *@
                 <button type="button" class="btn btn--sm btn--danger" disabled="@ActionsDisabled"
-                        title="@(ActionsDisabled ? PickFirstHint : null)"
                         @onclick="ConfirmUpdateNowAsync">
                     <Icon Name="zap" Width="14" Height="14" />
-                    <span>Start the update now</span>
+                    <span>Start or book the update</span>
                 </button>
                 <span class="upg-bar__sep" aria-hidden="true"></span>
                 <button type="button" class="btn btn--sm" disabled="@_running" @onclick="RefreshDataAsync">
@@ -228,6 +231,10 @@
                named where it is picked and where it is shown back. *@
             <p class="upg-tz">Dates below are UTC. Times you book are in each customer's local time.</p>
 
+            @* Eight columns of real customer data do not fit a narrow window, and
+               the page's own container clips rather than scrolls (#574), so the
+               table gets a box of its own to scroll in. *@
+            <div class="upg-scroll">
             <table class="data-table data-table--edge">
                 <thead>
                     <tr>
@@ -245,9 +252,9 @@
                         <th scope="col">Customer</th>
                         <th scope="col">Environment</th>
                         <th scope="col">Status</th>
-                        <th scope="col">Now on</th>
+                        <th scope="col">Current version</th>
                         <th scope="col">Next update</th>
-                        <th scope="col">Latest possible date</th>
+                        <th scope="col">Latest Microsoft allows</th>
                         <th scope="col">Last checked</th>
                     </tr>
                 </thead>
@@ -299,7 +306,7 @@
                                         @if (waiting.Count == 1 && row.CanAct)
                                         {
                                             <button type="button" class="btn btn--sm upg-booked__cancel"
-                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel</button>
+                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel booking</button>
                                         }
                                     </div>
                                 }
@@ -367,7 +374,7 @@
                                         @if (result.ActionId is { } bookedId)
                                         {
                                             <button type="button" class="btn btn--sm upg-note__cancel"
-                                                    @onclick="() => CancelActionAsync(bookedId)">Cancel</button>
+                                                    @onclick="() => CancelActionAsync(bookedId)">Cancel booking</button>
                                         }
                                     </div>
                                 }
@@ -402,6 +409,7 @@
                     }
                 </tbody>
             </table>
+            </div>
 
             @* Only when there is actually a padlock on screen to explain. A hover
                title alone was invisible on a touch screen, to the keyboard, and to a
@@ -530,7 +538,7 @@
     private int? _feedEnvId;
     private List<UpgradeActionRow>? _feed;
 
-    private const string PickFirstHint = "Pick at least one environment first";
+    private const string PickFirstHint = "Nothing selected - tick an environment to move its date or start its update";
 
     private bool ActionsDisabled => _selected.Count == 0 || _running;
 
@@ -983,8 +991,12 @@
         return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, tz), TimeSpan.Zero);
     }
 
+    /// <summary>
+    /// A customer's time zone the way a consultant names it - the city, not the raw
+    /// region/city id. Matches how the project page says the same thing.
+    /// </summary>
     private static string ZoneLabel(string? ianaId) =>
-        string.IsNullOrWhiteSpace(ianaId) ? "UTC" : ianaId;
+        string.IsNullOrWhiteSpace(ianaId) ? "UTC" : BcUpdateWindow.CityLabel(ianaId);
 
     // -- What the dialog says, which depends on the choice in it ---------
 

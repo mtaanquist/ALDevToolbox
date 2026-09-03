@@ -6,11 +6,13 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.OAuth;
 using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
 
@@ -108,9 +110,14 @@ internal static class OAuthEndpoints
     {
         // Anonymous, cacheable, side-effect free. Returns the document Claude
         // fetches after following the WWW-Authenticate pointer on /mcp's 401.
-        app.MapGet("/.well-known/oauth-protected-resource", (HttpContext ctx) =>
+        app.MapGet("/.well-known/oauth-protected-resource", (HttpContext ctx, PublicOrigin publicOrigin) =>
         {
-            var issuer = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+            // Computed per request and never persisted, so PUBLIC_BASE_URL can
+            // simply take over when set (issue #670). OpenIddict's own
+            // discovery document still derives its issuer per request; the two
+            // agree because a client that fetched this document reaches the
+            // authorization server through the origin it names.
+            var issuer = publicOrigin.For(ctx);
             var doc = new
             {
                 resource = $"{issuer}/mcp",
@@ -136,11 +143,20 @@ internal static class OAuthEndpoints
         // intercepting our SignIn call.
         app.MapPost("/oauth/authorize", async (
             HttpContext ctx,
+            IAntiforgery antiforgery,
             AppDbContext db,
             TimeProvider clock,
             ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
+            // The handler binds HttpContext and reads the form by hand, so the
+            // endpoint carries no IAntiforgeryMetadata and UseAntiforgery()
+            // does not cover it — validate explicitly, first, like every other
+            // cookie-authenticated POST under Endpoints/. Without this a
+            // cross-site auto-submitted form could mint an authorisation code
+            // for an attacker-registered client (issue #671).
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, cancellationToken)) return;
+
             var logger = loggerFactory.CreateLogger("OAuth.Authorize");
             var request = ctx.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException(

@@ -240,7 +240,25 @@ public sealed class OffsiteRestoreWorker : BackgroundService
         await foreach (var jobId in _jobs.Reader.ReadAllAsync(stoppingToken))
         {
             _heartbeat.BeginActive();
-            try { await RunOneAsync(jobId, stoppingToken); }
+            try
+            {
+                await RunOneAsync(jobId, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Matches the other background workers: one bad job never kills
+                // the loop. Anything escaping RunOneAsync's own catch (scope or
+                // service resolution, the unknown-kind guard) would otherwise
+                // reach the host, which defaults to StopHost and takes the whole
+                // app down. Mark the job failed too, or it sits "Running" in the
+                // SiteAdmin poller forever.
+                _logger.LogError(ex, "Off-site restore worker tripped on JobId={JobId}.", jobId);
+                _jobs.MarkFailed(jobId, ex.Message);
+            }
             finally { _heartbeat.EndActive(); }
         }
     }

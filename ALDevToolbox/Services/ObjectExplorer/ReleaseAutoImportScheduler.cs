@@ -1,5 +1,6 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Services.SingleTenant;
+using ALDevToolbox.Services.Workers;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -29,14 +30,13 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// otherwise the sweep would have nothing to do and never run (issue #518).
 /// </para>
 /// </summary>
-public sealed class ReleaseAutoImportScheduler : BackgroundService
+public sealed class ReleaseAutoImportScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
 
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ILogger<ReleaseAutoImportScheduler> _logger;
-    private readonly WorkerHeartbeat _heartbeat;
     private readonly bool _singleTenant;
     private readonly int _hourUtc;
 
@@ -51,18 +51,20 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         ILogger<ReleaseAutoImportScheduler> logger,
         WorkerHeartbeatRegistry heartbeats,
         ISingleTenantMode singleTenant)
+        // Poll every minute; the sweep resolves + enqueues quickly (downloads run
+        // on ReleaseImportWorker, not here), so a 30-minute active ceiling is
+        // ample even for many opted-in orgs.
+        : base(logger, heartbeats, nameof(ReleaseAutoImportScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(30),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
         _singleTenant = singleTenant.IsEnabled;
         _hourUtc = ResolveHourUtc();
-        // Poll every minute; the sweep resolves + enqueues quickly (downloads run
-        // on ReleaseImportWorker, not here), so a 30-minute active ceiling is
-        // ample even for many opted-in orgs.
-        _heartbeat = heartbeats.Register(nameof(ReleaseAutoImportScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(30),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
     private static int ResolveHourUtc()
@@ -72,36 +74,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         return 4; // Quiet pre-dawn UTC window, after the 3am OE vacuum.
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Let startup migrations + seed finish before the first poll.
-        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ReleaseAutoImportScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
         if (nowUtc.Hour < _hourUtc) return;
@@ -120,22 +93,28 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     /// otherwise the system org is skipped. Static + DB-only so it's unit-tested
     /// without the importer or the poll loop. See issue #518.
     /// </summary>
-    internal static async Task<List<(int OrganizationId, string Countries)>> ResolveTargetsAsync(
+    internal static async Task<List<(int OrganizationId, string Countries, bool IsSystem)>> ResolveTargetsAsync(
         AppDbContext db, bool includeSystemOrg, CancellationToken ct)
     {
-        var activeOrgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+        // Fence category 3 (scheduler, no request org): enumerates the orgs to sweep; each
+        // org's import then runs pinned inside its own AmbientOrganizationScope.
+        var activeOrgs = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
             .Where(o => (includeSystemOrg || !o.IsSystem) && !o.IsPending)
-            .Select(o => o.Id)
+            .Select(o => new { o.Id, o.IsSystem })
             .ToListAsync(ct).ConfigureAwait(false);
-        var activeSet = activeOrgIds.ToHashSet();
+        // IsSystem travels with the id: the sweep stamps it on the ambient identity so a
+        // scheduled import into the system org sees the same quota rule the interactive
+        // path does (issue #694).
+        var activeSet = activeOrgs.ToDictionary(o => o.Id, o => o.IsSystem);
 
+        // Fence category 3 (scheduler, no request org): opt-in settings for the same sweep.
         var rows = await db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.AutoImportReleasesEnabled && s.AutoImportCountry != null && s.AutoImportCountry != "")
             .Select(s => new { s.OrganizationId, s.AutoImportCountry })
             .ToListAsync(ct).ConfigureAwait(false);
         return rows
-            .Where(r => activeSet.Contains(r.OrganizationId))
-            .Select(r => (r.OrganizationId, r.AutoImportCountry!))
+            .Where(r => activeSet.ContainsKey(r.OrganizationId))
+            .Select(r => (r.OrganizationId, r.AutoImportCountry!, activeSet[r.OrganizationId]))
             .ToList();
     }
 
@@ -145,7 +124,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     /// </summary>
     internal async Task SweepAsync(CancellationToken ct)
     {
-        List<(int OrganizationId, string Countries)> targets;
+        List<(int OrganizationId, string Countries, bool IsSystem)> targets;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -171,7 +150,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         var notFound = 0;
         var failed = 0;
 
-        foreach (var (orgId, countries) in targets)
+        foreach (var (orgId, countries, isSystem) in targets)
         {
             // The setting may hold a comma-separated list ("w1,dk,nl") — one
             // import per code. Each code fails independently so a bad country
@@ -181,7 +160,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                 try
                 {
                     using var ambient = AmbientOrganizationScope.Enter(
-                        new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+                        AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem));
                     await using var scope = _services.CreateAsyncScope();
                     var importer = scope.ServiceProvider.GetRequiredService<ArtifactReleaseImporter>();
                     var outcome = await importer.ImportAsync(country, version: null, ct).ConfigureAwait(false);
@@ -218,7 +197,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                 }
             }
 
-            await StampLastRunAsync(orgId, ct).ConfigureAwait(false);
+            await StampLastRunAsync(orgId, isSystem, ct).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
@@ -233,12 +212,12 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     /// EF query filter applies, no filter escape needed. Best-effort: a failure
     /// here only costs the timestamp, never the sweep.
     /// </summary>
-    private async Task StampLastRunAsync(int orgId, CancellationToken ct)
+    private async Task StampLastRunAsync(int orgId, bool isSystem, CancellationToken ct)
     {
         try
         {
             using var ambient = AmbientOrganizationScope.Enter(
-                new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+                AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem));
             await using var scope = _services.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var row = await db.OrganizationSettings.SingleOrDefaultAsync(ct).ConfigureAwait(false);

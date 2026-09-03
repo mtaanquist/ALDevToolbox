@@ -1,15 +1,17 @@
 // CodeMirror 6 companion shared by every page that embeds a syntax-aware
 // text editor (TOML for /admin/templates, JSON for /admin/configuration/workspace).
 //
-// Pulled in as ESM modules from esm.sh so the rest of the app stays JS-bundler-
-// free (per .design/milestones.md → P2.2). Versions are pinned to keep cache
-// hits stable and to avoid surprise behaviour drifts.
+// The CodeMirror packages are vendored under wwwroot/lib/codemirror/ and imported
+// by relative path, so the app has no runtime CDN dependency and works on an
+// air-gapped host. They are pre-bundled single files (no bundler in this repo);
+// wwwroot/lib/codemirror/README.md records the exact versions and the commands
+// that produced them, which is also how you bump them.
 //
-// Every URL carries the same `?deps=` query so esm.sh resolves the shared
-// CodeMirror packages to a single canonical instance. Without this, each
-// package fetches its own latest-matching @codemirror/state and the
-// instanceof checks inside CodeMirror's extension system break with the
-// "Unrecognized extension value in extension set" error.
+// The shared packages (@codemirror/state, view, language, @lezer/common,
+// @lezer/highlight) are each vendored once and imported by every other file, so
+// CodeMirror's extension system sees a single canonical instance. Duplicating one
+// of them breaks the instanceof checks with "Unrecognized extension value in
+// extension set".
 //
 // The exported functions are ID-keyed so Blazor's IJSObjectReference can
 // stay a plain integer rather than wrapping the EditorView itself: simpler
@@ -19,26 +21,26 @@ import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialCha
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
     highlightActiveLine, keymap, Decoration, WidgetType, showPanel, gutter, GutterMarker,
     placeholder }
-    from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
+    from "./lib/codemirror/view.js";
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
-    from "https://esm.sh/@codemirror/state@6.4.1";
+    from "./lib/codemirror/state.js";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
-    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/commands.js";
 import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
-    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/language.js";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
-    from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "./lib/codemirror/search.js";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
-    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/autocomplete.js";
 import { lintKeymap, lintGutter, setDiagnostics }
-    from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "./lib/codemirror/lint.js";
 import { toml }
-    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/legacy-modes-toml.js";
 import { json as jsonMode }
-    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/lang-json.js";
 import { tags }
-    from "https://esm.sh/@lezer/highlight@1.2.1";
+    from "./lib/codemirror/lezer-highlight.js";
 
 // Lightweight AL StreamParser. Not a full AL grammar — recognises keywords,
 // strings, double-quoted identifiers (AL allows spaces inside `"..."`), comments
@@ -652,12 +654,11 @@ export function mountReadOnly(container, value, language, options) {
     // small floating menu and stop the browser's default menu. Anything
     // outside a declaration falls through (browser menu kept).
     const declarations = Array.isArray(opts.declarations) ? opts.declarations : [];
-    let openMenu = null;
+    let closeOpenMenu = null;
     const closeMenu = () => {
-        if (openMenu) {
-            openMenu.remove();
-            openMenu = null;
-        }
+        const close = closeOpenMenu;
+        closeOpenMenu = null;
+        close?.(false);
     };
 
     // Right-click anywhere offers "Go to definition" when a callback is wired;
@@ -736,11 +737,11 @@ export function mountReadOnly(container, value, language, options) {
 
         event.preventDefault();
         closeMenu();
-        openMenu = renderMenu(event.clientX, event.clientY, items);
+        // The menu owns its own click / scroll / keydown dismissal now, so
+        // this no longer registers document-level listeners of its own.
+        closeOpenMenu = renderMenu(event.clientX, event.clientY, items, container).close;
     };
     container.addEventListener("contextmenu", onContextMenu);
-    document.addEventListener("click", closeMenu);
-    document.addEventListener("scroll", closeMenu, true);
 
     // Cmd/Ctrl-click anywhere in the editor fires Go to definition.
     // Holding the modifier (without clicking) toggles a class on the editor
@@ -781,9 +782,14 @@ export function mountReadOnly(container, value, language, options) {
     container.addEventListener("mousemove", updateModifierClass);
     container.addEventListener("keydown", updateModifierClass);
     container.addEventListener("keyup", updateModifierClass);
-    container.addEventListener("mouseleave", () => container.classList.remove("cm-modifier-down"));
+    const onContainerMouseLeave = () => container.classList.remove("cm-modifier-down");
+    container.addEventListener("mouseleave", onContainerMouseLeave);
     // Modifier release outside the editor still needs to clear the class.
-    window.addEventListener("blur", () => container.classList.remove("cm-modifier-down"));
+    // Retained so dispose() can take it off `window` again — an anonymous
+    // handler here leaked one closure over the container per mount, on the one
+    // path that does call dispose (#711).
+    const onWindowBlur = () => container.classList.remove("cm-modifier-down");
+    window.addEventListener("blur", onWindowBlur);
 
     editors.set(id, {
         view,
@@ -795,8 +801,8 @@ export function mountReadOnly(container, value, language, options) {
             container.removeEventListener("mousemove", updateModifierClass);
             container.removeEventListener("keydown", updateModifierClass);
             container.removeEventListener("keyup", updateModifierClass);
-            document.removeEventListener("click", closeMenu);
-            document.removeEventListener("scroll", closeMenu, true);
+            container.removeEventListener("mouseleave", onContainerMouseLeave);
+            window.removeEventListener("blur", onWindowBlur);
             container.classList.remove("cm-modifier-down");
             closeMenu();
             themeObserver.disconnect();
@@ -1320,16 +1326,22 @@ export function usesCommandKey() {
 /// be careful with: the footer advertises Ctrl+F for a DIFFERENT feature that
 /// happens to share the name — CodeMirror's search box, not this occurrence
 /// list — so putting that chip here would send people to the wrong thing.
-function renderMenu(x, y, items) {
+/// Returns `{ menu, close }` — `close(restoreFocus)` is the single dismissal
+/// path and removes every listener the menu registered (#718).
+function renderMenu(x, y, items, opener) {
     const menu = document.createElement("div");
     menu.className = "cm-symbol-menu";
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
+    // Assigned once the menu is mounted; the item handlers only read it when
+    // they run, which is after that.
+    let close = () => menu.remove();
 
     for (const item of items) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "cm-symbol-menu__item";
+        btn.setAttribute("role", "menuitem");
 
         const label = document.createElement("span");
         label.textContent = item.label;
@@ -1352,7 +1364,7 @@ function renderMenu(x, y, items) {
             btn.classList.add("cm-symbol-menu__item--disabled");
         } else {
             btn.addEventListener("click", () => {
-                menu.remove();
+                close(false);
                 try {
                     const result = item.action();
                     if (result && typeof result.catch === "function") {
@@ -1367,7 +1379,56 @@ function renderMenu(x, y, items) {
     }
 
     document.body.appendChild(menu);
-    return menu;
+    close = wireFloatingMenu(menu, opener);
+    return { menu, close };
+}
+
+/// Makes the right-click menu usable from the keyboard and dismissable
+/// exactly once: `role="menu"` / `role="menuitem"`, focus on the first
+/// enabled item, ArrowUp/ArrowDown between items, Escape closes and hands
+/// focus back to the opener. Returns the one `close(restoreFocus = true)`
+/// that removes the menu AND its click / scroll / keydown listeners, so a
+/// dismissal through an item leaves nothing attached to the document (#718).
+function wireFloatingMenu(menu, opener) {
+    menu.setAttribute("role", "menu");
+    const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]'))
+        .filter(el => !el.disabled);
+
+    let closed = false;
+    const close = (restoreFocus = true) => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener("click", onOutside);
+        document.removeEventListener("scroll", onOutside, true);
+        document.removeEventListener("keydown", onKeydown, true);
+        menu.remove();
+        if (restoreFocus && opener && document.contains(opener)) opener.focus?.();
+    };
+    const onOutside = () => close(false);
+    const onKeydown = e => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            return;
+        }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        const all = items();
+        if (all.length === 0) return;
+        e.preventDefault();
+        const at = all.indexOf(document.activeElement);
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = at < 0
+            ? (step === 1 ? 0 : all.length - 1)
+            : (at + step + all.length) % all.length;
+        all[next].focus();
+    };
+
+    document.addEventListener("click", onOutside);
+    document.addEventListener("scroll", onOutside, true);
+    document.addEventListener("keydown", onKeydown, true);
+    items()[0]?.focus();
+    return close;
 }
 
 // Translates the C# {lineNumber: cssClass} map into a CodeMirror extension
@@ -1375,6 +1436,10 @@ function renderMenu(x, y, items) {
 // added / removed / modified lines on each side.
 function buildLineDecorationExtensions(lineDecorations) {
     if (!lineDecorations || typeof lineDecorations !== "object") return [];
+    // No decorated lines means the single-file viewer, where this provider
+    // would still walk every line of the document on every view update just to
+    // produce an empty set. Same guard buildDiffGutterExtensions carries.
+    if (Object.keys(lineDecorations).length === 0) return [];
     return [EditorView.decorations.of((view) => {
         const builder = new RangeSetBuilder();
         for (let i = 1; i <= view.state.doc.lines; i++) {

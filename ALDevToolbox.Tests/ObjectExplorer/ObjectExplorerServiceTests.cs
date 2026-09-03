@@ -32,6 +32,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private ReleaseImportService NewImporter(Data.AppDbContext ctx) =>
         new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
             new TranslationImportService(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance),
+            new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
     private ProjectAccess NewAccess(Data.AppDbContext ctx) => new(ctx, _db.OrgContext);
@@ -49,7 +50,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         new(ctx, NewAccess(ctx));
 
     private ReferenceQueryService NewReferences(Data.AppDbContext ctx) =>
-        new(ctx, NewAccess(ctx), NullLogger<ReferenceQueryService>.Instance);
+        new(ctx, NewAccess(ctx), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance);
 
     private ReferenceSessionService NewSessions(Data.AppDbContext ctx) =>
         new(new Microsoft.Extensions.Caching.Memory.MemoryCache(
@@ -226,6 +227,43 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             CommitDate = commitDate,
             CreatedAt = DateTime.UtcNow,
         };
+
+    [Fact]
+    public async Task GetModuleHeaderAsync_returns_the_module_identity_and_its_release()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+        var module = (await query.ListModulesAsync(releaseId, new ModuleListFilter()))
+            .Single(m => m.Name == "OIOUBL");
+
+        var header = await query.GetModuleHeaderAsync(module.Id);
+
+        header.Should().NotBeNull();
+        header!.Name.Should().Be("OIOUBL");
+        header.AppId.Should().Be(module.AppId);
+        header.ReleaseId.Should().Be(releaseId);
+        header.ReleaseLabel.Should().Be("BC 25.18 DK");
+    }
+
+    [Fact]
+    public async Task GetModuleHeaderAsync_is_null_for_a_module_that_does_not_exist()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        (await NewQuery(read).GetModuleHeaderAsync(987654)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetReleaseLabelAsync_returns_the_label_and_null_for_an_unknown_release()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        (await query.GetReleaseLabelAsync(releaseId)).Should().Be("BC 25.18 DK");
+        (await query.GetReleaseLabelAsync(987654)).Should().BeNull();
+    }
 
     [Fact]
     public async Task ListModulesAsync_filters_by_search_substring()
@@ -521,6 +559,64 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                     "within a Kind block, results are ordered by ObjectId");
             }
         }
+    }
+
+    [Fact]
+    public async Task Object_lookup_by_name_is_case_insensitive_and_literal()
+    {
+        // #690 swapped LOWER(name) = @p for a wildcard-free ILike so the name
+        // trigram index stays usable. That must not change behaviour: the match
+        // is still case-insensitive, and a name containing the SQL wildcards
+        // %/_ (underscores are common in AL object names) has to match
+        // literally rather than acting as a pattern.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales_Header", 9000190),
+            ("SalesXHeader", 9000191),
+            ("Discount % Setup", 9000192),
+            ("Discount ZZ Setup", 9000193));
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Case-insensitive on both the exact-lookup entry points.
+        (await query.GetObjectByNameAsync(releaseId, "table", "sales_header"))!
+            .Name.Should().Be("Sales_Header");
+        (await query.GetObjectOutlineAsync(releaseId, "TABLE", "SALES_HEADER"))!
+            .Name.Should().Be("Sales_Header");
+
+        // The '_' is a literal, not the single-character wildcard, so the
+        // lookup must not resolve to "SalesXHeader"...
+        (await query.GetObjectByNameAsync(releaseId, "table", "SalesXHeader"))!
+            .Name.Should().Be("SalesXHeader");
+        // ...and '%' must not match any run of characters.
+        (await query.GetObjectByNameAsync(releaseId, "table", "Discount % Setup"))!
+            .Name.Should().Be("Discount % Setup");
+        (await query.GetObjectOutlineAsync(releaseId, "table", "Discount % Setup"))!
+            .Name.Should().Be("Discount % Setup");
+
+        // A name that only differs by the wildcard interpretation is not found.
+        (await query.GetObjectByNameAsync(releaseId, "table", "Sales%Header"))
+            .Should().BeNull("'%' is escaped to a literal, so it matches nothing here");
+    }
+
+    [Fact]
+    public async Task ListObjectsAsync_search_treats_wildcards_literally()
+    {
+        // Companion to the lookup test: the module drill-down search is a
+        // substring ILike now, so a term containing %/_ must still narrow.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales_Header", 9000194),
+            ("SalesXHeader", 9000195));
+        await using var read = _db.NewContext();
+        long moduleId = await read.OeModules
+            .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
+
+        var page = await NewQuery(read).ListObjectsAsync(moduleId,
+            new ObjectListFilter(Search: "sales_head"), skip: 0, take: 50);
+        page.Rows.Should().Contain(o => o.Name == "Sales_Header");
+        page.Rows.Should().NotContain(o => o.Name == "SalesXHeader",
+            because: "'_' is escaped, so it is not the single-character wildcard");
     }
 
     /// <summary>
@@ -1057,6 +1153,157 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         target.LineNumber.Should().Be(decl.Line);
     }
 
+    /// <summary>
+    /// Seeds one Release whose module ships three objects sharing the name
+    /// <c>User</c> — a table, a tableextension of it, and a codeunit — plus a
+    /// caller file that references the name twice: once with a
+    /// <c>Database::</c> prefix and once bare. Returns the caller file's id.
+    /// Used by the kind-hint go-to-definition tests (issue #712).
+    /// </summary>
+    private async Task<(long FileId, int TableLine, int CodeunitLine, int ExtensionLine)> SeedSameNameKindsAsync()
+    {
+        await using var write = _db.NewContext();
+        var release = new Release
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Label = "Same-name kinds",
+            Kind = "first_party",
+            Status = "ready",
+            ImportedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        write.OeReleases.Add(release);
+        await write.SaveChangesAsync();
+
+        var module = new OeModule
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ReleaseId = release.Id,
+            AppId = Guid.NewGuid(),
+            Name = "Bundle",
+            Publisher = "CRONUS",
+            Version = "1.0.0.0",
+            CreatedAt = DateTime.UtcNow,
+            DependencyCount = 0,
+        };
+        write.OeModules.Add(module);
+        await write.SaveChangesAsync();
+
+        async Task<ModuleFile> AddFileAsync(string path, string[] lines, string hash)
+        {
+            var text = string.Join("\n", lines);
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = text,
+                ContentLength = text.Length,
+                LineCount = lines.Length,
+            });
+            var f = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Path = path,
+                ContentHash = hash,
+                LineCount = lines.Length,
+            };
+            write.OeModuleFiles.Add(f);
+            await write.SaveChangesAsync();
+            return f;
+        }
+
+        var targetsFile = await AddFileAsync("src/Users.al", new[]
+        {
+            "table 2000000120 User",           // line 1
+            "{",
+            "}",
+            "tableextension 50010 User extends User", // line 4
+            "{",
+            "}",
+            "codeunit 418 User",               // line 7
+            "{",
+            "}",
+        }, new string('A', 64));
+
+        var callerFile = await AddFileAsync("src/Caller.al", new[]
+        {
+            "codeunit 50000 Caller",
+            "{",
+            "    procedure Foo()",
+            "    begin",
+            "        RecRef.Open(Database::User);", // line 5
+            "        Bar(User);",                   // line 6
+            "    end;",
+            "}",
+        }, new string('B', 64));
+
+        write.OeModuleObjects.AddRange(
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "table", ObjectId = 2000000120, Name = "User",
+                LineNumber = 1, SourceFileId = targetsFile.Id,
+            },
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "tableextension", ObjectId = 50010, Name = "User",
+                LineNumber = 4, SourceFileId = targetsFile.Id,
+            },
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit", ObjectId = 418, Name = "User",
+                LineNumber = 7, SourceFileId = targetsFile.Id,
+            },
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit", ObjectId = 50000, Name = "Caller",
+                LineNumber = 1, SourceFileId = callerFile.Id,
+            });
+        await write.SaveChangesAsync();
+
+        return (callerFile.Id, 1, 7, 4);
+    }
+
+    [Fact]
+    public async Task GoToDefinitionAsync_prefers_the_kind_the_click_names()
+    {
+        // #712: `Database::User` names the TABLE. Ranking used to be
+        // alphabetical by kind, so the click landed on codeunit `User`.
+        var seed = await SeedSameNameKindsAsync();
+        await using var read = _db.NewContext();
+
+        var target = await NewSourceViewer(read)
+            .GoToDefinitionAsync(seed.FileId, line: 5, column: "        RecRef.Open(Database::".Length + 2);
+
+        target.Should().NotBeNull();
+        target!.LineNumber.Should().Be(seed.TableLine,
+            because: "the Database:: prefix names the table, not the same-named codeunit");
+    }
+
+    [Fact]
+    public async Task GoToDefinitionAsync_prefers_the_base_object_over_its_extension()
+    {
+        // #712: with no kind hint the candidates fall back to a deliberate
+        // order — a base object ahead of the extension that extends it.
+        var seed = await SeedSameNameKindsAsync();
+        await using var read = _db.NewContext();
+
+        var target = await NewSourceViewer(read)
+            .GoToDefinitionAsync(seed.FileId, line: 6, column: "        Bar(".Length + 2);
+
+        target.Should().NotBeNull();
+        target!.LineNumber.Should().Be(seed.TableLine,
+            because: "an unhinted click on a name shared by a table and its tableextension means the table");
+    }
+
     [Fact]
     public async Task GoToDefinitionAsync_resolves_a_method_call_to_its_procedure_declaration()
     {
@@ -1454,6 +1701,112 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             TargetObjectId: 99999999,
             TargetObjectName: "Nonexistent Codeunit"));
         matches.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Snippet enrichment cuts the line out in SQL (<c>split_part</c> on
+    /// <c>'\n'</c>) rather than loading whole file bodies — see issue #687. Two
+    /// edges that behaviour has to keep: CRLF content must not leak a trailing
+    /// carriage return into the snippet, and a line number past the end of the
+    /// file must yield an empty snippet instead of throwing.
+    /// </summary>
+    [Theory]
+    [InlineData(2, "    Message('hi');")]  // real line, CRLF file
+    [InlineData(99, "")]                   // past the end of the file
+    public async Task FindReferencesAsync_snippet_handles_crlf_and_out_of_range_lines(
+        int referenceLine, string expectedSnippet)
+    {
+        var targetAppId = Guid.NewGuid();
+        int releaseId;
+        await using (var write = _db.NewContext())
+        {
+            var release = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "CRLF snippet fixture",
+                Kind = "first_party",
+                Status = "ready",
+                ImportedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(release);
+            await write.SaveChangesAsync();
+            releaseId = release.Id;
+
+            var module = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = release.Id,
+                AppId = Guid.NewGuid(),
+                Name = "Caller",
+                Publisher = "CRONUS",
+                Version = "1.0.0.0",
+                CreatedAt = DateTime.UtcNow,
+                DependencyCount = 0,
+            };
+            write.OeModules.Add(module);
+            await write.SaveChangesAsync();
+
+            // Windows line endings on purpose.
+            var content = "codeunit 50000 \"Caller\"\r\n    Message('hi');\r\n}\r\n";
+            const string hash = "CRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLF00";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = content,
+                ContentLength = content.Length,
+                LineCount = 3,
+            });
+            var file = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Path = "src/Caller.al",
+                ContentHash = hash,
+                LineCount = 3,
+            };
+            write.OeModuleFiles.Add(file);
+            await write.SaveChangesAsync();
+
+            var caller = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit",
+                ObjectId = 50000,
+                Name = "Caller",
+                LineNumber = 1,
+                SourceFileId = file.Id,
+            };
+            write.OeModuleObjects.Add(caller);
+            await write.SaveChangesAsync();
+
+            write.OeModuleReferences.Add(new ModuleReference
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                SourceObjectId = caller.Id,
+                TargetAppId = targetAppId,
+                TargetObjectKind = "table",
+                TargetObjectId = 18,
+                TargetObjectName = "Customer",
+                ReferenceKind = "variable_type",
+                LineNumber = referenceLine,
+            });
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: targetAppId,
+            TargetObjectKind: "table",
+            TargetObjectId: 18,
+            TargetObjectName: "Customer"));
+
+        matches.Should().ContainSingle();
+        matches[0].SourceFilePath.Should().Be("src/Caller.al");
+        matches[0].Snippet.Should().Be(expectedSnippet);
     }
 
     [Fact]
@@ -2333,5 +2686,102 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             childReleaseId,
             new FindReferencesQuery(owner!.AppId, owner.Kind, owner.ObjectId, owner.Name, "Priority", "table_field"));
         matches.Should().Contain(m => m.SourceObjectName == "ProdOrderLineExt" && m.MemberName == "Priority");
+    }
+
+    [Fact]
+    public async Task Reextract_twice_leaves_the_reference_count_unchanged()
+    {
+        // Re-extraction used to clear only method_call and field_access
+        // while the extractor also re-emits property_object,
+        // implements_interface, label_use and variable_use — so every
+        // re-run multiplied those rows (issue #712). The source below
+        // emits an implements_interface and a label_use, neither of which
+        // the old sweep touched.
+        int releaseId;
+        await using (var write = _db.NewContext())
+        {
+            var release = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "CRONUS release", Kind = "project", Status = "ready",
+                ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(release);
+            await write.SaveChangesAsync();
+            releaseId = release.Id;
+
+            var module = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId, ReleaseId = release.Id,
+                AppId = Guid.NewGuid(), Name = "CRONUS Ext", Publisher = "CRONUS",
+                Version = "1.0.0.0", CreatedAt = DateTime.UtcNow, DependencyCount = 0,
+            };
+            write.OeModules.Add(module);
+            await write.SaveChangesAsync();
+
+            var lines = new[]
+            {
+                "codeunit 50000 \"CRONUS Greeter\" implements \"Sample Iface\"",
+                "{",
+                "    var",
+                "        HelloMsg: Label 'Hello';",
+                "",
+                "    procedure Greet()",
+                "    begin",
+                "        Message(HelloMsg);",
+                "    end;",
+                "}",
+            };
+            var content = string.Join("\n", lines);
+            const string hash = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE1";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash, Content = content, ContentLength = content.Length, LineCount = lines.Length,
+            });
+            var file = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
+                Path = "src/Greeter.Codeunit.al", ContentHash = hash, LineCount = lines.Length,
+            };
+            write.OeModuleFiles.Add(file);
+            await write.SaveChangesAsync();
+
+            var obj = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
+                Kind = "codeunit", ObjectId = 50000, Name = "CRONUS Greeter",
+                LineNumber = 1, SourceFileId = file.Id,
+            };
+            write.OeModuleObjects.Add(obj);
+            await write.SaveChangesAsync();
+
+            write.OeModuleSymbols.Add(new ModuleSymbol
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
+                ObjectId = obj.Id, Kind = "procedure", Name = "Greet", LineNumber = 6,
+            });
+            await write.SaveChangesAsync();
+
+            await NewImporter(write).ReextractReferencesAsync(release.Id);
+        }
+
+        int afterFirst;
+        await using (var read = _db.NewContext())
+        {
+            afterFirst = await read.OeModuleReferences.AsNoTracking()
+                .CountAsync(r => r.Module!.ReleaseId == releaseId);
+        }
+        afterFirst.Should().BeGreaterThan(0,
+            because: "the fixture emits at least an implements_interface and a label_use");
+
+        await using (var write = _db.NewContext())
+        {
+            await NewImporter(write).ReextractReferencesAsync(releaseId);
+        }
+
+        await using var verify = _db.NewContext();
+        var afterSecond = await verify.OeModuleReferences.AsNoTracking()
+            .CountAsync(r => r.Module!.ReleaseId == releaseId);
+        afterSecond.Should().Be(afterFirst);
     }
 }

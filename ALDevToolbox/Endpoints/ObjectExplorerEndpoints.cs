@@ -106,7 +106,7 @@ internal static class ObjectExplorerEndpoints
                     var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
                     var tempPath = await TryStageAsync(ctx, importer, releaseId, calTxtFile, "oe-cal-", ".txt", "C/AL file", ct).ConfigureAwait(false);
                     if (tempPath is null) return;
-                    var identity = CaptureIdentity(orgContext);
+                    var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
                     var source = new ReleaseImportSource.CalTxt(tempPath, calEncoding);
                     await EnqueueImportAsync(queue, persistedJobs, releaseId, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
@@ -118,7 +118,7 @@ internal static class ObjectExplorerEndpoints
                 {
                     await dvdDownloader.ValidateUrlForQueueAsync(dvdUrl, ct).ConfigureAwait(false);
                     var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
-                    var identity = CaptureIdentity(orgContext);
+                    var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
                     var source = new ReleaseImportSource.Url(dvdUrl);
                     await EnqueueImportAsync(queue, persistedJobs, releaseId, identity, source, storeSymbolReference, ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
@@ -131,7 +131,7 @@ internal static class ObjectExplorerEndpoints
                     var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
                     var tempPath = await TryStageAsync(ctx, importer, releaseId, folderZip, "oe-folder-", ".zip", "ZIP", ct).ConfigureAwait(false);
                     if (tempPath is null) return;
-                    var identity = CaptureIdentity(orgContext);
+                    var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
                     var source = new ReleaseImportSource.StagedZip(tempPath, IsDvd: false);
                     await EnqueueImportAsync(queue, persistedJobs, releaseId, identity, source, storeSymbolReference, ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
@@ -419,7 +419,7 @@ internal static class ObjectExplorerEndpoints
                     // transient. See issue #433.
                     await importer.ReopenForRebuildAsync(id, ct).ConfigureAwait(false);
                     await management.ClearIngestedDataAsync(id, ct).ConfigureAwait(false);
-                    var identity = CaptureIdentity(orgContext);
+                    var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
                     var source = new ReleaseImportSource.ProjectBuild(retryProjectId);
                     await EnqueueImportAsync(queue, persistedJobs, id, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
                     ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=retry-queued");
@@ -491,7 +491,7 @@ internal static class ObjectExplorerEndpoints
                     source = new ReleaseImportSource.CalTxt(tempPath, calEncoding);
                 }
 
-                var identity = CaptureIdentity(orgContext);
+                var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
                 await EnqueueImportAsync(queue, persistedJobs, id, identity, source, storeSymbolReference, ct).ConfigureAwait(false);
 
                 ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=retry-queued");
@@ -567,7 +567,7 @@ internal static class ObjectExplorerEndpoints
 
                 await importer.ReopenForRebuildAsync(id, ct);
                 await management.ClearIngestedDataAsync(id, ct);
-                var identity = CaptureIdentity(orgContext);
+                var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
                 var source = new ReleaseImportSource.ProjectBuild(projectId);
                 await EnqueueImportAsync(queue, persistedJobs, id, identity, source, storeSymbolReference: false, ct);
 
@@ -601,7 +601,7 @@ internal static class ObjectExplorerEndpoints
             CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-            var identity = CaptureIdentity(orgContext);
+            var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
             var source = new ReleaseImportSource.Backfill();
             await EnqueueImportAsync(queue, persistedJobs, id, identity, source, storeSymbolReference: false, ct);
             ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=backfill-queued");
@@ -619,7 +619,7 @@ internal static class ObjectExplorerEndpoints
             CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-            var identity = CaptureIdentity(orgContext);
+            var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(orgContext, "queuing a release import");
             // Query-filtered to the caller's org; no cross-tenant enqueue.
             var releaseIds = await db.OeReleases.AsNoTracking()
                 .Where(r => r.Status == "ready" && r.DeletedAt == null)
@@ -745,14 +745,6 @@ internal static class ObjectExplorerEndpoints
     }
 
     // ── Folder-ZIP path ────────────────────────────────────────────────
-
-    private static AmbientOrganizationScope.OrganizationIdentity CaptureIdentity(IOrganizationContext orgContext) =>
-        new(
-            OrganizationId: orgContext.CurrentOrganizationId
-                ?? throw new InvalidOperationException("No organization in scope when queuing a release import."),
-            UserId: orgContext.CurrentUserId,
-            IsSiteAdmin: orgContext.IsSiteAdmin,
-            IsSystemOrganization: orgContext.IsSystemOrganization);
 
     private static void RedirectQueued(HttpContext ctx, int releaseId) =>
         ctx.Response.Redirect($"/admin/object-explorer?ok=queued&id={releaseId}");

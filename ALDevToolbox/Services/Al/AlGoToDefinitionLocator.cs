@@ -31,6 +31,10 @@ public static class AlGoToDefinitionLocator
         "permissionsetextension",
         "extends",
         "tabledata",
+        // `Database::"Customer"` is a table literal. Kept here (and not in
+        // AlResolvableTokenScanner's list) so the click's kind hint sees it
+        // without changing which tokens the viewer underlines. See #712.
+        "database",
     };
 
     /// <summary>
@@ -65,6 +69,39 @@ public static class AlGoToDefinitionLocator
     }
 
     /// <summary>
+    /// The object kind the click's context asks for, or <c>null</c> when the
+    /// context names none. Three shapes carry one: a typed literal
+    /// (<c>Database::"Customer"</c>, <c>Codeunit::"Sales-Post"</c>), a
+    /// declaration keyword (<c>Record "Customer"</c>, <c>Page "Customer
+    /// List"</c>), and a page's <c>SourceTable = "Customer"</c> property.
+    /// Callers pass it to the object lookup so a name shared by several
+    /// kinds resolves to the one the source actually named — BC ships both a
+    /// table and a page called <c>E-Document Service</c>, and both a table and
+    /// a codeunit called <c>User</c>. See issue #712.
+    /// </summary>
+    public static string? KindHint(GoToDefinitionClick click)
+    {
+        if (click.LeftContext.Operator is "::" or "keyword"
+            && click.LeftContext.Qualifier is { Length: > 0 } qualifier)
+        {
+            // `extends` names a base object but not which kind — the owning
+            // object's own kind decides that, and this locator doesn't see it.
+            if (qualifier.Equals("extends", StringComparison.OrdinalIgnoreCase)) return null;
+            // Accept any qualifier that maps onto a real catalog kind. That
+            // deliberately includes `Database`, which the underline scanner's
+            // keyword list doesn't carry: `Database::User` is a table.
+            var mapped = AlKindKeywords.MapKeywordToKind(qualifier);
+            if (AlKindKeywords.KindRank(mapped) < AlKindKeywords.KindPriority.Length) return mapped;
+        }
+
+        if (SourceTablePropertyRegex.IsMatch(click.LineText)) return "table";
+        return null;
+    }
+
+    private static readonly Regex SourceTablePropertyRegex =
+        new(@"^\s*SourceTable\s*=", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
     /// Returns the type name when <paramref name="fileContent"/> contains a
     /// var declaration like <c>VarName: Codeunit "Sales-Post"</c>. Used to
     /// resolve <c>SalesPostCu.Post(...)</c> to the right declaring object.
@@ -88,36 +125,6 @@ public static class AlGoToDefinitionLocator
             : match.Groups["u"].Value;
     }
 
-    private static readonly Regex AllRecordVarDeclsRegex = new(
-        @"\b(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Record\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    /// <summary>
-    /// Returns every <c>VarName: Record "Table"</c> pair in
-    /// <paramref name="fileContent"/>. Used by the resolvable scanner to
-    /// underline <c>VarName."FieldName"</c> field accesses across the file
-    /// in a single pass, rather than calling
-    /// <see cref="ResolveVariableType"/> per click. Only <c>Record</c>-typed
-    /// vars are returned because that's the only AL type that exposes
-    /// fields by dot-access. Last wins on duplicate variable names — AL
-    /// rarely reuses names across procedures, and even when it does the
-    /// duplicates usually share a type.
-    /// </summary>
-    public static IReadOnlyDictionary<string, string> ResolveAllRecordVariableTypes(string fileContent)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(fileContent)) return result;
-
-        foreach (Match m in AllRecordVarDeclsRegex.Matches(fileContent))
-        {
-            var varName = m.Groups["var"].Value;
-            var tableName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
-            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(tableName)) continue;
-            result[varName] = tableName;
-        }
-        return result;
-    }
-
     // AL object keywords that can appear before a type name in a var
     // declaration. Captured so the reference classifier can distinguish a
     // var of type `Codeunit "HttpClient"` (real object reference) from a
@@ -127,34 +134,6 @@ public static class AlGoToDefinitionLocator
         @"(?:(?<kw>Record|Codeunit|Page|Report|Query|XmlPort|Interface|Enum|RequestPage|TestPage|TestPart|TestRequestPage|ControlAddIn|PermissionSet|Profile)\s+)?" +
         @"(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    /// <summary>
-    /// Returns every <c>VarName: Type</c> declaration in <paramref name="fileContent"/>,
-    /// for both AL-object-keyword forms (<c>Foo: Codeunit "Sales-Post"</c>,
-    /// <c>Cust: Record Customer</c>) and unkeyworded type identifiers
-    /// (<c>Client: HttpClient</c>, <c>Tok: JsonToken</c>, <c>Err: ErrorInfo</c>).
-    /// The <see cref="ResolvedVariableType.Keyword"/> is <c>null</c> when the
-    /// declaration omits an AL object keyword — that signal lets the
-    /// references classifier drop calls on a system-type-shaped variable that
-    /// happens to share a name with the searched-for codeunit (the common
-    /// <c>HttpClient: HttpClient</c> pattern). Last wins on duplicate variable
-    /// names, matching <see cref="ResolveAllRecordVariableTypes"/>.
-    /// </summary>
-    public static IReadOnlyDictionary<string, ResolvedVariableType> ResolveAllObjectVariableTypes(string fileContent)
-    {
-        var result = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(fileContent)) return result;
-
-        foreach (Match m in AllObjectVarDeclsRegex.Matches(fileContent))
-        {
-            var varName = m.Groups["var"].Value;
-            var typeName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
-            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(typeName)) continue;
-            var keyword = m.Groups["kw"].Success ? m.Groups["kw"].Value : null;
-            result[varName] = new ResolvedVariableType(keyword, typeName);
-        }
-        return result;
-    }
 
     /// <summary>
     /// Returns the 1-based line number where <paramref name="variableName"/>
@@ -196,22 +175,6 @@ public static class AlGoToDefinitionLocator
             return line;
         }
         return null;
-    }
-
-    /// <summary>
-    /// Public entry into the private <see cref="ReadLeftContext"/> tokeniser.
-    /// Lets callers that already have a line and a known token start index
-    /// (e.g. a regex-match column) read the operator and qualifier directly
-    /// without re-running <see cref="Inspect"/>.
-    /// </summary>
-    public static GoToDefinitionLeftContext ReadLeftContextAt(string lineText, int tokenStart)
-    {
-        if (string.IsNullOrEmpty(lineText) || tokenStart <= 0)
-        {
-            return new GoToDefinitionLeftContext(null, null);
-        }
-        var clamped = Math.Min(tokenStart, lineText.Length);
-        return ReadLeftContext(lineText, clamped);
     }
 
     private static string? GetLine(string source, int line)

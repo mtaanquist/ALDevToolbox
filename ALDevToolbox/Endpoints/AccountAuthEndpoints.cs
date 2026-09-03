@@ -79,7 +79,7 @@ internal static class AccountAuthEndpoints
             var identity = BuildIdentity(user);
             await ctx.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
-                new ClaimsPrincipal(identity), PersistentSignIn());
+                new ClaimsPrincipal(identity), PersistentSignIn(ctx));
             logger.LogInformation("Signed in {Email} (org {OrgId}, role {Role}).", user.Email, user.OrganizationId, user.Role);
             ctx.Response.Redirect(safeReturn);
         });
@@ -145,7 +145,7 @@ internal static class AccountAuthEndpoints
                     user.Organization = org;
                     await ctx.SignInAsync(
                         CookieAuthenticationDefaults.AuthenticationScheme,
-                        new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+                        new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
                     logger.LogInformation("Auto-approved new-org signup {Email} as admin of {OrgSlug}.", user.Email, org.Slug);
                     ctx.Response.Redirect("/");
                     return;
@@ -182,6 +182,7 @@ internal static class AccountAuthEndpoints
             PendingSignupService pending,
             IEmailService email,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -195,7 +196,7 @@ internal static class AccountAuthEndpoints
                 var start = await pending.StartAsync(emailInput, ip, ct);
                 if (start is not null && await email.IsConfiguredAsync(ct))
                 {
-                    var verifyUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/signup/verify?token={Uri.EscapeDataString(start.LinkToken)}";
+                    var verifyUrl = $"{publicOrigin.For(ctx)}/auth/signup/verify?token={Uri.EscapeDataString(start.LinkToken)}";
                     var (subject, body) = EmailTemplates.SignupVerification(verifyUrl, start.Code);
                     await email.SendAsync(AuthService.NormaliseEmail(emailInput), subject, body, ct);
                 }
@@ -310,7 +311,7 @@ internal static class AccountAuthEndpoints
                     user.Organization = org;
                     await ctx.SignInAsync(
                         CookieAuthenticationDefaults.AuthenticationScheme,
-                        new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+                        new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
                     logger.LogInformation("Verified signup signed in {Email} (org {OrgSlug}, newOrg={New}).",
                         user.Email, org.Slug, outcome == SignupOutcome.OrganizationProvisioned);
                     ctx.Response.Redirect("/");
@@ -339,6 +340,7 @@ internal static class AccountAuthEndpoints
             AppDbContext db,
             IEmailService email,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -356,8 +358,10 @@ internal static class AccountAuthEndpoints
                 var token = await passwordReset.CreatePasswordResetTokenAsync(addr, ct);
                 if (token is not null)
                 {
+                    // Fence category 1 (pre-auth routing): forgot-password, before any cookie exists;
+                    // pinned to the typed email.
                     var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
-                    var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/reset-password?token={Uri.EscapeDataString(token)}";
+                    var url = $"{publicOrigin.For(ctx)}/reset-password?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.ForgotPassword(user.DisplayName, url);
                     await email.SendAsync(user.Email, subject, body, ct);
                 }
@@ -379,6 +383,7 @@ internal static class AccountAuthEndpoints
             AppDbContext db,
             IEmailService email,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -396,9 +401,11 @@ internal static class AccountAuthEndpoints
                 var token = await passwordReset.CreateMagicLoginTokenAsync(addr, ResolveIp(ctx), ct);
                 if (token is not null)
                 {
+                    // Fence category 1 (pre-auth routing): magic-link email, before any cookie exists;
+                    // pinned to the typed email.
                     var user = await db.Users.IgnoreQueryFilters()
                         .FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
-                    var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";
+                    var url = $"{publicOrigin.For(ctx)}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.MagicLink(user.DisplayName, url);
                     await email.SendAsync(user.Email, subject, body, ct);
                 }
@@ -428,7 +435,7 @@ internal static class AccountAuthEndpoints
                 var user = await passwordReset.ConsumeMagicLoginTokenAsync(token, ct);
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
                 logger.LogInformation("Magic-link sign-in for {Email} (org {OrgId}).", user.Email, user.OrganizationId);
                 ctx.Response.Redirect("/");
             }
@@ -462,7 +469,7 @@ internal static class AccountAuthEndpoints
 
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
                 logger.LogInformation("Invite accepted; {Email} signed in to org {OrgId}.",
                     user.Email, user.OrganizationId);
                 ctx.Response.Redirect("/");
@@ -509,6 +516,11 @@ internal static class AccountAuthEndpoints
             {
                 await accounts.ChangePasswordAsync(org.CurrentUserId!.Value,
                     form["CurrentPassword"].ToString(), form["NewPassword"].ToString(), ct);
+                // The change invalidates every cookie issued before it (#675),
+                // including this one — re-issue it so the user who just changed
+                // their own password isn't signed out along with everyone else.
+                await ctx.SignInAsync(
+                    CookieAuthenticationDefaults.AuthenticationScheme, ctx.User, PersistentSignIn(ctx));
                 ctx.Response.Redirect($"{RouteConstants.Account}?{RouteConstants.OkQuery}=password");
             }
             catch (PlanValidationException ex)

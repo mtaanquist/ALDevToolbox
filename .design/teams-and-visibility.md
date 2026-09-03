@@ -241,7 +241,7 @@ in the list query): `ArtifactService` (`ListProjectsAsync`, `GetProjectHeaderAsy
 `GetProjectIdForReleaseAsync`, `ListComparableBuildsAsync`); `ProjectService`
 (`ListProjectsAsync`, `GetProjectAsync`, `ListProjectReleasesAsync`,
 `ListSupplementalSymbolsAsync`); `PipelineService` and `ReleasePipelineService` list
-and get reads; `DeliveryService` (`ListDeliveriesAsync`, `GetDeliveryAsync`,
+and get reads; `DeliveryService` (`ListDeliveriesAsync`,
 `ListDeliveryHistoryAsync`); `Bc/ProjectConnectionService` (`GetConnectionAsync`,
 `ListEnvironmentsAsync`); `ProjectDiscoveryService.GetDiscoveryAsync`;
 `Endpoints/ArtifactEndpoints.cs` (gate before streaming bytes — slice 3; the

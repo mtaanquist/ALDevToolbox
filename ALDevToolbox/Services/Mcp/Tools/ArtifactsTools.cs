@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.ObjectExplorer;
@@ -29,15 +28,13 @@ public sealed class ArtifactsTools
 {
     private readonly ArtifactService _artifacts;
     private readonly ReleaseComparisonService _comparison;
-    private readonly ProjectAccess _access;
-    private readonly AppDbContext _db;
+    private readonly ProjectService _projects;
 
-    public ArtifactsTools(ArtifactService artifacts, ReleaseComparisonService comparison, ProjectAccess access, AppDbContext db)
+    public ArtifactsTools(ArtifactService artifacts, ReleaseComparisonService comparison, ProjectService projects)
     {
         _artifacts = artifacts;
         _comparison = comparison;
-        _access = access;
-        _db = db;
+        _projects = projects;
     }
 
     [McpServerTool(Name = "list_solutions", ReadOnly = true)]
@@ -59,7 +56,7 @@ public sealed class ArtifactsTools
         [Description("Solution name or numeric id (from list_solutions).")] string solutionNameOrId,
         CancellationToken ct = default)
     {
-        var projectId = await ResolveProjectAsync(solutionNameOrId, ct);
+        var projectId = await _projects.ResolveProjectAsync(solutionNameOrId, ct);
         return await _artifacts.ListBuildsForProjectAsync(projectId, ct);
     }
 
@@ -137,8 +134,8 @@ public sealed class ArtifactsTools
         [Description("When true (default), omit unchanged objects and return only added / removed / modified.")] bool changesOnly = true,
         CancellationToken ct = default)
     {
-        var (leftProject, leftRelease) = await ResolveReadyBuildAsync(baseBuildId, ct);
-        var (rightProject, rightRelease) = await ResolveReadyBuildAsync(otherBuildId, ct);
+        var (leftProject, leftRelease) = await _projects.ResolveReadyBuildAsync(baseBuildId, ct);
+        var (rightProject, rightRelease) = await _projects.ResolveReadyBuildAsync(otherBuildId, ct);
         if (leftProject != rightProject)
         {
             throw new McpException(
@@ -159,56 +156,6 @@ public sealed class ArtifactsTools
     /// </summary>
     private static McpException NotFound(string message) => new(message);
 
-    /// <summary>
-    /// Resolves a project by name or id, applying the visibility fence in the
-    /// same query — this and <see cref="ResolveReadyBuildAsync"/> read
-    /// <c>oe_projects</c> directly rather than through a gated service, so they
-    /// are where every tool in this class inherits the gate. A project the
-    /// caller cannot see answers "does not exist", the same as an id in another
-    /// org. See <c>.design/teams-and-visibility.md</c>.
-    /// </summary>
-    private async Task<int> ResolveProjectAsync(string projectNameOrId, CancellationToken ct)
-    {
-        var snapshot = await _access.GetSnapshotAsync(ct);
-        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
-        if (int.TryParse(projectNameOrId, out var asId))
-        {
-            var exists = await _db.OeProjects.AsNoTracking()
-                .Where(visible)
-                .AnyAsync(p => p.Id == asId && p.DeletedAt == null, ct);
-            if (!exists) throw new McpException($"Solution {asId} does not exist in this organisation.");
-            return asId;
-        }
-        var name = projectNameOrId.Trim();
-        var row = await _db.OeProjects.AsNoTracking()
-            .Where(visible)
-            .Where(p => p.DeletedAt == null && p.Name.ToLower() == name.ToLower())
-            .Select(p => new { p.Id })
-            .FirstOrDefaultAsync(ct);
-        if (row is null)
-        {
-            throw new McpException($"Solution '{projectNameOrId}' was not found. Call list_solutions to see available solutions.");
-        }
-        return row.Id;
-    }
-
-    /// <summary>Resolves a build that must be ready and have produced a navigable release; returns (projectId, releaseId).</summary>
-    private async Task<(int ProjectId, int ReleaseId)> ResolveReadyBuildAsync(int buildId, CancellationToken ct)
-    {
-        var snapshot = await _access.GetSnapshotAsync(ct);
-        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
-        var build = await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => _db.OeProjects.Where(visible).Any(p => p.Id == b.ProjectId))
-            .Where(b => b.Id == buildId)
-            .Select(b => new { b.ProjectId, b.Status, b.ReleaseId })
-            .FirstOrDefaultAsync(ct)
-            ?? throw new McpException($"Build {buildId} was not found in this organisation.");
-        if (build.Status != ProjectBuildStatus.Ready || build.ReleaseId is null)
-        {
-            throw new McpException($"Build {buildId} can't be compared — only 'ready' builds that produced a release can be diffed.");
-        }
-        return (build.ProjectId, build.ReleaseId.Value);
-    }
 }
 
 /// <summary>One build's detail for the <c>get_solution_build</c> MCP tool, with download paths for its deliverables.</summary>

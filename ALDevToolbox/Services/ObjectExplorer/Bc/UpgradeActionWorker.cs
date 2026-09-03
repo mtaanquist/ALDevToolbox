@@ -97,23 +97,28 @@ public sealed class UpgradeActionWorker : BackgroundService
     /// it would in a request. The active-org enumeration is the one cross-org read — the
     /// same blessed <c>IgnoreQueryFilters()</c> the existing schedulers use.
     /// </summary>
-    private async Task ForEachOrgAsync(Func<int, CancellationToken, Task> perOrg, CancellationToken ct)
+    private async Task ForEachOrgAsync(Func<int, bool, CancellationToken, Task> perOrg, CancellationToken ct)
     {
-        List<int> orgIds;
+        // IsSystem travels with the id so the per-org identity carries the org's real
+        // flag rather than a hard-coded false (issue #694).
+        List<(int Id, bool IsSystem)> orgs;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            orgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            // Fence category 3 (scheduler, no request org): the org enumeration; per-org work
+            // then runs inside that org's AmbientOrganizationScope.
+            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
                 .Where(o => !o.IsPending)
-                .Select(o => o.Id)
+                .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);
+            orgs = rows.Select(o => (o.Id, o.IsSystem)).ToList();
         }
 
-        foreach (var orgId in orgIds)
+        foreach (var (orgId, isSystem) in orgs)
         {
             try
             {
-                await perOrg(orgId, ct).ConfigureAwait(false);
+                await perOrg(orgId, isSystem, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -127,12 +132,13 @@ public sealed class UpgradeActionWorker : BackgroundService
     /// one sweep against a seeded database without the hosted-service loop. Returns how
     /// many rows were run.
     /// </summary>
-    internal async Task<int> RunDueActionsAsync(int orgId, CancellationToken ct)
+    internal async Task<int> RunDueActionsAsync(int orgId, bool isSystem, CancellationToken ct)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
 
         List<DueAction> due;
-        using (AmbientOrganizationScope.Enter(new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false)))
+        using (AmbientOrganizationScope.Enter(
+            AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem)))
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -149,7 +155,7 @@ public sealed class UpgradeActionWorker : BackgroundService
         foreach (var action in due)
         {
             if (ct.IsCancellationRequested) break;
-            if (await RunOneAsync(orgId, action, ct).ConfigureAwait(false)) ran++;
+            if (await RunOneAsync(orgId, isSystem, action, ct).ConfigureAwait(false)) ran++;
         }
 
         if (ran > 0)
@@ -164,12 +170,12 @@ public sealed class UpgradeActionWorker : BackgroundService
     /// claim was lost — somebody cancelled it in the seconds between the sweep's read and
     /// this call, and their cancel stands.
     /// </summary>
-    private async Task<bool> RunOneAsync(int orgId, DueAction action, CancellationToken ct)
+    private async Task<bool> RunOneAsync(int orgId, bool isSystem, DueAction action, CancellationToken ct)
     {
         // The requester is the actor: the audit row names them, and the grant is
         // re-checked as theirs at fire time.
-        var identity = new AmbientOrganizationScope.OrganizationIdentity(
-            orgId, action.RequestedByUserId, false, false);
+        var identity = AmbientOrganizationScope.OrganizationIdentity.ForOrganization(
+            orgId, isSystem, action.RequestedByUserId);
         using var ambient = AmbientOrganizationScope.Enter(identity);
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -239,10 +245,10 @@ public sealed class UpgradeActionWorker : BackgroundService
     /// The row is failed rather than retried: we know the send started and not whether it
     /// landed, and repeating "start the update now" on a guess is not a safe default.
     /// </summary>
-    internal async Task FailInterruptedAsync(int orgId, CancellationToken ct)
+    internal async Task FailInterruptedAsync(int orgId, bool isSystem, CancellationToken ct)
     {
         using var ambient = AmbientOrganizationScope.Enter(
-            new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+            AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem));
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 

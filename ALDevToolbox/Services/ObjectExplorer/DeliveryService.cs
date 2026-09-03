@@ -218,7 +218,7 @@ public sealed class DeliveryService
         // a future delivery is left for the DeliveryScheduler to enqueue when due.
         if (scheduledForUtc <= now)
         {
-            await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, CaptureIdentity()), ct);
+            await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "capturing identity for a delivery")), ct);
         }
 
         _logger.LogInformation(
@@ -302,7 +302,8 @@ public sealed class DeliveryService
         if (newScheduledForUtc <= now)
         {
             await _queue.EnqueueAsync(new DeliveryJob(deliveryId,
-                new AmbientOrganizationScope.OrganizationIdentity(info.OrganizationId, info.TriggeredByUserId, false, false)), ct);
+                AmbientOrganizationScope.OrganizationIdentity.ForOrganization(
+                    info.OrganizationId, _orgContext.IsSystemOrganization, info.TriggeredByUserId)), ct);
         }
         _logger.LogInformation("Rescheduled delivery {DeliveryId} to {ScheduledFor:o}.", deliveryId, newScheduledForUtc);
     }
@@ -325,7 +326,8 @@ public sealed class DeliveryService
         foreach (var d in due)
         {
             await _queue.EnqueueAsync(new DeliveryJob(d.Id,
-                new AmbientOrganizationScope.OrganizationIdentity(d.OrganizationId, d.TriggeredByUserId, false, false)), ct);
+                AmbientOrganizationScope.OrganizationIdentity.ForOrganization(
+                    d.OrganizationId, _orgContext.IsSystemOrganization, d.TriggeredByUserId)), ct);
         }
         return due.Count;
     }
@@ -803,21 +805,6 @@ public sealed class DeliveryService
             .ToListAsync(ct);
     }
 
-    /// <summary>A single delivery with its per-app results in order, or null when not found in this org.</summary>
-    public async Task<ProjectDelivery?> GetDeliveryAsync(int deliveryId, CancellationToken ct = default)
-    {
-        var projectId = await _db.OeProjectDeliveries.AsNoTracking()
-            .Where(d => d.Id == deliveryId)
-            .Select(d => (int?)d.ProjectId)
-            .FirstOrDefaultAsync(ct);
-        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
-
-        return await _db.OeProjectDeliveries.AsNoTracking()
-            .Where(d => d.Id == deliveryId)
-            .Include(d => d.Results.OrderBy(r => r.Ordering))
-            .FirstOrDefaultAsync(ct);
-    }
-
     /// <summary>
     /// Gates a release-pipeline-keyed delivery read on its project's visibility —
     /// deliveries inherit it like everything else under a project. One that doesn't
@@ -864,13 +851,6 @@ public sealed class DeliveryService
         log.Append(DateTime.UtcNow.ToString("HH:mm:ss")).Append("  ").AppendLine(line);
 
     private static string Short(string message) => message.Length > 300 ? message[..300] : message;
-
-    private AmbientOrganizationScope.OrganizationIdentity CaptureIdentity() => new(
-        OrganizationId: _orgContext.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organization in scope when capturing identity for a delivery."),
-        UserId: _orgContext.CurrentUserId,
-        IsSiteAdmin: _orgContext.IsSiteAdmin,
-        IsSystemOrganization: _orgContext.IsSystemOrganization);
 
     private static PlanValidationException Validation(string field, string message) =>
         new(new Dictionary<string, string> { [field] = message });

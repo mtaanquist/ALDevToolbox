@@ -1,6 +1,8 @@
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Auth;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 
@@ -120,5 +122,41 @@ public sealed class OffsiteRestoreJobsTests
         var list = jobs.List();
 
         list.Select(j => j.Id).Should().Equal(third, second, first);
+    }
+
+    /// <summary>
+    /// An exception escaping the per-job work must not reach the host: the
+    /// default <c>BackgroundServiceExceptionBehavior</c> is StopHost, so one
+    /// bad restore would take the whole app down. Resolving the restore
+    /// service from an empty provider throws outside the inner catch, which
+    /// is exactly the escape path issue #682 was about. The worker must log
+    /// it, fail the job, and keep draining the queue.
+    /// </summary>
+    [Fact]
+    public async Task Worker_survives_an_exception_escaping_a_job_and_keeps_draining()
+    {
+        var jobs = new OffsiteRestoreJobs(_clock);
+        // Empty provider: GetRequiredService<OffsiteBackupService>() throws.
+        var services = new ServiceCollection().BuildServiceProvider();
+        var worker = new OffsiteRestoreWorker(
+            jobs, services, NullLogger<OffsiteRestoreWorker>.Instance, new WorkerHeartbeatRegistry());
+
+        var first = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k1", "f1.dump");
+        var second = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k2", "f2.dump");
+
+        await worker.StartAsync(CancellationToken.None);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline
+            && (jobs.Get(first)!.Status != OffsiteRestoreJobStatus.Failed
+                || jobs.Get(second)!.Status != OffsiteRestoreJobStatus.Failed))
+        {
+            await Task.Delay(20);
+        }
+        await worker.StopAsync(CancellationToken.None);
+
+        jobs.Get(first)!.Status.Should().Be(OffsiteRestoreJobStatus.Failed);
+        jobs.Get(first)!.Error.Should().NotBeNullOrEmpty();
+        // The second job proves the loop was not torn down by the first.
+        jobs.Get(second)!.Status.Should().Be(OffsiteRestoreJobStatus.Failed);
     }
 }

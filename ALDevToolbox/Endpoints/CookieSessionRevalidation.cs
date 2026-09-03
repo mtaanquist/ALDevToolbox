@@ -67,6 +67,18 @@ internal static class CookieSessionRevalidation
             return;
         }
 
+        // Password changed (or reset) after this cookie was handed out: the
+        // session belongs to the old credential, so drop it. A cookie with no
+        // sign-in stamp predates issue #675 and is treated as older than any
+        // stamp. The user who made the change keeps working because the
+        // change-password endpoint re-issues their own cookie.
+        if (user.CredentialsChangedAt is { } changedAt && SignedInAt(context.Properties) < changedAt)
+        {
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return;
+        }
+
         // Rebuild the claims from the current row so a role / SiteAdmin / org
         // change applies on this request, then renew the cookie with a fresh
         // re-validation stamp.
@@ -74,4 +86,17 @@ internal static class CookieSessionRevalidation
         context.Properties.Items[LastValidatedKey] = now.ToString("o", CultureInfo.InvariantCulture);
         context.ShouldRenew = true;
     }
+
+    /// <summary>
+    /// The moment the cookie's session started, as stamped by
+    /// <see cref="EndpointHelpers.PersistentSignIn"/>. Returns
+    /// <see cref="DateTime.MinValue"/> when the stamp is missing or unparsable
+    /// so an old cookie fails the credential-change comparison rather than
+    /// passing it.
+    /// </summary>
+    private static DateTime SignedInAt(AuthenticationProperties properties) =>
+        properties.Items.TryGetValue(EndpointHelpers.SignedInAtKey, out var raw)
+        && DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var issued)
+            ? issued
+            : DateTime.MinValue;
 }

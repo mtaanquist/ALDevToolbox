@@ -13,14 +13,26 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 internal static class OeIngestHelpers
 {
     /// <summary>
-    /// Rows-per-<c>SaveChanges</c> for source files and for objects. Base App
-    /// carries several thousand files with multi-KB content each, and EF's
-    /// batch builder allocates the whole batch text + parameter array in
-    /// memory; bounded chunks keep the per-flush footprint flat. The C/AL path
-    /// shares the same envelope (a W1+DK export is ~5k–8k objects).
+    /// Rows-per-<c>SaveChanges</c> for source files. Kept small because the
+    /// file loop also buffers the pending source blobs for
+    /// <see cref="UpsertFileContentsAsync"/>, and Base App carries several
+    /// thousand files with multi-KB content each — the chunk bounds that
+    /// buffer, not the EF batch. The C/AL path shares the same envelope
+    /// (a W1+DK export is ~5k-8k objects).
     /// </summary>
     public const int FileChunkSize = 50;
-    public const int ObjectChunkSize = 50;
+
+    /// <summary>
+    /// Rows-per-<c>SaveChanges</c> for objects and their emitted symbols,
+    /// variables and references. These are narrow rows and the change tracker
+    /// is cleared after every flush, so the footprint is per-chunk and 50 was
+    /// far below what the tracker comfortably holds; each flush also cost a
+    /// round trip, which dominated a millions-of-rows ingest. See #688.
+    /// The C/AL system-reference backfill pages the same number of objects
+    /// with their source blobs attached, so this also sets that read's
+    /// working set — a few MB per chunk, still comfortably bounded.
+    /// </summary>
+    public const int ObjectChunkSize = 300;
 
     /// <summary>SHA-256 of the UTF-8 bytes of <paramref name="content"/>, as uppercase hex.</summary>
     public static string HashHex(string content)

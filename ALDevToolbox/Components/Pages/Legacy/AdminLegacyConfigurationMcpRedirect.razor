@@ -1,0 +1,20 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/configuration/mcp
+   New route: /admin/administration/tools
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/admin/configuration/mcp"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: the per-org MCP toggle moved into the unified Tools tab
+    (it was previously /admin/configuration/mcp, then /admin/administration/mcp).
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/tools", replace: true);
+    }
+}

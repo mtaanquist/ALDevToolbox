@@ -2,7 +2,7 @@
 
 ## Target environment
 
-The app runs as two Docker containers (app + Postgres) sitting behind whatever ingress the company uses (Traefik, nginx, etc.). The previous "single container, single volume" posture relaxed in P4.16 — see `architecture.md`. The compose file in the repo (`compose.yml`) is the canonical deployment shape.
+The app runs as two Docker containers (app + Postgres) sitting behind whatever ingress the company uses (Traefik, nginx, etc.). The previous "single container, single volume" posture relaxed in P4.16 — see `architecture.md`. The compose file in the repo (`compose.yaml`) is the canonical deployment shape.
 
 ## Dockerfile
 
@@ -13,25 +13,18 @@ The repo ships a working `Dockerfile` at the root; that's the canonical build. K
 - The image carries the application binaries and embedded `Resources/` only. There is no on-disk seed directory — the singleton system org owns the canonical templates at runtime.
 - The app reads `ConnectionStrings__DefaultConnection` to find the database. There is no on-disk DB; persistence is the sibling `db` compose service backed by the `pg-data` named volume.
 - Port 8080 inside the container, mapped however the host wants.
+- Both base images are pinned by digest (`FROM ...@sha256:...`, with the tag they were resolved from in the comment above each `FROM`), so a rebuild of a given commit produces the same image. Bump them deliberately with `docker buildx imagetools inspect mcr.microsoft.com/dotnet/aspnet:10.0`.
+- **The app runs as the non-root `app` user** shipped by the `mcr.microsoft.com/dotnet/aspnet` images. This container clones customer repositories, provisions the AL compiler from NuGet and runs it over that source, and holds the database credentials in its environment, so it does not run as uid 0. The Dockerfile creates and `chown`s the three volume mount points (`/var/lib/aldevtoolbox/{dp-keys,backups,altool}`) before the `USER` line so Docker seeds freshly created named volumes with the right ownership. The compose service additionally drops all Linux capabilities and sets `no-new-privileges`. `read_only: true` is *not* set: the build pipeline stages repository clones and multi-GB `.app` / DVD downloads under `/tmp`, and a tmpfs there would charge all of that to RAM. Existing installs whose volumes were created by the old root image need a one-off `chown` — see *Upgrades* below.
 
 ## docker-compose example
 
-The canonical compose file lives at the repo root (`compose.yml`). It defines two services — `aldevtoolbox` (the app) and `db` (`postgres:18-alpine`) — wired together with a healthcheck-gated `depends_on`. The app reads `ConnectionStrings__DefaultConnection`, which compose builds from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. See `README.md` for the quick-start invocation.
+The canonical compose file lives at the repo root (`compose.yaml`). It defines two services — `aldevtoolbox` (the app) and `db` (`postgres:18-alpine`) — wired together with a healthcheck-gated `depends_on`. The app reads `ConnectionStrings__DefaultConnection`, which compose builds from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. `POSTGRES_PASSWORD` has no default — compose refuses to start without it rather than silently using a well-known one. See `README.md` for the quick-start invocation.
 
 ## Environment variables
 
-| Variable                  | Purpose                                             | Default                  |
-|---------------------------|-----------------------------------------------------|--------------------------|
-| `BOOTSTRAP_ADMIN_EMAIL`   | First admin email (only on a fresh database)       | none                     |
-| `BOOTSTRAP_ADMIN_PASSWORD`| First admin password (only on a fresh database)    | none                     |
-| `SINGLE_TENANT_MODE`      | `1` hides/disables multi-tenant surfaces (storage quotas, per-tenant snapshots, self-service org creation at signup) for internal single-org hosting | `0` (multi-tenant) |
-| `SINGLE_TENANT_ORG_NAME`  | First-run only: names the lone organisation (single-tenant mode) | none (stays "Default") |
-| `SINGLE_TENANT_ORG_SLUG`  | First-run only: optional slug for the lone organisation            | none (stays `default`) |
-| `SINGLE_TENANT_EMAIL_DOMAINS` | First-run only: comma/space-separated email domains the lone org claims; verified signups from them auto-join active | none |
-| `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
-| `ASPNETCORE_URLS`         | Standard ASP.NET Core binding                       | `http://+:8080`          |
-| `ASPNETCORE_ENVIRONMENT`  | Standard ASP.NET Core environment                   | `Production`             |
+**`README.md` carries the single table of every variable the app reads** (under *Run in Docker*). That list used to be duplicated here and the two copies drifted, so this document deliberately keeps no second one — document a new variable in the README table only.
+
+The variables that encode a deployment *decision* rather than plumbing are discussed below in prose: `SINGLE_TENANT_MODE` and the `SINGLE_TENANT_*` seeds under *Single-tenant mode*, `PUBLIC_BASE_URL` and `AllowedHosts` under *Public origin and `AllowedHosts`*, and `POSTGRES_PASSWORD` (required, no default) above.
 
 If `ConnectionStrings__DefaultConnection` is unset the app fails to start with a clear error.
 
@@ -78,11 +71,27 @@ Standard:
 2. Stop container.
 3. Start new container against the same volume.
 
+### Upgrading an install that ran as root (one-off)
+
+Named volumes created by an older image are owned by `root`, and the non-root app cannot write to them. Do the one-off chown after pulling the new image and before starting it:
+
+```bash
+docker compose down
+docker run --rm \
+  -v aldevtoolbox_app-keys:/v/dp-keys \
+  -v aldevtoolbox_app-backups:/v/backups \
+  -v aldevtoolbox_app-altool:/v/altool \
+  alpine chown -R 1654:1654 /v/dp-keys /v/backups /v/altool
+docker compose up -d
+```
+
+(`1654` is the `app` uid/gid in the .NET images; the volume names carry the compose project prefix — check `docker volume ls` if yours differs. The `app-altool` contents are disposable, so deleting that volume instead is also fine.)
+
 Migrations run on startup. If a migration is destructive (drops a column, etc.), back up first. Migration testing in CI against a copy of the production DB is a good practice but not required for v1.
 
 ## Monitoring
 
-The app exposes two operator endpoints (wired in `Program.cs`):
+The app exposes three operator endpoints (wired in `Program.cs`):
 
 ```csharp
 app.MapHealthChecks("/healthz", new HealthCheckOptions {
@@ -117,10 +126,20 @@ The one exception is Object Explorer at full-catalogue scale. The find-reference
 
 The container should *not* terminate TLS itself. Run it behind a reverse proxy (Traefik, nginx, Caddy) that handles certificates. Set `app.UseForwardedHeaders()` to handle the `X-Forwarded-Proto` header so cookies get the `Secure` flag correctly.
 
-For operators who don't already run an ingress, `compose.yml` ships an **optional, commented-out `caddy` service** (with a `Caddyfile` at the repo root) that fronts the app on 80/443 and provisions Let's Encrypt certificates automatically — uncomment it, set `SITE_ADDRESS` + `CRONUS_EMAIL`, and uncomment the `caddy-data` / `caddy-config` volumes. It's a convenience, not a new fence: bring-your-own Traefik/nginx is unchanged, and the app still terminates HTTP only. Caddy preserves the inbound `Host` header and sets `X-Forwarded-Proto`, so request-derived absolute URLs (email links, OAuth issuer) resolve to the public `https://` domain with no extra config; passkeys still need `Auth__WebAuthn__RpId` / `OriginsCsv` set to that domain. See `README.md` → "HTTPS with Caddy (optional)".
+For operators who don't already run an ingress, `compose.yaml` ships an **optional, commented-out `caddy` service** (with a `Caddyfile` at the repo root) that fronts the app on 80/443 and provisions Let's Encrypt certificates automatically — uncomment it, set `SITE_ADDRESS` + `ACME_EMAIL`, and uncomment the `caddy-data` / `caddy-config` volumes. It's a convenience, not a new fence: bring-your-own Traefik/nginx is unchanged, and the app still terminates HTTP only. Caddy preserves the inbound `Host` header and sets `X-Forwarded-Proto`, so request-derived absolute URLs (email links, OAuth issuer) resolve to the public `https://` domain with no extra config; passkeys still need `Auth__WebAuthn__RpId` / `OriginsCsv` set to that domain. See `README.md` → "HTTPS with Caddy (optional)".
+
+### Public origin and `AllowedHosts`
+
+Email links that carry a credential — password reset, magic link, invite accept, email-change confirm, signup verification — used to be built by interpolating the inbound request's `Host` header. Anyone could therefore have a genuine reset email delivered to a victim with the token pointing at their own site. Two settings close that, and a deployment should set both:
+
+- **`PUBLIC_BASE_URL`** — the public origin those links are built from. Once set the request `Host` is ignored for link building (and for the OAuth protected-resource metadata document). Unset, the old request-derived behaviour stays for compatibility and a warning is logged at startup.
+- **`AllowedHosts`** — `appsettings.json` ships `*` so a fresh checkout runs anywhere; set it per deployment (env var `AllowedHosts`, semicolon-separated) to the real host names, and Kestrel's host-filtering middleware refuses a foreign `Host` before any handler runs.
+
+`PUBLIC_BASE_URL` is what makes the links correct; `AllowedHosts` is what stops the forged request reaching the handler at all.
 
 ## What's deliberately not here
 
-- Multi-tenancy. There's one tenant: your team.
 - Horizontal scaling. Blazor Server's SignalR connections are sticky to the server; one instance is enough for this load.
-- A queue or worker process. Generation is synchronous and finishes in under a second.
+- An external queue or worker process. Generation is synchronous and finishes in under a second, and it stays that way. Heavier work (build imports, discovery, deliveries, environment refreshes, off-site restores) runs off the request thread through in-process channel-backed queues inside the same container — no broker, no separate worker deployment.
+
+Multi-tenancy, by contrast, *is* here: every editable entity is scoped to an organisation. A single-org deployment turns the multi-tenant surfaces off with `SINGLE_TENANT_MODE=1` (above), which hides them without relaxing the isolation itself.

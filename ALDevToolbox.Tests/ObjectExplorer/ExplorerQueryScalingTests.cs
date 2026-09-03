@@ -163,6 +163,54 @@ public sealed class ExplorerQueryScalingTests : IDisposable
                    + "only saw the (zero) rows returned would call a full scan free");
     }
 
+    /// <summary>
+    /// Drawing one source page calls the viewer eight times, and each call used
+    /// to re-ask the same two questions: may this file be seen, and what is its
+    /// text. Both answers are fixed for the DI scope (in a Blazor circuit, the
+    /// page), so both are resolved once and reused — this pins that, because
+    /// losing it again is invisible to any functional test.
+    /// </summary>
+    [Fact]
+    public async Task One_page_load_resolves_visibility_and_reads_the_blob_once()
+    {
+        var moduleId = await SeedSkewedModuleAsync();
+        long fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            fileId = await ctx.OeModuleFiles.AsNoTracking()
+                .Where(f => f.ModuleId == moduleId && f.Path == "src/Target/Target0.al")
+                .Select(f => f.Id)
+                .SingleAsync();
+        }
+
+        var (sql, _) = await MeasureAsync(async viewer =>
+        {
+            await viewer.GetFileHeaderAsync(fileId);
+            await viewer.GetFileAsync(fileId);
+            await viewer.GetFileOutlineAsync(fileId);
+            await viewer.ListDeclarationsInFileAsync(fileId);
+            await viewer.ListResolvablesInFileAsync(fileId);
+        });
+
+        sql.Count(IsVisibilityProbe).Should().Be(1,
+            because: "the file's owning release is resolved once per scope and memoised, "
+                   + "not re-resolved by each of the five calls the page makes");
+        sql.Count(s => s.Contains("oe_file_contents")).Should().Be(1,
+            because: "one page shows one file's text, so the blob crosses the wire once");
+    }
+
+    /// <summary>
+    /// The visibility probe is the only query that reaches oe_module_files for
+    /// the owning release alone — every other read the page makes either joins
+    /// the content store, the release row, or the object table.
+    /// </summary>
+    private static bool IsVisibilityProbe(string sql) =>
+        sql.Contains("oe_module_files")
+        && sql.Contains("release_id")
+        && !sql.Contains("oe_file_contents")
+        && !sql.Contains("oe_releases")
+        && !sql.Contains("oe_module_objects");
+
     /// <summary>Which listing a case exercises. All three share the lookup.</summary>
     public enum Listing
     {
@@ -218,7 +266,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         await using (var ctx = new AppDbContext(options, _db.OrgContext))
         {
             await work(new SourceViewerService(
-                ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+                ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
                 new ProjectAccess(ctx, _db.OrgContext)));
         }
 

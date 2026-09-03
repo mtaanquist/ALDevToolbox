@@ -26,13 +26,6 @@
                                   placeholder="e.g. Scheduled maintenance on Sunday 09:00-11:00 UTC.">@_view.BannerText</textarea>
                     </SettingRow>
 
-                    <SettingRow Name="New signups"
-                                Hint="Someone joining an organisation that already exists. Signups that create a new organisation are always reviewed.">
-                        <Switch Name="DefaultSignupAutoApprove" HiddenFalse="true"
-                                Checked="@_view.DefaultSignupAutoApprove"
-                                Label="@(_view.DefaultSignupAutoApprove ? "Let them in straight away" : "Wait for an admin to approve")" />
-                    </SettingRow>
-
                     <SettingRow Name="Who may sign up">
                         <HintContent>
                             One email domain per line. Leave blank to accept any address.
@@ -41,7 +34,7 @@
                         </HintContent>
                         <ChildContent>
                             <textarea class="textarea" name="SignupEmailDomainAllowlist" rows="4"
-                                      placeholder="e.g.&#10;cronus.com&#10;example.dk">@_view.SignupEmailDomainAllowlist</textarea>
+                                      placeholder="@SignupDomainPlaceholder">@_view.SignupEmailDomainAllowlist</textarea>
                         </ChildContent>
                     </SettingRow>
 
@@ -80,6 +73,10 @@
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private SystemSettingsView? _view;
+
+    // Razor encodes a literal &#10; in an attribute, so the placeholder used to
+    // read "e.g.&#10;cronus.com" on screen. A real newline from C# survives.
+    private const string SignupDomainPlaceholder = "e.g.\ncronus.com\nexample.dk";
 
     protected override async Task OnInitializedAsync()
     {

@@ -1,4 +1,5 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Services.Workers;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
@@ -23,7 +24,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// See <c>.design/saas-delivery.md</c> and issue #657.
 /// </para>
 /// </summary>
-public sealed class EnvironmentRefreshScheduler : BackgroundService
+public sealed class EnvironmentRefreshScheduler : PolledScheduler
 {
     /// <summary>The UTC hour the nightly sweep runs in — quiet for European working hours.</summary>
     internal const int SweepHourUtc = 3;
@@ -34,7 +35,6 @@ public sealed class EnvironmentRefreshScheduler : BackgroundService
     private readonly EnvironmentRefreshQueue _queue;
     private readonly TimeProvider _clock;
     private readonly ILogger<EnvironmentRefreshScheduler> _logger;
-    private readonly WorkerHeartbeat _heartbeat;
 
     // The last UTC date a sweep ran, so the five-minute poll fires the sweep once per
     // night rather than twelve times inside the sweep hour.
@@ -46,60 +46,30 @@ public sealed class EnvironmentRefreshScheduler : BackgroundService
         TimeProvider clock,
         ILogger<EnvironmentRefreshScheduler> logger,
         WorkerHeartbeatRegistry heartbeats)
+        // Polls every 5 minutes; a sweep only enumerates and enqueues (the round trips
+        // run on EnvironmentRefreshWorker), so a 10-minute active ceiling is ample.
+        : base(logger, heartbeats, nameof(EnvironmentRefreshScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(10),
+            maxIdleSilence: TimeSpan.FromMinutes(30),
+            disableEnvVar: "DISABLE_ENVIRONMENT_REFRESH_SCHEDULER")
     {
         _services = services;
         _queue = queue;
         _clock = clock;
         _logger = logger;
-        // Polls every 5 minutes; a sweep only enumerates and enqueues (the round trips
-        // run on EnvironmentRefreshWorker), so a 10-minute active ceiling is ample.
-        _heartbeat = heartbeats.Register(nameof(EnvironmentRefreshScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(10),
-            maxIdleSilence: TimeSpan.FromMinutes(30));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task TickAsync(CancellationToken ct)
     {
-        if (Environment.GetEnvironmentVariable("DISABLE_ENVIRONMENT_REFRESH_SCHEDULER") == "1")
-        {
-            _logger.LogInformation("EnvironmentRefreshScheduler disabled via DISABLE_ENVIRONMENT_REFRESH_SCHEDULER=1.");
-            return;
-        }
+        // The sweep is nightly, but the poll is every five minutes: check whether this
+        // poll lands in the sweep hour and today's sweep hasn't run yet.
+        var nowUtc = _clock.GetUtcNow().UtcDateTime;
+        var today = DateOnly.FromDateTime(nowUtc);
+        if (nowUtc.Hour != SweepHourUtc || _lastSweptUtcDate == today) return;
 
-        // Let startup migrations + seed finish before the first poll.
-        try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                var nowUtc = _clock.GetUtcNow().UtcDateTime;
-                var today = DateOnly.FromDateTime(nowUtc);
-                if (nowUtc.Hour == SweepHourUtc && _lastSweptUtcDate != today)
-                {
-                    _heartbeat.BeginActive();
-                    try
-                    {
-                        await SweepAsync(stoppingToken);
-                        _lastSweptUtcDate = today;
-                    }
-                    finally { _heartbeat.EndActive(); }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "EnvironmentRefreshScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
+        await SweepAsync(ct).ConfigureAwait(false);
+        _lastSweptUtcDate = today;
     }
 
     /// <summary>
@@ -109,25 +79,26 @@ public sealed class EnvironmentRefreshScheduler : BackgroundService
     /// </summary>
     internal async Task<int> SweepAsync(CancellationToken ct)
     {
-        List<int> orgIds;
+        List<(int Id, bool IsSystem)> orgs;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             // The one sanctioned cross-org read: which orgs to sweep. Only pending
             // signups are skipped — like DeliveryScheduler, the system org is swept too,
             // since in single-tenant deployments it is the working org.
-            orgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
                 .Where(o => !o.IsPending)
-                .Select(o => o.Id)
+                .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);
+            orgs = rows.Select(o => (o.Id, o.IsSystem)).ToList();
         }
 
         var enqueued = 0;
-        foreach (var orgId in orgIds)
+        foreach (var (orgId, isSystem) in orgs)
         {
             try
             {
-                var identity = new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false);
+                var identity = AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem);
                 using var ambient = AmbientOrganizationScope.Enter(identity);
                 await using var scope = _services.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

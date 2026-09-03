@@ -41,13 +41,6 @@ public class SystemSettings
     public string? BannerText { get; set; }
 
     /// <summary>
-    /// When <see langword="true"/>, signups into existing organisations are
-    /// auto-approved without an org admin's review. Defaults to
-    /// <see langword="false"/> — admin approval is the safer default for v1.
-    /// </summary>
-    public bool DefaultSignupAutoApprove { get; set; }
-
-    /// <summary>
     /// When <see langword="true"/>, <c>BackupScheduler</c> takes a daily
     /// backup at <see cref="BackupScheduleTimeUtc"/>. Operators can pause
     /// the schedule without losing the time-of-day setting.

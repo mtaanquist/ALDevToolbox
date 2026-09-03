@@ -1,4 +1,5 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Services.Workers;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -22,14 +23,13 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// Opt out with <c>DISABLE_DELIVERY_SCHEDULER=1</c>. See <c>.design/saas-delivery.md</c>.
 /// </para>
 /// </summary>
-public sealed class DeliveryScheduler : BackgroundService
+public sealed class DeliveryScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
 
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ILogger<DeliveryScheduler> _logger;
-    private readonly WorkerHeartbeat _heartbeat;
 
     // One-shot per process: fail orphaned in-progress deliveries on the first sweep.
     private bool _reconciledInterrupted;
@@ -39,51 +39,20 @@ public sealed class DeliveryScheduler : BackgroundService
         TimeProvider clock,
         ILogger<DeliveryScheduler> logger,
         WorkerHeartbeatRegistry heartbeats)
+        // Polls every 30s; a sweep only resolves + enqueues (the publish runs on
+        // DeliveryWorker), so a 10-minute active ceiling is ample even for many orgs.
+        : base(logger, heartbeats, nameof(DeliveryScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(10),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_DELIVERY_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
-        // Polls every 30s; a sweep only resolves + enqueues (the publish runs on
-        // DeliveryWorker), so a 10-minute active ceiling is ample even for many orgs.
-        _heartbeat = heartbeats.Register(nameof(DeliveryScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(10),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        if (Environment.GetEnvironmentVariable("DISABLE_DELIVERY_SCHEDULER") == "1")
-        {
-            _logger.LogInformation("DeliveryScheduler disabled via DISABLE_DELIVERY_SCHEDULER=1.");
-            return;
-        }
-
-        // Let startup migrations + seed finish before the first poll.
-        try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await SweepAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DeliveryScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
+    protected override Task TickAsync(CancellationToken ct) => SweepAsync(ct);
 
     /// <summary>
     /// One pass over every active org. Internal so a test can drive it directly against a
@@ -94,7 +63,7 @@ public sealed class DeliveryScheduler : BackgroundService
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
         var reconcileThisSweep = !_reconciledInterrupted;
 
-        List<int> orgIds;
+        List<(int Id, bool IsSystem)> orgs;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -102,18 +71,19 @@ public sealed class DeliveryScheduler : BackgroundService
             // signups are skipped. Unlike ReleaseAutoImportScheduler we do NOT skip the
             // system org: in single-tenant (and fresh bootstrap-admin) deployments the
             // working org IS the system org, so its scheduled deliveries must run.
-            orgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
                 .Where(o => !o.IsPending)
-                .Select(o => o.Id)
+                .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);
+            orgs = rows.Select(o => (o.Id, o.IsSystem)).ToList();
         }
 
-        foreach (var orgId in orgIds)
+        foreach (var (orgId, isSystem) in orgs)
         {
             try
             {
                 using var ambient = AmbientOrganizationScope.Enter(
-                    new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+                    AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem));
                 await using var scope = _services.CreateAsyncScope();
                 var deliveries = scope.ServiceProvider.GetRequiredService<DeliveryService>();
 

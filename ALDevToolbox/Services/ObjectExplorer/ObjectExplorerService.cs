@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 
@@ -304,8 +305,12 @@ public class ObjectExplorerService
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            var s = filter.Search.Trim().ToLower();
-            q = q.Where(m => m.Name.ToLower().Contains(s) || m.Publisher.ToLower().Contains(s));
+            // ILike instead of ToLower().Contains: the latter wraps the column
+            // in a function (no index) and lowers the needle with the current
+            // culture. Escape %/_ so a literal wildcard matches literally. #690
+            var pattern = "%" + ObjectSearchService.EscapeLike(filter.Search.Trim()) + "%";
+            q = q.Where(m => EF.Functions.ILike(m.Name, pattern, "\\")
+                || EF.Functions.ILike(m.Publisher, pattern, "\\"));
         }
 
         return await q.OrderBy(m => m.Publisher).ThenBy(m => m.Name)
@@ -314,6 +319,35 @@ public class ObjectExplorerService
                 m.IsTest, m.IsInternal, m.IsLanguagePack,
                 m.Objects.Count))
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// The header facts for one module's detail page — its identity plus the
+    /// Release it came from. Null when the module doesn't exist or belongs to a
+    /// Release this person can't see.
+    /// </summary>
+    public async Task<ModuleHeader?> GetModuleHeaderAsync(long moduleId, CancellationToken ct = default)
+    {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return null;
+        return await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId)
+            .Select(m => new ModuleHeader(
+                m.AppId, m.Name, m.Publisher, m.Version, m.ReleaseId, m.Release!.Label))
+            .SingleOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// A Release's label on its own — the object detail page needs it to name
+    /// the Release a base object is being viewed "from". Null when the Release
+    /// doesn't exist or isn't visible.
+    /// </summary>
+    public async Task<string?> GetReleaseLabelAsync(int releaseId, CancellationToken ct = default)
+    {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
+        return await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => r.Label)
+            .SingleOrDefaultAsync(ct);
     }
 
     // ── Objects ─────────────────────────────────────────────────────────
@@ -335,23 +369,26 @@ public class ObjectExplorerService
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var s = filter.Search.Trim();
-            var lower = s.ToLower();
             // Numeric search matches the object id; substring otherwise. The
             // search box accepts either, mirroring the convention from the
             // earlier base-app browser the new schema replaces. The C/AL
             // Version List joins the substring match so a module drill-down
             // finds "NAVDK14.49"-tagged objects the same way the release
-            // search does (issue #271).
+            // search does (issue #271). ILike (not ToLower().Contains) so the
+            // trigram indexes on name / version_list are usable and the casing
+            // isn't current-culture; %/_ escaped so a literal wildcard in the
+            // term matches literally. #690
+            var pattern = "%" + ObjectSearchService.EscapeLike(s) + "%";
             if (int.TryParse(s, out var asInt))
             {
                 q = q.Where(o => o.ObjectId == asInt
-                    || o.Name.ToLower().Contains(lower)
-                    || (o.VersionList != null && o.VersionList.ToLower().Contains(lower)));
+                    || EF.Functions.ILike(o.Name, pattern, "\\")
+                    || (o.VersionList != null && EF.Functions.ILike(o.VersionList, pattern, "\\")));
             }
             else
             {
-                q = q.Where(o => o.Name.ToLower().Contains(lower)
-                    || (o.VersionList != null && o.VersionList.ToLower().Contains(lower)));
+                q = q.Where(o => EF.Functions.ILike(o.Name, pattern, "\\")
+                    || (o.VersionList != null && EF.Functions.ILike(o.VersionList, pattern, "\\")));
             }
         }
 
@@ -438,11 +475,15 @@ public class ObjectExplorerService
     {
         if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var kind = objectKind.Trim().ToLowerInvariant();
-        var name = objectName.Trim().ToLowerInvariant();
+        // Exact case-insensitive match as a wildcard-free ILike pattern: it
+        // leaves the column unwrapped so the name trigram index can serve it,
+        // where LOWER(name) = @p forced a scan of the release. Escaped so an
+        // object name containing % or _ matches literally. #690
+        var name = ObjectSearchService.EscapeLike(objectName.Trim());
         var id = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                         && o.Kind == kind
-                        && o.Name.ToLower() == name)
+                        && EF.Functions.ILike(o.Name, name, "\\"))
             .Select(o => (long?)o.Id)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (id is null) return null;
@@ -468,11 +509,13 @@ public class ObjectExplorerService
     {
         if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var kind = objectKind.Trim().ToLowerInvariant();
-        var name = objectName.Trim().ToLowerInvariant();
+        // Wildcard-free ILike pattern — index-usable exact case-insensitive
+        // match; see GetObjectByNameAsync. #690
+        var name = ObjectSearchService.EscapeLike(objectName.Trim());
         var header = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                         && o.Kind == kind
-                        && o.Name.ToLower() == name)
+                        && EF.Functions.ILike(o.Name, name, "\\"))
             .Select(o => new
             {
                 o.Id, o.Kind, o.ObjectId, o.Name, o.ModuleId,
@@ -596,7 +639,7 @@ public class ObjectExplorerService
         var source = string.Join('\n', sliceLines);
         if (truncated)
         {
-            source += $"\n// … (truncated at {maxLines} of {available} lines; call list_procedure_calls or narrow the question)";
+            source += $"\n// ... (truncated at {maxLines} of {available} lines; call list_procedure_calls or narrow the question)";
         }
 
         return new ProcedureSource(
@@ -688,4 +731,218 @@ public class ObjectExplorerService
             .ToListAsync(ct);
     }
 
+    // ── MCP id resolvers ────────────────────────────────────────────────
+    //
+    // The MCP tools used to carry these as private helpers with their own
+    // AppDbContext, which meant a visibility rule added here did not reach
+    // them. They live on the service that owns the entity so there is one
+    // home per gate. They throw McpException because their refusal copy is
+    // written for an agent; nothing on the web surface calls them.
+    // See .design/teams-and-visibility.md.
+
+    /// <summary>
+    /// Resolves a release by label or numeric id for an MCP caller, refusing
+    /// one the caller cannot see with the same "does not exist" copy an
+    /// unknown id gets. This is the choke point every release-keyed MCP tool
+    /// passes through, so the project-visibility fence lives here.
+    /// </summary>
+    public async Task<int> ResolveReleaseAsync(string releaseLabelOrId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = _access.VisibleReleasePredicate(snapshot);
+        if (int.TryParse(releaseLabelOrId, out var asId))
+        {
+            var exists = await _db.OeReleases.AsNoTracking()
+                .Where(visible)
+                .AnyAsync(r => r.Id == asId && r.DeletedAt == null, ct);
+            if (!exists) throw new McpException($"Release {asId} does not exist.");
+            return asId;
+        }
+        var label = releaseLabelOrId.Trim();
+        var row = await _db.OeReleases.AsNoTracking()
+            .Where(visible)
+            .Where(r => r.Label == label && r.DeletedAt == null)
+            .Select(r => new { r.Id })
+            .FirstOrDefaultAsync(ct);
+        if (row is null)
+        {
+            throw new McpException($"Release '{releaseLabelOrId}' was not found. Call list_releases to see available labels.");
+        }
+        return row.Id;
+    }
+
+    /// <summary>
+    /// A caller who passes a symbol id straight to get_procedure_source /
+    /// list_procedure_calls never resolves a release, and a symbol id is
+    /// guessable — so the symbol's own release is checked here. Refuses with
+    /// the same "doesn't exist" copy an unknown id gets.
+    /// </summary>
+    public async Task EnsureSymbolVisibleAsync(long symbolId, CancellationToken ct = default)
+    {
+        var releaseId = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(sym => sym.Id == symbolId)
+            .Select(sym => (int?)sym.Module!.ReleaseId)
+            .FirstOrDefaultAsync(ct);
+        if (releaseId is not null && !await ReleaseVisibleAsync(releaseId.Value, ct))
+        {
+            throw new McpException($"Symbol id {symbolId} doesn't exist. Call get_object_outline to see the current ids for an object.");
+        }
+    }
+
+    /// <summary>
+    /// Body-bearing symbol kinds — what counts as a "procedure" the
+    /// forward-edge tools can read source for. Mirrors the kinds the
+    /// procedure walker pushes a scope frame for.
+    /// </summary>
+    private static readonly HashSet<string> BodyBearingKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "procedure", "local_procedure", "internal_procedure", "protected_procedure",
+        "trigger", "event_publisher", "event_subscriber",
+    };
+
+    /// <summary>
+    /// Resolves a procedure / trigger to its <c>oe_module_symbols.id</c>
+    /// by (release, object, kind, procedure name). Throws
+    /// <see cref="McpException"/> with copy steering the agent to the
+    /// outline + symbolId form when the name is ambiguous on the
+    /// object (page-action OnAction triggers, table-field OnValidate
+    /// triggers, multiple overloads of the same procedure). Gated by
+    /// <see cref="ResolveReleaseAsync"/>.
+    /// </summary>
+    public async Task<long> ResolveProcedureSymbolIdAsync(
+        string releaseLabelOrId,
+        string? objectName,
+        string? objectKind,
+        string? procedureName,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectName)
+            || string.IsNullOrWhiteSpace(objectKind)
+            || string.IsNullOrWhiteSpace(procedureName))
+        {
+            throw new McpException("Must supply either symbolId or all of (objectName, objectKind, procedureName).");
+        }
+
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var ownerKind = objectKind.Trim().ToLowerInvariant();
+        var procName = procedureName.Trim();
+        // Wildcard-free ILike patterns: an exact case-insensitive match that
+        // leaves the columns unwrapped, so the name trigram indexes stay usable
+        // where LOWER(name) = @p forced a scan. Escaped so a name containing
+        // % or _ matches literally. #690
+        var ownerNamePattern = ObjectSearchService.EscapeLike(objectName.Trim());
+        var procNamePattern = ObjectSearchService.EscapeLike(procName);
+
+        var candidates = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == releaseId
+                        && s.Object.Kind == ownerKind
+                        && EF.Functions.ILike(s.Object.Name, ownerNamePattern, "\\")
+                        && EF.Functions.ILike(s.Name, procNamePattern, "\\"))
+            .Select(s => new { s.Id, s.Kind, s.LineNumber })
+            .ToListAsync(ct);
+
+        var bodied = candidates.Where(c => BodyBearingKinds.Contains(c.Kind)).ToList();
+        if (bodied.Count == 0)
+        {
+            throw new McpException($"No procedure or trigger named '{procName}' on {ownerKind} '{objectName}' in release {releaseLabelOrId}. Call get_object_outline to see what this object exposes.");
+        }
+        if (bodied.Count > 1)
+        {
+            throw new McpException($"Multiple symbols named '{procName}' on {ownerKind} '{objectName}' (typical for page-action OnAction triggers and table-field OnValidate triggers). Call get_object_outline to see their line numbers and ids, then pass symbolId instead of procedureName.");
+        }
+        return bodied[0].Id;
+    }
+
+    /// <summary>
+    /// The full per-module row the <c>list_release_modules</c> MCP tool
+    /// returns, capped at <paramref name="maxResults"/>. Distinct from
+    /// <see cref="ListModuleSummariesAsync"/>, which is the three-column form
+    /// the search-filter dropdown needs. The release must already have come
+    /// from <see cref="ResolveReleaseAsync"/>.
+    /// </summary>
+    public async Task<List<McpReleaseModuleRow>> ListReleaseModulesForMcpAsync(
+        int releaseId, int maxResults, CancellationToken ct = default)
+    {
+        return await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .OrderBy(m => m.Name)
+            .Take(maxResults)
+            .Select(m => new McpReleaseModuleRow(
+                m.Id,
+                m.Name,
+                m.Publisher,
+                m.Version,
+                m.AppId,
+                m.IsTest,
+                m.IsInternal,
+                m.IsLanguagePack,
+                m.DependencyCount,
+                m.SymbolReferenceContentHash != null))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Identity + stored-symbol-file state for one module in a release, looked
+    /// up by name, for the <c>download_symbol_reference</c> MCP tool. Returns
+    /// <see langword="null"/> when the release has no module by that name. The
+    /// release must already have come from <see cref="ResolveReleaseAsync"/>.
+    /// </summary>
+    public async Task<McpModuleSymbolReference?> GetModuleSymbolReferenceAsync(
+        int releaseId, string moduleName, CancellationToken ct = default)
+    {
+        var name = moduleName.Trim();
+        return await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId && m.Name.ToLower() == name.ToLower())
+            .Select(m => new McpModuleSymbolReference(
+                m.Id,
+                m.Name,
+                m.Version,
+                m.SymbolReferenceContentHash,
+                (int?)(m.SymbolReferenceContent != null ? m.SymbolReferenceContent.ContentLength : 0)))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Names of the modules in a release that <em>do</em> have a stored
+    /// SymbolReference.json — the "try one of these instead" list.
+    /// </summary>
+    public async Task<List<string>> ListModulesWithStoredSymbolReferenceAsync(
+        int releaseId, CancellationToken ct = default)
+    {
+        return await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId && m.SymbolReferenceContentHash != null)
+            .OrderBy(m => m.Name)
+            .Select(m => m.Name)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Chain-aware object lookup for the MCP find-references tools: resolves a
+    /// target object by name across the release's visible ancestry. The seed
+    /// release must already have come from <see cref="ResolveReleaseAsync"/>.
+    /// </summary>
+    public Task<ChainObjectHit?> ResolveChainObjectAsync(
+        int seedReleaseId, string name, string? kind, int? objectId, CancellationToken ct = default)
+        => ChainObjectResolution.ResolveObjectAsync(_db, seedReleaseId, name, kind, objectId, ct);
 }
+
+/// <summary>One module row for the <c>list_release_modules</c> MCP tool.</summary>
+public sealed record McpReleaseModuleRow(
+    long Id,
+    string Name,
+    string Publisher,
+    string Version,
+    Guid AppId,
+    bool IsTest,
+    bool IsInternal,
+    bool IsLanguagePack,
+    int DependencyCount,
+    bool HasStoredSymbolReference);
+
+/// <summary>One module's stored-SymbolReference.json state for the <c>download_symbol_reference</c> MCP tool.</summary>
+public sealed record McpModuleSymbolReference(
+    long Id,
+    string Name,
+    string Version,
+    string? ContentHash,
+    int? ContentLength);

@@ -3,8 +3,6 @@
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject OrganizationAdminService OrgAdmin
-@inject AppDbContext Db
-@inject IOrganizationContext OrgCtx
 @inject NavigationManager Nav
 @inject ILogger<AdminAdministrationIdentity> Log
 @using ALDevToolbox.Data
@@ -171,7 +169,11 @@
                     <HintContent>
                         Your company's Directory (tenant) ID, from the Overview page of the
                         Microsoft Entra admin center. Anyone from a Microsoft organisation
-                        that isn't on this list is refused.
+                        that isn't on this list is refused. Microsoft sign-in only links to
+                        an existing account when Microsoft confirms the email, or when the
+                        email domain is one this organisation has verified. Otherwise the
+                        sign-in is refused and the person is told to ask you to verify
+                        the domain.
                     </HintContent>
                     <ChildContent>
                         <div class="sub-rows sub-rows--plain">
@@ -442,28 +444,18 @@
 
     private async Task LoadAsync()
     {
-        var orgId = OrgCtx.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organisation in scope.");
-        var org = await Db.Organizations.AsNoTracking().FirstAsync(o => o.Id == orgId);
-        _name = _baseName = org.Name;
-        _slug = org.Slug;
-        var settings = await Db.OrganizationSettings.AsNoTracking()
-            .Where(s => s.OrganizationId == orgId)
-            .Select(s => new { s.RequireStrongAuth, s.AutoJoinVerifiedDomainUsers })
-            .FirstOrDefaultAsync();
-        _requireStrongAuth = settings?.RequireStrongAuth ?? false;
-        _autoJoinVerifiedDomainUsers = settings?.AutoJoinVerifiedDomainUsers ?? false;
+        var identity = await OrgAdmin.GetIdentityViewAsync();
+        _name = _baseName = identity.Name;
+        _slug = identity.Slug;
+        _requireStrongAuth = identity.RequireStrongAuth;
+        _autoJoinVerifiedDomainUsers = identity.AutoJoinVerifiedDomainUsers;
         _domains = await OrgAdmin.ListEmailDomainsAsync();
         ApplyEntraView(await OrgAdmin.GetEntraViewAsync());
         // Blast-radius numbers for the Microsoft-only policy: who would lose
-        // password sign-in. Query filters scope both to this org.
-        _adminHasEntraLink = await Db.UserExternalLogins
-            .AnyAsync(l => l.User!.Role == UserRole.Admin && l.User.Status == UserStatus.Active);
-        _membersTotal = await Db.Users.CountAsync(u => u.Status == UserStatus.Active);
-        var linkedMembers = await Db.UserExternalLogins
-            .Where(l => l.User!.Status == UserStatus.Active)
-            .Select(l => l.UserId).Distinct().CountAsync();
-        _membersWithoutLink = Math.Max(0, _membersTotal - linkedMembers);
+        // password sign-in.
+        _adminHasEntraLink = identity.AdminHasEntraLink;
+        _membersTotal = identity.MembersTotal;
+        _membersWithoutLink = identity.MembersWithoutEntraLink;
         _loading = false;
     }
 

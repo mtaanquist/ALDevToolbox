@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 
@@ -27,7 +28,7 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// deployment needs to shift it.
 /// </para>
 /// </summary>
-public sealed class ObjectExplorerVacuumScheduler : BackgroundService
+public sealed class ObjectExplorerVacuumScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
 
@@ -49,7 +50,6 @@ public sealed class ObjectExplorerVacuumScheduler : BackgroundService
     private readonly ILogger<ObjectExplorerVacuumScheduler> _logger;
     private readonly int _hourUtc;
     private DateTimeOffset? _lastRunUtc;
-    private readonly WorkerHeartbeat _heartbeat;
 
     public ObjectExplorerVacuumScheduler(
         IServiceProvider services,
@@ -57,16 +57,18 @@ public sealed class ObjectExplorerVacuumScheduler : BackgroundService
         IConfiguration config,
         ILogger<ObjectExplorerVacuumScheduler> logger,
         WorkerHeartbeatRegistry heartbeats)
+        // Same shape as BackupScheduler: poll every minute, stale at 5; a
+        // single VACUUM sweep is short, an hour ceiling is plenty.
+        : base(logger, heartbeats, nameof(ObjectExplorerVacuumScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromHours(1),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_OE_VACUUM_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
         _hourUtc = ParseHour(config["OE_VACUUM_HOUR_UTC"]);
-        // Same shape as BackupScheduler: poll every minute, stale at 5; a
-        // single VACUUM sweep is short, an hour ceiling is plenty.
-        _heartbeat = heartbeats.Register(nameof(ObjectExplorerVacuumScheduler),
-            maxActiveDuration: TimeSpan.FromHours(1),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
     private static int ParseHour(string? raw)
@@ -75,37 +77,7 @@ public sealed class ObjectExplorerVacuumScheduler : BackgroundService
         return 3;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Defer a few seconds so startup migrations have settled before we
-        // open another scope against the same pool.
-        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "ObjectExplorerVacuumScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         var now = _clock.GetUtcNow();
         if (!ShouldRun(now)) return;

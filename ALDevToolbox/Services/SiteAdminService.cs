@@ -120,6 +120,7 @@ public sealed class SiteAdminService
         var normalised = (email ?? string.Empty).Trim().ToLowerInvariant();
         if (normalised.Length == 0) return Task.FromResult(new List<SiteAdminUserRow>());
 
+        // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
         return _db.Users.IgnoreQueryFilters()
             .AsNoTracking()
             .Where(u => u.Email == normalised)
@@ -199,6 +200,10 @@ public sealed class SiteAdminService
         CancellationToken ct = default)
     {
         RequireSiteAdmin();
+        // Fence category 2 (SiteAdmin cross-org console): audit_log gained a
+        // tenant query filter in #678; this console exists to search audit
+        // activity across every organisation, and access is gated by
+        // RequireSiteAdmin() above.
         var q = _db.AuditLog.IgnoreQueryFilters().AsNoTracking().AsQueryable();
 
         if (entityType is { } et) q = q.Where(e => e.EntityType == et);
@@ -238,6 +243,7 @@ public sealed class SiteAdminService
     public Task<List<Organization>> ListOrganizationsAsync(CancellationToken ct = default)
     {
         RequireSiteAdmin();
+        // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
         return _db.Organizations.IgnoreQueryFilters()
             .AsNoTracking()
             .OrderBy(o => o.Name)
@@ -246,6 +252,8 @@ public sealed class SiteAdminService
 
     private async Task<User> LoadUserAsync(int userId, CancellationToken ct)
     {
+        // Fence category 2 (SiteAdmin cross-org console): private helper; every public
+        // caller calls RequireSiteAdmin() before reaching here.
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null)
         {

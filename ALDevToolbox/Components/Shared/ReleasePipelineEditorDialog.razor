@@ -93,7 +93,7 @@
                         <label class="field__label" for="rpe-name">Name</label>
                         <input id="rpe-name" type="text" class="input" maxlength="200" @bind="_name"
                                disabled="@_saving" placeholder="e.g. CRONUS App → Production" />
-                        <small class="field__hint">Name it for what it publishes and where — see the example.</small>
+                        <small class="field__hint">Name it for what it publishes and where, so a colleague can tell your release pipelines apart.</small>
                     </div>
 
                     <div class="field">
@@ -130,7 +130,7 @@
                     </div>
 
                     <div class="field">
-                        <label class="field__label" for="rpe-schedule">When to install</label>
+                        <label class="field__label" for="rpe-schedule">When installs run</label>
                         <span class="select-wrap">
                             <select id="rpe-schedule" class="select" @bind="_deploymentSchedule" disabled="@_saving">
                                 @if (!BcDeploymentSchedule.Pickable.Contains(_deploymentSchedule))

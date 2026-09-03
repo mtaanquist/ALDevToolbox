@@ -1,0 +1,19 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/configuration/logo, /admin/templates/logo
+   New route: /admin/templates/defaults
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/admin/configuration/logo"
+@page "/admin/templates/logo"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Logo lives inside /admin/templates/defaults as of P4.21 - folded in to
+    cut the per-page count. Both legacy URLs (/admin/configuration/logo and
+    /admin/templates/logo) redirect here so old bookmarks keep working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/defaults", replace: true);
+}

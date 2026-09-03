@@ -416,11 +416,16 @@ public static class AlLexer
         return tokens;
     }
 
+    // AL identifiers are not ASCII-only: `Købsordre` is a legal bare
+    // variable name and shows up in Danish, German and French
+    // codebases. The ASCII-only test used to split such a name into
+    // two tokens, so every member access on it stranded. Matches the
+    // C/AL lexer's character classes (issue #712).
     private static bool IsIdentifierStart(char c) =>
-        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+        char.IsLetter(c) || c == '_';
 
     private static bool IsIdentifierPart(char c) =>
-        IsIdentifierStart(c) || (c >= '0' && c <= '9');
+        char.IsLetterOrDigit(c) || c == '_';
 
     private static bool IsHexDigit(char c) =>
         (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');

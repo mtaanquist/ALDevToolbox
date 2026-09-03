@@ -24,12 +24,18 @@
 
     function flash(el) {
         const label = el.querySelector("[data-copy-label]") || el;
-        const original = label.textContent;
+        // Remember the pristine label the first time only: a second click while
+        // the swap is still showing would otherwise capture "Copied" as the text
+        // to restore, and the button would read "Copied" forever. Cancelling the
+        // pending timer keeps the last click in charge of the reset.
+        if (el._copyTimer) clearTimeout(el._copyTimer);
+        if (el._copyLabel === undefined) el._copyLabel = label.textContent;
         label.textContent = "Copied";
         el.classList.add("is-copied");
-        setTimeout(function () {
-            label.textContent = original;
+        el._copyTimer = setTimeout(function () {
+            label.textContent = el._copyLabel;
             el.classList.remove("is-copied");
+            el._copyTimer = null;
         }, RESET_MS);
     }
 

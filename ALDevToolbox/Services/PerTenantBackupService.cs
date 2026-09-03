@@ -49,7 +49,14 @@ public sealed record PerTenantBackupRow(
 public sealed class PerTenantBackupService
 {
     /// <summary>Version baked into every snapshot ZIP. Bump when a migration touches a tenanted table.</summary>
-    public const int CurrentSchemaVersion = 2;
+    /// <remarks>
+    /// Bumped to 3 with #665, which added the Projects / Pipelines / Deliveries /
+    /// Teams / Translator-memory tables and five cascade-orphaned children to the
+    /// catalogue. A version-2 snapshot has no entries for them, so restoring one
+    /// under this code would delete those rows and leave them deleted — the exact
+    /// data loss #665 fixes. Refusing the old snapshot is the safe outcome.
+    /// </remarks>
+    public const int CurrentSchemaVersion = 3;
 
     /// <summary>
     /// Snapshot entry for the shared content-addressed source store. Not a
@@ -104,6 +111,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var q = _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -141,6 +149,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -264,6 +273,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -411,6 +421,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(b => b.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["BackupId"] = "Backup not found." });
@@ -424,6 +435,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .Include(b => b.Organization)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -450,6 +462,8 @@ public sealed class PerTenantBackupService
         if (retention < 1) retention = 1;
 
         var rows = await _db.PerTenantBackups
+            // Fence category 3 (scheduler/maintenance, no request org): retention pruning is
+            // driven by the backup scheduler; pinned to b.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .Include(b => b.Organization)
             .Where(b => b.OrganizationId == organizationId && !b.IsPinned)

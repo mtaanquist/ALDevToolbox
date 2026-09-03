@@ -2,6 +2,8 @@ using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
 using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
@@ -342,6 +344,16 @@ public class AppDbContext : DbContext
         ScopeToOrganization<PersonalAccessToken>(modelBuilder);
         ScopeToOrganization<UserRepositoryToken>(modelBuilder);
         ScopeToOrganization<OAuthConsent>(modelBuilder);
+        // AuditLogEntry carries a *nullable* organization_id: startup seed and
+        // bootstrap-admin inserts happen before any org context exists. The
+        // filter therefore admits null-org rows alongside the current org's,
+        // so those system rows stay visible while a tenant still cannot read
+        // another tenant's audit history (#678). AuditService keeps its
+        // explicit predicates as belt and braces; the SiteAdmin console reads
+        // cross-org and calls IgnoreQueryFilters() explicitly.
+        ScopeToOrganization<AuditLogEntry>(
+            modelBuilder,
+            e => e.OrganizationId == _orgContext.OrganizationIdForFilter || e.OrganizationId == null);
 
         // PasswordResetToken scopes via its required User principal: tokens
         // don't carry organization_id themselves, so the filter walks the nav.
@@ -391,5 +403,11 @@ public class AppDbContext : DbContext
     {
         configurationBuilder.Properties<DateTime>().HaveColumnType("timestamp with time zone");
         configurationBuilder.Properties<DateTime?>().HaveColumnType("timestamp with time zone");
+        // #691: no bare organization_id index on the five OE fact tables. See
+        // OeFactTableForeignKeyIndexConvention for why a Replace is the only
+        // way — the stock convention re-creates a removed FK index.
+        configurationBuilder.Conventions.Replace<ForeignKeyIndexConvention>(
+            sp => new OeFactTableForeignKeyIndexConvention(
+                sp.GetRequiredService<ProviderConventionSetBuilderDependencies>()));
     }
 }

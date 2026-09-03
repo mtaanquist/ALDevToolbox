@@ -26,7 +26,9 @@ export function init(dotNetRef) {
         if (mode === null) return;
 
         ev.preventDefault();
-        currentRef.invokeMethodAsync("SetModeFromKeybind", mode);
+        // Fire-and-forget: a dropped circuit rejects here, and an unhandled
+        // rejection per keypress would bury real errors in the console.
+        currentRef.invokeMethodAsync("SetModeFromKeybind", mode).catch(() => {});
     };
     document.addEventListener("keydown", keyHandler);
 }

@@ -2,7 +2,6 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
-@inject ALDevToolbox.Data.AppDbContext Db
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
@@ -181,10 +180,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var header = await Db.OeModules.AsNoTracking()
-            .Where(m => m.Id == ModuleId)
-            .Select(m => new { m.Name, m.Publisher, m.Version, m.ReleaseId, ReleaseLabel = m.Release!.Label })
-            .SingleOrDefaultAsync();
+        var header = await ObjectExplorer.GetModuleHeaderAsync(ModuleId);
         _loaded = true;
         if (header is null) return;
 

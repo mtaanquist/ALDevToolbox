@@ -44,6 +44,8 @@ public sealed class UserAdministrationService
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["Decision"] = "This request has already been decided." });
         }
+        // Fence category 4 (explicitly scoped lookups): the signup request was already
+        // loaded against actingOrgId, so both ids below belong to the admin's own org.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == req.UserId.Value, ct);
         user.Status = UserStatus.Active;
         req.Decision = SignupDecision.Approved;
@@ -52,6 +54,8 @@ public sealed class UserAdministrationService
         // The org carrying the new user becomes non-pending the moment its
         // first signup is approved. Subsequent admin login triggers the
         // first-time seed (see Program.cs bootstrap path).
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to req.OrganizationId,
+        // which LoadSignupRequestAsync already checked equals actingOrgId.
         var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == req.OrganizationId, ct);
         org.IsPending = false;
         await _db.SaveChangesAsync(ct);
@@ -67,6 +71,8 @@ public sealed class UserAdministrationService
         }
         if (req.UserId is int userId)
         {
+            // Fence category 4 (explicitly scoped user-id lookup): req.UserId belongs to the
+            // signup request already checked against actingOrgId.
             var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
             // Pending users rarely have audit rows pointing at them, but
             // anonymise defensively rather than gamble on the rejection
@@ -188,6 +194,8 @@ public sealed class UserAdministrationService
     /// </summary>
     private async Task<string> LookupDisplayNameAsync(int userId, int actingOrgId, CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to
+        // u.OrganizationId == actingOrgId (see #489).
         var name = await _db.Users.IgnoreQueryFilters().AsNoTracking()
             .Where(u => u.Id == userId && u.OrganizationId == actingOrgId)
             .Select(u => u.DisplayName)
@@ -197,6 +205,7 @@ public sealed class UserAdministrationService
 
     private async Task<int> CountActiveAdminsAsync(int orgId, CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to u.OrganizationId == orgId.
         return await _db.Users.IgnoreQueryFilters()
             .CountAsync(u => u.OrganizationId == orgId
                              && u.Role == UserRole.Admin
@@ -205,6 +214,8 @@ public sealed class UserAdministrationService
 
     private async Task<User> LoadUserAsync(int userId, int actingOrgId, CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): the row is refused below
+        // unless its OrganizationId equals actingOrgId.
         var user = await _db.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null || user.OrganizationId != actingOrgId)
@@ -217,6 +228,8 @@ public sealed class UserAdministrationService
     private async Task<SignupRequest> LoadSignupRequestAsync(int id, int actingOrgId, CancellationToken ct)
     {
         var req = await _db.SignupRequests
+            // Fence category 4 (explicitly scoped lookup): the row is refused below unless its
+            // OrganizationId equals actingOrgId.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (req is null || req.OrganizationId != actingOrgId)
@@ -259,6 +272,8 @@ public sealed class UserAdministrationService
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["NewEmail"] = "That's already this user's email." });
         }
+        // Fence category 6 (existence-only uniqueness probe): emails are unique
+        // deployment-wide; projects a bool, never a row.
         var taken = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == normalised && u.Id != user.Id, ct);
         if (taken)
         {
@@ -271,6 +286,8 @@ public sealed class UserAdministrationService
         // a previous recipient's link would still validate against the newly-
         // stored pending_email and silently confirm an address they never had
         // access to.
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to t.UserId == user.Id,
+        // the user this admin just loaded from their own org.
         var stale = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Where(t => t.UserId == user.Id
                         && t.Purpose == TokenPurpose.EmailChangeConfirm
@@ -304,6 +321,8 @@ public sealed class UserAdministrationService
         if (string.IsNullOrWhiteSpace(rawToken)) return null;
         var hash = TokenIssuer.Sha256Hex(rawToken);
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Fence category 1 (pre-auth routing): the confirmation link is opened from an email,
+        // possibly signed out; pinned to the token hash.
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == TokenPurpose.EmailChangeConfirm, ct);
@@ -322,6 +341,7 @@ public sealed class UserAdministrationService
         }
         // Race: another account may have grabbed the address since the token
         // was issued.
+        // Fence category 6 (existence-only uniqueness probe): projects a bool, never a row.
         var stolen = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == user.PendingEmail && u.Id != user.Id, ct);
         if (stolen)
         {
@@ -346,16 +366,21 @@ public sealed class UserAdministrationService
     /// </summary>
     public async Task ResetMfaAsync(int targetUserId, CancellationToken ct = default)
     {
+        // Fence category 2 (SiteAdmin cross-org console): break-glass MFA reset, reached only
+        // from /site-admin/users; every read is pinned to targetUserId.
         var user = await _db.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == targetUserId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["UserId"] = "User not found." });
 
+        // Category 2, pinned to s.UserId == targetUserId.
         var totp = await _db.UserTotpSecrets.IgnoreQueryFilters()
             .Where(s => s.UserId == targetUserId).ToListAsync(ct);
         _db.UserTotpSecrets.RemoveRange(totp);
+        // Category 2, pinned to c.UserId == targetUserId.
         var codes = await _db.UserRecoveryCodes.IgnoreQueryFilters()
             .Where(c => c.UserId == targetUserId).ToListAsync(ct);
         _db.UserRecoveryCodes.RemoveRange(codes);
+        // Category 2, pinned to p.UserId == targetUserId.
         var passkeys = await _db.UserPasskeys.IgnoreQueryFilters()
             .Where(p => p.UserId == targetUserId).ToListAsync(ct);
         _db.UserPasskeys.RemoveRange(passkeys);
@@ -363,4 +388,67 @@ public sealed class UserAdministrationService
         user.EmailMfaEnabled = false;
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// Everything the Administration → Users page lists: pending signups (with
+    /// the account each one created), the org's non-pending members, which of
+    /// them sign in with Microsoft, and the invites still outstanding.
+    /// </summary>
+    /// <remarks>
+    /// Reads run inside the organisation query filter — the page's own copies of
+    /// these queries used <c>IgnoreQueryFilters()</c> with an explicit
+    /// <c>OrganizationId == actingOrgId</c> predicate, which is what the filter
+    /// already applies for the signed-in admin's own org. See #680 / #701.
+    /// </remarks>
+    public async Task<UserAdministrationPage> GetAdministrationPageAsync(int actingOrgId, CancellationToken ct = default)
+    {
+        var pendingRequests = await _db.SignupRequests.AsNoTracking()
+            .Where(r => r.OrganizationId == actingOrgId && r.Decision == SignupDecision.Pending)
+            .OrderBy(r => r.RequestedAt)
+            .ToListAsync(ct);
+
+        var active = await _db.Users.AsNoTracking()
+            .Where(u => u.OrganizationId == actingOrgId && u.Status != UserStatus.Pending)
+            .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
+            .ThenBy(u => u.DisplayName)
+            .ToListAsync(ct);
+
+        var entraLinked = (await _db.UserExternalLogins.AsNoTracking()
+            .Select(l => l.UserId)
+            .Distinct()
+            .ToListAsync(ct)).ToHashSet();
+
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var invites = await _db.Invites.AsNoTracking()
+            .Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > now)
+            .OrderBy(i => i.ExpiresAt)
+            .ToListAsync(ct);
+
+        // One lookup for every user a request or an invite points at, rather than
+        // the query-per-row the page used to run.
+        var userIds = pendingRequests.Where(r => r.UserId is not null).Select(r => r.UserId!.Value)
+            .Concat(invites.Select(i => i.InvitedByUserId))
+            .Distinct()
+            .ToList();
+        var users = await _db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, ct);
+
+        return new UserAdministrationPage(
+            pendingRequests
+                .Select(r => (r, r.UserId is int uid && users.TryGetValue(uid, out var u) ? u : null))
+                .ToList(),
+            active,
+            entraLinked,
+            invites
+                .Select(i => (i, users.TryGetValue(i.InvitedByUserId, out var by) ? by : null))
+                .ToList());
+    }
 }
+
+/// <summary>The read model behind Administration → Users.</summary>
+public sealed record UserAdministrationPage(
+    List<(SignupRequest Request, User? User)> Pending,
+    List<User> Active,
+    HashSet<int> EntraLinkedUserIds,
+    List<(Invite Invite, User? InvitedBy)> Invites);

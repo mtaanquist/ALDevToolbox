@@ -9,7 +9,7 @@ namespace ALDevToolbox.Tests.Builders;
 /// </summary>
 /// <remarks>
 /// Updated for the unified-extensions model: the legacy
-/// <see cref="WithCoreFolder"/> / <see cref="WithModuleFolder"/> helpers seed
+/// <see cref="WithCoreFolder"/> / <see cref="WithExtensionFolder(Module, string, ValueTuple{string,string}[])"/> helpers seed
 /// the equivalent <see cref="WorkspaceExtension"/> and
 /// <see cref="ModuleExtensionFolder"/> rows so existing tests keep their shape
 /// without having to know about the new tables. Tests that need finer control
@@ -126,23 +126,6 @@ public static class TemplateBuilder
             });
         }
         return module;
-    }
-
-    /// <summary>
-    /// Backwards-compatibility shim: the pre-unified
-    /// <c>WithModuleFolder(template, path, files)</c> didn't actually know
-    /// which module to target — the rows were shared across every module
-    /// selected from the template. Tests that rely on this shape produce a
-    /// disconnected folder graph; we record the path on a fresh dummy module
-    /// so they still compile. Real tests should switch to
-    /// <see cref="WithExtensionFolder(Module, string, ValueTuple{string,string}[])"/>.
-    /// </summary>
-    [Obsolete("Unified-extensions: use Module.WithExtensionFolder instead.")]
-    public static RuntimeTemplate WithModuleFolder(this RuntimeTemplate template, string path, params (string Path, string Content)[] files)
-    {
-        _ = path;
-        _ = files;
-        return template;
     }
 
     private static WorkspaceExtensionFolder WalkOrCreate(WorkspaceExtension extension, string path)

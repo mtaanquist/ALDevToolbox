@@ -9,7 +9,7 @@
 @using ALDevToolbox.Services.OAuth
 @using ALDevToolbox.Components.Shared
 @using Microsoft.EntityFrameworkCore
-@inject AppDbContext Db
+@inject AccountService Accounts
 @inject IOrganizationContext Org
 @inject IJSRuntime JS
 @inject RecoveryCodeService RecoveryCodes
@@ -900,9 +900,11 @@ else
     {
         var userId = Org.CurrentUserId;
         if (userId is null) return;
-        _user = await Db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId.Value);
-        if (_user is null) return;
-        _organization = await Db.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Id == _user.OrganizationId);
+        var overview = await Accounts.GetAccountOverviewAsync(userId.Value);
+        if (overview is null) return;
+        _user = overview.User;
+        _organization = overview.Organization;
+        _orgEntraEnabled = overview.OrganizationEntraEnabled;
         _smtpConfigured = await Email.IsConfiguredAsync();
         _pendingEmailMfa = Ok == "email-mfa-sent";
         _recoveryRemaining = await RecoveryCodes.RemainingAsync(_user.Id);
@@ -911,14 +913,7 @@ else
             _passkeys = await Passkeys.ListForUserAsync(_user.Id);
         }
         _entraLinks = await Entra.ListLinksAsync(_user.Id);
-        _orgEntraEnabled = await Db.OrganizationSettings.AsNoTracking()
-            .AnyAsync(s => s.OrganizationId == _user.OrganizationId && s.EntraEnabled);
-
-        _tokens = await Db.PersonalAccessTokens
-            .Where(p => p.UserId == _user.Id)
-            .OrderByDescending(p => p.CreatedAt)
-            .AsNoTracking()
-            .ToListAsync();
+        _tokens = await Pats.ListForUserAsync(_user.Id);
         _clients = await OAuthClients.ListForUserAsync(_user.Id);
 
         await ReloadReposAsync();

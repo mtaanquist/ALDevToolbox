@@ -30,7 +30,8 @@
     hidden for everyone else, who still sees the repositories read-only and can
     follow through to download builds. Named user: the BC consultant who owns a
     customer's solution, opening Settings to point it at a repo or wire up delivery.
-    Primary action: Save solution. See .design/artifacts.md.
+    Primary action: Create solution on /solutions/new, Save solution once it exists.
+    See .design/artifacts.md.
 *@
 
 <PageTitle>@(_header?.Name ?? (Id is null ? "New solution" : "Solution")) · Solutions · AL Dev Toolbox</PageTitle>
@@ -116,8 +117,8 @@
                         <span class="form-actions__note">Unsaved changes</span>
                     }
                     <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
-                        <Icon Name="save" Width="15" Height="15" />
-                        <span>@(_saving ? "Saving..." : "Save solution")</span>
+                        <Icon Name="@(Id is null ? "plus" : "save")" Width="15" Height="15" />
+                        <span>@(_saving ? "Saving..." : Id is null ? "Create solution" : "Save solution")</span>
                     </button>
                 }
             </div>
@@ -127,13 +128,12 @@
         {
             <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@_message</span></p>
         }
-        @if (_errors.Count > 0)
+        @* Only the page-level failures ("_") stack up here; everything the user typed
+           gets its error inline next to the field, the way the Access tab does. *@
+        @if (_errors.TryGetValue("_", out var pageError))
         {
             <div class="alert alert--danger" role="alert">
-                @foreach (var err in _errors.Values.Distinct())
-                {
-                    <p>@err</p>
-                }
+                <p>@pageError</p>
             </div>
         }
 
@@ -170,14 +170,17 @@
                             <div class="form-grid">
                                 <section class="field">
                                     <label class="field__label" for="proj-name">Name</label>
-                                    <input id="proj-name" type="text" class="input" maxlength="200" @bind="_edit.Name" @bind:after="MarkDirty"
+                                    @* required + maxlength mirror ProjectService.ValidateAsync. *@
+                                    <input id="proj-name" type="text" class="input" maxlength="200" required @bind="_edit.Name" @bind:after="MarkDirty"
                                            disabled="@(_saving || !_canManage)" placeholder="e.g. CRONUS A/S" />
+                                    <FieldError Field="Name" Errors="_errors" />
                                     <small class="field__hint">Labels each build, e.g. "CRONUS A/S on BC 26.0".</small>
                                 </section>
                                 <section class="field">
                                     <label class="field__label" for="proj-country">Country code</label>
                                     <input id="proj-country" type="text" class="input" maxlength="20" pattern="[A-Za-z0-9]{2,10}" required style="max-width:220px"
                                            @bind="_edit.Country" @bind:after="MarkDirty" disabled="@(_saving || !_canManage)" placeholder="e.g. dk or w1" />
+                                    <FieldError Field="DefaultArtifactCountry" Errors="_errors" />
                                     <small class="field__hint">Country code of the Microsoft localisation to compile against (e.g. dk for Denmark, w1 for the base/worldwide version). Some localisations include extra regulatory features, so pick the one this solution actually targets.</small>
                                 </section>
                             </div>
@@ -259,7 +262,10 @@
                         <div class="card__body">
                             @if (_edit.Repos.Count == 0)
                             {
-                                <p class="u-muted">No repositories yet. Add the Git repositories that make up this solution's solution.</p>
+                                <div class="empty-state empty-state--quiet">
+                                    <span class="empty-state__title">No repositories yet</span>
+                                    <span class="empty-state__text">Add the Git repositories that make up this solution.</span>
+                                </div>
                             }
                             else
                             {
@@ -269,7 +275,7 @@
                                             <tr>
                                                 <th scope="col">Host</th>
                                                 <th scope="col">Repository URL</th>
-                                                <th scope="col">Display name</th>
+                                                <th scope="col">Display name <span class="u-muted">· optional</span></th>
                                                 @if (_canManage)
                                                 {
                                                     <th scope="col"></th>
@@ -303,6 +309,7 @@
                                                         {
                                                             <input type="text" class="input input--sm" @bind="repo.Url" @bind:event="oninput" @bind:after="MarkDirty"
                                                                    disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
+                                                            <FieldError Field="Url" Errors="RepoErrors(repo)" />
                                                         }
                                                         else
                                                         {
@@ -313,7 +320,7 @@
                                                         @if (_canManage)
                                                         {
                                                             <input type="text" class="input input--sm" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="MarkDirty"
-                                                                   disabled="@_saving" placeholder="optional" aria-label="Display name" />
+                                                                   disabled="@_saving" placeholder="e.g. Base app" aria-label="Display name" />
                                                         }
                                                         else
                                                         {
@@ -470,7 +477,7 @@
                                                 <th>Type</th>
                                                 <th>Status</th>
                                                 <th>Delivery window</th>
-                                                <th>Business Central updates</th>
+                                                <th>Microsoft's update window</th>
                                                 <th class="data-table__actions"><span class="u-sr">Actions</span></th>
                                             </tr>
                                         </thead>
@@ -755,7 +762,9 @@
                                                                             <span>@(_m365 is null ? "Couldn't read this setting" : _m365 == true ? "Allowed" : "Not allowed")</span>
                                                                             @if (_m365 is { } current)
                                                                             {
-                                                                                <button type="button" class="btn btn--sm btn--danger" disabled="@_settingSaving"
+                                                                                @* Red only for the direction that takes access away; granting it is an
+                                                                                   ordinary action, and the page keeps its one primary button. *@
+                                                                                <button type="button" class="btn btn--sm @M365ToggleClass" disabled="@_settingSaving"
                                                                                         @onclick="() => SaveM365Async(env, !current)">
                                                                                     @if (_settingBusy == "m365")
                                                                                     {
@@ -1205,6 +1214,9 @@
     private string _cadence = BcAppUpdateCadence.Default;
     private string _targetVersion = string.Empty;
     private bool? _m365;
+
+    /// <summary>Red only for the direction that takes access away; granting it is an ordinary action.</summary>
+    private string? M365ToggleClass => _m365 == true ? "btn--danger" : null;
     private bool _settingSaving;
     private string? _settingBusy;
     private string? _settingError;
@@ -1351,7 +1363,10 @@
         {
             // Anyone may create. The creator becomes the owner.
             _canManage = true;
-            _edit = new EditModel { Repos = { new RepoRow { Provider = DefaultProvider } } };
+            // No seeded blank row: with none, the Repositories tab shows its empty
+            // state and the "Add repository" button, which is what a first-time
+            // user needs. A seeded row hid both and made the "0 added" pill lie.
+            _edit = new EditModel();
         }
         else
         {
@@ -1432,6 +1447,42 @@
     }
 
     private void MarkDirty() => _dirty = true;
+    /// <summary>
+    /// Per-row repository errors, so each message renders under the row it belongs to
+    /// instead of stacking in a page-level alert that never names the row.
+    /// </summary>
+    private Dictionary<RepoRow, Dictionary<string, string>> _repoErrors = new();
+
+    private IReadOnlyDictionary<string, string>? RepoErrors(RepoRow row) =>
+        _repoErrors.TryGetValue(row, out var errs) ? errs : null;
+
+    /// <summary>
+    /// Re-keys the service's positional repository errors (<c>Repositories[i].Url</c>)
+    /// onto the rows that were sent, and moves the user to the tab holding the first
+    /// problem - otherwise an inline-only error can sit on a tab they can't see.
+    /// </summary>
+    private void SpreadRepoErrors(List<RepoRow> sent)
+    {
+        foreach (var (key, message) in _errors)
+        {
+            if (!key.StartsWith("Repositories[", StringComparison.Ordinal)) continue;
+            var close = key.IndexOf(']');
+            if (close < 0 || !int.TryParse(key.AsSpan(13, close - 13), out var i)) continue;
+            if (i < 0 || i >= sent.Count) continue;
+            var field = key[(close + 2)..];
+            if (!_repoErrors.TryGetValue(sent[i], out var errs))
+            {
+                errs = new();
+                _repoErrors[sent[i]] = errs;
+            }
+            errs[field] = message;
+        }
+
+        var generalProblem = _errors.ContainsKey("Name") || _errors.ContainsKey("DefaultArtifactCountry");
+        if (generalProblem) _section = Section.General;
+        else if (_repoErrors.Count > 0) _section = Section.Repos;
+    }
+
     private void AddRepo() { _edit.Repos.Add(new RepoRow { Provider = DefaultProvider }); _dirty = true; }
     private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _dirty = true; }
 
@@ -1473,9 +1524,13 @@
         _saving = true;
         _message = null;
         _errors = new();
+        _repoErrors = new();
+        // The rows actually sent, in order: the service keys repository errors by
+        // position in this list, so it is what maps an error back to a visible row.
+        var sent = _edit.Repos.Where(r => !r.IsBlank()).ToList();
         try
         {
-            var repos = _edit.Repos.Where(r => !r.IsBlank())
+            var repos = sent
                 .Select(r => new ProjectRepositoryInput(r.Provider, r.Url, r.DisplayName))
                 .ToList();
             var input = new ProjectInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos);
@@ -1494,6 +1549,7 @@
         catch (PlanValidationException ex)
         {
             _errors = new(ex.Errors);
+            SpreadRepoErrors(sent);
         }
         catch (ProjectAccessDeniedException)
         {
@@ -1954,7 +2010,7 @@
 
     private static string WindowText(ProjectEnvironmentRow env) =>
         env.UpdateWindowStart is { } s && env.UpdateWindowEnd is { } e
-            ? $"{s:HH\\:mm}–{e:HH\\:mm}"
+            ? $"{s:HH\\:mm}-{e:HH\\:mm}"
             : "any time";
 
     /// <summary>
@@ -1970,7 +2026,7 @@
 
         var zone = BcUpdateWindow.ResolveDisplayZone(env.BcUpdateWindowTimeZoneIana, _bc?.TimeZone);
         var label = ZoneLabel(zone, env.BcUpdateWindowTimeZoneIana);
-        return $"{s:HH\\:mm}–{e:HH\\:mm} ({label})";
+        return $"{s:HH\\:mm}-{e:HH\\:mm} ({label})";
     }
 
     /// <summary>

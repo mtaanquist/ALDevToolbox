@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 
@@ -139,7 +140,7 @@ public sealed class ProjectService
             }).ToList(),
         };
         _db.OeProjects.Add(project);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
 
         _logger.LogInformation("Created project {ProjectId} ({Name}) with {RepoCount} repo(s) for org {OrgId}.",
             project.Id, name, project.Repositories.Count, orgId);
@@ -185,7 +186,7 @@ public sealed class ProjectService
             DisplayName = r.DisplayName,
         }).ToList();
 
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated project {ProjectId} ({Name}); now {RepoCount} repo(s).",
             project.Id, name, project.Repositories.Count);
 
@@ -545,11 +546,86 @@ public sealed class ProjectService
         };
     }
 
+    /// <summary>
+    /// Saves, turning the name-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. The pre-check reads before this writes, so two
+    /// concurrent saves can leave one to be caught by the case-insensitive unique
+    /// index — and that has to read as an inline message, not a 500. See #702.
+    /// </summary>
+    private async Task SaveTranslatingNameClashAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw Validation("Name", "Another project already uses this name.");
+        }
+    }
+
     private static PlanValidationException Validation(string field, string message) =>
         new(new Dictionary<string, string> { [field] = message });
 
     private static readonly System.Text.RegularExpressions.Regex CountryRegex =
         new("^[a-z0-9]{2,10}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // ── MCP id resolvers ────────────────────────────────────────────────
+    //
+    // Relocated from the MCP tool classes so the visibility fence has one
+    // home per entity: a rule added here reaches the agent surface too.
+    // They throw McpException because their refusal copy is written for an
+    // agent; nothing on the web surface calls them.
+    // See .design/teams-and-visibility.md.
+
+    /// <summary>
+    /// Resolves a project by name or id for an MCP caller, applying the
+    /// visibility fence in the same query. A project the caller cannot see
+    /// answers "does not exist", the same as an id in another org.
+    /// </summary>
+    public async Task<int> ResolveProjectAsync(string projectNameOrId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        if (int.TryParse(projectNameOrId, out var asId))
+        {
+            var exists = await _db.OeProjects.AsNoTracking()
+                .Where(visible)
+                .AnyAsync(p => p.Id == asId && p.DeletedAt == null, ct);
+            if (!exists) throw new McpException($"Solution {asId} does not exist in this organisation.");
+            return asId;
+        }
+        var name = projectNameOrId.Trim();
+        var row = await _db.OeProjects.AsNoTracking()
+            .Where(visible)
+            .Where(p => p.DeletedAt == null && p.Name.ToLower() == name.ToLower())
+            .Select(p => new { p.Id })
+            .FirstOrDefaultAsync(ct);
+        if (row is null)
+        {
+            throw new McpException($"Solution '{projectNameOrId}' was not found. Call list_solutions to see available solutions.");
+        }
+        return row.Id;
+    }
+
+    /// <summary>Resolves a build that must be ready and have produced a navigable release; returns (projectId, releaseId).</summary>
+    public async Task<(int ProjectId, int ReleaseId)> ResolveReadyBuildAsync(int buildId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var build = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => _db.OeProjects.Where(visible).Any(p => p.Id == b.ProjectId))
+            .Where(b => b.Id == buildId)
+            .Select(b => new { b.ProjectId, b.Status, b.ReleaseId })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new McpException($"Build {buildId} was not found in this organisation.");
+        if (build.Status != ProjectBuildStatus.Ready || build.ReleaseId is null)
+        {
+            throw new McpException($"Build {buildId} can't be compared — only 'ready' builds that produced a release can be diffed.");
+        }
+        return (build.ProjectId, build.ReleaseId.Value);
+    }
+
 }
 
 /// <summary>Form-post shape for a project and its repositories. The repo list is owned wholesale by the editor.</summary>

@@ -155,6 +155,8 @@ public sealed class AccountService
         }
 
         var existingUser = await _db.Users
+            // Fence category 1 (pre-auth routing): signup runs before any cookie exists, so
+            // there is no org to filter by; the probe is pinned to the typed email.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);
         if (existingUser is not null)
@@ -183,6 +185,8 @@ public sealed class AccountService
         else
         {
             var match = await _db.Organizations
+                // Fence category 1 (pre-auth routing): resolves which org a signup joins, pinned
+                // to the requested slug. No cookie exists yet.
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(o => o.Slug == slug, ct);
             if (match is null)
@@ -357,6 +361,30 @@ public sealed class AccountService
         return (outcome, user, org);
     }
 
+    /// <summary>
+    /// The signed-in person's own account row, their organisation, and whether
+    /// that organisation offers Microsoft sign-in — what the Account page opens
+    /// with.
+    /// </summary>
+    /// <remarks>
+    /// Runs inside the organisation query filter. The page used to read these
+    /// with <c>IgnoreQueryFilters()</c>; neither bypass was doing anything —
+    /// a person's own row is in their own org, and the organisations table
+    /// carries no filter to escape. See #680 / #701.
+    /// </remarks>
+    public async Task<AccountOverview?> GetAccountOverviewAsync(int userId, CancellationToken ct = default)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) return null;
+
+        var organization = await _db.Organizations.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId, ct);
+        var entraEnabled = await _db.OrganizationSettings.AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == user.OrganizationId && s.EntraEnabled, ct);
+
+        return new AccountOverview(user, organization, entraEnabled);
+    }
+
     /// <summary>Self-service password change. Verifies the current password before applying the new one.</summary>
     public async Task ChangePasswordAsync(int userId, string currentPassword, string newPassword, CancellationToken ct = default)
     {
@@ -369,7 +397,31 @@ public sealed class AccountService
         AuthService.ValidatePassword(newPassword, errors, fieldName: "NewPassword");
         if (errors.Count > 0) throw new PlanValidationException(errors);
         user.PasswordHash = _auth.HashPassword(newPassword);
+        var now = _clock.GetUtcNow().UtcDateTime;
+        user.CredentialsChangedAt = now;
+        await RevokeSessionCredentialsAsync(_db, user.Id, now, ct);
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Revokes what a password change is supposed to take away besides the
+    /// password itself: the user's live personal access tokens. Cookies are
+    /// handled by the <c>credentials_changed_at</c> stamp the caller writes —
+    /// <see cref="Endpoints.CookieSessionRevalidation"/> drops any cookie
+    /// issued before it. The caller saves; both changes land together. #675.
+    /// </summary>
+    /// <remarks>
+    /// The token query skips the org filter because both callers run outside a
+    /// tenant-scoped request (a completed password reset has no session at all)
+    /// and already read the user the same way. It is scoped to this one user's
+    /// rows by id, so it cannot reach another account's tokens.
+    /// </remarks>
+    internal static async Task RevokeSessionCredentialsAsync(AppDbContext db, int userId, DateTime now, CancellationToken ct)
+    {
+        var tokens = await db.PersonalAccessTokens.IgnoreQueryFilters()
+            .Where(p => p.UserId == userId && p.RevokedAt == null)
+            .ToListAsync(ct);
+        foreach (var token in tokens) token.RevokedAt = now;
     }
 
     /// <summary>Self-service display-name change.</summary>
@@ -414,6 +466,8 @@ public sealed class AccountService
         var domain = EmailAddress.DomainOf(normalisedEmail);
         if (domain is null) return null;
         return await _db.OrganizationEmailDomains
+            // Fence category 1 (pre-auth routing): maps the signup email's domain to one org,
+            // pinned to d.Domain == domain. No cookie exists yet.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(d => d.Domain == domain)
@@ -426,6 +480,8 @@ public sealed class AccountService
         var safeSlug = Slugify(slug);
         var candidate = safeSlug;
         var disambiguator = 1;
+        // Fence category 1 (pre-auth routing): slug-uniqueness probe while creating the
+        // signup's new org; existence-only (AnyAsync), pinned to the candidate slug.
         while (await _db.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Slug == candidate, ct))
         {
             disambiguator++;
@@ -460,3 +516,6 @@ public sealed class AccountService
         return hyphenated.Length == 0 ? "org" : hyphenated;
     }
 }
+
+/// <summary>What the Account page needs about the signed-in person up front.</summary>
+public sealed record AccountOverview(User User, Organization? Organization, bool OrganizationEntraEnabled);

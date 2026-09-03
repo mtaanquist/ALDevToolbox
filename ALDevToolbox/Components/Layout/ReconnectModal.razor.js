@@ -1,18 +1,23 @@
-// Set up event handlers
+// Set up event handlers.
+//
+// The elements only exist on pages that render the reconnect modal, and this
+// module is imported by the shell regardless, so every lookup is optional: a
+// bare dereference would throw at import time and take the whole module - and
+// with it the retry/resume handlers - down on any page without them.
 const reconnectModal = document.getElementById("components-reconnect-modal");
-reconnectModal.addEventListener("components-reconnect-state-changed", handleReconnectStateChanged);
+reconnectModal?.addEventListener("components-reconnect-state-changed", handleReconnectStateChanged);
 
 const retryButton = document.getElementById("components-reconnect-button");
-retryButton.addEventListener("click", retry);
+retryButton?.addEventListener("click", retry);
 
 const resumeButton = document.getElementById("components-resume-button");
-resumeButton.addEventListener("click", resume);
+resumeButton?.addEventListener("click", resume);
 
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
-        reconnectModal.showModal();
+        reconnectModal?.showModal();
     } else if (event.detail.state === "hide") {
-        reconnectModal.close();
+        reconnectModal?.close();
     } else if (event.detail.state === "failed") {
         document.addEventListener("visibilitychange", retryWhenDocumentBecomesVisible);
     } else if (event.detail.state === "rejected") {
@@ -36,7 +41,7 @@ async function retry() {
             if (!resumeSuccessful) {
                 location.reload();
             } else {
-                reconnectModal.close();
+                reconnectModal?.close();
             }
         }
     } catch (err) {
@@ -52,7 +57,7 @@ async function resume() {
             location.reload();
         }
     } catch {
-        reconnectModal.classList.replace("components-reconnect-paused", "components-reconnect-resume-failed");
+        reconnectModal?.classList.replace("components-reconnect-paused", "components-reconnect-resume-failed");
     }
 }
 

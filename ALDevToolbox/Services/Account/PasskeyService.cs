@@ -93,6 +93,8 @@ public sealed class PasskeyService
         int userId, CancellationToken ct = default)
     {
         AssertConfigured();
+        // Fence category 4 (explicitly scoped user-id lookup): both reads pinned to the
+        // signed-in user's id.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         var existing = await _db.UserPasskeys.IgnoreQueryFilters()
             .Where(p => p.UserId == userId)
@@ -141,6 +143,8 @@ public sealed class PasskeyService
         IsCredentialIdUniqueToUserAsyncDelegate isUnique = async (args, _) =>
         {
             var cid = args.CredentialId;
+            // Fence category 6 (existence-only uniqueness probe): credential ids are unique
+            // deployment-wide; projects a bool, never a row.
             return !await _db.UserPasskeys.IgnoreQueryFilters().AnyAsync(p => p.CredentialId == cid, ct);
         };
 
@@ -182,10 +186,13 @@ public sealed class PasskeyService
         if (!string.IsNullOrWhiteSpace(emailHint))
         {
             var normalised = emailHint.Trim().ToLowerInvariant();
+            // Fence category 1 (pre-auth routing): passkey sign-in, before any cookie exists;
+            // pinned to the typed email and then to that user's credentials.
             var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == normalised, ct);
             if (user is not null)
             {
                 userId = user.Id;
+                // Fence category 1 (pre-auth routing): pinned to the user resolved above.
                 var creds = await _db.UserPasskeys.IgnoreQueryFilters()
                     .Where(p => p.UserId == user.Id)
                     .Select(p => p.CredentialId)
@@ -249,10 +256,13 @@ public sealed class PasskeyService
         var envelope = UnprotectEnvelope(protectedChallenge);
 
         var credentialId = rawResponse.RawId;
+        // Fence category 1 (pre-auth routing): passkey assertion; pinned to the credential
+        // id the authenticator returned, then to that passkey's user.
         var passkey = await _db.UserPasskeys.IgnoreQueryFilters()
             .FirstOrDefaultAsync(p => p.CredentialId == credentialId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["Passkey"] = "Unknown passkey." });
 
+        // Fence category 1 (pre-auth routing): pinned to the passkey's own UserId.
         var user = await _db.Users.IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstAsync(u => u.Id == passkey.UserId, ct);
@@ -287,6 +297,7 @@ public sealed class PasskeyService
 
     public async Task DeleteAsync(int userId, int passkeyId, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to p.UserId == userId.
         var row = await _db.UserPasskeys.IgnoreQueryFilters()
             .FirstOrDefaultAsync(p => p.Id == passkeyId && p.UserId == userId, ct);
         if (row is null) return;
@@ -301,6 +312,7 @@ public sealed class PasskeyService
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["Name"] = "Name must be 1–80 characters." });
         }
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to p.UserId == userId.
         var row = await _db.UserPasskeys.IgnoreQueryFilters()
             .FirstOrDefaultAsync(p => p.Id == passkeyId && p.UserId == userId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["PasskeyId"] = "Passkey not found." });
@@ -309,6 +321,7 @@ public sealed class PasskeyService
     }
 
     public async Task<IReadOnlyList<UserPasskey>> ListForUserAsync(int userId, CancellationToken ct = default) =>
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to p.UserId == userId.
         await _db.UserPasskeys.IgnoreQueryFilters()
             .Where(p => p.UserId == userId)
             .OrderBy(p => p.CreatedAt)

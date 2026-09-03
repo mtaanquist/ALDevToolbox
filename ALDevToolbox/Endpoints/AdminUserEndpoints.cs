@@ -33,6 +33,8 @@ internal static class AdminUserEndpoints
             {
                 try
                 {
+                    // Fence category 4 (explicitly scoped lookup): the approval above already refused
+                    // any request outside the admin's own org, so this re-read is in-org.
                     var req = await db.SignupRequests.IgnoreQueryFilters()
                         .Include(r => r.User).Include(r => r.Organization)
                         .FirstAsync(r => r.Id == id, ct);
@@ -58,6 +60,8 @@ internal static class AdminUserEndpoints
         {
             var logger = loggerFactory.CreateLogger("AdminUsers");
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            // Fence category 4 (explicitly scoped lookup): only the email address is read here;
+            // the reject call below refuses any request outside the admin's own org.
             var req = await db.SignupRequests.IgnoreQueryFilters()
                 .Include(r => r.User).Include(r => r.Organization)
                 .FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -112,6 +116,7 @@ internal static class AdminUserEndpoints
             IEmailService email,
             IOrganizationContext orgCtx,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -130,7 +135,9 @@ internal static class AdminUserEndpoints
             try
             {
                 var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
-                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+                var url = $"{publicOrigin.For(ctx)}/accept-invite?token={Uri.EscapeDataString(token)}";
+                // Fence category 4 (explicitly scoped user-id lookup): pinned to the signed-in
+                // admin's own id.
                 var inviter = await db.Users.IgnoreQueryFilters().AsNoTracking()
                     .Include(u => u.Organization)
                     .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
@@ -183,6 +190,7 @@ internal static class AdminUserEndpoints
             IOrganizationContext orgCtx,
             IDataProtectionProvider protection,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -196,12 +204,14 @@ internal static class AdminUserEndpoints
             try
             {
                 var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
-                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+                var url = $"{publicOrigin.For(ctx)}/accept-invite?token={Uri.EscapeDataString(token)}";
                 var emailFailed = false;
                 if (sendEmail && await email.IsConfiguredAsync(ct))
                 {
                     try
                     {
+                        // Fence category 4 (explicitly scoped user-id lookup): pinned to the signed-in
+                        // admin's own id.
                         var inviter = await db.Users.IgnoreQueryFilters().AsNoTracking()
                             .Include(u => u.Organization)
                             .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
@@ -246,6 +256,7 @@ internal static class AdminUserEndpoints
             IOrganizationContext orgCtx,
             IDataProtectionProvider protection,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -257,11 +268,13 @@ internal static class AdminUserEndpoints
             {
                 var token = await userAdmin.RequestEmailChangeAsync(id, newEmail,
                     orgCtx.CurrentOrganizationId!.Value, orgCtx.CurrentUserId!.Value, ct);
-                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/account/email-change/confirm?token={Uri.EscapeDataString(token)}";
+                var url = $"{publicOrigin.For(ctx)}/auth/account/email-change/confirm?token={Uri.EscapeDataString(token)}";
                 if (await email.IsConfiguredAsync(ct))
                 {
                     try
                     {
+                        // Fence category 4 (explicitly scoped user-id lookup): the email-change request above
+                        // already refused any user outside the admin's own org.
                         var user = await db.Users.IgnoreQueryFilters().AsNoTracking()
                             .FirstAsync(u => u.Id == id, ct);
                         var (subject, body) = EmailTemplates.EmailChangeConfirm(user.DisplayName, url);

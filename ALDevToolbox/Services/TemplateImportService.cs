@@ -52,6 +52,8 @@ public sealed class TemplateImportService
     public async Task<List<SystemTemplateSummary>> ListSystemTemplatesAsync(CancellationToken ct = default)
     {
         var systemOrgId = await _db.Organizations
+            // Fence category 5 (system-org fork read): finds the singleton system org to fork
+            // from; pinned to o.IsSystem and projects only its id.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.IsSystem)
@@ -62,6 +64,7 @@ public sealed class TemplateImportService
         var actingOrgId = RequireOrganizationId();
 
         var systemTemplates = await _db.RuntimeTemplates
+            // Fence category 5 (system-org fork read): pinned to OrganizationId == systemOrgId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(t => t.OrganizationId == systemOrgId.Value && t.DeletedAt == null && !t.Deprecated)
@@ -78,6 +81,8 @@ public sealed class TemplateImportService
 
         var keys = systemTemplates.Select(t => t.Key).ToList();
         var localKeys = await _db.RuntimeTemplates
+            // Fence category 4 (explicitly scoped org-id lookup): pinned to
+            // OrganizationId == actingOrgId from the authenticated principal.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(t => t.OrganizationId == actingOrgId && keys.Contains(t.Key))
@@ -123,6 +128,7 @@ public sealed class TemplateImportService
         await _quotaGuard.EnsureCanWriteAsync(ct);
 
         var systemOrgId = await _db.Organizations
+            // Fence category 5 (system-org fork read): pinned to o.IsSystem, id only.
             .IgnoreQueryFilters()
             .Where(o => o.IsSystem)
             .Select(o => (int?)o.Id)
@@ -160,6 +166,8 @@ public sealed class TemplateImportService
         }
 
         var keyClash = await _db.RuntimeTemplates
+            // Fence category 4 (explicitly scoped org-id lookup): key-clash probe pinned to
+            // OrganizationId == actingOrgId.
             .IgnoreQueryFilters()
             .AnyAsync(t => t.OrganizationId == actingOrgId && t.Key == source.Key, ct);
         if (keyClash)
@@ -347,11 +355,14 @@ public sealed class TemplateImportService
         ApplicationVersion sourceVersion, int actingOrgId, DateTime now, CancellationToken ct)
     {
         var existing = await _db.ApplicationVersions
+            // Fence category 4 (explicitly scoped org-id lookup): both reads are pinned to
+            // OrganizationId == actingOrgId; the clone is written into the acting org only.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(v => v.OrganizationId == actingOrgId && v.Key == sourceVersion.Key, ct);
         if (existing is not null) return existing;
 
         var maxOrdering = await _db.ApplicationVersions
+            // Same category 4 read, pinned to v.OrganizationId == actingOrgId.
             .IgnoreQueryFilters()
             .Where(v => v.OrganizationId == actingOrgId)
             .Select(v => (int?)v.Ordering)
@@ -377,6 +388,8 @@ public sealed class TemplateImportService
         Module sourceModule, int actingOrgId, DateTime now, CancellationToken ct)
     {
         var existing = await _db.Modules
+            // Fence category 4 (explicitly scoped org-id lookup): pinned to
+            // OrganizationId == actingOrgId.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(m => m.OrganizationId == actingOrgId && m.Key == sourceModule.Key, ct);
         if (existing is not null) return existing;

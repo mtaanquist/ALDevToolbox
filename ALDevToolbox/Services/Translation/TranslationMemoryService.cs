@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.Translation;
@@ -371,7 +372,9 @@ public sealed class TranslationMemoryService
                 await tx.CommitAsync(ct).ConfigureAwait(false);
                 return new VoteResult(entryId, newScore, newValue);
             }
-            catch (DbUpdateException ex) when (IsUniqueViolation(ex) && attempt < maxAttempts)
+            // A Postgres unique-violation here is the (entry_id, user_id) index
+            // catching a concurrent vote from the same user.
+            catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex) && attempt < maxAttempts)
             {
                 // A concurrent vote from the same user inserted the row first.
                 // Roll back, drop the failed insert from the tracker, and retry:
@@ -381,14 +384,6 @@ public sealed class TranslationMemoryService
             }
         }
     }
-
-    /// <summary>
-    /// True when <paramref name="ex"/> wraps a Postgres unique-violation
-    /// (SQLSTATE 23505) — e.g. two votes from the same user racing on the
-    /// <c>(entry_id, user_id)</c> unique index.
-    /// </summary>
-    private static bool IsUniqueViolation(DbUpdateException ex) =>
-        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
 
     /// <summary>
     /// Soft-deletes an entry (sets <c>deleted_at</c>) so it stops appearing in
@@ -452,13 +447,21 @@ public sealed class TranslationMemoryService
         if (!string.IsNullOrWhiteSpace(q.Kind)) query = query.Where(e => e.Kind == q.Kind);
         if (!string.IsNullOrWhiteSpace(q.Origin))
         {
-            var o = q.Origin.Trim().ToLower();
-            query = query.Where(e => e.Origin != null && e.Origin.ToLower().Contains(o));
+            // ILike instead of ToLower().Contains: the latter wraps the column in
+            // a function, so no index can serve it, and it uses current-culture
+            // casing. Escape %/_ so a literal wildcard in the term doesn't match
+            // everything. #385, #686
+            var originPattern = "%" + ObjectSearchService.EscapeLike(q.Origin.Trim()) + "%";
+            query = query.Where(e => e.Origin != null && EF.Functions.ILike(e.Origin, originPattern, "\\"));
         }
         if (!string.IsNullOrWhiteSpace(q.Text))
         {
-            var needle = q.Text.Trim().ToLower();
-            query = query.Where(e => e.SourceText.ToLower().Contains(needle) || e.TargetText.ToLower().Contains(needle));
+            // Same reason as above, and pg_trgm GIN indexes serve ILIKE — this is
+            // what lets the planner use ix_translation_memory_{source,target}_trgm
+            // instead of two sequential scans over the whole table. #686
+            var needle = "%" + ObjectSearchService.EscapeLike(q.Text.Trim()) + "%";
+            query = query.Where(e => EF.Functions.ILike(e.SourceText, needle, "\\")
+                || EF.Functions.ILike(e.TargetText, needle, "\\"));
         }
 
         var total = await query.CountAsync(ct).ConfigureAwait(false);

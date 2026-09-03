@@ -717,7 +717,13 @@ public static class AlReferenceExtractor
                 return true;
             }
 
-            var target = _state.Ctx.Resolver.ResolveTypeByName(nameTok.Value);
+            // The property itself implies a kind when the value doesn't
+            // spell one out: `SourceTable = "E-Document Service"` can only
+            // mean the TABLE, and BC ships a page with that exact name.
+            // Without the hint the resolver picks by insertion order and
+            // the underline lands on the wrong object.
+            var target = _state.Ctx.Resolver.ResolveTypeByName(
+                nameTok.Value, kindHint ?? ImpliedKindKeyword(propertyName));
             if (target is null)
             {
                 // Target not in catalog (cross-release, unknown kind, etc.).
@@ -739,12 +745,22 @@ public static class AlReferenceExtractor
                 ReferenceKind: "property_object"));
             _state.Resolved++;
 
-            // kindHint is intentionally unused at the row level — the
-            // catalog lookup already returned the canonical kind.
-            _ = kindHint;
             _state.SkipToSemicolon();
             return true;
         }
+
+        /// <summary>
+        /// The AL object kind a property's value must have when the value
+        /// omits the kind keyword. <c>RunObject</c> is excluded on purpose:
+        /// it accepts pages, reports, codeunits and xmlports alike and
+        /// always spells the kind out.
+        /// </summary>
+        private static string? ImpliedKindKeyword(string propertyName) =>
+            string.Equals(propertyName, "SourceTable", StringComparison.OrdinalIgnoreCase) ? "Record"
+            : string.Equals(propertyName, "LookupPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(propertyName, "CardPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(propertyName, "DrillDownPageID", StringComparison.OrdinalIgnoreCase) ? "Page"
+            : null;
 
         /// <summary>
         /// Handles <c>DataCaptionFields = "No.", "Name", "Description";</c>
@@ -812,9 +828,11 @@ public static class AlReferenceExtractor
         ///     stay deferred.
         ///   - conditional: <c>if (Type = const(Item)) Item."No." else
         ///     Resource."No.";</c> → emits Item and Resource (every
-        ///     branch's table). const(…) values like <c>Item</c> the
-        ///     enum value won't resolve as an object — they're skipped
-        ///     silently.
+        ///     branch's table). The <c>const(…)</c> / <c>filter(…)</c>
+        ///     arguments are option / enum VALUES, not object names, so
+        ///     they're skipped wholesale — plenty of BC option values
+        ///     (Item, Customer, Resource, …) share a table name and
+        ///     would otherwise emit a reference to the wrong thing.
         ///
         /// De-duplicates within one value so a repeated reference doesn't
         /// produce a stack of identical underlines.
@@ -829,9 +847,28 @@ public static class AlReferenceExtractor
             while (_state.Pos < _state.Tokens.Count && !_state.At(";"))
             {
                 var tok = _state.Tokens[_state.Pos];
+
+                // `const(Item)` / `filter(Customer)` hold OPTION and ENUM
+                // values, not object names — `Type = const(Item)` on a
+                // Sales Line means the option value Item, not table 27.
+                // Skip the whole parenthesised argument so a value that
+                // happens to share a table name doesn't emit a reference
+                // to that table.
+                if (tok.Kind == AlTokenKind.Identifier
+                    && (string.Equals(tok.Value, "const", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "filter", StringComparison.OrdinalIgnoreCase))
+                    && _state.Pos + 1 < _state.Tokens.Count
+                    && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
+                    && _state.Tokens[_state.Pos + 1].Value == "(")
+                {
+                    _state.Pos++; // the const / filter keyword
+                    _state.SkipBalancedParens();
+                    continue;
+                }
+
                 if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
                 {
-                    var target = _state.Ctx.Resolver.ResolveTypeByName(tok.Value);
+                    var target = _state.Ctx.Resolver.ResolveTypeByName(tok.Value, "Record");
                     if (target is not null
                         && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
                     {
@@ -1259,14 +1296,18 @@ public static class AlReferenceExtractor
             if (args.Count < 3) { SkipPastAttributeClose(); return; }
 
             // arg[1]: typed-literal `Kind::Name` for the target object.
-            // The catalog lookup keys on the name; the kind is implicit
-            // from the catalog row.
-            var targetName = ExtractTypedLiteralName(args[1]);
+            // Keep the kind: a subscription to `Codeunit::"Sales-Post"`
+            // must not bind to a page or a tableextension that happens to
+            // share the name. When arg[1] omits the kind we fall back to
+            // arg[0]'s `ObjectType::Codeunit` half, which carries the
+            // same information.
+            var (targetKind, targetName) = ExtractTypedLiteral(args[1]);
             if (string.IsNullOrEmpty(targetName))
             {
                 SkipPastAttributeClose();
                 return;
             }
+            targetKind ??= ExtractTypedLiteral(args[0]).Name;
 
             // arg[2]: event name. String (legacy) or Identifier (newer).
             var eventName = ExtractStringOrIdentifier(args[2]);
@@ -1276,7 +1317,7 @@ public static class AlReferenceExtractor
                 return;
             }
 
-            var target = _state.Ctx.Resolver.ResolveTypeByName(targetName);
+            var target = _state.Ctx.Resolver.ResolveTypeByName(targetName, targetKind);
             if (target is null)
             {
                 // Cross-release / unknown / numeric id. Silent drop —
@@ -1355,27 +1396,32 @@ public static class AlReferenceExtractor
         }
 
         /// <summary>
-        /// Extracts the name from a <c>Kind::Name</c> typed-literal
-        /// argument. Returns null when the shape doesn't match (e.g.
-        /// numeric id, malformed). The kind itself isn't returned —
-        /// the catalog row that the name resolves to carries the
-        /// canonical kind.
+        /// Splits a <c>Kind::Name</c> typed-literal argument into its two
+        /// halves. Both come back null when the shape doesn't match (e.g.
+        /// numeric id, malformed); the kind alone is null when the literal
+        /// has no left-hand side. The kind is the caller's disambiguation
+        /// hint — several BC names exist as both a codeunit and a page, or
+        /// as a table and the tableextension extending it.
         /// </summary>
-        private static string? ExtractTypedLiteralName(List<AlToken> arg)
+        private static (string? Kind, string? Name) ExtractTypedLiteral(List<AlToken> arg)
         {
-            // Find the `::` token; the right-hand side is the name.
+            // Find the `::` token; the right-hand side is the name, the
+            // left-hand side the kind keyword.
             for (int i = 0; i < arg.Count - 1; i++)
             {
                 if (arg[i].Kind != AlTokenKind.DoubleColon) continue;
                 var name = arg[i + 1];
-                if (name.Kind == AlTokenKind.Identifier || name.Kind == AlTokenKind.QuotedIdentifier)
+                if (name.Kind != AlTokenKind.Identifier && name.Kind != AlTokenKind.QuotedIdentifier)
                 {
-                    return name.Value;
+                    // Number form (Codeunit::80) — v1 doesn't resolve.
+                    return (null, null);
                 }
-                // Number form (Codeunit::80) — v1 doesn't resolve.
-                return null;
+                var kind = i > 0 && arg[i - 1].Kind == AlTokenKind.Identifier
+                    ? arg[i - 1].Value
+                    : null;
+                return (kind, name.Value);
             }
-            return null;
+            return (null, null);
         }
 
         /// <summary>

@@ -15,6 +15,12 @@ namespace ALDevToolbox.Services;
 /// over- or under-shoot reality. For the SiteAdmin storage view and the
 /// quota guard this is accurate enough; if it becomes a billing dispute
 /// surface, switch to schema-per-tenant or per-table TOAST inspection.
+///
+/// The Object Explorer fact tables are estimated a second time over: their
+/// per-org row share comes from the org's share of <c>oe_modules</c> rather
+/// than a count of the fact rows themselves, because counting them meant a
+/// full scan of the largest tables in the schema on every sweep (#684). See
+/// <c>EstimateModuleShareRowsAsync</c>.
 /// </summary>
 public sealed class DatabaseUsageService
 {
@@ -69,13 +75,15 @@ public sealed class DatabaseUsageService
         var multiplier = settings.IndexSizeMultiplier;
         var systemDefault = settings.DefaultStorageQuotaMb;
 
+        // Fence category 2 (SiteAdmin cross-org console): only caller is /site-admin/backup-storage/storage,
+        // which is gated by [Authorize(Roles = SiteAdminRole)].
         var orgs = await _db.Organizations.IgnoreQueryFilters()
             .OrderBy(o => o.IsSystem ? 0 : 1).ThenBy(o => o.Name)
             .Select(o => new { o.Id, o.Name, o.Slug, o.IsSystem, o.StorageQuotaMb })
             .ToListAsync(ct);
 
         var tableSizes = await ReadTableSizesAsync(ct);
-        var perOrgCounts = await ReadPerOrgRowCountsAsync(orgs.Select(o => o.Id).ToList(), ct);
+        var perOrgCounts = await ReadPerOrgRowCountsAsync(orgs.Select(o => o.Id).ToList(), tableSizes, ct);
         var oeSourceBytes = await ReadOeSourceLogicalBytesAsync(orgs.Select(o => o.Id).ToList(), ct);
 
         var rows = new List<OrgUsageRow>(orgs.Count);
@@ -118,6 +126,8 @@ public sealed class DatabaseUsageService
         if (orgId is null) return null;
 
         var settings = await _systemSettings.GetViewAsync(ct);
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == orgId.Value
+        // taken from the authenticated principal's IOrganizationContext.
         var org = await _db.Organizations.IgnoreQueryFilters()
             .Where(o => o.Id == orgId.Value)
             .Select(o => new { o.Id, o.Name, o.Slug, o.IsSystem, o.StorageQuotaMb })
@@ -125,7 +135,7 @@ public sealed class DatabaseUsageService
         if (org is null) return null;
 
         var tableSizes = await ReadTableSizesAsync(ct);
-        var perOrgCounts = await ReadPerOrgRowCountsAsync([orgId.Value], ct);
+        var perOrgCounts = await ReadPerOrgRowCountsAsync([orgId.Value], tableSizes, ct);
         var oeSourceBytes = await ReadOeSourceLogicalBytesAsync([orgId.Value], ct);
 
         long logical = 0, index = 0;
@@ -312,6 +322,8 @@ public sealed class DatabaseUsageService
         {
             throw new ArgumentOutOfRangeException(nameof(quotaMb), "Quota must be non-negative.");
         }
+        // Fence category 2 (SiteAdmin cross-org console): quota override, reached only from
+        // /site-admin/backup-storage/storage; pinned to o.Id == organizationId.
         var org = await _db.Organizations.IgnoreQueryFilters()
             .FirstOrDefaultAsync(o => o.Id == organizationId, ct)
             ?? throw new InvalidOperationException($"Organization {organizationId} not found.");
@@ -354,8 +366,18 @@ public sealed class DatabaseUsageService
         return result;
     }
 
+    /// <summary>
+    /// Per-org row counts for every catalogued table, used to prorate each
+    /// table's on-disk size. Exact <c>COUNT(*)</c> everywhere except the Object
+    /// Explorer fact tables in
+    /// <see cref="TenantTableCatalog.ModuleShareEstimatedTables"/>, whose share
+    /// is estimated from <c>oe_modules</c> instead — see
+    /// <see cref="EstimateModuleShareRowsAsync"/>.
+    /// </summary>
     private async Task<Dictionary<(int OrgId, string Table), long>> ReadPerOrgRowCountsAsync(
-        IReadOnlyList<int> orgIds, CancellationToken ct)
+        IReadOnlyList<int> orgIds,
+        IReadOnlyDictionary<string, (long LogicalBytes, long IndexBytes, long TotalRows)> tableSizes,
+        CancellationToken ct)
     {
         var counts = new Dictionary<(int, string), long>();
         if (orgIds.Count == 0) return counts;
@@ -363,9 +385,10 @@ public sealed class DatabaseUsageService
         var connection = _db.Database.GetDbConnection();
         await EnsureOpenAsync(connection, ct);
 
-        // Direct organization_id tables.
+        // Direct organization_id tables, minus the OE fact tables we estimate.
         foreach (var table in TenantTableCatalog.AllTenantedTables
-                     .Where(TenantTableCatalog.TablesWithDirectOrgColumn.Contains))
+                     .Where(TenantTableCatalog.TablesWithDirectOrgColumn.Contains)
+                     .Where(t => !TenantTableCatalog.ModuleShareEstimatedTables.Contains(t)))
         {
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = $"SELECT organization_id, COUNT(*) FROM {table} "
@@ -403,7 +426,73 @@ public sealed class DatabaseUsageService
             }
         }
 
+        await EstimateModuleShareRowsAsync(orgIds, tableSizes, counts, ct);
+
         return counts;
+    }
+
+    /// <summary>
+    /// Fills in *estimated* row counts for the Object Explorer fact tables
+    /// (<see cref="TenantTableCatalog.ModuleShareEstimatedTables"/>) instead of
+    /// counting them.
+    ///
+    /// Every fact row belongs to exactly one <c>oe_modules</c> row, and
+    /// <c>oe_modules</c> is small and org-scoped, so an org's share of the
+    /// modules is a defensible stand-in for its share of the facts. We count
+    /// modules once (a single scan of a small table), then hand each fact table
+    /// a synthetic row count of <c>share x planner-estimated total rows</c>, so
+    /// the caller's existing proration arithmetic — and therefore the figure the
+    /// quota guard compares against — is unchanged in shape.
+    ///
+    /// The alternative was a <c>COUNT(*)</c> per fact table on every sweep: on a
+    /// loaded catalogue that is tens of millions of index tuples read four times
+    /// an hour, and it evicts Object Explorer's hot pages from the buffer cache
+    /// each time (#684). The usage figure drives a storage bar and a write
+    /// guard, not an invoice, and the whole computation is already an estimate.
+    ///
+    /// An org with no modules gets no entry (and so contributes nothing), which
+    /// is right: no modules means no fact rows.
+    /// </summary>
+    private async Task EstimateModuleShareRowsAsync(
+        IReadOnlyList<int> orgIds,
+        IReadOnlyDictionary<string, (long LogicalBytes, long IndexBytes, long TotalRows)> tableSizes,
+        Dictionary<(int, string), long> counts,
+        CancellationToken ct)
+    {
+        var connection = _db.Database.GetDbConnection();
+        await EnsureOpenAsync(connection, ct);
+
+        // Whole-table group-by (no org predicate): we need the global total to
+        // form a share, and the basis table is small enough that scanning it in
+        // full is cheaper than a second query for the total.
+        var modulesPerOrg = new Dictionary<int, long>();
+        long totalModules = 0;
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText =
+                $"SELECT organization_id, COUNT(*) FROM {TenantTableCatalog.ModuleShareBasisTable} "
+                + "GROUP BY organization_id";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (await reader.IsDBNullAsync(0, ct)) continue;
+                var rows = reader.GetInt64(1);
+                modulesPerOrg[reader.GetInt32(0)] = rows;
+                totalModules += rows;
+            }
+        }
+        if (totalModules == 0) return;
+
+        foreach (var orgId in orgIds)
+        {
+            if (!modulesPerOrg.TryGetValue(orgId, out var orgModules) || orgModules == 0) continue;
+            var share = (double)orgModules / totalModules;
+            foreach (var table in TenantTableCatalog.ModuleShareEstimatedTables)
+            {
+                if (!tableSizes.TryGetValue(table, out var size) || size.TotalRows == 0) continue;
+                counts[(orgId, table)] = (long)Math.Round(share * size.TotalRows);
+            }
+        }
     }
 
     /// <summary>

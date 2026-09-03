@@ -434,6 +434,7 @@
                 <OeCompareResults CompareRight="@_compareRight"
                                   CompareBy="@_compareBy"
                                   FileResults="_compareResults"
+                                  FileResultsTruncated="_compareTruncated"
                                   ObjectResults="_objectCompareResults" />
                 break;
         }
@@ -488,6 +489,8 @@
     private List<ReleaseProcedureMatch>? _procedureResults;
     private List<ReleaseContentMatch>? _contentResults;
     private List<ReleaseCompareFileRow>? _compareResults;
+    /// <summary>True when the file diff hit its cap and more files changed than are listed.</summary>
+    private bool _compareTruncated;
     private List<ObjectCompareRow>? _objectCompareResults;
 
     // Refs to the search-style text inputs whose `value` attribute is
@@ -1043,7 +1046,13 @@
             }
             else
             {
-                _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
+                // The service hands back one row past the cap when it had to cut
+                // the diff; trim that marker off and tell the results table, so
+                // the page can say how much it is showing. See issue #685.
+                var cap = ReleaseComparisonService.MaxCompareFileRows;
+                var rows = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId, cap);
+                _compareTruncated = rows.Count > cap;
+                _compareResults = _compareTruncated ? rows.Take(cap).ToList() : rows;
                 _objectCompareResults = null;
             }
         }

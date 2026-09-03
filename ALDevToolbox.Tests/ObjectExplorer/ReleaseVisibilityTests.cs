@@ -80,7 +80,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
     }
 
     private ReferenceQueryService References(AppDbContext ctx) =>
-        new(ctx, Access(ctx), NullLogger<ReferenceQueryService>.Instance);
+        new(ctx, Access(ctx), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance);
 
     private ObjectSearchService Search(AppDbContext ctx) => new(ctx, Access(ctx));
 

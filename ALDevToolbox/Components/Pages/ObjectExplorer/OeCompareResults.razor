@@ -47,7 +47,19 @@
 }
 @if (FileResults is not null)
 {
-    <p class="u-muted">Showing @FileResults.Count.ToString("N0") changed file@(FileResults.Count == 1 ? "" : "s").</p>
+    <p class="u-muted">
+        @if (FileResultsTruncated)
+        {
+            <text>
+                Showing the first @FileResults.Count.ToString("N0") of more than
+                @FileResults.Count.ToString("N0") changed files - narrow the comparison.
+            </text>
+        }
+        else
+        {
+            <text>Showing @FileResults.Count.ToString("N0") changed file@(FileResults.Count == 1 ? "" : "s").</text>
+        }
+    </p>
 }
 <table class="data-table data-table--edge">
     <thead>
@@ -64,8 +76,12 @@
         {
             <TableSkeletonRows Columns="4" />
         }
-        @foreach (var r in FileResults ?? new())
-        {
+        @* Virtualized: a release-to-release diff runs to thousands of rows, and
+           rendering them all costs the same again in render-tree nodes held on
+           the circuit plus a first-paint payload down the wire. The rows are a
+           fixed --row-h tall, so ItemSize is exact; the spacers have to be
+           `tr`s to stay legal inside a tbody. See issue #685. *@
+        <Virtualize Items="FileResults ?? new()" Context="r" ItemSize="40" SpacerElement="tr" OverscanCount="12">
             <tr class="@RowStateIcon.RowClass(r.Status)">
                 <td class="data-table__col-state"><RowStateIcon State="@r.Status" /></td>
                 <td>@r.ModuleName</td>
@@ -75,7 +91,7 @@
                     <OeCompareRowActions Status="@r.Status" LeftFileId="r.LeftFileId" RightFileId="r.RightFileId" />
                 </td>
             </tr>
-        }
+        </Virtualize>
     </tbody>
 </table>
 @if (FileResults is null)
@@ -89,6 +105,8 @@
     [Parameter] public string CompareRight { get; set; } = string.Empty;
     [Parameter] public string CompareBy { get; set; } = "files";
     [Parameter] public List<ReleaseCompareFileRow>? FileResults { get; set; }
+    /// <summary>True when more files changed than <see cref="FileResults"/> lists.</summary>
+    [Parameter] public bool FileResultsTruncated { get; set; }
     [Parameter] public List<ObjectCompareRow>? ObjectResults { get; set; }
 
     private RenderFragment RenderObjectCompareResults => __builder =>

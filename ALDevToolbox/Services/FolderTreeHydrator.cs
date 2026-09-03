@@ -26,11 +26,17 @@ public sealed class FolderTreeHydrator
     /// Hydrates the recursive folder/file tree on every <see cref="WorkspaceExtension"/>
     /// of every supplied template. Pass <paramref name="ignoreOrgFilter"/> for
     /// cross-org reads (system-org import) that run without a tenant in scope.
+    /// Pass <paramref name="pathsOnly"/> when the caller only draws the layout
+    /// (the generator pages' live preview) — the file bodies are then left behind
+    /// in the database instead of every example AL file being read to render a
+    /// list of paths. The hydrated files carry an empty <c>Content</c>, so never
+    /// pass it on a path that writes or generates.
     /// </summary>
     public async Task HydrateExtensionFolderTreeAsync(
         IEnumerable<RuntimeTemplate> templates,
         CancellationToken ct = default,
-        bool ignoreOrgFilter = false)
+        bool ignoreOrgFilter = false,
+        bool pathsOnly = false)
     {
         var allExtensions = templates.SelectMany(t => t.WorkspaceExtensions).ToList();
         if (allExtensions.Count == 0) return;
@@ -40,6 +46,13 @@ public sealed class FolderTreeHydrator
         IQueryable<WorkspaceExtensionFile> fileQuery = _db.WorkspaceExtensionFiles.AsNoTracking();
         if (ignoreOrgFilter)
         {
+            // Fence category 5 (system-org fork read), and only when the caller opts in.
+            // ignoreOrgFilter is passed true by exactly one caller — TemplateImportService
+            // (both hydrate calls in ImportTemplateAsync) — whose source rows were already
+            // read pinned to OrganizationId == systemOrgId, so the ids below belong to the
+            // system org by construction. Every other caller (GenerationService, ModuleService,
+            // ExportService, NewWorkspace/NewExtension previews) leaves it false and stays
+            // inside the tenant filter.
             folderQuery = folderQuery.IgnoreQueryFilters();
             fileQuery = fileQuery.IgnoreQueryFilters();
         }
@@ -48,12 +61,24 @@ public sealed class FolderTreeHydrator
             .OrderBy(f => f.Ordering)
             .ToListAsync(ct);
         var folderIds = folders.Select(f => f.Id).ToList();
-        var files = folderIds.Count == 0
-            ? new List<WorkspaceExtensionFile>()
-            : await fileQuery
+        var fileRows = folderIds.Count == 0
+            ? null
+            : fileQuery
                 .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
-                .OrderBy(f => f.Ordering)
-                .ToListAsync(ct);
+                .OrderBy(f => f.Ordering);
+        var files = fileRows is null
+            ? new List<WorkspaceExtensionFile>()
+            : pathsOnly
+                ? await fileRows.Select(f => new WorkspaceExtensionFile
+                {
+                    Id = f.Id,
+                    OrganizationId = f.OrganizationId,
+                    WorkspaceExtensionFolderId = f.WorkspaceExtensionFolderId,
+                    Ordering = f.Ordering,
+                    Path = f.Path,
+                    IsExample = f.IsExample,
+                }).ToListAsync(ct)
+                : await fileRows.ToListAsync(ct);
 
         var foldersById = folders.ToDictionary(f => f.Id);
         var extensionsById = allExtensions.ToDictionary(e => e.Id);
@@ -87,12 +112,14 @@ public sealed class FolderTreeHydrator
     /// <summary>
     /// Hydrates the recursive <see cref="Module.ExtensionFolders"/> tree on
     /// every supplied module. Same flat-query + client-side reassembly pattern
-    /// as <see cref="HydrateExtensionFolderTreeAsync"/>.
+    /// as <see cref="HydrateExtensionFolderTreeAsync"/>, including
+    /// <paramref name="pathsOnly"/>.
     /// </summary>
     public async Task HydrateModuleExtensionFolderTreeAsync(
         IEnumerable<Module> modules,
         CancellationToken ct = default,
-        bool ignoreOrgFilter = false)
+        bool ignoreOrgFilter = false,
+        bool pathsOnly = false)
     {
         var moduleList = modules.ToList();
         if (moduleList.Count == 0) return;
@@ -102,6 +129,8 @@ public sealed class FolderTreeHydrator
         IQueryable<ModuleExtensionFile> fileQuery = _db.ModuleExtensionFiles.AsNoTracking();
         if (ignoreOrgFilter)
         {
+            // Fence category 5 (system-org fork read): same opt-in as above — only
+            // TemplateImportService passes ignoreOrgFilter, with system-org module ids.
             folderQuery = folderQuery.IgnoreQueryFilters();
             fileQuery = fileQuery.IgnoreQueryFilters();
         }
@@ -110,12 +139,24 @@ public sealed class FolderTreeHydrator
             .OrderBy(f => f.Ordering)
             .ToListAsync(ct);
         var folderIds = folders.Select(f => f.Id).ToList();
-        var files = folderIds.Count == 0
-            ? new List<ModuleExtensionFile>()
-            : await fileQuery
+        var fileRows = folderIds.Count == 0
+            ? null
+            : fileQuery
                 .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
-                .OrderBy(f => f.Ordering)
-                .ToListAsync(ct);
+                .OrderBy(f => f.Ordering);
+        var files = fileRows is null
+            ? new List<ModuleExtensionFile>()
+            : pathsOnly
+                ? await fileRows.Select(f => new ModuleExtensionFile
+                {
+                    Id = f.Id,
+                    OrganizationId = f.OrganizationId,
+                    ModuleExtensionFolderId = f.ModuleExtensionFolderId,
+                    Ordering = f.Ordering,
+                    Path = f.Path,
+                    IsExample = f.IsExample,
+                }).ToListAsync(ct)
+                : await fileRows.ToListAsync(ct);
 
         var foldersById = folders.ToDictionary(f => f.Id);
         var modulesById = moduleList.ToDictionary(m => m.Id);

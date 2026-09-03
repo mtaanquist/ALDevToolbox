@@ -415,12 +415,33 @@
 
     private HashSet<string> _collapsed = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether <see cref="_canUseEnvironmentOps"/> has been resolved yet, and for
+    /// which signed-in user. <c>OnParametersSetAsync</c> runs on every navigation
+    /// and every cascading auth-state change, so without this the sidebar's one
+    /// team-membership question would cost a DI scope and two queries per render.
+    /// Keyed by user id so a sign-out, or a different person signing in on the same
+    /// circuit, recomputes. A role or team change made while the circuit is open is
+    /// therefore not reflected until the next sign-in or circuit — the same
+    /// staleness ProjectAccess already documents for its scope-level snapshot.
+    /// </summary>
+    private bool _opsComputed;
+    private string? _opsComputedForUser;
+
     protected override async Task OnParametersSetAsync()
     {
         if (AuthStateTask is null) return;
         var state = await AuthStateTask;
         _isAuthenticated = state.User.Identity?.IsAuthenticated == true;
         _orgDisabled = EndpointHelpers.ReadDisabledTools(state.User);
+
+        var userId = _isAuthenticated
+            ? state.User.FindFirst(HttpOrganizationContext.UserIdClaim)?.Value ?? string.Empty
+            : null;
+        if (_opsComputed && _opsComputedForUser == userId) return;
+
+        _opsComputed = true;
+        _opsComputedForUser = userId;
         _canUseEnvironmentOps = _isAuthenticated && await CanUseEnvironmentOpsAsync();
         _collapsed = ReadCollapsedGroups();
     }
@@ -490,7 +511,8 @@
     /// both would otherwise be using the one scoped <c>AppDbContext</c> at the same
     /// moment — which is exactly the "a second operation was started on this context
     /// instance" that any query added to this component would cause. One extra
-    /// membership read per page render, and no shared state with the page.</para>
+    /// membership read per circuit (see the guard in <c>OnParametersSetAsync</c>),
+    /// and no shared state with the page.</para>
     /// </summary>
     private async Task<bool> CanUseEnvironmentOpsAsync()
     {

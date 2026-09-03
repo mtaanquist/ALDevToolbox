@@ -61,7 +61,6 @@ internal static class SettingsInputBuilder
     public static SystemSettingsInput WithGeneral(SystemSettingsView current, IFormCollection form) => Base(current) with
     {
         BannerText = form["BannerText"].ToString(),
-        DefaultSignupAutoApprove = IsChecked(form, "DefaultSignupAutoApprove"),
         SignupEmailDomainAllowlist = form["SignupEmailDomainAllowlist"].ToString(),
         ReleaseDownloadDomainAllowlist = form["ReleaseDownloadDomainAllowlist"].ToString(),
     };
@@ -98,7 +97,6 @@ internal static class SettingsInputBuilder
         SmtpFromName: current.SmtpFromName,
         SmtpUseStartTls: current.SmtpUseStartTls,
         BannerText: current.BannerText,
-        DefaultSignupAutoApprove: current.DefaultSignupAutoApprove,
         BackupScheduleEnabled: current.BackupScheduleEnabled,
         BackupScheduleTimeUtc: current.BackupScheduleTimeUtc,
         BackupRetentionCount: current.BackupRetentionCount,

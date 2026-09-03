@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@using ALDevToolbox.Components.Shared
 
 @*
     The shell-less layout for the auth family (page archetype "Auth card").
@@ -16,6 +17,10 @@
     LoginChallenge are @@rendermode InteractiveServer, so a dropped circuit on
     an auth page needs the same recovery affordance as anywhere else.
 *@
+
+@* Signing in is exactly when a "we go down at 21:00" notice matters most, so
+   the shell-less auth layout carries the banner too. *@
+<SiteBanner />
 
 <div class="auth">
     @Body

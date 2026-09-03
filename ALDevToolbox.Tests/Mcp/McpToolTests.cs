@@ -733,6 +733,7 @@ public sealed class McpToolTests : IDisposable
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
             new ALDevToolbox.Services.ObjectExplorer.TranslationImportService(
                 ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>.Instance),
+            new ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter(ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter>.Instance),
             NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>.Instance);
         await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, appFileName));
         var summary = await importer.ImportReleaseAsync(
@@ -753,14 +754,14 @@ public sealed class McpToolTests : IDisposable
     {
         var access = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, _db.OrgContext);
         var references = new ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService(
-            ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
+            ctx, access, _db.OrgContext, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
         var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
             ctx, references, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
         var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx, access);
         var translations = new ALDevToolbox.Services.ObjectExplorer.TranslationQueryService(ctx);
         var comparison = new ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService(
             ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>.Instance);
-        return new ObjectExplorerTools(explorer, search, references, translations, comparison, access, ctx);
+        return new ObjectExplorerTools(explorer, search, references, translations, comparison);
     }
 
     /// <summary>
@@ -777,7 +778,8 @@ public sealed class McpToolTests : IDisposable
         await using var ctx = _db.NewContext();
         var tools = NewOeTools(ctx);
 
-        var rows = await tools.CompareReleaseFilesAsync(leftId.ToString(), rightId.ToString());
+        var result = await tools.CompareReleaseFilesAsync(leftId.ToString(), rightId.ToString());
+        var rows = result.Rows;
 
         rows.Should().NotBeEmpty();
         rows.Count.Should().BeLessThanOrEqualTo(200, "the tool caps its response like its siblings");
@@ -787,6 +789,18 @@ public sealed class McpToolTests : IDisposable
             .OnlyContain(r => r.LeftFileId == null && r.RightFileId != null);
         rows.Where(r => r.Status == "removed").Should()
             .OnlyContain(r => r.LeftFileId != null && r.RightFileId == null);
+
+        // A short list must never be silently short: whenever the tool cut the
+        // set it says so, and says how to narrow the question (#685).
+        if (result.Truncated)
+        {
+            result.Note.Should().NotBeNullOrWhiteSpace();
+            result.Note.Should().Contain("narrow");
+        }
+        else
+        {
+            result.Note.Should().BeNull();
+        }
     }
 
     [Fact]
@@ -805,8 +819,8 @@ public sealed class McpToolTests : IDisposable
             .FirstAsync();
         var tools = NewOeTools(ctx);
 
-        var rows = await tools.CompareReleaseFilesAsync(
-            leftId.ToString(), rightId.ToString(), pathPattern: target.Path);
+        var rows = (await tools.CompareReleaseFilesAsync(
+            leftId.ToString(), rightId.ToString(), pathPattern: target.Path)).Rows;
 
         rows.Should().NotBeEmpty();
         rows.Should().OnlyContain(r => r.Path.Contains(target.Path, StringComparison.OrdinalIgnoreCase));

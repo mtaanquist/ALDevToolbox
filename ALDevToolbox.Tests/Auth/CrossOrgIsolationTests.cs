@@ -1,4 +1,5 @@
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
@@ -81,6 +82,58 @@ public sealed class CrossOrgIsolationTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// #678: audit_log used to opt out of the tenant query filter, leaving
+    /// isolation to every read remembering its own organization_id predicate.
+    /// These assertions deliberately use raw <c>_db.AuditLog</c> queries with
+    /// no predicate, so they fail if the filter is ever removed again — the
+    /// explicit predicates in <c>AuditService</c> would otherwise mask it.
+    /// </summary>
+    [Fact]
+    public async Task Audit_rows_from_another_org_are_invisible_without_an_explicit_predicate()
+    {
+        int defaultId, otherId, seedId;
+        AuditLogEntry theirsEarlier;
+        await using (var seed = _db.NewContext())
+        {
+            var mine = NewAuditEntry(TestDb.DefaultOrgId, "mine");
+            var theirs = NewAuditEntry(TestDb.OtherOrgId, "theirs");
+            theirsEarlier = NewAuditEntry(TestDb.OtherOrgId, "theirs-earlier");
+            theirsEarlier.Timestamp = theirs.Timestamp.AddMinutes(-5);
+            seed.AuditLog.Add(theirsEarlier);
+            // Startup seed and bootstrap inserts carry no organisation.
+            var systemRow = NewAuditEntry(null, "startup-seed");
+            seed.AuditLog.AddRange(mine, theirs, systemRow);
+            await seed.SaveChangesAsync();
+            defaultId = mine.Id;
+            otherId = theirs.Id;
+            seedId = systemRow.Id;
+        }
+
+        _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
+        await using (var ctx = _db.NewContext())
+        {
+            (await ctx.AuditLog.Where(e => e.Id == otherId).AnyAsync())
+                .Should().BeFalse("the query filter alone must hide another org's audit row");
+            (await ctx.AuditLog.Where(e => e.Id == defaultId).AnyAsync()).Should().BeTrue();
+            (await ctx.AuditLog.Where(e => e.Id == seedId).AnyAsync())
+                .Should().BeTrue("null-org seed rows stay visible by design");
+        }
+
+        // Every public AuditService read is empty for the other org's row.
+        var svc = new AuditService(_db.NewContext(), _db.OrgContext);
+        (await svc.GetRecentAsync()).Should().NotContain(e => e.Id == otherId);
+        var (paged, _) = await svc.GetPagedAsync(new AuditFilter(null, null, null, null, null, null), 0, 100);
+        paged.Should().NotContain(e => e.Id == otherId);
+        (await svc.GetForEntityAsync(AuditEntityType.RuntimeTemplate, 99))
+            .Should().NotContain(e => e.Id == otherId);
+        (await svc.GetByIdAsync(otherId)).Should().BeNull();
+        // The other org's newer row must not surface, even though it is the
+        // true "next" entry for that entity in that tenant.
+        (await svc.GetNextForEntityAsync(theirsEarlier))?.OrganizationId
+            .Should().NotBe(TestDb.OtherOrgId);
+    }
+
     [Fact]
     public async Task IgnoreQueryFilters_lets_pre_login_paths_read_across_orgs()
     {
@@ -110,4 +163,14 @@ public sealed class CrossOrgIsolationTests : IDisposable
                 .Should().BeTrue();
         }
     }
+
+    private static AuditLogEntry NewAuditEntry(int? organizationId, string changedBy) => new()
+    {
+        OrganizationId = organizationId,
+        EntityType = AuditEntityType.RuntimeTemplate,
+        EntityId = 99,
+        Action = AuditAction.Updated,
+        Timestamp = DateTime.UtcNow,
+        ChangedBy = changedBy,
+    };
 }

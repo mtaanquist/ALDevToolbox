@@ -3,6 +3,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace ALDevToolbox.Services;
 
@@ -21,7 +22,6 @@ public sealed record SystemSettingsView(
     string? SmtpFromName,
     bool? SmtpUseStartTls,
     string? BannerText,
-    bool DefaultSignupAutoApprove,
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
@@ -51,7 +51,6 @@ public sealed record SystemSettingsInput(
     string? SmtpFromName,
     bool? SmtpUseStartTls,
     string? BannerText,
-    bool DefaultSignupAutoApprove,
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
@@ -205,6 +204,15 @@ public sealed class SystemSettingsService
     private readonly TimeProvider _clock;
     private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
     private readonly ALDevToolbox.Services.Tools.ToolAvailabilityState? _toolAvailability;
+    private readonly IMemoryCache? _cache;
+
+    /// <summary>
+    /// Cache key for the site banner. The banner is read on every page render
+    /// by <c>MainLayout</c> / <c>AuthLayout</c>, so it must not cost a query
+    /// per navigation; <see cref="SaveAsync"/> evicts the entry so a SiteAdmin
+    /// edit shows up immediately rather than after the TTL.
+    /// </summary>
+    private const string BannerCacheKey = "system-settings:banner";
 
     public SystemSettingsService(
         AppDbContext db,
@@ -212,7 +220,8 @@ public sealed class SystemSettingsService
         ILogger<SystemSettingsService> logger,
         TimeProvider clock,
         ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null,
-        ALDevToolbox.Services.Tools.ToolAvailabilityState? toolAvailability = null)
+        ALDevToolbox.Services.Tools.ToolAvailabilityState? toolAvailability = null,
+        IMemoryCache? cache = null)
     {
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
@@ -225,6 +234,7 @@ public sealed class SystemSettingsService
         // the toggles keep compiling. In production DI both are always set.
         _mcpAvailability = mcpAvailability;
         _toolAvailability = toolAvailability;
+        _cache = cache;
     }
 
     /// <summary>Loads the singleton row, populating the audit-friendly view.</summary>
@@ -240,7 +250,6 @@ public sealed class SystemSettingsService
             SmtpFromName: row.SmtpFromName,
             SmtpUseStartTls: row.SmtpUseStartTls,
             BannerText: row.BannerText,
-            DefaultSignupAutoApprove: row.DefaultSignupAutoApprove,
             BackupScheduleEnabled: row.BackupScheduleEnabled,
             BackupScheduleTimeUtc: row.BackupScheduleTimeUtc,
             BackupRetentionCount: row.BackupRetentionCount,
@@ -308,7 +317,6 @@ public sealed class SystemSettingsService
         row.SmtpFromName = NullIfBlank(input.SmtpFromName);
         row.SmtpUseStartTls = input.SmtpUseStartTls;
         row.BannerText = NullIfBlank(input.BannerText);
-        row.DefaultSignupAutoApprove = input.DefaultSignupAutoApprove;
         row.BackupScheduleEnabled = input.BackupScheduleEnabled;
         row.BackupScheduleTimeUtc = input.BackupScheduleTimeUtc;
         row.BackupRetentionCount = input.BackupRetentionCount;
@@ -334,6 +342,9 @@ public sealed class SystemSettingsService
         }
 
         await _db.SaveChangesAsync(ct);
+        // The banner is read on every render from a memory cache; drop the
+        // entry so this edit is visible on the next navigation.
+        _cache?.Remove(BannerCacheKey);
         // Push the (possibly new) MCP toggle into the singleton so the
         // NavMenu link and the /mcp endpoint pick it up on the next render
         // without waiting for a process restart and without a per-render
@@ -343,10 +354,9 @@ public sealed class SystemSettingsService
         // sidebar and route gate pick up the change on the next render/request.
         _toolAvailability?.Set(ALDevToolbox.Domain.Tools.ToolCatalog.ParseDisabled(row.DisabledTools));
         _logger.LogInformation(
-            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}, mcp={Mcp}).",
+            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, mcp={Mcp}).",
             row.SmtpHost ?? "<unset>",
             !string.IsNullOrEmpty(row.BannerText),
-            row.DefaultSignupAutoApprove,
             row.McpEnabled);
     }
 
@@ -555,14 +565,22 @@ public sealed class SystemSettingsService
 
     /// <summary>
     /// Returns the system banner text, or <see langword="null"/> when none is
-    /// set. Cached per-request via <see cref="AppDbContext"/>'s scoped
-    /// lifetime; SiteAdmin updates land on the next request.
+    /// set. Memory-cached for a minute because every page render asks for it;
+    /// <see cref="SaveAsync"/> evicts the entry, so a SiteAdmin edit is live on
+    /// the next navigation rather than a minute later.
     /// </summary>
     public async Task<string?> GetBannerAsync(CancellationToken ct = default)
     {
+        if (_cache is not null && _cache.TryGetValue(BannerCacheKey, out string? cached))
+        {
+            return cached;
+        }
+
         var row = await _db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
-        return string.IsNullOrWhiteSpace(row?.BannerText) ? null : row!.BannerText;
+        var banner = string.IsNullOrWhiteSpace(row?.BannerText) ? null : row!.BannerText;
+        _cache?.Set(BannerCacheKey, banner, TimeSpan.FromMinutes(1));
+        return banner;
     }
 
     /// <summary>
@@ -580,14 +598,6 @@ public sealed class SystemSettingsService
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var list = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return list.Length == 0 ? null : list;
-    }
-
-    /// <summary>True when admin approval should be skipped for new signups into existing organisations.</summary>
-    public async Task<bool> ShouldAutoApproveSignupAsync(CancellationToken ct = default)
-    {
-        var row = await _db.SystemSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == 1, ct);
-        return row?.DefaultSignupAutoApprove ?? false;
     }
 
     /// <summary>
@@ -616,7 +626,6 @@ public sealed class SystemSettingsService
             row = new SystemSettings
             {
                 Id = 1,
-                DefaultSignupAutoApprove = false,
                 UpdatedAt = _clock.GetUtcNow().UtcDateTime,
             };
             _db.SystemSettings.Add(row);

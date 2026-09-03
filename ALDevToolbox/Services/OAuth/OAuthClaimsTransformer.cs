@@ -83,6 +83,8 @@ public sealed class OAuthClaimsTransformer : IClaimsTransformation
         }
 
         var user = await _db.Users
+            // Fence category 1 (pre-auth routing): runs while the principal is being built from
+            // a bearer token; pinned to u.Id == userId from the token's subject claim.
             .IgnoreQueryFilters()
             .Include(u => u.Organization)
             .AsNoTracking()

@@ -37,13 +37,47 @@ public sealed class SourceViewerService
     // their existing not-found shape, never a distinct refusal. See
     // ProjectAccess.IsReleaseVisibleAsync and .design/teams-and-visibility.md.
 
+    /// <summary>
+    /// Visibility answers already resolved in this DI scope. Rendering one source
+    /// page asks the same question from eight entry points (header, content,
+    /// outline, declarations, resolvables, tree, ...), and — for the same reason
+    /// <see cref="ProjectAccess.IsReleaseVisibleAsync"/> memoises its own answers —
+    /// it cannot change within a scope. Bounded by the files one scope touches.
+    /// </summary>
+    private readonly Dictionary<long, bool> _fileVisibility = new();
+
     private async Task<bool> FileVisibleAsync(long fileId, CancellationToken ct)
     {
+        if (_fileVisibility.TryGetValue(fileId, out var cached)) return cached;
+
         var releaseId = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => (int?)f.Module!.ReleaseId)
             .FirstOrDefaultAsync(ct);
-        return releaseId is null || await _access.IsReleaseVisibleAsync(releaseId.Value, ct);
+        return _fileVisibility[fileId] =
+            releaseId is null || await _access.IsReleaseVisibleAsync(releaseId.Value, ct);
+    }
+
+    // ── One source blob per scope ───────────────────────────────────────
+    // Four of the methods below need the file's text, and the viewer page calls
+    // three of them back-to-back for the file it is opening. Remembering the last
+    // blob read turns that into one round-trip instead of three. Only the most
+    // recent file is held: a Base Application source file is large, the scope is
+    // the circuit, and one page only ever reads one file's text.
+
+    private long? _contentFileId;
+    private string? _content;
+
+    private async Task<string?> GetContentAsync(long fileId, CancellationToken ct)
+    {
+        if (_contentFileId == fileId) return _content;
+
+        var content = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => f.FileContent!.Content)
+            .SingleOrDefaultAsync(ct);
+        _contentFileId = fileId;
+        return _content = content;
     }
 
     private async Task<bool> ModuleVisibleAsync(long moduleId, CancellationToken ct)
@@ -60,10 +94,31 @@ public sealed class SourceViewerService
     public async Task<SourceFileDetail?> GetFileAsync(long fileId, CancellationToken ct = default)
     {
         if (!await FileVisibleAsync(fileId, ct)) return null;
-        return await _db.OeModuleFiles.AsNoTracking()
+
+        // When another call in this scope already pulled the blob (the viewer page
+        // loads declarations and resolvables around this one), take the text from
+        // there and ask the database only for the row's small columns.
+        if (_contentFileId == fileId)
+        {
+            var meta = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => f.Id == fileId)
+                .Select(f => new { f.Id, f.ModuleId, f.Path, f.LineCount })
+                .SingleOrDefaultAsync(ct);
+            return meta is null
+                ? null
+                : new SourceFileDetail(meta.Id, meta.ModuleId, meta.Path, _content ?? string.Empty, meta.LineCount);
+        }
+
+        var detail = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.FileContent!.Content, f.LineCount))
             .SingleOrDefaultAsync(ct);
+        if (detail is not null)
+        {
+            _contentFileId = fileId;
+            _content = detail.Content;
+        }
+        return detail;
     }
 
     /// <summary>
@@ -162,10 +217,7 @@ public sealed class SourceViewerService
         long fileId, CancellationToken ct = default)
     {
         if (!await FileVisibleAsync(fileId, ct)) return new();
-        var content = await _db.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Id == fileId)
-            .Select(f => f.FileContent!.Content)
-            .SingleOrDefaultAsync(ct);
+        var content = await GetContentAsync(fileId, ct);
         if (string.IsNullOrEmpty(content)) return new();
 
         var objects = await _db.OeModuleObjects.AsNoTracking()
@@ -269,13 +321,15 @@ public sealed class SourceViewerService
         long fileId, int line, int column, CancellationToken ct = default)
     {
         if (!await FileVisibleAsync(fileId, ct)) return null;
-        var meta = await _db.OeModuleFiles.AsNoTracking()
+        var releaseId = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => new { Content = f.FileContent!.Content, ReleaseId = f.Module!.ReleaseId })
+            .Select(f => (int?)f.Module!.ReleaseId)
             .SingleOrDefaultAsync(ct);
-        if (meta is null) return null;
+        if (releaseId is null) return null;
+        var content = await GetContentAsync(fileId, ct);
+        if (content is null) return null;
 
-        var click = Services.Al.AlGoToDefinitionLocator.Inspect(meta.Content, line, column);
+        var click = Services.Al.AlGoToDefinitionLocator.Inspect(content, line, column);
         if (click is null || string.IsNullOrEmpty(click.Word)) return null;
         var word = click.Word;
 
@@ -329,7 +383,7 @@ public sealed class SourceViewerService
         //    type-name token right there and can Cmd-click it to
         //    reach the type source if they want it.
         var declLine = Services.Al.AlGoToDefinitionLocator
-            .ResolveVariableDeclarationLine(meta.Content, word);
+            .ResolveVariableDeclarationLine(content, word);
         if (declLine is int targetLine)
         {
             return new GoToDefinitionTarget(fileId, targetLine);
@@ -341,8 +395,13 @@ public sealed class SourceViewerService
         //    that defines it — e.g. clicking `Customer` in a Dansani file
         //    navigates to the base table in the BC parent Release. See
         //    ChainObjectResolution.
+        //    The click's own context picks between same-named candidates:
+        //    `Database::User` means the table, not the codeunit. Without the
+        //    hint the ranking fell back to kind order and could land on the
+        //    wrong object (issue #712).
         var target = await ChainObjectResolution.ResolveObjectAsync(
-            _db, meta.ReleaseId, word, kind: null, objectId: null, ct);
+            _db, releaseId.Value, word, kind: null, objectId: null, ct,
+            kindHint: Services.Al.AlGoToDefinitionLocator.KindHint(click));
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }
@@ -369,10 +428,7 @@ public sealed class SourceViewerService
         ListResolvablesInFileAsync(long fileId, CancellationToken ct = default)
     {
         if (!await FileVisibleAsync(fileId, ct)) return new();
-        var content = await _db.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Id == fileId)
-            .Select(f => f.FileContent!.Content)
-            .SingleOrDefaultAsync(ct);
+        var content = await GetContentAsync(fileId, ct);
         if (string.IsNullOrEmpty(content)) return new();
 
         // Pull every source-extracted reference on the file (LineNumber
@@ -544,10 +600,7 @@ public sealed class SourceViewerService
         long fileId, int line, int column, CancellationToken ct = default)
     {
         if (!await FileVisibleAsync(fileId, ct)) return null;
-        var content = await _db.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Id == fileId)
-            .Select(f => f.FileContent!.Content)
-            .SingleOrDefaultAsync(ct);
+        var content = await GetContentAsync(fileId, ct);
         if (string.IsNullOrEmpty(content)) return null;
 
         var click = Services.Al.AlGoToDefinitionLocator.Inspect(content, line, column);

@@ -33,12 +33,20 @@ internal static class ChainObjectResolution
     /// Resolves an object by <paramref name="name"/> (optionally narrowed to
     /// <paramref name="kind"/> and/or <paramref name="objectId"/>) across the
     /// visible chain, returning the closest-depth hit or <see langword="null"/>.
-    /// Base-object kinds sort ahead of their extension kinds (so a bare
-    /// <c>Customer</c> token lands on the table, not a <c>tableextension</c>
-    /// named the same), then the closest Release wins.
+    /// <para><paramref name="kindHint"/> is a soft preference rather than the
+    /// hard <paramref name="kind"/> filter: the kind the call site's context
+    /// suggests (a <c>Database::</c> / <c>Codeunit::</c> prefix, a
+    /// <c>Record X</c> declaration, a <c>SourceTable =</c> property). Matching
+    /// candidates sort first; everything else falls back to the deliberate
+    /// kind order in <see cref="ALDevToolbox.Services.Al.AlKindKeywords.KindPriority"/>
+    /// — tables before codeunits, and every base object ahead of the extension
+    /// kind that extends it — then the closest Release wins. Ranking used to be
+    /// alphabetical by kind, which put a codeunit ahead of a same-named table
+    /// (issue #712).</para>
     /// </summary>
     public static async Task<ChainObjectHit?> ResolveObjectAsync(
-        AppDbContext db, int seedReleaseId, string name, string? kind, int? objectId, CancellationToken ct)
+        AppDbContext db, int seedReleaseId, string name, string? kind, int? objectId, CancellationToken ct,
+        string? kindHint = null)
     {
         const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
             SELECT
@@ -59,9 +67,13 @@ internal static class ChainObjectResolution
               AND ({2}::text IS NULL OR lower(o.kind) = lower({2}::text))
               AND ({3}::int  IS NULL OR o.object_id   = {3}::int)
             -- Prefer a navigable object (one with source) so go-to-definition
-            -- lands somewhere; then base-object kinds ahead of extensions, then
-            -- the closest Release, then a stable id tiebreak.
-            ORDER BY (o.source_file_id IS NULL), o.kind ASC, ch.depth ASC, o.id ASC
+            -- lands somewhere; then the kind the click's context asked for;
+            -- then the deliberate kind order (base objects ahead of their
+            -- extensions); then the closest Release and a stable id tiebreak.
+            ORDER BY (o.source_file_id IS NULL),
+                     ({4}::text IS NOT NULL AND lower(o.kind) = lower({4}::text)) DESC,
+                     COALESCE(array_position({5}::text[], lower(o.kind)), array_length({5}::text[], 1) + 1),
+                     ch.depth ASC, o.id ASC
             LIMIT 1
             """;
 
@@ -71,7 +83,9 @@ internal static class ChainObjectResolution
                 seedReleaseId,
                 name,
                 (object?)kind ?? DBNull.Value,
-                (object?)objectId ?? DBNull.Value)
+                (object?)objectId ?? DBNull.Value,
+                (object?)ALDevToolbox.Services.Al.AlKindKeywords.MapKeywordToKind(kindHint) ?? DBNull.Value,
+                ALDevToolbox.Services.Al.AlKindKeywords.KindPriority)
             .ToListAsync(ct);
         return hits.FirstOrDefault();
     }

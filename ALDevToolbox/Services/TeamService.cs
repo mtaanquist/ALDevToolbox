@@ -226,7 +226,7 @@ public sealed class TeamService
             UpdatedAt = now,
         };
         _db.Teams.Add(team);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct).ConfigureAwait(false);
 
         _logger.LogInformation("Created team {TeamId} ({Name}) for org {OrgId}.", team.Id, clean, orgId);
         return team.Id;
@@ -245,7 +245,7 @@ public sealed class TeamService
         var previous = team.Name;
         team.Name = clean;
         team.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct).ConfigureAwait(false);
 
         _logger.LogInformation("Renamed team {TeamId} from {PreviousName} to {Name}.", id, previous, clean);
     }
@@ -421,6 +421,25 @@ public sealed class TeamService
         if (clash) throw Validation("Name", "Another team already uses this name. Pick a different one.");
 
         return clean;
+    }
+
+    /// <summary>
+    /// Saves, turning the name-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. <see cref="ValidateNameAsync"/> reads before it writes,
+    /// so two admins naming a team the same thing at once leave one of them to be
+    /// caught by the functional unique index — and that has to read as an inline
+    /// "pick a different name", not a 500. See issue #702.
+    /// </summary>
+    private async Task SaveTranslatingNameClashAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw Validation("Name", "Another team already uses this name. Pick a different one.");
+        }
     }
 
     private static PlanValidationException Validation(string field, string message) =>

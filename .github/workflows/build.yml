@@ -40,7 +40,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - id: filter
@@ -94,17 +94,32 @@ jobs:
       ALDT_TEST_POSTGRES_CONNECTION: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 10.0.x
 
-      # Ubuntu 24.04 runners ship postgresql-client (currently v16) on PATH, so
-      # BackupServiceTests can probe pg_dump / pg_restore without an apt step.
-      # PgToolAvailability skips the tests when the major version is below 18 —
-      # the dump format the postgres:18 server emits — so the suite stays
-      # green on the runner image without needing the upstream pgdg repo here.
+      - name: Install PostgreSQL 18 client tools
+        # BackupServiceTests / BackupSchedulerTests shell out to pg_dump and
+        # pg_restore, and PgToolAvailability requires v18 to match the dump
+        # format the postgres:18 service container emits. Ubuntu 24.04 runners
+        # only ship v16, which made those eight tests skip silently on every
+        # run (#666) — so pull the client from PGDG, the same incantation the
+        # Dockerfile uses. /usr/bin/pg_dump stays at v16, so the v18 bin
+        # directory has to be *prepended* to PATH via $GITHUB_PATH.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> $GITHUB_PATH
+
+      - name: Verify pg_dump version
+        run: pg_dump --version
 
       - name: Restore
         # The committed packages.lock.json pins the explicit (wildcard) package
@@ -136,15 +151,18 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    # Job-level so every compose invocation sees it: since #709 the compose
+    # file refuses to interpolate without POSTGRES_PASSWORD, and that applies
+    # to `docker compose down` and `logs` as much as to `up`.
+    env:
+      # Random password each run so a leak in workflow logs isn't reusable.
+      POSTGRES_PASSWORD: ci-${{ github.run_id }}
+      BOOTSTRAP_ADMIN_EMAIL: admin@example.com
+      BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-${{ github.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build and start the stack
-        env:
-          # Random password each run so a leak in workflow logs isn't reusable.
-          POSTGRES_PASSWORD: ci-${{ github.run_id }}
-          BOOTSTRAP_ADMIN_EMAIL: admin@example.com
-          BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-${{ github.run_id }}
         # --wait blocks until every container reports healthy or the timeout
         # expires; without it, compose only waits ~30s on depends_on before
         # giving up. The 180s budget covers postgres init + image build.
@@ -206,11 +224,11 @@ jobs:
       ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=aldevtoolbox_designtime"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 10.0.x
 

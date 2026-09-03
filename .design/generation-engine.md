@@ -43,8 +43,8 @@ CRONUSCustomer/
 │   └── rulesets/
 │       └── Company.ruleset.json
 ├── Core/                                # path of the first required WorkspaceExtension
-│   ├── app.json
-│   ├── AppSourceCop.json                # only when template.AppSourceCop.Include = true
+│   ├── app.json                         # org file scoped to every extension; mustache-substituted per extension
+│   ├── AppSourceCop.json                # org file scoped to every extension, when the template opts in
 │   ├── src/                             # folder from workspace_extension_folders
 │   │   └── codeunits/
 │   │       └── AppInstall.Codeunit.al   # file from workspace_extension_files; mustache-substituted
@@ -60,6 +60,7 @@ CRONUSCustomer/
 │   │   └── ...                          # files from module_extension_files
 │   └── ...
 ├── CRONUSCustomer.code-workspace
+├── workspace.aldt.toml                  # the form-post shape, so the workspace can be regenerated
 ├── .gitignore
 └── README.md
 ```
@@ -87,18 +88,33 @@ What the template declares is what the ZIP contains — there are no static fall
      d. Resolve each extension's dependencies into freshly-substituted name +
         freshly-allocated GUID. See "Dependency resolution" below.
 4. For each EmittableExtension in walk order:
-     a. Build app.json (see below).
-     b. When template.AppSourceCop.Include = true, build AppSourceCop.json
-        from the template's app_source_cop_json. The Include flag itself is
-        stripped — it's our authoring concept, not an AL field.
+     a. Emit every `organization_files` row scoped to EveryExtension that
+        the template opted into, rendering each through the per-extension
+        mustache context (WorkspaceZipBuilder.WritePerExtensionOrgFiles).
+        app.json is one of those rows — a canonical body seeded from
+        PlatformOrganizationFiles that resolves {{extension_id}},
+        {{dependencies_array}}, {{id_ranges_array}} and friends from the
+        context built in step 3; see "app.json construction" below for what
+        goes into each variable. Its output is re-serialised into AL's
+        2-space style so inline arrays don't land on one line.
+     b. AppSourceCop.json, when the org authors one, is just another such
+        row — there is no generator-built AppSourceCop.json any more. The
+        template's `app_source_cop_json` column survives as the authoring
+        surface (and the TOML round-trip) but no longer emits the file.
      c. Walk the folder tree depth-first. For each folder, emit its declared
         files (skipping IsExample files when plan.IncludeExamples is false). If
         the folder ends up with no emitted files AND no child folders, drop a
         .gitkeep placeholder so empty directories survive the ZIP round-trip.
 5. Generate workspace-root files:
      a. {{short_name}}.code-workspace (see below).
-     b. README.md (minimal — workspace name + description).
-     c. .gitignore (embedded resource shipped with the app; per-deployment policy).
+     b. workspace.aldt.toml — the plan's form-post shape, so the New
+        Workspace / New Extension pages can read a generated workspace back
+        and regenerate it (WorkspaceConfigService).
+     c. README.md and .gitignore are workspace-root-scoped
+        `organization_files` rows, seeded from PlatformOrganizationFiles.
+        Neither is generator-built and neither is an embedded resource any
+        more; an org edits both at /admin/templates/files and each
+        template opts in.
      d. Per-template-included files from `organization_files`, filtered by
         the `runtime_template_included_files` join — admins opt each template
         into the files that belong with it. Each row's `path` is
@@ -110,8 +126,10 @@ What the template declares is what the ZIP contains — there are no static fall
      a. images/logo.{png|svg|jpg} — bytes from organization_assets for the
         acting org (M14). The file extension matches the asset's `content_type`.
         Pre-M14 this was an embedded resource; that path is gone.
-     b. rulesets/Company.ruleset.json — embedded resource shipped with the app
-        (per-deployment policy, not per-org).
+     b. rulesets/Company.ruleset.json — also a workspace-root-scoped
+        `organization_files` row (its `path` carries the .assets/rulesets
+        prefix), seeded per org and template-opt-in like the rest. It was an
+        embedded resource before; that path is gone.
 7. Stream the whole thing as a ZIP.
 ```
 
@@ -165,7 +183,15 @@ A JSON file with:
 }
 ```
 
-The `settings` block is a static C# string constant in `WorkspaceConfigService`. The `folders` array is dynamic — one entry per emitted extension, using its `path` (which is also the on-disk folder name). Module clones use the module's `key` as the path; spaces don't appear because keys are URL-safe.
+That JSON is not a constant. `WorkspaceZipBuilder.BuildCodeWorkspace` layers three sources (Issue #61):
+
+1. The organisation's base template, `organization_settings.code_workspace_json`, edited at `/admin/templates/workspace` (falling back to `OrganizationDefaults.CodeWorkspaceJson` when the org hasn't set one).
+2. The optional per-template overlay, `runtime_templates.code_workspace_json`, edited on the template's own edit page. It deep-merges on the `settings` object and replaces wholesale on every other top-level key.
+3. The computed `folders` array, written last and always authoritative — the workspace has to point at the folders the generator actually emitted, whatever either layer pasted.
+
+Mustache substitution runs over each layer before the merge, so both can use `{{publisher}}`, `{{short_name}}` and the rest. A layer that doesn't parse as a JSON object raises a field-keyed `PlanValidationException` so the workspace and template error surfaces stay distinct.
+
+Each `folders` entry uses the extension's `path`, which is also its on-disk folder name. For a module clone that path is the module's `extension_name` (PascalCase), not its `key` — the key is the admin/URL slug and the dependency-reference target.
 
 ## Mustache substitution
 

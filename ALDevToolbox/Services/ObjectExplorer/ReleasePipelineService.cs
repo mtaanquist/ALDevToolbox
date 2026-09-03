@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
 
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
@@ -122,7 +123,7 @@ public sealed class ReleasePipelineService
             UpdatedAt = now,
         };
         _db.OeReleasePipelines.Add(pipeline);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
 
         _logger.LogInformation("Created release pipeline {ReleasePipelineId} ({Name}) for project {ProjectId} → environment {EnvironmentId}.",
             pipeline.Id, v.Name, input.ProjectId, input.ProjectEnvironmentId);
@@ -146,7 +147,7 @@ public sealed class ReleasePipelineService
         pipeline.DeploymentSchedule = v.DeploymentSchedule;
         pipeline.SchemaSyncMode = v.SchemaSyncMode;
         pipeline.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated release pipeline {ReleasePipelineId} ({Name}).", pipeline.Id, v.Name);
     }
 
@@ -283,8 +284,49 @@ public sealed class ReleasePipelineService
         if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
     }
 
+    /// <summary>
+    /// Saves, turning the name-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. The pre-check reads before this writes, so two
+    /// concurrent saves can leave one to be caught by the case-insensitive unique
+    /// index — and that has to read as an inline message, not a 500. See #702.
+    /// </summary>
+    private async Task SaveTranslatingNameClashAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw Validation("Name", "Another release pipeline in this project already uses this name.");
+        }
+    }
+
     private static PlanValidationException Validation(string field, string message) =>
         new(new Dictionary<string, string> { [field] = message });
+
+    /// <summary>
+    /// Throws a friendly <see cref="McpException"/> when the id isn't an active
+    /// release pipeline the caller can see, instead of silently returning an
+    /// empty history. Two fences: the org query filter, and the owning project's
+    /// visibility. A pipeline under a Private project the caller has no grant on
+    /// answers "not found", the same as an id in another org. Relocated here
+    /// from the MCP tool class so the fence has one home.
+    /// See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    public async Task EnsureReleasePipelineExistsAsync(int releasePipelineId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var exists = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => _db.OeProjects.Where(visible).Any(p => p.Id == r.ProjectId))
+            .AnyAsync(r => r.Id == releasePipelineId && r.DeletedAt == null, ct);
+        if (!exists)
+        {
+            throw new McpException($"Release pipeline {releasePipelineId} was not found. Call list_release_pipelines to see available pipelines.");
+        }
+    }
+
 }
 
 /// <summary>Form-post shape for a release pipeline: project, name, source build pipeline, target environment, and modes.</summary>

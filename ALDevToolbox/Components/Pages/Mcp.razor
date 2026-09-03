@@ -15,7 +15,7 @@
 @inject ILogger<Mcp> Logger
 @inject IOrganizationContext OrgContext
 @inject PersonalAccessTokenService Pats
-@inject AppDbContext Db
+@inject ALDevToolbox.Services.OAuth.OAuthConsentService Consents
 
 <PageTitle>MCP · AL Dev Toolbox</PageTitle>
 
@@ -388,15 +388,10 @@
         try
         {
             _hasToken = (await Pats.ListForUserAsync(userId.Value)).Any(p => p.RevokedAt is null);
-            // Counted straight off the table rather than through
-            // OAuthClientAdminService: that service joins each consent against
-            // the OAuth application registry to get a display name, which drags
-            // the whole OpenIddict manager in for what is a yes/no here. No new
-            // IgnoreQueryFilters() call site either - the tenant filter is
-            // exactly the scope we want, this org's consents for this user.
-            _hasConnectedAssistant = await Db.OAuthConsents
-                .AsNoTracking()
-                .AnyAsync(c => c.UserId == userId.Value);
+            // Read through the consent-only service, not the admin one: that
+            // joins the OAuth application registry for display names and drags the
+            // OpenIddict managers along for what is a yes/no here.
+            _hasConnectedAssistant = await Consents.HasAnyConsentAsync(userId.Value);
         }
         catch (Exception ex)
         {

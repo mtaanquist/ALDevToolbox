@@ -43,6 +43,7 @@ public sealed class McpSetupPageTests : IDisposable
             .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddScoped<PersonalAccessTokenService>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthConsentService>();
         _ctx.Services.AddSingleton(TimeProvider.System);
         _ctx.Services.AddSingleton(_db.DataProtectionProvider);
         _ctx.Services.AddSingleton<IHttpContextAccessor>(

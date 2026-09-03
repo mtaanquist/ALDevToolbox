@@ -95,7 +95,8 @@ public sealed class EntraSignInServiceTests : IDisposable
     [Fact]
     public async Task Complete_matches_an_existing_user_by_email_and_creates_the_link()
     {
-        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        // The org has verified cronus.com, which is what licenses the bind.
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
         var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
         await using var ctx = _db.NewContext();
 
@@ -240,7 +241,7 @@ public sealed class EntraSignInServiceTests : IDisposable
     [Fact]
     public async Task Complete_refuses_disabled_and_pending_accounts()
     {
-        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
         await SeedUserAsync(TestDb.DefaultOrgId, "disabled@cronus.com", UserStatus.Disabled);
         await SeedUserAsync(TestDb.DefaultOrgId, "pending@cronus.com", UserStatus.Pending);
         await using var ctx = _db.NewContext();
@@ -250,6 +251,91 @@ public sealed class EntraSignInServiceTests : IDisposable
             .Outcome.Should().Be(EntraCompletionOutcome.AccountDisabled);
         (await svc.CompleteAsync(new EntraTokenIdentity(TenantA, "aaaaaaaa-0000-0000-0000-000000000002", "pending@cronus.com", null), Ip))
             .Outcome.Should().Be(EntraCompletionOutcome.AccountPending);
+    }
+
+    [Fact]
+    public async Task Complete_refuses_to_bind_an_existing_account_on_an_unverified_email()
+    {
+        // Tenant is allow-listed, but nothing proves it owns cronus.com: no
+        // xms_edov and the org has claimed no domain. Issue #674.
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "admin@cronus.com");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "admin@cronus.com", "Not Really Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.EmailNotVerified);
+        result.User.Should().BeNull();
+        (await ctx.UserExternalLogins.IgnoreQueryFilters().AnyAsync(l => l.UserId == userId))
+            .Should().BeFalse("an unverified email claim must never create a link");
+        (await ctx.LoginAttempts.AnyAsync(a => a.Email == "admin@cronus.com" && !a.Succeeded))
+            .Should().BeTrue("the refusal is auditable");
+    }
+
+    [Fact]
+    public async Task Complete_binds_an_existing_account_when_the_token_carries_xms_edov()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "mette@cronus.com", "Mette", EmailVerified: true), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success);
+        result.User!.Id.Should().Be(userId);
+        (await ctx.UserExternalLogins.IgnoreQueryFilters().AnyAsync(l => l.UserId == userId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Complete_binds_an_existing_account_when_the_org_verified_the_domain()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "mette@cronus.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success);
+        result.User!.Id.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task Complete_still_signs_in_an_existing_link_on_an_unverified_email()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using (var seed = _db.NewContext())
+        {
+            seed.UserExternalLogins.Add(new UserExternalLogin
+            {
+                UserId = userId, Provider = "entra", Issuer = TenantA, Subject = Oid,
+                DisplayIdentity = "mette@cronus.com", CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "mette@cronus.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success, "the oid link predates the rule and is unaffected");
+        result.User!.Id.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task Complete_jit_provisions_when_the_email_is_unverified_and_no_account_exists()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "guest@partner.example", "Guest"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.PendingApproval,
+            "with no account to take over, the approval path still applies");
     }
 
     [Fact]

@@ -76,6 +76,8 @@ internal static class AccountMfaEndpoints
                     ctx.Response.Redirect($"/login/challenge?{RouteConstants.ErrQuery}=rate-limited");
                     return;
                 }
+                // Fence category 1 (pre-auth routing): MFA challenge between the two login legs;
+                // pinned to u.Id == state.UserId from the signed challenge state.
                 var user = await db.Users.IgnoreQueryFilters().AsNoTracking()
                     .Where(u => u.Id == state.UserId)
                     .Select(u => new { u.Email, u.DisplayName })
@@ -194,6 +196,8 @@ internal static class AccountMfaEndpoints
                     ctx.Response.Redirect($"{RouteConstants.Account}?{RouteConstants.ErrQuery}=Email&{RouteConstants.MsgQuery}={Uri.EscapeDataString("Try again in a few minutes.")}");
                     return;
                 }
+                // Fence category 4 (explicitly scoped user-id lookup): pinned to the signed-in
+                // user's own id.
                 var user = await db.Users.IgnoreQueryFilters().AsNoTracking()
                     .Where(u => u.Id == org.CurrentUserId!.Value)
                     .Select(u => new { u.Email, u.DisplayName })
@@ -271,7 +275,7 @@ internal static class AccountMfaEndpoints
         var user = await auth.CompleteMfaAsync(state.UserId, ResolveIp(ctx), ct);
         await ctx.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
-            new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+            new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
         ClearMfaPendingCookie(ctx);
         logger.LogInformation("MFA-gated sign-in completed for {Email} (org {OrgId}).", user.Email, user.OrganizationId);
         ctx.Response.Redirect(string.IsNullOrEmpty(state.ReturnUrl) ? "/" : state.ReturnUrl);

@@ -64,6 +64,15 @@ public sealed record ModuleListFilter(
     bool IncludeInternal = false,
     bool IncludeLanguagePack = false);
 
+/// <summary>Header facts for one module: its identity and the Release it came from.</summary>
+public sealed record ModuleHeader(
+    Guid AppId,
+    string Name,
+    string Publisher,
+    string Version,
+    int ReleaseId,
+    string ReleaseLabel);
+
 /// <summary>One row in the Modules list — name, publisher, version, counts.</summary>
 public sealed record ModuleListItem(
     long Id,

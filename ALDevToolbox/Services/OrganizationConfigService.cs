@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Seed;
@@ -42,8 +44,6 @@ public class OrganizationConfigService
     public const string MachineTranslationApiKeyProtectionPurpose = "ALDevToolbox.OrganizationSettings.MachineTranslationApiKey";
 
     private static readonly Regex PathRegex = new(@"^[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)*$", RegexOptions.Compiled);
-    private static readonly Regex SvgScriptTagRegex = new(@"<script\b[^>]*>.*?</script\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
-    private static readonly Regex SvgEventAttrRegex = new(@"\s+on[a-zA-Z]+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
@@ -168,6 +168,7 @@ public class OrganizationConfigService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var name = await db.Organizations
+            // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.Id == organizationId)
@@ -209,16 +210,21 @@ public class OrganizationConfigService
             return cached;
 
         var settings = await _db.OrganizationSettings
+            // Fence category 4 (explicitly scoped org-id lookup): the three reads below are all
+            // pinned to OrganizationId == organizationId, and the guard above refuses a request
+            // scoped to a different org.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.OrganizationId == organizationId, ct);
 
         var logo = await _db.OrganizationAssets
+            // Same category 4 read, pinned to a.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(a => a.OrganizationId == organizationId && a.Kind == OrganizationAssetKind.Logo, ct);
 
         var files = await _db.OrganizationFiles
+            // Same category 4 read, pinned to f.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(f => f.OrganizationId == organizationId)
@@ -566,7 +572,7 @@ public class OrganizationConfigService
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Name"] = "Organisation name must be 2–80 characters.",
+                ["Name"] = "Organisation name must be 2-80 characters.",
             });
         }
 
@@ -584,34 +590,11 @@ public class OrganizationConfigService
     }
 
     /// <summary>
-    /// Extracts the domain part of an email and looks up the claiming
-    /// organisation, if any. Used by signup to route users to a known org
-    /// without requiring them to type a slug. Bypasses query filters because
-    /// signup runs pre-login (no org in scope) and the routing must see
-    /// claims across every org.
-    /// </summary>
-    public async Task<Organization?> ResolveOrganizationByEmailAsync(string email, CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(email)) return null;
-        var at = email.LastIndexOf('@');
-        if (at < 0 || at == email.Length - 1) return null;
-        var domain = email[(at + 1)..].Trim().ToLowerInvariant();
-        if (domain.Length == 0) return null;
-
-        var claim = await _db.OrganizationEmailDomains
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(d => d.Domain == domain)
-            .Select(d => d.Organization)
-            .FirstOrDefaultAsync(ct);
-        return claim;
-    }
-
-    /// <summary>
     /// Replaces the logo for the current organisation with the supplied bytes.
-    /// SVG uploads are sanitised (script tags and on* attributes stripped) so
-    /// the rendered logo can't smuggle JavaScript into a generated workspace
-    /// or the admin preview.
+    /// SVG uploads are rebuilt from an allow-list of elements and attributes by
+    /// <see cref="SanitiseLogo"/> so the rendered logo can't smuggle JavaScript
+    /// into a generated workspace or the admin preview; an SVG that isn't
+    /// well-formed is refused.
     /// </summary>
     public async Task UploadLogoAsync(string contentType, byte[] content, CancellationToken ct = default)
     {
@@ -877,20 +860,297 @@ public class OrganizationConfigService
     };
 
     /// <summary>
-    /// Sanitises an uploaded SVG by stripping <c>&lt;script&gt;</c> elements
-    /// and <c>on*</c> event-handler attributes. PNGs pass through unchanged.
-    /// Public so the sanitiser can be exercised directly from tests.
+    /// Sanitises an uploaded SVG by re-emitting it from a parsed document with
+    /// an <b>allow-list</b> of elements and attributes: anything not named in
+    /// <see cref="SvgAllowedElements"/> is dropped together with its subtree,
+    /// and any attribute not in <see cref="SvgAllowedAttributes"/> is dropped.
+    /// That removes <c>script</c>, <c>foreignObject</c>, <c>use</c>,
+    /// <c>animate</c>, <c>animateTransform</c>, <c>set</c>, <c>image</c>,
+    /// every <c>on*</c> handler and every namespace we don't understand (HTML
+    /// or XLink content smuggled into an SVG) without needing a pattern per
+    /// vector. <c>href</c> / <c>xlink:href</c> survive only when the scheme is
+    /// http, https, a <c>data:image/*</c> URI, or a same-document fragment.
+    ///
+    /// <para>The <c>style</c> element and the <c>style</c> attribute survive a
+    /// conservative content filter (<see cref="IsSafeCss"/>) instead of being
+    /// dropped, because drawing tools put a logo's fills and strokes there and
+    /// removing them renders most real logos black. <c>viewBox</c>,
+    /// <c>xmlns</c> and the presentation attributes are preserved. The result
+    /// is serialised without an XML declaration.</para>
+    ///
+    /// <para>The document is parsed with DTDs prohibited and no external
+    /// resolver, so entity-expansion and external-entity tricks are refused by
+    /// the parser. Content that is not well-formed XML — including the
+    /// unterminated <c>&lt;script</c> that defeated the old regex pair — is
+    /// rejected with a <see cref="PlanValidationException"/> rather than
+    /// passed through half-cleaned.</para>
+    ///
+    /// <para>PNGs pass through unchanged. Public so the sanitiser can be
+    /// exercised directly from tests.</para>
     /// </summary>
+    /// <exception cref="PlanValidationException">
+    /// The bytes are not a well-formed SVG document.
+    /// </exception>
     public static byte[] SanitiseLogo(string contentType, byte[] content)
     {
         if (!string.Equals(contentType, "image/svg+xml", StringComparison.OrdinalIgnoreCase))
         {
             return content;
         }
-        var text = Encoding.UTF8.GetString(content);
-        text = SvgScriptTagRegex.Replace(text, string.Empty);
-        text = SvgEventAttrRegex.Replace(text, string.Empty);
-        return Encoding.UTF8.GetBytes(text);
+
+        XDocument doc;
+        try
+        {
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+            };
+            using var stream = new MemoryStream(content);
+            using var reader = XmlReader.Create(stream, settings);
+            doc = XDocument.Load(reader);
+        }
+        catch (Exception ex) when (ex is XmlException or InvalidOperationException)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["content"] = "That file isn't a valid SVG image. Save it again from your drawing tool and retry.",
+            });
+        }
+
+        if (doc.Root is null || doc.Root.Name != SvgNs + "svg")
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["content"] = "That file isn't a valid SVG image. Save it again from your drawing tool and retry.",
+            });
+        }
+
+        var clean = CleanSvgElement(doc.Root)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["content"] = "That file isn't a valid SVG image. Save it again from your drawing tool and retry.",
+            });
+
+        return Encoding.UTF8.GetBytes(clean.ToString(SaveOptions.DisableFormatting));
+    }
+
+    private static readonly XNamespace SvgNs = "http://www.w3.org/2000/svg";
+    private static readonly XNamespace XLinkNs = "http://www.w3.org/1999/xlink";
+
+    /// <summary>
+    /// The SVG elements a logo is allowed to contain. Anything else — script,
+    /// foreignObject, use, image, the animation elements — is dropped with its
+    /// subtree, the one exception being <c>a</c>, which is unwrapped so a
+    /// linked logo keeps its artwork (see <see cref="UnwrapSvgAnchor"/>).
+    /// <c>style</c> is allowed but its body must pass
+    /// <see cref="IsSafeCss"/>.
+    /// </summary>
+    private static readonly IReadOnlySet<string> SvgAllowedElements = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+        "text", "tspan", "defs", "linearGradient", "radialGradient", "stop",
+        "clipPath", "mask", "pattern", "symbol", "title", "desc", "style",
+    };
+
+    /// <summary>
+    /// Substrings that disqualify a <c>style</c> attribute or a
+    /// <c>&lt;style&gt;</c> body. Everything CSS can use to fetch a resource,
+    /// evaluate script, or break back out into markup is here; a declaration
+    /// list of plain colours and lengths — what a real logo export contains —
+    /// trips none of it. Matched against the value lower-cased with all
+    /// whitespace removed, so <c>url ( javascript :</c>-style padding can't
+    /// slip past.
+    /// </summary>
+    private static readonly string[] SvgUnsafeCssMarkers =
+    [
+        "url(", "expression(", "@import", "javascript:", "behavior:", "-moz-binding", "</", "<",
+    ];
+
+    /// <summary>
+    /// True when a <c>style</c> attribute value or <c>&lt;style&gt;</c> body is
+    /// safe to keep. Drawing tools (Illustrator, Inkscape, Figma) put a logo's
+    /// fills and strokes in exactly these two places — dropping them outright
+    /// renders most real logos black — so they get a conservative filter rather
+    /// than a ban. Failing it costs only that attribute or element, not the
+    /// whole file.
+    /// </summary>
+    private static bool IsSafeCss(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var cleaned = string.Concat(value.Where(c => !char.IsWhiteSpace(c))).ToLowerInvariant();
+        return !SvgUnsafeCssMarkers.Any(marker => cleaned.Contains(marker, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Geometry, presentation and layout attributes a logo needs. Deliberately
+    /// excludes every <c>on*</c> handler; <c>href</c> and <c>style</c> are
+    /// handled separately because their values need a content check.
+    /// </summary>
+    private static readonly IReadOnlySet<string> SvgAllowedAttributes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        // structure / geometry
+        "id", "class", "viewBox", "width", "height", "x", "y", "x1", "y1", "x2", "y2",
+        "cx", "cy", "r", "rx", "ry", "d", "points", "dx", "dy", "transform",
+        "preserveAspectRatio", "version", "gradientUnits", "gradientTransform",
+        "patternUnits", "patternContentUnits", "patternTransform", "clipPathUnits",
+        "maskUnits", "maskContentUnits", "spreadMethod", "offset",
+        // presentation
+        "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity",
+        "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray",
+        "stroke-dashoffset", "opacity", "color", "display", "visibility",
+        "clip-path", "clip-rule", "mask", "shape-rendering", "vector-effect",
+        "stop-color", "stop-opacity", "paint-order", "overflow",
+        // text
+        "font-family", "font-size", "font-weight", "font-style", "letter-spacing",
+        "text-anchor", "dominant-baseline", "xml:space",
+    };
+
+    /// <summary>
+    /// Recursively copies <paramref name="source"/> keeping only allow-listed
+    /// elements and attributes. Returns <c>null</c> when the element itself is
+    /// not allowed, so the caller drops it and its subtree.
+    /// </summary>
+    private static XElement? CleanSvgElement(XElement source)
+    {
+        if (source.Name.Namespace != SvgNs || !SvgAllowedElements.Contains(source.Name.LocalName))
+        {
+            return null;
+        }
+
+        if (source.Name.LocalName == "style")
+        {
+            // A style block carries CSS, not markup: keep its text (CDATA
+            // included, re-emitted as escaped text) only when it passes the
+            // filter, and drop the whole element otherwise.
+            var css = string.Concat(source.Nodes().OfType<XText>().Select(t => t.Value));
+            return IsSafeCss(css) ? new XElement(SvgNs + "style", new XText(css)) : null;
+        }
+
+        var clean = new XElement(SvgNs + source.Name.LocalName);
+
+        foreach (var attr in source.Attributes())
+        {
+            if (attr.IsNamespaceDeclaration)
+            {
+                // Keep only the SVG default namespace declaration; a prefix
+                // binding for XLink or HTML has nothing left to point at.
+                if (attr.Name.LocalName == "xmlns" && attr.Value == SvgNs.NamespaceName)
+                {
+                    clean.SetAttributeValue("xmlns", SvgNs.NamespaceName);
+                }
+                continue;
+            }
+
+            var isHref = attr.Name.LocalName == "href"
+                && (attr.Name.Namespace == XNamespace.None || attr.Name.Namespace == XLinkNs);
+            if (isHref)
+            {
+                if (IsSafeSvgHref(attr.Value))
+                {
+                    clean.SetAttributeValue("href", attr.Value);
+                }
+                continue;
+            }
+
+            if (attr.Name == "style")
+            {
+                if (IsSafeCss(attr.Value))
+                {
+                    clean.SetAttributeValue("style", attr.Value);
+                }
+                continue;
+            }
+
+            // Namespaced attributes (xlink:*, HTML, editor metadata) are out,
+            // except xml:space which is plain markup.
+            var name = attr.Name.Namespace == XNamespace.None
+                ? attr.Name.LocalName
+                : attr.Name.Namespace == XNamespace.Xml ? "xml:" + attr.Name.LocalName : null;
+            if (name is null || !SvgAllowedAttributes.Contains(name))
+            {
+                continue;
+            }
+            if (name == "xml:space")
+            {
+                clean.SetAttributeValue(XNamespace.Xml + "space", attr.Value);
+            }
+            else
+            {
+                clean.SetAttributeValue(name, attr.Value);
+            }
+        }
+
+        foreach (var node in source.Nodes())
+        {
+            switch (node)
+            {
+                case XElement child when child.Name == SvgNs + "a":
+                    // Exporters wrap a whole logo group in <a> when the designer
+                    // added a link. Unwrap it — the artwork inside is promoted
+                    // into this element and the link itself (with its href and
+                    // any target/on* attributes) is discarded. This is the one
+                    // unwrapped element: every other unknown name stays dropped
+                    // with its subtree.
+                    foreach (var unwrapped in UnwrapSvgAnchor(child))
+                    {
+                        clean.Add(unwrapped);
+                    }
+                    break;
+                case XElement child:
+                    var cleanChild = CleanSvgElement(child);
+                    if (cleanChild is not null) clean.Add(cleanChild);
+                    break;
+                case XText text:
+                    clean.Add(new XText(text.Value));
+                    break;
+                // Comments, processing instructions and CDATA are dropped.
+            }
+        }
+
+        return clean;
+    }
+
+    /// <summary>
+    /// Cleaned children of an <c>&lt;a&gt;</c>, with nested anchors unwrapped
+    /// too. The anchor's own attributes never survive, so a
+    /// <c>javascript:</c> href goes with it.
+    /// </summary>
+    private static IEnumerable<XElement> UnwrapSvgAnchor(XElement anchor)
+    {
+        foreach (var child in anchor.Elements())
+        {
+            if (child.Name == SvgNs + "a")
+            {
+                foreach (var nested in UnwrapSvgAnchor(child)) yield return nested;
+                continue;
+            }
+            var clean = CleanSvgElement(child);
+            if (clean is not null) yield return clean;
+        }
+    }
+
+    /// <summary>
+    /// True when an <c>href</c> on an allow-listed SVG element is safe to keep:
+    /// a same-document fragment, an http(s) URL, or a <c>data:image/*</c> URI.
+    /// Whitespace and control characters are stripped first because browsers
+    /// ignore them when parsing the scheme — the same evasion
+    /// <see cref="MarkdownRenderer.IsSafeUrl"/> defends against.
+    /// </summary>
+    private static bool IsSafeSvgHref(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        var cleaned = string.Concat(value.Where(c => c > ' '));
+        if (cleaned.Length == 0) return false;
+        if (cleaned[0] == '#') return true;
+
+        if (cleaned.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || cleaned.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return cleaned.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void Validate(OrganizationSettingsInput input)

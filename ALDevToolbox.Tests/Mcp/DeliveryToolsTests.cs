@@ -38,9 +38,7 @@ public sealed class DeliveryToolsTests : IDisposable
                 new ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache(TimeProvider.System),
                 NullLogger<DeliveryService>.Instance),
             new ReleasePipelineService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
-                NullLogger<ReleasePipelineService>.Instance),
-            new ProjectAccess(ctx, _db.OrgContext),
-            ctx);
+                NullLogger<ReleasePipelineService>.Instance));
 
     [Fact]
     public async Task List_release_pipelines_returns_the_orgs_pipelines()
