@@ -395,8 +395,13 @@ public sealed class SourceViewerService
         //    that defines it — e.g. clicking `Customer` in a Dansani file
         //    navigates to the base table in the BC parent Release. See
         //    ChainObjectResolution.
+        //    The click's own context picks between same-named candidates:
+        //    `Database::User` means the table, not the codeunit. Without the
+        //    hint the ranking fell back to kind order and could land on the
+        //    wrong object (issue #712).
         var target = await ChainObjectResolution.ResolveObjectAsync(
-            _db, releaseId.Value, word, kind: null, objectId: null, ct);
+            _db, releaseId.Value, word, kind: null, objectId: null, ct,
+            kindHint: Services.Al.AlGoToDefinitionLocator.KindHint(click));
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }

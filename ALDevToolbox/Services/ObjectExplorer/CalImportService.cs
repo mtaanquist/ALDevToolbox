@@ -652,6 +652,21 @@ public sealed class CalImportService
             "AND r.target_object_id IS NULL AND r.target_object_name <> '' " +
             "AND o.name = r.target_object_name AND o.kind = r.target_object_kind", p, ct).ConfigureAwait(false);
 
+        // Paren-less member access (`Cust.MyProc;`) reads exactly like a field
+        // read in C/AL, so the walker emits field_access for both. Now that the
+        // module's symbols are stored, a name that matches a procedure on the
+        // target object is a call — reclassify those rows (issue #712).
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_references r " +
+            "SET reference_kind = 'method_call', target_member_kind = 'procedure' " +
+            "FROM oe_module_objects o JOIN oe_module_symbols s ON s.object_id = o.id " +
+            "WHERE r.module_id = {0} AND o.module_id = {0} " +
+            "AND r.reference_kind = 'field_access' AND r.target_member_name IS NOT NULL " +
+            "AND r.target_object_id IS NOT NULL " +
+            "AND o.object_id = r.target_object_id AND o.kind = r.target_object_kind " +
+            "AND s.kind IN ('procedure', 'local_procedure') " +
+            "AND lower(s.name) = lower(r.target_member_name)", p, ct).ConfigureAwait(false);
+
         await _db.Database.ExecuteSqlRawAsync(
             "UPDATE oe_module_variables v SET target_object_name = o.name " +
             "FROM oe_module_objects o " +

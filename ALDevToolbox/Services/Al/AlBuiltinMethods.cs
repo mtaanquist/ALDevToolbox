@@ -940,6 +940,15 @@ public static class AlBuiltinMethods
         !string.IsNullOrEmpty(name) && StatementKeywords.Contains(name);
 
     /// <summary>
+    /// True for the runtime-supplied FIELDS (as opposed to methods) a
+    /// record exposes — <c>SystemId</c> and friends. Used to keep a
+    /// paren-less built-in classified correctly: <c>Rec.Modify;</c> is a
+    /// call, <c>Rec.SystemId</c> is a read. See issue #712.
+    /// </summary>
+    public static bool IsBuiltinField(string memberName) =>
+        !string.IsNullOrEmpty(memberName) && RecordSystemFields.Contains(memberName);
+
+    /// <summary>
     /// True when <paramref name="memberName"/> is a runtime built-in
     /// for the receiver's kind. The reference extractor uses this to
     /// distinguish "real unresolved" (typo / missing import / cross-

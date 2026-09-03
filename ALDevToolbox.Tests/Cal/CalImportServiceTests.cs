@@ -254,6 +254,81 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Paren_less_calls_are_classified_as_method_calls()
+    {
+        // #712: `Cust.MODIFY;` (built-in) and `Mgt.Bar;` (a procedure on the
+        // receiver) are calls, but C/AL writes them exactly like a field read.
+        // The built-in half is decided in the walker; the user-procedure half
+        // by the import's post-pass, once the module's symbols are stored.
+        const string cal =
+            "OBJECT Codeunit 50000 Mgt\r\n"
+          + "{\r\n"
+          + "  CODE\r\n"
+          + "  {\r\n"
+          + "    VAR\r\n"
+          + "      Cust@1000 : Record 18;\r\n"
+          + "      Helper@1001 : Codeunit 50001;\r\n"
+          + "\r\n"
+          + "    PROCEDURE Foo@1();\r\n"
+          + "    BEGIN\r\n"
+          + "      Cust.MODIFY;\r\n"
+          + "      Helper.Bar;\r\n"
+          + "      Cust.\"No.\";\r\n"
+          + "    END;\r\n"
+          + "\r\n"
+          + "    BEGIN\r\n"
+          + "    END.\r\n"
+          + "  }\r\n"
+          + "}\r\n"
+          + "OBJECT Codeunit 50001 Helper\r\n"
+          + "{\r\n"
+          + "  CODE\r\n"
+          + "  {\r\n"
+          + "    PROCEDURE Bar@1();\r\n"
+          + "    BEGIN\r\n"
+          + "    END;\r\n"
+          + "\r\n"
+          + "    BEGIN\r\n"
+          + "    END.\r\n"
+          + "  }\r\n"
+          + "}\r\n"
+          + "OBJECT Table 18 Customer\r\n"
+          + "{\r\n"
+          + "  FIELDS\r\n"
+          + "  {\r\n"
+          + "    { 1   ;   ;No.                 ;Code20         }\r\n"
+          + "  }\r\n"
+          + "  CODE\r\n"
+          + "  {\r\n"
+          + "    BEGIN\r\n"
+          + "    END.\r\n"
+          + "  }\r\n"
+          + "}\r\n";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, cal, Encoding.ASCII);
+        try
+        {
+            var releaseId = await ImportAsync(path, "Paren-less");
+            await using var read = _db.NewContext();
+
+            var sysRefs = await read.OeModuleSystemReferences.AsNoTracking()
+                .Where(r => r.Module!.ReleaseId == releaseId).ToListAsync();
+            sysRefs.Should().Contain(r => r.SystemMethodName.ToUpper() == "MODIFY"
+                && r.ReferenceKind == "method_call" && r.TargetObjectId == 18);
+
+            var refs = await read.OeModuleReferences.AsNoTracking()
+                .Where(r => r.Module!.ReleaseId == releaseId).ToListAsync();
+            refs.Should().Contain(r => r.TargetMemberName == "Bar"
+                && r.TargetObjectKind == "codeunit" && r.TargetObjectId == 50001
+                && r.ReferenceKind == "method_call" && r.TargetMemberKind == "procedure");
+            // A genuine field read with the same shape stays a read.
+            refs.Should().Contain(r => r.TargetMemberName == "No."
+                && r.TargetObjectId == 18 && r.ReferenceKind == "field_access");
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task BackfillSystemReferencesAsync_repopulates_cal_system_references()
     {
         // #291: simulate a pre-#279 C/AL release (no system refs), then backfill

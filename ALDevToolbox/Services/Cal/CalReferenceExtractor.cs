@@ -134,11 +134,24 @@ public static class CalReferenceExtractor
                             receiver.Value.Kind, receiver.Value.Id, member.Text, "procedure", "method_call"));
                     }
                 }
-                else if (!CalBuiltinMethods.IsReceiverMethod(member.Text))
+                else if (CalBuiltinMethods.IsReceiverMethod(member.Text))
                 {
-                    // Receiver.Field (read). Quoted members are certainly fields;
-                    // bare ones are usually fields too (a parameterless custom
-                    // function is rarer and still resolves by name at query time).
+                    // Paren-less built-in: `Cust.INSERT;` / `Rec.MODIFY;` are
+                    // calls, and classic C/AL writes them without parentheses
+                    // more often than not. They used to be dropped entirely —
+                    // now they land in the system-reference table like their
+                    // parenthesised twin (issue #712).
+                    sysRefs.Add(new CalRef(member.Line, member.Column,
+                        receiver.Value.Kind, receiver.Value.Id, member.Text, "system", "method_call"));
+                }
+                else
+                {
+                    // Receiver.Field (read) — or a paren-less call to a
+                    // procedure declared on the receiver, which reads the same
+                    // in C/AL. The import's post-pass reclassifies the row to
+                    // method_call when the name matches a procedure on the
+                    // target object (issue #712); it can't be decided here
+                    // because the walker sees one object at a time.
                     refs.Add(new CalRef(member.Line, member.Column,
                         receiver.Value.Kind, receiver.Value.Id, member.Text, "field", "field_access"));
                 }

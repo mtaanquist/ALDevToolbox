@@ -31,6 +31,10 @@ public static class AlGoToDefinitionLocator
         "permissionsetextension",
         "extends",
         "tabledata",
+        // `Database::"Customer"` is a table literal. Kept here (and not in
+        // AlResolvableTokenScanner's list) so the click's kind hint sees it
+        // without changing which tokens the viewer underlines. See #712.
+        "database",
     };
 
     /// <summary>
@@ -63,6 +67,39 @@ public static class AlGoToDefinitionLocator
             LineText: lineText,
             LeftContext: leftContext);
     }
+
+    /// <summary>
+    /// The object kind the click's context asks for, or <c>null</c> when the
+    /// context names none. Three shapes carry one: a typed literal
+    /// (<c>Database::"Customer"</c>, <c>Codeunit::"Sales-Post"</c>), a
+    /// declaration keyword (<c>Record "Customer"</c>, <c>Page "Customer
+    /// List"</c>), and a page's <c>SourceTable = "Customer"</c> property.
+    /// Callers pass it to the object lookup so a name shared by several
+    /// kinds resolves to the one the source actually named — BC ships both a
+    /// table and a page called <c>E-Document Service</c>, and both a table and
+    /// a codeunit called <c>User</c>. See issue #712.
+    /// </summary>
+    public static string? KindHint(GoToDefinitionClick click)
+    {
+        if (click.LeftContext.Operator is "::" or "keyword"
+            && click.LeftContext.Qualifier is { Length: > 0 } qualifier)
+        {
+            // `extends` names a base object but not which kind — the owning
+            // object's own kind decides that, and this locator doesn't see it.
+            if (qualifier.Equals("extends", StringComparison.OrdinalIgnoreCase)) return null;
+            // Accept any qualifier that maps onto a real catalog kind. That
+            // deliberately includes `Database`, which the underline scanner's
+            // keyword list doesn't carry: `Database::User` is a table.
+            var mapped = AlKindKeywords.MapKeywordToKind(qualifier);
+            if (AlKindKeywords.KindRank(mapped) < AlKindKeywords.KindPriority.Length) return mapped;
+        }
+
+        if (SourceTablePropertyRegex.IsMatch(click.LineText)) return "table";
+        return null;
+    }
+
+    private static readonly Regex SourceTablePropertyRegex =
+        new(@"^\s*SourceTable\s*=", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
     /// Returns the type name when <paramref name="fileContent"/> contains a
