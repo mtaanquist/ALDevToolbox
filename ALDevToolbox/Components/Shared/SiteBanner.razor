@@ -1,5 +1,6 @@
 @using ALDevToolbox.Services
-@inject SystemSettingsService Settings
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
 
 @*
     The site-wide notice a site administrator types at
@@ -10,6 +11,11 @@
     The text is read once per circuit here and comes from a memory cache in
     SystemSettingsService, so a navigation costs no query; the cache entry is
     dropped when the settings form saves.
+
+    Resolved through IServiceProvider rather than @@inject, and the read is
+    guarded: /Error re-renders through a layout after a request has already
+    failed, and the failure that matters most is an unreachable database
+    (issue #559). A banner that could not be read is simply not drawn.
 *@
 
 @if (!string.IsNullOrWhiteSpace(_text))
@@ -24,5 +30,18 @@
     private string? _text;
 
     protected override async Task OnInitializedAsync()
-        => _text = await Settings.GetBannerAsync();
+    {
+        var settings = Services.GetService<SystemSettingsService>();
+        if (settings is null) return;
+        try
+        {
+            _text = await settings.GetBannerAsync();
+        }
+        catch (Exception)
+        {
+            // The database is unreachable or the row is unreadable. The page
+            // the reader asked for matters more than the banner.
+            _text = null;
+        }
+    }
 }
