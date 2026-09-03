@@ -1,6 +1,6 @@
 @using ALDevToolbox.Services
 @using Microsoft.Extensions.DependencyInjection
-@inject IServiceProvider Services
+@inject IServiceScopeFactory Scopes
 
 @*
     The site-wide notice a site administrator types at
@@ -12,10 +12,17 @@
     SystemSettingsService, so a navigation costs no query; the cache entry is
     dropped when the settings form saves.
 
-    Resolved through IServiceProvider rather than @@inject, and the read is
-    guarded: /Error re-renders through a layout after a request has already
-    failed, and the failure that matters most is an unreachable database
-    (issue #559). A banner that could not be read is simply not drawn.
+    The read runs in its own service scope, not the request's: during static
+    server rendering the layout and the page initialise concurrently, and the
+    login page is already querying through the request-scoped AppDbContext.
+    Sharing that context from here raced it ("a second operation was started
+    on this context instance") and turned /login into a 500. A private scope
+    gives the banner its own context; the memory cache keeps that a rare query.
+
+    The read is also guarded: /Error re-renders through a layout after a
+    request has already failed, and the failure that matters most is an
+    unreachable database (issue #559). A banner that could not be read is
+    simply not drawn.
 *@
 
 @if (!string.IsNullOrWhiteSpace(_text))
@@ -31,10 +38,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var settings = Services.GetService<SystemSettingsService>();
-        if (settings is null) return;
         try
         {
+            await using var scope = Scopes.CreateAsyncScope();
+            var settings = scope.ServiceProvider.GetService<SystemSettingsService>();
+            if (settings is null) return;
             _text = await settings.GetBannerAsync();
         }
         catch (Exception)
