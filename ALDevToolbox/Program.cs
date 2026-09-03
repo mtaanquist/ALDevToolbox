@@ -711,63 +711,38 @@ builder.Services.AddSingleton<IconCatalog>();
 // MarkdownRenderer builds the Markdig pipeline once on construction and
 // reuses it for every render; safe as a singleton, no per-request state.
 builder.Services.AddSingleton<MarkdownRenderer>();
-// The scheduler runs in the background; opt-out via DISABLE_BACKUP_SCHEDULER=1
-// for environments (tests, CI) that don't want a background timer to start
-// chasing pg_dump.
-if (Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<BackupScheduler>();
-}
-// Daily VACUUM over the Object Explorer content tables. Same opt-out
-// pattern as the backup scheduler so tests can disable the timer.
-if (Environment.GetEnvironmentVariable("DISABLE_OE_VACUUM_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerVacuumScheduler>();
-}
+// Every scheduler below honours its own DISABLE_* opt-out inside the service
+// (see Services/Workers/PolledScheduler.cs), so registration is unconditional
+// except where a second condition applies.
+builder.Services.AddHostedService<BackupScheduler>();
+// Daily VACUUM over the Object Explorer content tables.
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerVacuumScheduler>();
 // Refreshes per-org storage snapshots so StorageBar reads a cached row rather
-// than counting every tenanted table on each navigation. Same opt-out pattern.
+// than counting every tenanted table on each navigation.
 // Single-tenant mode hides the StorageBar entirely, so there's nothing to feed —
 // skip the timer there too.
-if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1" && !singleTenantMode)
+if (!singleTenantMode)
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.UsageSnapshotScheduler>();
 }
 // Daily import of new Microsoft OnPrem releases for orgs that opted in
-// (OrganizationSettings.AutoImportReleasesEnabled). Same opt-out pattern as the
-// other schedulers; runs in single- and multi-tenant alike.
-if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
-}
+// (OrganizationSettings.AutoImportReleasesEnabled); runs in single- and
+// multi-tenant alike.
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
 // Enqueues scheduled SaaS deliveries when due, and fails restart-orphaned ones on its
-// first sweep. Same opt-out pattern (DISABLE_DELIVERY_SCHEDULER=1, also honoured inside
-// the service so tests that construct it directly stay quiet).
-if (Environment.GetEnvironmentVariable("DISABLE_DELIVERY_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryScheduler>();
-}
+// first sweep.
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryScheduler>();
 // Nightly sweep that re-reads every BC-connected project's environments, keeping the
-// mirrored next-platform-update columns fresh for the fleet view. Same opt-out pattern
-// (DISABLE_ENVIRONMENT_REFRESH_SCHEDULER=1, also honoured inside the service).
-if (Environment.GetEnvironmentVariable("DISABLE_ENVIRONMENT_REFRESH_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshScheduler>();
-}
+// mirrored next-platform-update columns fresh for the fleet view.
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshScheduler>();
 // Mirrors Microsoft's BCQuality knowledge base into Postgres for the MCP
-// tools: a first ingest shortly after startup, then daily. Same opt-out
-// pattern as the other schedulers — with it off the tools report an empty
-// knowledge base rather than failing. See .design/bcquality.md.
-if (Environment.GetEnvironmentVariable("DISABLE_BCQUALITY_REFRESH") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.BcQuality.BcQualityRefreshScheduler>();
-}
+// tools: a first ingest shortly after startup, then daily. With the refresh
+// disabled the tools report an empty knowledge base rather than failing.
+// See .design/bcquality.md.
+builder.Services.AddHostedService<ALDevToolbox.Services.BcQuality.BcQualityRefreshScheduler>();
 // Periodic prune of old login_attempts rows so the table doesn't grow
-// unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out
-// pattern as the other schedulers. See issue #403.
-if (Environment.GetEnvironmentVariable("DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.LoginAttemptPruneScheduler>();
-}
+// unbounded (the rate-limiter only reads a ~15-minute window). See issue #403.
+builder.Services.AddHostedService<ALDevToolbox.Services.LoginAttemptPruneScheduler>();
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services;
 
@@ -28,7 +29,7 @@ namespace ALDevToolbox.Services;
 /// exists yet — the bar simply hides.
 /// </para>
 /// </summary>
-public sealed class UsageSnapshotScheduler : BackgroundService
+public sealed class UsageSnapshotScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
     // Hourly, not quarter-hourly (#684). The sweep still counts rows in every
@@ -42,55 +43,26 @@ public sealed class UsageSnapshotScheduler : BackgroundService
     private readonly TimeProvider _clock;
     private readonly ILogger<UsageSnapshotScheduler> _logger;
     private DateTimeOffset? _lastRunUtc;
-    private readonly WorkerHeartbeat _heartbeat;
 
     public UsageSnapshotScheduler(
         IServiceProvider services,
         TimeProvider clock,
         ILogger<UsageSnapshotScheduler> logger,
         WorkerHeartbeatRegistry heartbeats)
+        // Poll every minute, stale at 5 (same as the vacuum scheduler). A
+        // single recompute sweep is short; a 10-minute active ceiling is plenty.
+        : base(logger, heartbeats, nameof(UsageSnapshotScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(10),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_USAGE_SNAPSHOT_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
-        // Poll every minute, stale at 5 (same as the vacuum scheduler). A
-        // single recompute sweep is short; a 10-minute active ceiling is plenty.
-        _heartbeat = heartbeats.Register(nameof(UsageSnapshotScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(10),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Defer a few seconds so startup migrations have settled before we
-        // open another scope against the same pool.
-        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "UsageSnapshotScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         var now = _clock.GetUtcNow();
         if (_lastRunUtc is { } last && now - last < RunInterval) return;

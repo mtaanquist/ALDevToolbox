@@ -160,7 +160,7 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume). | `/var/lib/aldevtoolbox/backups` |
 | `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily `pg_dump` (+ per-tenant snapshot) scheduler. | unset            |
 | `DISABLE_OE_VACUUM_SCHEDULER`                 | `1` to disable the nightly VACUUM over Object Explorer tables. | unset               |
-| `DISABLE_USAGE_SNAPSHOT_SCHEDULER`            | `1` to disable the 15-minute storage-usage snapshots.     | unset                  |
+| `DISABLE_USAGE_SNAPSHOT_SCHEDULER`            | `1` to disable the hourly storage-usage snapshots.         | unset                  |
 | `DISABLE_BCQUALITY_REFRESH`                   | `1` to disable the daily mirror of Microsoft's BCQuality knowledge base. | unset    |
 | `DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER`       | `1` to disable the daily auto-import of new Microsoft OnPrem releases for orgs that opted in. | unset |
 | `DISABLE_DELIVERY_SCHEDULER`                  | `1` to disable the scheduler that enqueues due deliveries, so scheduled publishes never fire. | unset |

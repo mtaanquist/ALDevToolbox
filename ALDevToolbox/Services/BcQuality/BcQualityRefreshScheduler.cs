@@ -1,4 +1,5 @@
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services.BcQuality;
 
@@ -23,7 +24,7 @@ namespace ALDevToolbox.Services.BcQuality;
 /// empty knowledge base rather than failing.
 /// </para>
 /// </summary>
-public sealed class BcQualityRefreshScheduler : BackgroundService
+public sealed class BcQualityRefreshScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
 
@@ -42,58 +43,27 @@ public sealed class BcQualityRefreshScheduler : BackgroundService
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ILogger<BcQualityRefreshScheduler> _logger;
-    private readonly WorkerHeartbeat _heartbeat;
 
     public BcQualityRefreshScheduler(
         IServiceProvider services,
         TimeProvider clock,
         ILogger<BcQualityRefreshScheduler> logger,
         WorkerHeartbeatRegistry heartbeats)
+        // A full ingest is a shallow clone plus ~250 upserts — seconds, not
+        // minutes. 15 minutes of active time is a wedged-job ceiling, and a
+        // 15-minute idle ceiling matches the 5-minute poll with slack.
+        : base(logger, heartbeats, nameof(BcQualityRefreshScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(15),
+            maxIdleSilence: TimeSpan.FromMinutes(15),
+            disableEnvVar: "DISABLE_BCQUALITY_REFRESH")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
-        // A full ingest is a shallow clone plus ~250 upserts — seconds, not
-        // minutes. 15 minutes of active time is a wedged-job ceiling, and a
-        // 15-minute idle ceiling matches the 5-minute poll with slack.
-        _heartbeat = heartbeats.Register(nameof(BcQualityRefreshScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(15),
-            maxIdleSilence: TimeSpan.FromMinutes(15));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Let startup migrations settle before opening another scope, and
-        // before the first-run ingest competes with the seed for the pool.
-        try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                // The service already stamped the failure on the provenance
-                // row; this keeps one bad refresh from killing the loop.
-                _logger.LogWarning(ex, "BCQuality refresh tick threw; will retry on a later poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
         var ingest = scope.ServiceProvider.GetRequiredService<BcQualityIngestService>();
