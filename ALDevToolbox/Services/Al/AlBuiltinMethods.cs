@@ -67,7 +67,7 @@ namespace ALDevToolbox.Services.Al;
 /// </list>
 ///
 /// <para>BC platform virtual-table ids and names live in a separate
-/// list at <c>ReleaseImportService.PlatformVirtualTables</c> — the
+/// list at <c>ReleaseImportAllowLists.PlatformVirtualTables</c> — the
 /// chain-walker also has a <c>IsPlatformVirtualTableId</c> range
 /// check (2000000000..2000000999) in <c>AlReferenceExtractor.cs</c>
 /// as a safety net.</para>
