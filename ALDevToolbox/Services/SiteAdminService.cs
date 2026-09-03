@@ -199,6 +199,10 @@ public sealed class SiteAdminService
         CancellationToken ct = default)
     {
         RequireSiteAdmin();
+        // IgnoreQueryFilters: sanctioned SiteAdmin cross-org console category.
+        // audit_log gained a tenant query filter in #678; this console exists
+        // to search audit activity across every organisation, and access is
+        // gated by RequireSiteAdmin() above.
         var q = _db.AuditLog.IgnoreQueryFilters().AsNoTracking().AsQueryable();
 
         if (entityType is { } et) q = q.Where(e => e.EntityType == et);

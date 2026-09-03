@@ -49,8 +49,11 @@ internal sealed class AuditLogEntryConfiguration : IEntityTypeConfiguration<Audi
             .WithMany()
             .HasForeignKey(e => e.ChangedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
-        // AuditLog scoping is service-layer (AuditService filters by org
-        // explicitly) — we don't apply a query filter here because seed and
-        // bootstrap inserts can have a null OrganizationId.
+        // AuditLog is tenant-scoped by the query filter installed in
+        // AppDbContext.OnModelCreating (#678). It is the one filter that also
+        // admits rows with a null OrganizationId, because startup seed and
+        // bootstrap inserts run before any org context exists. AuditService
+        // keeps its explicit organization_id predicates on top as belt and
+        // braces.
     }
 }

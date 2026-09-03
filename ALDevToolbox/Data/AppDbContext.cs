@@ -342,6 +342,16 @@ public class AppDbContext : DbContext
         ScopeToOrganization<PersonalAccessToken>(modelBuilder);
         ScopeToOrganization<UserRepositoryToken>(modelBuilder);
         ScopeToOrganization<OAuthConsent>(modelBuilder);
+        // AuditLogEntry carries a *nullable* organization_id: startup seed and
+        // bootstrap-admin inserts happen before any org context exists. The
+        // filter therefore admits null-org rows alongside the current org's,
+        // so those system rows stay visible while a tenant still cannot read
+        // another tenant's audit history (#678). AuditService keeps its
+        // explicit predicates as belt and braces; the SiteAdmin console reads
+        // cross-org and calls IgnoreQueryFilters() explicitly.
+        ScopeToOrganization<AuditLogEntry>(
+            modelBuilder,
+            e => e.OrganizationId == _orgContext.OrganizationIdForFilter || e.OrganizationId == null);
 
         // PasswordResetToken scopes via its required User principal: tokens
         // don't carry organization_id themselves, so the filter walks the nav.
