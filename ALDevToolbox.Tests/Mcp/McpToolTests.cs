@@ -733,6 +733,7 @@ public sealed class McpToolTests : IDisposable
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
             new ALDevToolbox.Services.ObjectExplorer.TranslationImportService(
                 ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>.Instance),
+            new ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter(ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter>.Instance),
             NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>.Instance);
         await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, appFileName));
         var summary = await importer.ImportReleaseAsync(

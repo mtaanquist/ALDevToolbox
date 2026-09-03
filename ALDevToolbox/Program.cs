@@ -260,6 +260,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.Translation.TranslationSuggesti
 builder.Services.AddSingleton<ALDevToolbox.Services.Translation.Providers.IMachineTranslationProviderFactory,
     ALDevToolbox.Services.Translation.Providers.MachineTranslationProviderFactory>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CalImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DvdDownloadService>();

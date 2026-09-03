@@ -38,6 +38,7 @@ public sealed class ExplorerTreeTests : IDisposable
                     ctx, _db.OrgContext,
                     NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance),
                 NullLogger<TranslationImportService>.Instance),
+            new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
     private SourceViewerService NewViewer(Data.AppDbContext ctx) =>
