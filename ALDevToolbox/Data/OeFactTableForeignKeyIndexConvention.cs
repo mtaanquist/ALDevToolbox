@@ -19,7 +19,22 @@ namespace ALDevToolbox.Data;
 ///
 /// This subclass keeps the convention for everything else and only declines to
 /// create the single-column <c>organization_id</c> index on those five tables.
-/// The foreign key constraint itself is unchanged.
+/// The foreign key constraint itself is unchanged, so tenant isolation (the EF
+/// query filter plus the FK) does not depend on this index in any mode.
+///
+/// <para>
+/// Known trade-off for multi-tenant installs: <c>PerTenantBackupService</c>
+/// exports and restores these tables with a plain
+/// <c>WHERE organization_id = @org</c>, and deleting an organisation cascades
+/// through the same column. Without the index those become sequential scans
+/// of the whole table (minutes on a multi-GB references table), still correct
+/// but slow. Per-tenant snapshots are disabled in single-tenant mode, where
+/// every current deployment runs, so the write saving on release import wins.
+/// If a large multi-org deployment ever needs those paths fast, add a
+/// composite <c>(organization_id, module_id)</c> index on the five tables
+/// here rather than reinstating the bare one; it serves the snapshot queries
+/// while staying useful to nothing else.
+/// </para>
 /// </summary>
 internal sealed class OeFactTableForeignKeyIndexConvention : ForeignKeyIndexConvention
 {
