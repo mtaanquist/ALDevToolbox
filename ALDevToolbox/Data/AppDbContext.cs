@@ -2,6 +2,8 @@ using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
 using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
@@ -401,5 +403,11 @@ public class AppDbContext : DbContext
     {
         configurationBuilder.Properties<DateTime>().HaveColumnType("timestamp with time zone");
         configurationBuilder.Properties<DateTime?>().HaveColumnType("timestamp with time zone");
+        // #691: no bare organization_id index on the five OE fact tables. See
+        // OeFactTableForeignKeyIndexConvention for why a Replace is the only
+        // way — the stock convention re-creates a removed FK index.
+        configurationBuilder.Conventions.Replace<ForeignKeyIndexConvention>(
+            sp => new OeFactTableForeignKeyIndexConvention(
+                sp.GetRequiredService<ProviderConventionSetBuilderDependencies>()));
     }
 }
