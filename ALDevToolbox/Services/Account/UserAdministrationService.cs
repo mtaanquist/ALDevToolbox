@@ -44,6 +44,8 @@ public sealed class UserAdministrationService
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["Decision"] = "This request has already been decided." });
         }
+        // Fence category 4 (explicitly scoped lookups): the signup request was already
+        // loaded against actingOrgId, so both ids below belong to the admin's own org.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == req.UserId.Value, ct);
         user.Status = UserStatus.Active;
         req.Decision = SignupDecision.Approved;
@@ -52,6 +54,8 @@ public sealed class UserAdministrationService
         // The org carrying the new user becomes non-pending the moment its
         // first signup is approved. Subsequent admin login triggers the
         // first-time seed (see Program.cs bootstrap path).
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to req.OrganizationId,
+        // which LoadSignupRequestAsync already checked equals actingOrgId.
         var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == req.OrganizationId, ct);
         org.IsPending = false;
         await _db.SaveChangesAsync(ct);
@@ -67,6 +71,8 @@ public sealed class UserAdministrationService
         }
         if (req.UserId is int userId)
         {
+            // Fence category 4 (explicitly scoped user-id lookup): req.UserId belongs to the
+            // signup request already checked against actingOrgId.
             var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
             // Pending users rarely have audit rows pointing at them, but
             // anonymise defensively rather than gamble on the rejection
@@ -188,6 +194,8 @@ public sealed class UserAdministrationService
     /// </summary>
     private async Task<string> LookupDisplayNameAsync(int userId, int actingOrgId, CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to
+        // u.OrganizationId == actingOrgId (see #489).
         var name = await _db.Users.IgnoreQueryFilters().AsNoTracking()
             .Where(u => u.Id == userId && u.OrganizationId == actingOrgId)
             .Select(u => u.DisplayName)
@@ -197,6 +205,7 @@ public sealed class UserAdministrationService
 
     private async Task<int> CountActiveAdminsAsync(int orgId, CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to u.OrganizationId == orgId.
         return await _db.Users.IgnoreQueryFilters()
             .CountAsync(u => u.OrganizationId == orgId
                              && u.Role == UserRole.Admin
@@ -205,6 +214,8 @@ public sealed class UserAdministrationService
 
     private async Task<User> LoadUserAsync(int userId, int actingOrgId, CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): the row is refused below
+        // unless its OrganizationId equals actingOrgId.
         var user = await _db.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null || user.OrganizationId != actingOrgId)
@@ -217,6 +228,8 @@ public sealed class UserAdministrationService
     private async Task<SignupRequest> LoadSignupRequestAsync(int id, int actingOrgId, CancellationToken ct)
     {
         var req = await _db.SignupRequests
+            // Fence category 4 (explicitly scoped lookup): the row is refused below unless its
+            // OrganizationId equals actingOrgId.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (req is null || req.OrganizationId != actingOrgId)
@@ -259,6 +272,8 @@ public sealed class UserAdministrationService
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["NewEmail"] = "That's already this user's email." });
         }
+        // Fence category 6 (existence-only uniqueness probe): emails are unique
+        // deployment-wide; projects a bool, never a row.
         var taken = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == normalised && u.Id != user.Id, ct);
         if (taken)
         {
@@ -271,6 +286,8 @@ public sealed class UserAdministrationService
         // a previous recipient's link would still validate against the newly-
         // stored pending_email and silently confirm an address they never had
         // access to.
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to t.UserId == user.Id,
+        // the user this admin just loaded from their own org.
         var stale = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Where(t => t.UserId == user.Id
                         && t.Purpose == TokenPurpose.EmailChangeConfirm
@@ -304,6 +321,8 @@ public sealed class UserAdministrationService
         if (string.IsNullOrWhiteSpace(rawToken)) return null;
         var hash = TokenIssuer.Sha256Hex(rawToken);
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Fence category 1 (pre-auth routing): the confirmation link is opened from an email,
+        // possibly signed out; pinned to the token hash.
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == TokenPurpose.EmailChangeConfirm, ct);
@@ -322,6 +341,7 @@ public sealed class UserAdministrationService
         }
         // Race: another account may have grabbed the address since the token
         // was issued.
+        // Fence category 6 (existence-only uniqueness probe): projects a bool, never a row.
         var stolen = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == user.PendingEmail && u.Id != user.Id, ct);
         if (stolen)
         {
@@ -346,16 +366,21 @@ public sealed class UserAdministrationService
     /// </summary>
     public async Task ResetMfaAsync(int targetUserId, CancellationToken ct = default)
     {
+        // Fence category 2 (SiteAdmin cross-org console): break-glass MFA reset, reached only
+        // from /site-admin/users; every read is pinned to targetUserId.
         var user = await _db.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == targetUserId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["UserId"] = "User not found." });
 
+        // Category 2, pinned to s.UserId == targetUserId.
         var totp = await _db.UserTotpSecrets.IgnoreQueryFilters()
             .Where(s => s.UserId == targetUserId).ToListAsync(ct);
         _db.UserTotpSecrets.RemoveRange(totp);
+        // Category 2, pinned to c.UserId == targetUserId.
         var codes = await _db.UserRecoveryCodes.IgnoreQueryFilters()
             .Where(c => c.UserId == targetUserId).ToListAsync(ct);
         _db.UserRecoveryCodes.RemoveRange(codes);
+        // Category 2, pinned to p.UserId == targetUserId.
         var passkeys = await _db.UserPasskeys.IgnoreQueryFilters()
             .Where(p => p.UserId == targetUserId).ToListAsync(ct);
         _db.UserPasskeys.RemoveRange(passkeys);

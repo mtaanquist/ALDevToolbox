@@ -46,6 +46,13 @@ public sealed class FolderTreeHydrator
         IQueryable<WorkspaceExtensionFile> fileQuery = _db.WorkspaceExtensionFiles.AsNoTracking();
         if (ignoreOrgFilter)
         {
+            // Fence category 5 (system-org fork read), and only when the caller opts in.
+            // ignoreOrgFilter is passed true by exactly one caller — TemplateImportService
+            // (both hydrate calls in ImportTemplateAsync) — whose source rows were already
+            // read pinned to OrganizationId == systemOrgId, so the ids below belong to the
+            // system org by construction. Every other caller (GenerationService, ModuleService,
+            // ExportService, NewWorkspace/NewExtension previews) leaves it false and stays
+            // inside the tenant filter.
             folderQuery = folderQuery.IgnoreQueryFilters();
             fileQuery = fileQuery.IgnoreQueryFilters();
         }
@@ -122,6 +129,8 @@ public sealed class FolderTreeHydrator
         IQueryable<ModuleExtensionFile> fileQuery = _db.ModuleExtensionFiles.AsNoTracking();
         if (ignoreOrgFilter)
         {
+            // Fence category 5 (system-org fork read): same opt-in as above — only
+            // TemplateImportService passes ignoreOrgFilter, with system-org module ids.
             folderQuery = folderQuery.IgnoreQueryFilters();
             fileQuery = fileQuery.IgnoreQueryFilters();
         }

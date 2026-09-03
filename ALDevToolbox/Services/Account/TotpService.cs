@@ -56,12 +56,14 @@ public sealed class TotpService
     /// </summary>
     public async Task<TotpEnrollment> BeginEnrollmentAsync(int userId, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): both reads pinned to userId.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         var raw = RandomNumberGenerator.GetBytes(20);
         var secretBase32 = Base32Encoding.ToString(raw);
         var encrypted = _protector.Protect(secretBase32);
         var now = _clock.GetUtcNow().UtcDateTime;
 
+        // Same category 4 read, pinned to s.UserId == userId.
         var existing = await _db.UserTotpSecrets.IgnoreQueryFilters()
             .FirstOrDefaultAsync(s => s.UserId == userId, ct);
         if (existing is null)
@@ -105,6 +107,7 @@ public sealed class TotpService
     /// </summary>
     public async Task<IReadOnlyList<string>> ConfirmEnrollmentAsync(int userId, string code, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to s.UserId == userId.
         var secret = await _db.UserTotpSecrets.IgnoreQueryFilters()
             .FirstOrDefaultAsync(s => s.UserId == userId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["Totp"] = "Start a TOTP enrollment first." });
@@ -118,6 +121,7 @@ public sealed class TotpService
         var now = _clock.GetUtcNow().UtcDateTime;
         secret.ConfirmedAt = now;
         secret.LastUsedAt = now;
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to u.Id == userId.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         user.TotpEnabled = true;
         await _db.SaveChangesAsync(ct);
@@ -132,6 +136,8 @@ public sealed class TotpService
     /// </summary>
     public async Task<bool> VerifyAsync(int userId, string code, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to s.UserId == userId
+        // (the half-authenticated MFA state).
         var secret = await _db.UserTotpSecrets.IgnoreQueryFilters()
             .FirstOrDefaultAsync(s => s.UserId == userId && s.ConfirmedAt != null, ct);
         if (secret is null) return false;
@@ -148,12 +154,16 @@ public sealed class TotpService
     /// </summary>
     public async Task DisableAsync(int userId, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): the three reads below are all
+        // pinned to the same userId.
         var secret = await _db.UserTotpSecrets.IgnoreQueryFilters()
             .FirstOrDefaultAsync(s => s.UserId == userId, ct);
         if (secret is not null) _db.UserTotpSecrets.Remove(secret);
+        // Same category 4 read, pinned to c.UserId == userId.
         var codes = await _db.UserRecoveryCodes.IgnoreQueryFilters()
             .Where(c => c.UserId == userId).ToListAsync(ct);
         _db.UserRecoveryCodes.RemoveRange(codes);
+        // Same category 4 read, pinned to u.Id == userId.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         user.TotpEnabled = false;
         await _db.SaveChangesAsync(ct);

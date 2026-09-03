@@ -168,6 +168,7 @@ public class OrganizationConfigService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var name = await db.Organizations
+            // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.Id == organizationId)
@@ -209,16 +210,21 @@ public class OrganizationConfigService
             return cached;
 
         var settings = await _db.OrganizationSettings
+            // Fence category 4 (explicitly scoped org-id lookup): the three reads below are all
+            // pinned to OrganizationId == organizationId, and the guard above refuses a request
+            // scoped to a different org.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.OrganizationId == organizationId, ct);
 
         var logo = await _db.OrganizationAssets
+            // Same category 4 read, pinned to a.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(a => a.OrganizationId == organizationId && a.Kind == OrganizationAssetKind.Logo, ct);
 
         var files = await _db.OrganizationFiles
+            // Same category 4 read, pinned to f.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(f => f.OrganizationId == organizationId)
@@ -599,6 +605,8 @@ public class OrganizationConfigService
         if (domain.Length == 0) return null;
 
         var claim = await _db.OrganizationEmailDomains
+            // Fence category 1 (pre-auth routing): maps a sign-in email's domain to one org;
+            // pinned to d.Domain == domain.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(d => d.Domain == domain)

@@ -111,6 +111,8 @@ public sealed class EntraSignInService
     /// login page has no organisation yet, and "any org" is the question.
     /// </summary>
     public Task<bool> IsSignInAvailableAsync(CancellationToken ct = default) =>
+        // Fence category 1 (pre-auth routing): deployment-wide question asked by the
+        // anonymous login page.
         _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .AnyAsync(s => s.EntraEnabled, ct);
 
@@ -128,6 +130,7 @@ public sealed class EntraSignInService
         // organizations carries no query filter (it is the tenant root), so
         // this read needs no IgnoreQueryFilters.
         var orgCount = await _db.Organizations.AsNoTracking().CountAsync(ct);
+        // Fence category 1 (pre-auth routing): deployment-wide count for the anonymous login page.
         var entraOnlyCount = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .CountAsync(s => s.LocalLoginPolicy == Domain.ValueObjects.LocalLoginPolicy.EntraOnly, ct);
         return (true, orgCount > entraOnlyCount);
@@ -149,6 +152,8 @@ public sealed class EntraSignInService
         var domain = ExtractDomain(email);
         if (domain is not null)
         {
+            // Fence category 1 (pre-auth routing): routes one sign-in to one org; pinned to the
+            // typed email's domain.
             orgId = await _db.OrganizationEmailDomains.IgnoreQueryFilters().AsNoTracking()
                 .Where(d => d.Domain == domain)
                 .Select(d => (int?)d.OrganizationId)
@@ -157,6 +162,8 @@ public sealed class EntraSignInService
 
         if (orgId is null)
         {
+            // Fence category 1 (pre-auth routing): with no email, the challenge is only offered
+            // when exactly one org has Entra enabled.
             var enabledOrgIds = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
                 .Where(s => s.EntraEnabled)
                 .Select(s => s.OrganizationId)
@@ -167,6 +174,7 @@ public sealed class EntraSignInService
             else return (null, "entra-not-configured");
         }
 
+        // Fence category 1 (pre-auth routing): pinned to the org resolved above.
         var settings = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.OrganizationId == orgId && s.EntraEnabled)
             .Select(s => new { s.OrganizationId, s.EntraClientId })
@@ -200,6 +208,8 @@ public sealed class EntraSignInService
         IDataProtector protector;
         if (configSource == "org")
         {
+            // Fence category 1 (pre-auth routing): inside the OIDC handler; pinned to
+            // s.OrganizationId == organizationId from the signed challenge properties.
             ciphertext = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
                 .Where(s => s.OrganizationId == organizationId)
                 .Select(s => s.EntraClientSecretEncrypted)
@@ -242,11 +252,14 @@ public sealed class EntraSignInService
         var email = AuthService.NormaliseEmail(token.Email ?? string.Empty);
 
         // 1. Existing link — the fast path for every returning user.
+        // Fence category 1 (pre-auth routing): OIDC callback, no cookie yet; pinned to the
+        // token's (provider, issuer, subject).
         var link = await _db.UserExternalLogins.IgnoreQueryFilters()
             .Include(l => l.User!).ThenInclude(u => u.Organization)
             .FirstOrDefaultAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
         if (link is not null)
         {
+            // Fence category 1 (pre-auth routing): pinned to the linked user's own org.
             var linkedOrgAllows = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
                 .AnyAsync(s => s.OrganizationId == link.User!.OrganizationId
                     && s.EntraEnabled && s.EntraAllowedTenantIds.Contains(tid), ct);
@@ -259,6 +272,8 @@ public sealed class EntraSignInService
         }
 
         // 2. No link yet: which orgs would accept this tenant at all?
+        // Fence category 1 (pre-auth routing): which orgs allow this Entra tenant at all —
+        // the routing decision itself, made before any cookie exists.
         var candidates = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.EntraEnabled && s.EntraAllowedTenantIds.Contains(tid))
             .Select(s => new { s.OrganizationId, s.AutoJoinVerifiedDomainUsers })
@@ -277,6 +292,7 @@ public sealed class EntraSignInService
 
         // Email-domain routing decides when several orgs share the tenant.
         var domain = ExtractDomain(email);
+        // Fence category 1 (pre-auth routing): email-domain tiebreak, pinned to the domain.
         var domainOrgId = domain is null ? null : await _db.OrganizationEmailDomains.IgnoreQueryFilters().AsNoTracking()
             .Where(d => d.Domain == domain)
             .Select(d => (int?)d.OrganizationId)
@@ -290,6 +306,8 @@ public sealed class EntraSignInService
         }
 
         // 3. Match an existing local account by verified email, in-org only.
+        // Fence category 1 (pre-auth routing): pinned to the token's verified email; the
+        // org match is enforced on the next line.
         var user = await _db.Users.IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstOrDefaultAsync(u => u.Email == email, ct);

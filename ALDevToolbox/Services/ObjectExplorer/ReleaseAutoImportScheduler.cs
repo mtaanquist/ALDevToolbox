@@ -123,6 +123,8 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     internal static async Task<List<(int OrganizationId, string Countries, bool IsSystem)>> ResolveTargetsAsync(
         AppDbContext db, bool includeSystemOrg, CancellationToken ct)
     {
+        // Fence category 3 (scheduler, no request org): enumerates the orgs to sweep; each
+        // org's import then runs pinned inside its own AmbientOrganizationScope.
         var activeOrgs = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
             .Where(o => (includeSystemOrg || !o.IsSystem) && !o.IsPending)
             .Select(o => new { o.Id, o.IsSystem })
@@ -132,6 +134,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         // path does (issue #694).
         var activeSet = activeOrgs.ToDictionary(o => o.Id, o => o.IsSystem);
 
+        // Fence category 3 (scheduler, no request org): opt-in settings for the same sweep.
         var rows = await db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.AutoImportReleasesEnabled && s.AutoImportCountry != null && s.AutoImportCountry != "")
             .Select(s => new { s.OrganizationId, s.AutoImportCountry })

@@ -50,6 +50,8 @@ public sealed class OAuthClientAdminService
     public async Task<IReadOnlyList<ConnectedClient>> ListForUserAsync(int userId, CancellationToken cancellationToken = default)
     {
         var consents = await _db.OAuthConsents
+            // Fence category 4 (explicitly scoped user-id lookup): pinned to c.UserId == userId,
+            // which /account passes from the signed-in user.
             .IgnoreQueryFilters()
             .Where(c => c.UserId == userId)
             .AsNoTracking()
@@ -65,6 +67,8 @@ public sealed class OAuthClientAdminService
     public async Task<IReadOnlyList<ConnectedClient>> ListForOrganizationAsync(int organizationId, CancellationToken cancellationToken = default)
     {
         var consents = await _db.OAuthConsents
+            // Fence category 4 (explicitly scoped org-id lookup): pinned to
+            // c.OrganizationId == organizationId, passed by the admin page from its own context.
             .IgnoreQueryFilters()
             .Where(c => c.OrganizationId == organizationId)
             .Include(c => c.User)
@@ -81,6 +85,8 @@ public sealed class OAuthClientAdminService
     public async Task<IReadOnlyList<ConnectedClient>> ListAllAsync(CancellationToken cancellationToken = default)
     {
         var consents = await _db.OAuthConsents
+            // Fence category 2 (SiteAdmin cross-org console): only caller is
+            // /site-admin/oauth-clients, gated by [Authorize(Roles = SiteAdminRole)].
             .IgnoreQueryFilters()
             .Include(c => c.User)
             .Include(c => c.Organization)
@@ -114,6 +120,8 @@ public sealed class OAuthClientAdminService
     public async Task RevokeConsentAsync(int consentId, int actorUserId, bool ignoreOrgScope = false, int? expectedOrganizationId = null, CancellationToken cancellationToken = default)
     {
         var query = _db.OAuthConsents.AsQueryable();
+        // Fence category 2 (SiteAdmin cross-org console): the bypass is opt-in and only the
+        // SiteAdmin page passes ignoreOrgScope; org-scoped callers stay inside the filter.
         if (ignoreOrgScope) query = query.IgnoreQueryFilters();
         var consent = await query.FirstOrDefaultAsync(c => c.Id == consentId, cancellationToken);
         if (consent is null || consent.RevokedAt is not null) return;

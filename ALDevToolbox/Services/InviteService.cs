@@ -62,6 +62,8 @@ public sealed class InviteService
         }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
+        // Fence category 4 (explicitly scoped org-id lookup): existence-only probe pinned to
+        // u.OrganizationId == actingOrgId from the signed-in admin's context.
         var existing = await _db.Users.IgnoreQueryFilters()
             .AnyAsync(u => u.OrganizationId == actingOrgId && u.Email == normalised, ct);
         if (existing)
@@ -113,6 +115,8 @@ public sealed class InviteService
     {
         var actingOrgId = _orgContext.CurrentOrganizationId
             ?? throw new InvalidOperationException("InviteService.RevokeAsync requires a signed-in admin.");
+        // Fence category 4 (explicitly scoped org-id lookup): the row is re-checked against
+        // actingOrgId immediately below, so a foreign invite id is refused.
         var invite = await _db.Invites.IgnoreQueryFilters()
             .FirstOrDefaultAsync(i => i.Id == inviteId, ct);
         if (invite is null || invite.OrganizationId != actingOrgId)
@@ -135,6 +139,8 @@ public sealed class InviteService
         if (string.IsNullOrWhiteSpace(token)) return null;
         var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Fence category 1 (pre-auth routing): the invitee is not signed in yet; pinned to
+        // the invite's own token hash.
         var row = await _db.Invites.IgnoreQueryFilters()
             .Include(i => i.Organization)
             .FirstOrDefaultAsync(i => i.TokenHash == hash, ct);

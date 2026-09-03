@@ -26,6 +26,8 @@ public static class PlatformOrganizationFileSeeder
         CancellationToken ct = default)
     {
         var existingPaths = await db.OrganizationFiles
+            // Fence category 3 (startup seed, no request org): pinned to
+            // f.OrganizationId == organizationId supplied by the caller.
             .IgnoreQueryFilters()
             .Where(f => f.OrganizationId == organizationId)
             .Select(f => f.Path)

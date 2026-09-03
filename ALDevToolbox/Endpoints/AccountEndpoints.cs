@@ -45,6 +45,8 @@ internal static class AccountEndpoints
     {
         try
         {
+            // Fence category 1 (pre-auth routing): pinned to u.OrganizationId == org.Id, the org
+            // the visitor just signed up into.
             var admins = await db.Users.IgnoreQueryFilters()
                 .Where(u => u.OrganizationId == org.Id
                             && u.Role == UserRole.Admin
@@ -78,6 +80,8 @@ internal static class AccountEndpoints
         string password,
         CancellationToken ct)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to the signed-in
+        // user's own id.
         var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == org.CurrentUserId!.Value, ct);
         if (!auth.VerifyPassword(password, user.PasswordHash))
         {

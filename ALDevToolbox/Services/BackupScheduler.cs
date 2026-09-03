@@ -182,6 +182,8 @@ public sealed class BackupScheduler : BackgroundService
             try
             {
                 var lastPerTenant = await db.PerTenantBackups
+                    // Fence category 3 (scheduler, no request org): pinned to b.OrganizationId == orgId
+                    // from the sweep's own org enumeration.
                     .IgnoreQueryFilters()
                     .AsNoTracking()
                     .Where(b => b.OrganizationId == orgId && b.Kind == BackupKind.Scheduled)

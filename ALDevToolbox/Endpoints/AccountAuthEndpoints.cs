@@ -358,6 +358,8 @@ internal static class AccountAuthEndpoints
                 var token = await passwordReset.CreatePasswordResetTokenAsync(addr, ct);
                 if (token is not null)
                 {
+                    // Fence category 1 (pre-auth routing): forgot-password, before any cookie exists;
+                    // pinned to the typed email.
                     var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
                     var url = $"{publicOrigin.For(ctx)}/reset-password?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.ForgotPassword(user.DisplayName, url);
@@ -399,6 +401,8 @@ internal static class AccountAuthEndpoints
                 var token = await passwordReset.CreateMagicLoginTokenAsync(addr, ResolveIp(ctx), ct);
                 if (token is not null)
                 {
+                    // Fence category 1 (pre-auth routing): magic-link email, before any cookie exists;
+                    // pinned to the typed email.
                     var user = await db.Users.IgnoreQueryFilters()
                         .FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
                     var url = $"{publicOrigin.For(ctx)}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";

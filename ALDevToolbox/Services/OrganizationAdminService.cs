@@ -126,6 +126,9 @@ public sealed class OrganizationAdminService
 
         var orgId = RequireOrganizationId();
         var existing = await _db.OrganizationEmailDomains
+            // Fence category 6 (uniqueness probe): email domains are unique deployment-wide, so
+            // the claim check has to see past the filter; only the owning org id is read, to
+            // choose between the two error messages below.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(d => d.Domain == normalised, ct);
