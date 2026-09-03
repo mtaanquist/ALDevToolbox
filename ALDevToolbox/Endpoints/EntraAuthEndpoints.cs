@@ -137,7 +137,12 @@ internal static class EntraAuthEndpoints
             TenantId: principal.FindFirst("tid")?.Value ?? string.Empty,
             ObjectId: principal.FindFirst("oid")?.Value ?? string.Empty,
             Email: principal.FindFirst("preferred_username")?.Value ?? principal.FindFirst("email")?.Value,
-            DisplayName: principal.FindFirst("name")?.Value);
+            DisplayName: principal.FindFirst("name")?.Value,
+            // xms_edov: Microsoft's own "the tenant owns this email domain"
+            // signal. Only a true value counts as evidence — the claim is
+            // absent in plenty of tenants, and absence is not verification.
+            EmailVerified: string.Equals(principal.FindFirst("xms_edov")?.Value, "true", StringComparison.OrdinalIgnoreCase)
+                || principal.FindFirst("xms_edov")?.Value == "1");
         var safeReturn = ResolveSafeReturn(ctx.Properties?.RedirectUri ?? "/");
 
         if (token.TenantId.Length == 0 || token.ObjectId.Length == 0)
@@ -218,6 +223,7 @@ internal static class EntraAuthEndpoints
             EntraCompletionOutcome.Ambiguous => "entra-ambiguous",
             EntraCompletionOutcome.EmailMissing => "entra-failed",
             EntraCompletionOutcome.EmailTakenElsewhere => "entra-email-taken",
+            EntraCompletionOutcome.EmailNotVerified => "entra-email-unverified",
             _ => "entra-failed",
         };
         ctx.Response.Redirect($"{RouteConstants.Login}?{RouteConstants.ErrQuery}={code}");

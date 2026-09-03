@@ -13,7 +13,16 @@ namespace ALDevToolbox.Services.Account;
 /// <param name="ObjectId">The <c>oid</c> claim — the stable per-tenant account id we key links on.</param>
 /// <param name="Email">The <c>preferred_username</c>/<c>email</c> claim. Display + matching only, never the link key.</param>
 /// <param name="DisplayName">The <c>name</c> claim.</param>
-public sealed record EntraTokenIdentity(string TenantId, string ObjectId, string? Email, string? DisplayName);
+/// <param name="EmailVerified">
+/// The <c>xms_edov</c> claim ("email domain owner verified") — true only when
+/// Microsoft has confirmed the tenant owns the email's domain. Without it the
+/// address is attacker-influenceable (a B2B guest's UPN is their own external
+/// address), so <see cref="EntraSignInService.CompleteAsync"/> refuses to bind
+/// the token to an existing local account on the strength of the email alone.
+/// See the "unverified email claim" rule in <c>.design/auth-and-audit.md</c>.
+/// </param>
+public sealed record EntraTokenIdentity(
+    string TenantId, string ObjectId, string? Email, string? DisplayName, bool EmailVerified = false);
 
 /// <summary>Resolved app-registration credentials for one challenge.</summary>
 /// <param name="OrganizationId">The org the sign-in is routed to.</param>
@@ -35,6 +44,13 @@ public enum EntraCompletionOutcome
     EmailMissing,
     /// <summary>A local account with this email exists in a different organisation.</summary>
     EmailTakenElsewhere,
+    /// <summary>
+    /// A local account with this email exists in the resolved organisation, but
+    /// nothing proves the Entra tenant owns the address (no <c>xms_edov</c>, and
+    /// the domain isn't one the organisation has verified). Binding on an
+    /// unverified claim would be account takeover, so the sign-in is refused.
+    /// </summary>
+    EmailNotVerified,
     /// <summary>Matched an account that is still pending approval.</summary>
     AccountPending,
     /// <summary>Matched an account that has been disabled.</summary>
@@ -318,6 +334,21 @@ public sealed class EntraSignInService
         }
         if (user is not null)
         {
+            // The email alone is not proof of anything: in an allow-listed
+            // partner or customer tenant an admin controls what lands in
+            // preferred_username/mail, and a B2B guest's UPN is their own
+            // external address. Bind only on positive evidence that the
+            // tenant owns the address — Microsoft's own xms_edov claim, or a
+            // domain this organisation has verified.
+            var domainVerifiedByOrg = domainOrgId is not null && domainOrgId == resolved.OrganizationId;
+            if (!token.EmailVerified && !domainVerifiedByOrg)
+            {
+                _logger.LogWarning(
+                    "Refused to link Entra tenant {Tid} to an existing account: the email domain {Domain} is unverified for that tenant (no xms_edov, domain not claimed by org {OrgId}).",
+                    tid, domain ?? "(none)", resolved.OrganizationId);
+                return await RefuseAsync(EntraCompletionOutcome.EmailNotVerified, email, ip, now,
+                    $"tenant {tid} did not prove ownership of domain {domain ?? "(none)"}", ct);
+            }
             var newLink = AddLink(user.Id, tid, token.ObjectId, email, now);
             _logger.LogInformation("Linked Entra identity {Tid}/{Oid} to existing user {Email} on first sign-in.", tid, token.ObjectId, email);
             return await FinishStatusCheckedAsync(user, newLink, email, ip, now, ct);
