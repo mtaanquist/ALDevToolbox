@@ -99,6 +99,7 @@ public sealed class PersistedImportJobs
 
     public async Task MarkRunningAsync(long jobRowId, CancellationToken ct = default)
     {
+        // Fence category 3 (background worker, no request org): pinned to j.Id == jobRowId.
         var row = await _db.OeImportJobs.IgnoreQueryFilters()
             .FirstOrDefaultAsync(j => j.Id == jobRowId, ct).ConfigureAwait(false);
         if (row is null) return;
@@ -109,6 +110,7 @@ public sealed class PersistedImportJobs
 
     public async Task MarkCompletedAsync(long jobRowId, CancellationToken ct = default)
     {
+        // Fence category 3 (background worker, no request org): pinned to j.Id == jobRowId.
         var row = await _db.OeImportJobs.IgnoreQueryFilters()
             .FirstOrDefaultAsync(j => j.Id == jobRowId, ct).ConfigureAwait(false);
         if (row is null) return;
@@ -119,6 +121,7 @@ public sealed class PersistedImportJobs
 
     public async Task MarkFailedAsync(long jobRowId, string errorMessage, CancellationToken ct = default)
     {
+        // Fence category 3 (background worker, no request org): pinned to j.Id == jobRowId.
         var row = await _db.OeImportJobs.IgnoreQueryFilters()
             .FirstOrDefaultAsync(j => j.Id == jobRowId, ct).ConfigureAwait(false);
         if (row is null) return;
@@ -227,6 +230,8 @@ public sealed class PersistedImportJobs
         if (lostReleases.Count > 0)
         {
             var ids = lostReleases.Keys.ToList();
+            // Fence category 3 (startup reconciliation, no request org): pinned to the release
+            // ids collected from the lost jobs above.
             var releases = await _db.OeReleases.IgnoreQueryFilters()
                 .Where(r => ids.Contains(r.Id) && r.Status == "ingesting")
                 .ToListAsync(ct).ConfigureAwait(false);
@@ -265,6 +270,8 @@ public sealed class PersistedImportJobs
     /// <summary>Snapshot for the admin "Background workers" page — depth + recent rows.</summary>
     public async Task<ImportQueueSnapshot> SnapshotAsync(int recentLimit = 10, CancellationToken ct = default)
     {
+        // Fence category 2 (SiteAdmin cross-org console): the snapshot's only caller is
+        // /site-admin/workers, gated by [Authorize(Roles = SiteAdminRole)].
         var pending = await _db.OeImportJobs.IgnoreQueryFilters()
             .CountAsync(j => j.Status == "queued" || j.Status == "running", ct).ConfigureAwait(false);
         var jobs = await _db.OeImportJobs.IgnoreQueryFilters()

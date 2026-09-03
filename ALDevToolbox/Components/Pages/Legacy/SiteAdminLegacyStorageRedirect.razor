@@ -1,0 +1,20 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /site-admin/storage
+   New route: /site-admin/backup-storage/storage
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/site-admin/storage"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /site-admin/storage moved under the unified
+    /site-admin/backup-storage/storage route.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/backup-storage/storage", replace: true);
+    }
+}

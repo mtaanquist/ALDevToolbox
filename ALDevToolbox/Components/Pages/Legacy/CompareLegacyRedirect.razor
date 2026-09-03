@@ -1,0 +1,21 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /compare
+   New route: /diff
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/compare"
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: the standalone paste-two-texts tool lived at /compare
+    until #578 renamed it to Diff, so that "compare" means only the Object
+    Explorer's release/object/file comparison. Old links and bookmarks keep
+    working. Same pattern as AdminLegacyUsersRedirect.razor.
+
+    /api/compare/diff is unaffected - that endpoint is shared with the Object
+    Explorer's diff views and keeps its name.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/diff", replace: true);
+}

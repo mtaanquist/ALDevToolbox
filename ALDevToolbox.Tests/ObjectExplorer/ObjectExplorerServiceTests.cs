@@ -32,6 +32,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private ReleaseImportService NewImporter(Data.AppDbContext ctx) =>
         new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
             new TranslationImportService(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance),
+            new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
     private ProjectAccess NewAccess(Data.AppDbContext ctx) => new(ctx, _db.OrgContext);
@@ -1150,6 +1151,157 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         target.Should().NotBeNull();
         target!.FileId.Should().Be(fileId);
         target.LineNumber.Should().Be(decl.Line);
+    }
+
+    /// <summary>
+    /// Seeds one Release whose module ships three objects sharing the name
+    /// <c>User</c> — a table, a tableextension of it, and a codeunit — plus a
+    /// caller file that references the name twice: once with a
+    /// <c>Database::</c> prefix and once bare. Returns the caller file's id.
+    /// Used by the kind-hint go-to-definition tests (issue #712).
+    /// </summary>
+    private async Task<(long FileId, int TableLine, int CodeunitLine, int ExtensionLine)> SeedSameNameKindsAsync()
+    {
+        await using var write = _db.NewContext();
+        var release = new Release
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Label = "Same-name kinds",
+            Kind = "first_party",
+            Status = "ready",
+            ImportedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        write.OeReleases.Add(release);
+        await write.SaveChangesAsync();
+
+        var module = new OeModule
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ReleaseId = release.Id,
+            AppId = Guid.NewGuid(),
+            Name = "Bundle",
+            Publisher = "CRONUS",
+            Version = "1.0.0.0",
+            CreatedAt = DateTime.UtcNow,
+            DependencyCount = 0,
+        };
+        write.OeModules.Add(module);
+        await write.SaveChangesAsync();
+
+        async Task<ModuleFile> AddFileAsync(string path, string[] lines, string hash)
+        {
+            var text = string.Join("\n", lines);
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = text,
+                ContentLength = text.Length,
+                LineCount = lines.Length,
+            });
+            var f = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Path = path,
+                ContentHash = hash,
+                LineCount = lines.Length,
+            };
+            write.OeModuleFiles.Add(f);
+            await write.SaveChangesAsync();
+            return f;
+        }
+
+        var targetsFile = await AddFileAsync("src/Users.al", new[]
+        {
+            "table 2000000120 User",           // line 1
+            "{",
+            "}",
+            "tableextension 50010 User extends User", // line 4
+            "{",
+            "}",
+            "codeunit 418 User",               // line 7
+            "{",
+            "}",
+        }, new string('A', 64));
+
+        var callerFile = await AddFileAsync("src/Caller.al", new[]
+        {
+            "codeunit 50000 Caller",
+            "{",
+            "    procedure Foo()",
+            "    begin",
+            "        RecRef.Open(Database::User);", // line 5
+            "        Bar(User);",                   // line 6
+            "    end;",
+            "}",
+        }, new string('B', 64));
+
+        write.OeModuleObjects.AddRange(
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "table", ObjectId = 2000000120, Name = "User",
+                LineNumber = 1, SourceFileId = targetsFile.Id,
+            },
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "tableextension", ObjectId = 50010, Name = "User",
+                LineNumber = 4, SourceFileId = targetsFile.Id,
+            },
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit", ObjectId = 418, Name = "User",
+                LineNumber = 7, SourceFileId = targetsFile.Id,
+            },
+            new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit", ObjectId = 50000, Name = "Caller",
+                LineNumber = 1, SourceFileId = callerFile.Id,
+            });
+        await write.SaveChangesAsync();
+
+        return (callerFile.Id, 1, 7, 4);
+    }
+
+    [Fact]
+    public async Task GoToDefinitionAsync_prefers_the_kind_the_click_names()
+    {
+        // #712: `Database::User` names the TABLE. Ranking used to be
+        // alphabetical by kind, so the click landed on codeunit `User`.
+        var seed = await SeedSameNameKindsAsync();
+        await using var read = _db.NewContext();
+
+        var target = await NewSourceViewer(read)
+            .GoToDefinitionAsync(seed.FileId, line: 5, column: "        RecRef.Open(Database::".Length + 2);
+
+        target.Should().NotBeNull();
+        target!.LineNumber.Should().Be(seed.TableLine,
+            because: "the Database:: prefix names the table, not the same-named codeunit");
+    }
+
+    [Fact]
+    public async Task GoToDefinitionAsync_prefers_the_base_object_over_its_extension()
+    {
+        // #712: with no kind hint the candidates fall back to a deliberate
+        // order — a base object ahead of the extension that extends it.
+        var seed = await SeedSameNameKindsAsync();
+        await using var read = _db.NewContext();
+
+        var target = await NewSourceViewer(read)
+            .GoToDefinitionAsync(seed.FileId, line: 6, column: "        Bar(".Length + 2);
+
+        target.Should().NotBeNull();
+        target!.LineNumber.Should().Be(seed.TableLine,
+            because: "an unhinted click on a name shared by a table and its tableextension means the table");
     }
 
     [Fact]

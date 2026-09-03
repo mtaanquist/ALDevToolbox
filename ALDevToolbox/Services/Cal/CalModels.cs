@@ -95,15 +95,48 @@ public sealed record CalProcedure(
     string Body,
     int BodyLine,
     IReadOnlyList<CalVariable> Parameters,
-    IReadOnlyList<CalVariable> Locals);
+    IReadOnlyList<CalVariable> Locals,
+    int BodyColumn = 1);
 
-/// <summary>An <c>OnXxx=BEGIN…END;</c> trigger property (object-, field-, or control-level).</summary>
+/// <summary>
+/// An <c>OnXxx=BEGIN…END;</c> trigger property (object-, field-, control-,
+/// data-item- or xmlport-element-level).
+/// </summary>
+/// <param name="BodyColumn">
+/// Slice column of the body's <c>BEGIN</c>. Code that follows <c>BEGIN</c> on
+/// the same line is walked as body line 1, so its columns need this offset to
+/// come out file-relative (issue #713).
+/// </param>
+/// <param name="RecTableId">
+/// The table the body's implicit <c>Rec</c> binds to when the trigger hangs off
+/// a report data item (<c>DataItemTable=Table18</c>) or an xmlport element
+/// (<c>SourceTable=Table36</c>). Null everywhere else — the owner object's own
+/// Rec binding applies.
+/// </param>
 public sealed record CalTrigger(
     string Name,
     int LineNumber,
     string Body,
     int BodyLine,
-    IReadOnlyList<CalVariable> Locals);
+    IReadOnlyList<CalVariable> Locals,
+    int BodyColumn = 1,
+    int? RecTableId = null);
+
+/// <summary>
+/// A declarative reference to another object written as a property rather than
+/// a variable declaration — a report data item's <c>DataItemTable=Table18</c>
+/// or an xmlport element's <c>SourceTable=Table36</c>. Emitted as the same
+/// <c>variable_type</c> reference a <c>Record 18</c> global would produce.
+/// </summary>
+public sealed record CalObjectRef(string Kind, int TargetId, int LineNumber);
+
+/// <summary>
+/// A property-valued C/AL expression that is executed like code — a report
+/// column's or xmlport field's <c>SourceExpr</c>. Walked by the reference
+/// extractor with the owning data item's scope. Line/column are slice-relative
+/// and point at the first character of the expression.
+/// </summary>
+public sealed record CalExpression(string Text, int LineNumber, int Column, int? RecTableId);
 
 /// <summary>The fully parsed contents of one C/AL object.</summary>
 public sealed record CalParsedObject(
@@ -116,4 +149,6 @@ public sealed record CalParsedObject(
     IReadOnlyList<CalVariable> Globals,
     IReadOnlyList<CalProcedure> Procedures,
     IReadOnlyList<CalTrigger> Triggers,
-    IReadOnlyList<CalPageField> PageFields);
+    IReadOnlyList<CalPageField> PageFields,
+    IReadOnlyList<CalObjectRef> ObjectRefs,
+    IReadOnlyList<CalExpression> Expressions);

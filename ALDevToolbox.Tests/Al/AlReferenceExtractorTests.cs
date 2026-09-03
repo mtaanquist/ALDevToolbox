@@ -484,6 +484,104 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Paren_less_call_to_a_user_procedure_is_a_method_call()
+    {
+        // AL lets a parameterless call drop its parentheses. `Cust.Insert;`
+        // is a call, not a read — the resolved member's kind says so even
+        // though the syntax doesn't. See issue #712.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.Insert;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetMemberName == "Insert" && r.ReferenceKind == "method_call");
+    }
+
+    [Fact]
+    public void Paren_less_field_read_stays_a_field_access()
+    {
+        // The counterpart to the test above: same shape, but the member
+        // resolves to a table field, so it stays a read.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                if Cust.Name = '' then exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetMemberName == "Name" && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Paren_less_builtin_is_a_method_call_but_a_system_field_is_not()
+    {
+        // Built-ins land in the system-reference table. `Modify` without
+        // parens is still a call; `SystemId` is a runtime field, so it stays
+        // a read. See issue #712.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.Modify;
+                if IsNullGuid(Cust.SystemId) then exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.SystemReferences.Should().ContainSingle(r =>
+            r.SystemMethodName == "Modify" && r.ReferenceKind == "method_call");
+        result.SystemReferences.Should().ContainSingle(r =>
+            r.SystemMethodName == "SystemId" && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Non_ascii_identifiers_lex_and_resolve()
+    {
+        // Danish, German and French AL codebases use accented characters in
+        // variable and procedure names. The lexer used to accept ASCII
+        // letters only, so `Købsordre` split into two tokens and every
+        // member access on it stranded. See issue #712.
+        var resolver = MakeResolver();
+        resolver.AddType("Købsordre", new AlTypeRef(BaseAppId, "table", 50100, "Købsordre"));
+        resolver.AddMember("Købsordre", new AlMember("Åbn Salgsordre", "procedure", null, null));
+        resolver.AddMember("Købsordre", new AlMember("Beløb", "table_field", null, null));
+
+        const string src = """
+            procedure Foo()
+            var
+                Købsordre: Record Købsordre;
+            begin
+                Købsordre."Åbn Salgsordre"();
+                if Købsordre.Beløb > 0 then exit;
+            end;
+            """;
+
+        AlLexer.Tokenize("Købsordre.Beløb").Select(t => t.Value)
+            .Should().Equal(new[] { "Købsordre", ".", "Beløb" });
+
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Købsordre"
+            && r.TargetMemberName == "Åbn Salgsordre"
+            && r.ReferenceKind == "method_call");
+        result.References.Should().ContainSingle(r =>
+            r.TargetMemberName == "Beløb" && r.ReferenceKind == "field_access");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
     public void Procedure_with_parameters_only_picks_up_param_types()
     {
         // No var block — parameter `c` should still be in scope inside

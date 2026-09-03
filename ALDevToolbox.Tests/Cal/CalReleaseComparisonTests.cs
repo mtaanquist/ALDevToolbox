@@ -28,7 +28,8 @@ public sealed class CalReleaseComparisonTests : IDisposable
             await using (var ctx = _db.NewContext())
                 releaseId = await new ReleaseImportService(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
                     new TranslationImportService(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance),
-                    NullLogger<ReleaseImportService>.Instance)
+                    new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
+            NullLogger<ReleaseImportService>.Instance)
                     .BeginReleaseAsync(new ReleaseImportMetadata(label, kind, parentId, null));
             await using (var ctx = _db.NewContext())
                 await new CalImportService(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),

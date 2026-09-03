@@ -126,6 +126,8 @@ public sealed class PersonalAccessTokenService
 
         var hash = HashHex(plaintext);
         var row = await _db.PersonalAccessTokens
+            // Fence category 1 (pre-auth routing): bearer-token validation discovers which org
+            // to mount; pinned to the token hash.
             .IgnoreQueryFilters()
             .Include(p => p.User)
             .Include(p => p.Organization)
@@ -160,6 +162,8 @@ public sealed class PersonalAccessTokenService
             try
             {
                 await _db.PersonalAccessTokens
+                    // Fence category 1 (pre-auth routing): last-used touch on the row just validated;
+                    // pinned to p.Id == row.Id.
                     .IgnoreQueryFilters()
                     .Where(p => p.Id == row.Id)
                     .ExecuteUpdateAsync(s => s.SetProperty(p => p.LastUsedAt, now), ct);
@@ -199,6 +203,8 @@ public sealed class PersonalAccessTokenService
     public async Task<IReadOnlyList<PersonalAccessToken>> ListAllAsync(CancellationToken ct = default)
     {
         return await _db.PersonalAccessTokens
+            // Fence category 2 (SiteAdmin cross-org console): only caller is
+            // /site-admin/access-tokens, gated by [Authorize(Roles = SiteAdminRole)].
             .IgnoreQueryFilters()
             .Include(p => p.User)
             .Include(p => p.Organization)
@@ -220,6 +226,8 @@ public sealed class PersonalAccessTokenService
     public async Task RevokeAsync(int id, bool ignoreOrgScope = false, int? forUserId = null, CancellationToken ct = default)
     {
         var query = _db.PersonalAccessTokens.AsQueryable();
+        // Fence category 2 (SiteAdmin cross-org console): opt-in bypass; only the SiteAdmin
+        // page passes ignoreOrgScope, self-service callers stay inside the filter.
         if (ignoreOrgScope) query = query.IgnoreQueryFilters();
         if (forUserId is int uid) query = query.Where(p => p.UserId == uid);
         var row = await query.FirstOrDefaultAsync(p => p.Id == id, ct);

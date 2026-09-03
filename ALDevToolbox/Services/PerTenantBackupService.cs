@@ -111,6 +111,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var q = _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -148,6 +149,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -271,6 +273,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -418,6 +421,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(b => b.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["BackupId"] = "Backup not found." });
@@ -431,6 +435,7 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
+            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
             .IgnoreQueryFilters()
             .Include(b => b.Organization)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -457,6 +462,8 @@ public sealed class PerTenantBackupService
         if (retention < 1) retention = 1;
 
         var rows = await _db.PerTenantBackups
+            // Fence category 3 (scheduler/maintenance, no request org): retention pruning is
+            // driven by the backup scheduler; pinned to b.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .Include(b => b.Organization)
             .Where(b => b.OrganizationId == organizationId && !b.IsPinned)

@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol;
 
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
@@ -303,6 +304,29 @@ public sealed class ReleasePipelineService
 
     private static PlanValidationException Validation(string field, string message) =>
         new(new Dictionary<string, string> { [field] = message });
+
+    /// <summary>
+    /// Throws a friendly <see cref="McpException"/> when the id isn't an active
+    /// release pipeline the caller can see, instead of silently returning an
+    /// empty history. Two fences: the org query filter, and the owning project's
+    /// visibility. A pipeline under a Private project the caller has no grant on
+    /// answers "not found", the same as an id in another org. Relocated here
+    /// from the MCP tool class so the fence has one home.
+    /// See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    public async Task EnsureReleasePipelineExistsAsync(int releasePipelineId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var exists = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => _db.OeProjects.Where(visible).Any(p => p.Id == r.ProjectId))
+            .AnyAsync(r => r.Id == releasePipelineId && r.DeletedAt == null, ct);
+        if (!exists)
+        {
+            throw new McpException($"Release pipeline {releasePipelineId} was not found. Call list_release_pipelines to see available pipelines.");
+        }
+    }
+
 }
 
 /// <summary>Form-post shape for a release pipeline: project, name, source build pipeline, target environment, and modes.</summary>

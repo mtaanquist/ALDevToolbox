@@ -15,6 +15,11 @@
     when it is embedded in something narrower than the viewport.
 *@
 
+@* The shell grid is height-bound (height: 100%), so the site banner cannot be
+   a third grid child without redrawing the areas. A flex column above it gives
+   the strip its own row and leaves the shell to fill what is left. *@
+<div class="app-frame">
+<SiteBanner />
 <div class="shell-root">
     <div class="app">
         <div class="app__brand">
@@ -102,6 +107,7 @@
             </div>
         </main>
     </div>
+</div>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>

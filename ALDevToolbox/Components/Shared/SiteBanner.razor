@@ -1,0 +1,55 @@
+@using ALDevToolbox.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory Scopes
+
+@*
+    The site-wide notice a site administrator types at
+    /site-admin/settings/general — "maintenance tonight 21:00-23:00 UTC" and
+    the like. Rendered by both layouts so it reaches signed-out visitors on
+    the sign-in page too.
+
+    The text is read once per circuit here and comes from a memory cache in
+    SystemSettingsService, so a navigation costs no query; the cache entry is
+    dropped when the settings form saves.
+
+    The read runs in its own service scope, not the request's: during static
+    server rendering the layout and the page initialise concurrently, and the
+    login page is already querying through the request-scoped AppDbContext.
+    Sharing that context from here raced it ("a second operation was started
+    on this context instance") and turned /login into a 500. A private scope
+    gives the banner its own context; the memory cache keeps that a rare query.
+
+    The read is also guarded: /Error re-renders through a layout after a
+    request has already failed, and the failure that matters most is an
+    unreachable database (issue #559). A banner that could not be read is
+    simply not drawn.
+*@
+
+@if (!string.IsNullOrWhiteSpace(_text))
+{
+    <div class="site-banner alert alert--warn" role="status">
+        <Icon Name="triangle-alert" Width="16" Height="16" />
+        <span>@_text</span>
+    </div>
+}
+
+@code {
+    private string? _text;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using var scope = Scopes.CreateAsyncScope();
+            var settings = scope.ServiceProvider.GetService<SystemSettingsService>();
+            if (settings is null) return;
+            _text = await settings.GetBannerAsync();
+        }
+        catch (Exception)
+        {
+            // The database is unreachable or the row is unreadable. The page
+            // the reader asked for matters more than the banner.
+            _text = null;
+        }
+    }
+}

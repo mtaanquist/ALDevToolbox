@@ -77,6 +77,8 @@ public sealed class AuthService
         }
 
         var user = await _db.Users
+            // Fence category 1 (pre-auth routing): password login, before any cookie exists;
+            // pinned to the typed email.
             .IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);
@@ -144,6 +146,8 @@ public sealed class AuthService
     public async Task<User> CompleteMfaAsync(int userId, string ip, CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Fence category 1 (pre-auth routing): finishes a half-authenticated MFA login;
+        // pinned to u.Id == userId from the signed MFA state.
         var user = await _db.Users.IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstAsync(u => u.Id == userId, ct);
@@ -226,11 +230,14 @@ public sealed class AuthService
     {
         var window = now - RateWindow;
         var perEmail = await _db.LoginAttempts
+            // Fence category 1 (pre-auth routing): login_attempts is org-less rate-limit data,
+            // read before any cookie exists; pinned to the email / IP being throttled.
             .IgnoreQueryFilters()
             .CountAsync(a => a.Email == email && a.Timestamp >= window, ct);
         if (perEmail >= MaxAttemptsPerEmail) return true;
         if (string.IsNullOrEmpty(ip)) return false;
         var perIp = await _db.LoginAttempts
+            // Same category 1 read, pinned to the caller's IP.
             .IgnoreQueryFilters()
             .CountAsync(a => a.Ip == ip && a.Timestamp >= window, ct);
         return perIp >= MaxAttemptsPerIp;
@@ -244,6 +251,7 @@ public sealed class AuthService
     {
         var window = now - LockoutWindow;
         var recent = await _db.LoginAttempts
+            // Fence category 1 (pre-auth routing): lockout check during login; pinned to the email.
             .IgnoreQueryFilters()
             .Where(a => a.Email == email && a.Timestamp >= window)
             .OrderByDescending(a => a.Timestamp)
@@ -263,11 +271,14 @@ public sealed class AuthService
     /// </summary>
     public async Task<bool> IsMfaThrottledAsync(int userId, DateTime now, CancellationToken ct)
     {
+        // Fence category 1 (pre-auth routing): MFA throttle between the two login legs;
+        // pinned to u.Id == userId and then to that user's email.
         var email = await _db.Users.IgnoreQueryFilters()
             .Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(ct);
         if (email is null) return false;
         var window = now - LockoutWindow;
         var recent = await _db.LoginAttempts
+            // Same category 1 read, pinned to that user's email.
             .IgnoreQueryFilters()
             .Where(a => a.Email == email && a.Timestamp >= window)
             .OrderByDescending(a => a.Timestamp)

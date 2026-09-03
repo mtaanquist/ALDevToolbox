@@ -339,6 +339,7 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
                     ctx, _db.OrgContext,
                     NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance),
                 NullLogger<TranslationImportService>.Instance),
+            new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
             NullLogger<ReleaseImportService>.Instance);
         await using var stream = File.OpenRead(Path.Combine(FixtureRoot, appFileName));
         var summary = await importer.ImportReleaseAsync(new ReleaseImportRequest(
@@ -359,6 +360,6 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
         var search = new ObjectSearchService(ctx, access);
         var translations = new TranslationQueryService(ctx);
         var comparison = new ReleaseComparisonService(ctx, access, NullLogger<ReleaseComparisonService>.Instance);
-        return new ObjectExplorerTools(explorer, search, references, translations, comparison, access, ctx);
+        return new ObjectExplorerTools(explorer, search, references, translations, comparison);
     }
 }

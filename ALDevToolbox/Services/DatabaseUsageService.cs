@@ -75,6 +75,8 @@ public sealed class DatabaseUsageService
         var multiplier = settings.IndexSizeMultiplier;
         var systemDefault = settings.DefaultStorageQuotaMb;
 
+        // Fence category 2 (SiteAdmin cross-org console): only caller is /site-admin/backup-storage/storage,
+        // which is gated by [Authorize(Roles = SiteAdminRole)].
         var orgs = await _db.Organizations.IgnoreQueryFilters()
             .OrderBy(o => o.IsSystem ? 0 : 1).ThenBy(o => o.Name)
             .Select(o => new { o.Id, o.Name, o.Slug, o.IsSystem, o.StorageQuotaMb })
@@ -124,6 +126,8 @@ public sealed class DatabaseUsageService
         if (orgId is null) return null;
 
         var settings = await _systemSettings.GetViewAsync(ct);
+        // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == orgId.Value
+        // taken from the authenticated principal's IOrganizationContext.
         var org = await _db.Organizations.IgnoreQueryFilters()
             .Where(o => o.Id == orgId.Value)
             .Select(o => new { o.Id, o.Name, o.Slug, o.IsSystem, o.StorageQuotaMb })
@@ -318,6 +322,8 @@ public sealed class DatabaseUsageService
         {
             throw new ArgumentOutOfRangeException(nameof(quotaMb), "Quota must be non-negative.");
         }
+        // Fence category 2 (SiteAdmin cross-org console): quota override, reached only from
+        // /site-admin/backup-storage/storage; pinned to o.Id == organizationId.
         var org = await _db.Organizations.IgnoreQueryFilters()
             .FirstOrDefaultAsync(o => o.Id == organizationId, ct)
             ?? throw new InvalidOperationException($"Organization {organizationId} not found.");

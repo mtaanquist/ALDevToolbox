@@ -1039,9 +1039,11 @@ internal sealed class AlProcedureWalker
             }
             _state.Pos++;
 
-            // Followed by ( → method_call. Anything else → field_access.
+            // Followed by ( → method_call. Without parens the syntax
+            // can't tell a call from a field read — AL allows
+            // `Rec.Modify;` — so the resolved member's kind decides
+            // below (issue #712).
             var followedByParen = _state.Pos < _state.Tokens.Count && _state.At("(");
-            var refKind = followedByParen ? "method_call" : "field_access";
 
             // Resolve member on receiver type.
             var member = _state.Ctx.Resolver.ResolveMember(receiverType, memberTok.Value);
@@ -1068,7 +1070,12 @@ internal sealed class AlProcedureWalker
                         TargetObjectId: receiverType.ObjectId,
                         TargetObjectName: receiverType.Name,
                         SystemMethodName: memberTok.Value,
-                        ReferenceKind: followedByParen ? "method_call" : "field_access"));
+                        // Paren-less built-ins are still calls (`Rec.Modify;`);
+                        // only the runtime's system FIELDS (SystemId,
+                        // SystemModifiedAt, …) are reads. See issue #712.
+                        ReferenceKind: followedByParen || !AlBuiltinMethods.IsBuiltinField(memberTok.Value)
+                            ? "method_call"
+                            : "field_access"));
                     // The args may still contain references that need to
                     // surface — walk inside the parens via the main dispatch.
                     if (followedByParen) WalkArgsForBuiltin(receiverType, memberTok.Value);
@@ -1167,6 +1174,9 @@ internal sealed class AlProcedureWalker
             // references on the extension's declaration row picks
             // this call up.
             var targetOwner = member.DeclaringType ?? receiverType;
+            var refKind = followedByParen || AlKindKeywords.IsCallableMemberKind(member.Kind)
+                ? "method_call"
+                : "field_access";
             _state.EmitResolved(memberTok.Line, memberTok.Column, targetOwner, member.Name, member.Kind, refKind);
 
             // For chained access, advance receiverType to the
@@ -2393,7 +2403,9 @@ internal sealed class AlProcedureWalker
         if (member is null) return false;
 
         var targetOwner = member.DeclaringType ?? baseType;
-        var refKind = followedByParen ? "method_call" : "field_access";
+        var refKind = followedByParen || AlKindKeywords.IsCallableMemberKind(member.Kind)
+            ? "method_call"
+            : "field_access";
         _state.EmitResolved(memberTok.Line, memberTok.Column, targetOwner, member.Name, member.Kind, refKind);
         nextReceiver = AdvanceReceiverByMember(member);
         return true;

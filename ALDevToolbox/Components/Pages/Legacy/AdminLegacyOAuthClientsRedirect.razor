@@ -1,0 +1,21 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/oauth-clients
+   New route: /admin/administration/oauth-clients
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/admin/oauth-clients"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/oauth-clients moved to
+    /admin/administration/oauth-clients when the per-org admin pages were
+    consolidated.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/oauth-clients", replace: true);
+    }
+}

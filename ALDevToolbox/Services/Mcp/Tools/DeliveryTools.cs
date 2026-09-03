@@ -1,8 +1,6 @@
 using System.ComponentModel;
-using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.ObjectExplorer;
-using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
@@ -29,15 +27,11 @@ public sealed class DeliveryTools
 {
     private readonly DeliveryService _deliveries;
     private readonly ReleasePipelineService _releasePipelines;
-    private readonly ProjectAccess _access;
-    private readonly AppDbContext _db;
 
-    public DeliveryTools(DeliveryService deliveries, ReleasePipelineService releasePipelines, ProjectAccess access, AppDbContext db)
+    public DeliveryTools(DeliveryService deliveries, ReleasePipelineService releasePipelines)
     {
         _deliveries = deliveries;
         _releasePipelines = releasePipelines;
-        _access = access;
-        _db = db;
     }
 
     [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
@@ -52,7 +46,8 @@ public sealed class DeliveryTools
         }
         catch (ProjectAccessDeniedException)
         {
-            // Same answer as an id that isn't there — see EnsureReleasePipelineExistsAsync.
+            // Same answer as an id that isn't there — see
+            // ReleasePipelineService.EnsureReleasePipelineExistsAsync.
             throw new McpException($"Project {projectId} does not exist in this organisation.");
         }
     }
@@ -63,7 +58,7 @@ public sealed class DeliveryTools
         [Description("Release pipeline id (from list_release_pipelines).")] int releasePipelineId,
         CancellationToken ct = default)
     {
-        await EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
+        await _releasePipelines.EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
         return await _deliveries.ListDeliveryHistoryAsync(releasePipelineId, ct);
     }
 
@@ -91,29 +86,6 @@ public sealed class DeliveryTools
         }
     }
 
-    // ── helpers ─────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Throws a friendly <see cref="McpException"/> when the id isn't an active
-    /// release pipeline the caller can see, instead of silently returning an
-    /// empty history. Two fences: the org query filter, and the owning project's
-    /// visibility — this reads <c>oe_release_pipelines</c> directly rather than
-    /// through a gated service. A pipeline under a Private project the caller
-    /// has no grant on answers "not found", the same as an id in another org.
-    /// See <c>.design/teams-and-visibility.md</c>.
-    /// </summary>
-    private async Task EnsureReleasePipelineExistsAsync(int releasePipelineId, CancellationToken ct)
-    {
-        var snapshot = await _access.GetSnapshotAsync(ct);
-        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
-        var exists = await _db.OeReleasePipelines.AsNoTracking()
-            .Where(r => _db.OeProjects.Where(visible).Any(p => p.Id == r.ProjectId))
-            .AnyAsync(r => r.Id == releasePipelineId && r.DeletedAt == null, ct);
-        if (!exists)
-        {
-            throw new McpException($"Release pipeline {releasePipelineId} was not found. Call list_release_pipelines to see available pipelines.");
-        }
-    }
 }
 
 /// <summary>The outcome of a <c>publish_build</c> call — the new delivery id and how to track it.</summary>

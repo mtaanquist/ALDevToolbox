@@ -259,7 +259,7 @@ populated; one primary button per page.
   (cache-backed extension picker with Refresh, a `.confirm-modal` panel), latest-build card with per-`.app`
   download + Download all (outline), the per-repo changelog, build history (failures shown
   honestly), the BUILD LOG card with `Raw log`, project-scoped Compare builds, and the OE deep-link.
-- Shared: `RowStateIcon` (the row-state glyph; `BuildStatusPill` was retired in PR 18c once every caller moved onto `.status-pill` or the row keyline), `CommitRef` (mono short hash + branch) under `Components/Shared/`.
+- Shared: `RowStateIcon` (the row-state glyph; `BuildStatusPill` was retired in PR 18c once every caller moved onto `.status-pill` or the row keyline) under `Components/Shared/`. `CommitRef` (mono short hash + branch) was sketched here but never used by a page, and has since been deleted.
 
 Each user-facing page states the CLAUDE.md "UX definition of done" and gets a fresh-eyes
 `design-review` pass on the rendered screens (light + dark).

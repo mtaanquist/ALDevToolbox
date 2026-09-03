@@ -28,7 +28,6 @@ public sealed class ToolToggleServiceTests : IDisposable
         SmtpHost: null, SmtpPort: null, SmtpUser: null,
         SmtpPassword: null, ClearSmtpPassword: false,
         SmtpFrom: null, SmtpFromName: null, SmtpUseStartTls: null, BannerText: null,
-        DefaultSignupAutoApprove: false,
         BackupScheduleEnabled: true,
         BackupScheduleTimeUtc: new TimeOnly(2, 0),
         BackupRetentionCount: 14,

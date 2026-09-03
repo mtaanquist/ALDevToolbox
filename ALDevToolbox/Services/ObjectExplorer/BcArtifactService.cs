@@ -76,21 +76,6 @@ public sealed class BcArtifactService
     }
 
     /// <summary>
-    /// True when <paramref name="country"/> appears in Microsoft's OnPrem
-    /// countries index. Returns <see langword="true"/> when the index can't be
-    /// read (don't block on a transient Azure hiccup) — the actual import would
-    /// still fail loudly on a bad code.
-    /// </summary>
-    public async Task<bool> IsKnownCountryAsync(string country, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(country)) return false;
-        var json = await GetIndexAsync(BcArtifactIndex.CountriesIndexUrl(), ct).ConfigureAwait(false);
-        if (json is null) return true;
-        var countries = BcArtifactIndex.ParseCountries(json);
-        return countries.Count == 0 || countries.Contains(country.Trim().ToLowerInvariant());
-    }
-
-    /// <summary>
     /// Resolves a version (newest when <paramref name="version"/> is null, else
     /// the exact / Major.Minor match) to its application-artifact URL plus the
     /// derived release label. Returns <see langword="null"/> when nothing matches.

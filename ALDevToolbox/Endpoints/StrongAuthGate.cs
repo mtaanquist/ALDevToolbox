@@ -84,6 +84,8 @@ internal static class StrongAuthGate
             }
 
             var requireStrongAuth = await db.OrganizationSettings
+                // Fence category 4 (explicitly scoped org-id lookup): pinned to the org id read from
+                // the user row above.
                 .IgnoreQueryFilters()
                 .Where(s => s.OrganizationId == status.OrganizationId)
                 .Select(s => (bool?)s.RequireStrongAuth)
@@ -101,6 +103,8 @@ internal static class StrongAuthGate
             // MFA is the Entra tenant's job there — same rule as
             // AuthService.HasStrongAuthAsync. See issue #552.
             var hasStrongAuth = status.TotpEnabled || status.EmailMfaEnabled
+                // Fence category 4 (explicitly scoped user-id lookup): pinned to p.UserId == userId,
+                // the id on the request's own auth cookie.
                 || await db.UserPasskeys.IgnoreQueryFilters()
                     .AnyAsync(p => p.UserId == userId.Value, ctx.RequestAborted)
                 || await db.UserExternalLogins

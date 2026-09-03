@@ -1,5 +1,6 @@
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services;
 
@@ -17,7 +18,7 @@ namespace ALDevToolbox.Services;
 /// since the last success. Opt out with <c>DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER=1</c>.
 /// </para>
 /// </summary>
-public sealed class LoginAttemptPruneScheduler : BackgroundService
+public sealed class LoginAttemptPruneScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RunInterval = TimeSpan.FromHours(6);
@@ -29,52 +30,24 @@ public sealed class LoginAttemptPruneScheduler : BackgroundService
     private readonly TimeProvider _clock;
     private readonly ILogger<LoginAttemptPruneScheduler> _logger;
     private DateTimeOffset? _lastRunUtc;
-    private readonly WorkerHeartbeat _heartbeat;
 
     public LoginAttemptPruneScheduler(
         IServiceProvider services,
         TimeProvider clock,
         ILogger<LoginAttemptPruneScheduler> logger,
         WorkerHeartbeatRegistry heartbeats)
+        : base(logger, heartbeats, nameof(LoginAttemptPruneScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(10),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
-        _heartbeat = heartbeats.Register(nameof(LoginAttemptPruneScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(10),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Defer past startup migrations before opening another scope on the pool.
-        try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "LoginAttemptPruneScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         var now = _clock.GetUtcNow();
         if (_lastRunUtc is { } last && now - last < RunInterval) return;

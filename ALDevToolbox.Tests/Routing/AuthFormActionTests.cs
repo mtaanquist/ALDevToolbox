@@ -20,6 +20,9 @@ namespace ALDevToolbox.Tests.Routing;
 /// because the point is the pairing of eight files against the route table
 /// rather than any one page's render.
 /// </summary>
+// Boots the app and sets ConnectionStrings__DefaultConnection, a process-wide
+// variable; serialise with every other app-booting class or two hosts race it.
+[Collection(EndpointFactoryCollection.Name)]
 public class AuthFormActionTests : IClassFixture<TestDb>
 {
     private readonly TestDb _db;

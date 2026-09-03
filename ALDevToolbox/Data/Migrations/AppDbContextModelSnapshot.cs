@@ -1226,8 +1226,6 @@ namespace ALDevToolbox.Data.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Name"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Name"), new[] { "gin_trgm_ops" });
 
-                    b.HasIndex("OrganizationId");
-
                     b.HasIndex("SourceFileId");
 
                     b.HasIndex("VersionList")
@@ -1318,8 +1316,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("target_variable_id");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("SourceObjectId")
                         .HasDatabaseName("ix_oe_module_references_source_object");
@@ -1429,8 +1425,6 @@ namespace ALDevToolbox.Data.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Name"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Name"), new[] { "gin_trgm_ops" });
 
-                    b.HasIndex("OrganizationId");
-
                     b.HasIndex("ObjectId", "LineNumber")
                         .HasDatabaseName("ix_oe_module_symbols_object_line");
 
@@ -1502,8 +1496,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("target_object_name");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("SourceObjectId")
                         .HasDatabaseName("ix_oe_module_system_references_source_object");
@@ -1688,8 +1680,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("type_name");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("ObjectId", "Name")
                         .HasDatabaseName("ix_oe_module_variables_object_name");
@@ -4065,10 +4055,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<string>("BannerText")
                         .HasColumnType("text")
                         .HasColumnName("banner_text");
-
-                    b.Property<bool>("DefaultSignupAutoApprove")
-                        .HasColumnType("boolean")
-                        .HasColumnName("default_signup_auto_approve");
 
                     b.Property<int?>("DefaultStorageQuotaMb")
                         .HasColumnType("integer")

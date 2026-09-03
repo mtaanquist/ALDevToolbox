@@ -19,7 +19,6 @@ public sealed class TenantQueryFilterTests
     /// </summary>
     private static readonly Dictionary<string, string> Unfiltered = new()
     {
-        ["audit_log"] = "Read exclusively through AuditService, which puts an explicit organization_id predicate on every query.",
         ["organization_usage_snapshots"] = "Written and read off-request by the usage scheduler and the SiteAdmin storage page via raw SQL, both cross-org by design.",
         ["per_tenant_backups"] = "SiteAdmin-only surface; every read already calls IgnoreQueryFilters() to list snapshots across orgs.",
     };

@@ -155,6 +155,8 @@ public sealed class AccountService
         }
 
         var existingUser = await _db.Users
+            // Fence category 1 (pre-auth routing): signup runs before any cookie exists, so
+            // there is no org to filter by; the probe is pinned to the typed email.
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);
         if (existingUser is not null)
@@ -183,6 +185,8 @@ public sealed class AccountService
         else
         {
             var match = await _db.Organizations
+                // Fence category 1 (pre-auth routing): resolves which org a signup joins, pinned
+                // to the requested slug. No cookie exists yet.
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(o => o.Slug == slug, ct);
             if (match is null)
@@ -462,6 +466,8 @@ public sealed class AccountService
         var domain = EmailAddress.DomainOf(normalisedEmail);
         if (domain is null) return null;
         return await _db.OrganizationEmailDomains
+            // Fence category 1 (pre-auth routing): maps the signup email's domain to one org,
+            // pinned to d.Domain == domain. No cookie exists yet.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(d => d.Domain == domain)
@@ -474,6 +480,8 @@ public sealed class AccountService
         var safeSlug = Slugify(slug);
         var candidate = safeSlug;
         var disambiguator = 1;
+        // Fence category 1 (pre-auth routing): slug-uniqueness probe while creating the
+        // signup's new org; existence-only (AnyAsync), pinned to the candidate slug.
         while (await _db.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Slug == candidate, ct))
         {
             disambiguator++;

@@ -1,5 +1,4 @@
-using System.Collections.Concurrent;
-using System.Threading.Channels;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 
@@ -7,7 +6,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// In-process hand-off of "re-read this project's Business Central environments and
 /// re-mirror their next platform update" to <see cref="EnvironmentRefreshWorker"/>. Fed
 /// by the nightly <see cref="EnvironmentRefreshScheduler"/> sweep and by an on-demand
-/// refresh from a page. A small bounded <see cref="Channel{T}"/> — not an external queue
+/// refresh from a page. A small bounded <see cref="System.Threading.Channels.Channel{T}"/> — not an external queue
 /// — keeps the "no external services" fence intact, mirroring
 /// <see cref="ProjectDiscoveryQueue"/>.
 ///
@@ -20,51 +19,12 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// </para>
 /// See <c>.design/saas-delivery.md</c> and issue #657.
 /// </summary>
-public sealed class EnvironmentRefreshQueue
+public sealed class EnvironmentRefreshQueue : JobQueue<EnvironmentRefreshJob, int>
 {
     // A nightly sweep offers every BC-connected project at once, so the bound is set for
     // a fleet rather than for a single page action; the worker drains one at a time and a
     // full channel simply makes the scheduler wait.
-    private readonly Channel<EnvironmentRefreshJob> _channel =
-        Channel.CreateBounded<EnvironmentRefreshJob>(new BoundedChannelOptions(256)
-        {
-            SingleReader = true,
-            FullMode = BoundedChannelFullMode.Wait,
-        });
-
-    private readonly ConcurrentDictionary<int, byte> _inFlight = new();
-
-    public ChannelReader<EnvironmentRefreshJob> Reader => _channel.Reader;
-
-    /// <summary>
-    /// Enqueues a refresh for <paramref name="job"/>'s project unless one is already
-    /// queued or running for it (the dedupe gate). Returns <c>true</c> when it was
-    /// enqueued, <c>false</c> when coalesced into an in-flight refresh.
-    /// </summary>
-    public async ValueTask<bool> EnqueueAsync(EnvironmentRefreshJob job, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(job);
-        // Claim the in-flight slot first so a concurrent enqueue for the same project
-        // loses the race and coalesces. Released by Complete() (worker) or here if the
-        // write itself fails.
-        if (!_inFlight.TryAdd(job.ProjectId, 0)) return false;
-        try
-        {
-            await _channel.Writer.WriteAsync(job, ct).ConfigureAwait(false);
-            return true;
-        }
-        catch
-        {
-            _inFlight.TryRemove(job.ProjectId, out _);
-            throw;
-        }
-    }
-
-    /// <summary>True while a refresh for <paramref name="projectId"/> is queued or running.</summary>
-    public bool IsInFlight(int projectId) => _inFlight.ContainsKey(projectId);
-
-    /// <summary>Clears the in-flight flag once the worker has finished a project (success or failure).</summary>
-    public void Complete(int projectId) => _inFlight.TryRemove(projectId, out _);
+    public EnvironmentRefreshQueue() : base(capacity: 256, keySelector: job => job.ProjectId) { }
 }
 
 /// <summary>

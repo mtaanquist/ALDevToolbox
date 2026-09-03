@@ -1,5 +1,6 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Services.SingleTenant;
+using ALDevToolbox.Services.Workers;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -29,14 +30,13 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// otherwise the sweep would have nothing to do and never run (issue #518).
 /// </para>
 /// </summary>
-public sealed class ReleaseAutoImportScheduler : BackgroundService
+public sealed class ReleaseAutoImportScheduler : PolledScheduler
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
 
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ILogger<ReleaseAutoImportScheduler> _logger;
-    private readonly WorkerHeartbeat _heartbeat;
     private readonly bool _singleTenant;
     private readonly int _hourUtc;
 
@@ -51,18 +51,20 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         ILogger<ReleaseAutoImportScheduler> logger,
         WorkerHeartbeatRegistry heartbeats,
         ISingleTenantMode singleTenant)
+        // Poll every minute; the sweep resolves + enqueues quickly (downloads run
+        // on ReleaseImportWorker, not here), so a 30-minute active ceiling is
+        // ample even for many opted-in orgs.
+        : base(logger, heartbeats, nameof(ReleaseAutoImportScheduler),
+            pollInterval: PollInterval,
+            maxActiveDuration: TimeSpan.FromMinutes(30),
+            maxIdleSilence: TimeSpan.FromMinutes(5),
+            disableEnvVar: "DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER")
     {
         _services = services;
         _clock = clock;
         _logger = logger;
         _singleTenant = singleTenant.IsEnabled;
         _hourUtc = ResolveHourUtc();
-        // Poll every minute; the sweep resolves + enqueues quickly (downloads run
-        // on ReleaseImportWorker, not here), so a 30-minute active ceiling is
-        // ample even for many opted-in orgs.
-        _heartbeat = heartbeats.Register(nameof(ReleaseAutoImportScheduler),
-            maxActiveDuration: TimeSpan.FromMinutes(30),
-            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
     private static int ResolveHourUtc()
@@ -72,36 +74,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         return 4; // Quiet pre-dawn UTC window, after the 3am OE vacuum.
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Let startup migrations + seed finish before the first poll.
-        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            _heartbeat.Tick();
-            try
-            {
-                _heartbeat.BeginActive();
-                try { await TickAsync(stoppingToken); }
-                finally { _heartbeat.EndActive(); }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ReleaseAutoImportScheduler tick threw; will retry on the next poll.");
-            }
-
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(CancellationToken ct)
+    protected override async Task TickAsync(CancellationToken ct)
     {
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
         if (nowUtc.Hour < _hourUtc) return;
@@ -123,6 +96,8 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     internal static async Task<List<(int OrganizationId, string Countries, bool IsSystem)>> ResolveTargetsAsync(
         AppDbContext db, bool includeSystemOrg, CancellationToken ct)
     {
+        // Fence category 3 (scheduler, no request org): enumerates the orgs to sweep; each
+        // org's import then runs pinned inside its own AmbientOrganizationScope.
         var activeOrgs = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
             .Where(o => (includeSystemOrg || !o.IsSystem) && !o.IsPending)
             .Select(o => new { o.Id, o.IsSystem })
@@ -132,6 +107,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         // path does (issue #694).
         var activeSet = activeOrgs.ToDictionary(o => o.Id, o => o.IsSystem);
 
+        // Fence category 3 (scheduler, no request org): opt-in settings for the same sweep.
         var rows = await db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.AutoImportReleasesEnabled && s.AutoImportCountry != null && s.AutoImportCountry != "")
             .Select(s => new { s.OrganizationId, s.AutoImportCountry })

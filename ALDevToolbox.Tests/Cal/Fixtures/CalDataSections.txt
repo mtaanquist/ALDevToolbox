@@ -1,0 +1,140 @@
+OBJECT Table 18 Customer
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  FIELDS
+  {
+    { 1   ;   ;No.                 ;Code20         }
+    { 2   ;   ;Name                ;Text100        }
+    { 59  ;   ;Balance             ;Decimal        }
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT Table 37 Sales Line
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  FIELDS
+  {
+    { 1   ;   ;Document No.        ;Code20         }
+    { 103 ;   ;Line Amount         ;Decimal        }
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT Codeunit 80 Sales-Post
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  CODE
+  {
+    PROCEDURE CheckCustomer@1(CustNo@1000 : Code[20]);
+    BEGIN
+    END;
+
+    PROCEDURE CalcAmount@2(CustNo@1000 : Code[20]) : Decimal;
+    BEGIN
+    END;
+
+    PROCEDURE PrepareCustomer@3(CustNo@1000 : Code[20]);
+    BEGIN
+    END;
+
+    BEGIN
+    END.
+  }
+}
+OBJECT Report 50000 Customer Balances
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  PROPERTIES
+  {
+    OnPreReport=BEGIN SalesPost.CheckCustomer(''); END;
+
+  }
+  DATASET
+  {
+    { 1   ;    ;DataItem;Customer            ;
+               DataItemTable=Table18;
+               OnPreDataItem=BEGIN
+                               SalesPost.CheckCustomer('');
+                             END;
+
+               OnAfterGetRecord=BEGIN
+                                  CALCFIELDS("Balance");
+                                END; }
+
+    { 2   ;1   ;Column  ;CustomerName        ;
+               SourceExpr="Name" }
+
+    { 3   ;1   ;Column  ;PostedAmount        ;
+               SourceExpr=SalesPost.CalcAmount("No.") }
+
+    { 4   ;1   ;DataItem;Sales Line          ;
+               DataItemTable=Table37;
+               OnAfterGetRecord=BEGIN
+                                  Total := Total + "Line Amount";
+                                END; }
+
+    { 5   ;2   ;Column  ;LineAmount          ;
+               SourceExpr="Line Amount" }
+  }
+  CODE
+  {
+    VAR
+      SalesPost@1000 : Codeunit 80;
+      Total@1001 : Decimal;
+
+    BEGIN
+    END.
+  }
+}
+OBJECT XMLport 50001 Customer Import
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  ELEMENTS
+  {
+    { [{9F7A1C21-0E2B-4F0B-9E62-8B6C2A5D0001}];  ;Root                ;Element ;Text     }
+
+    { [{9F7A1C21-0E2B-4F0B-9E62-8B6C2A5D0002}];1 ;Customer            ;Element ;Table    ;
+                                                  SourceTable=Table18;
+                                                  OnAfterInitRecord=BEGIN
+                                                                      SalesPost.PrepareCustomer('');
+                                                                    END;
+                                                                     }
+
+    { [{9F7A1C21-0E2B-4F0B-9E62-8B6C2A5D0003}];2 ;Name                ;Field   ;Field    ;
+                                                  SourceField=Customer::Name;
+                                                  OnBeforePassField=BEGIN
+                                                                      "Name" := UPPERCASE("Name");
+                                                                    END;
+                                                                     }
+  }
+  CODE
+  {
+    VAR
+      SalesPost@1000 : Codeunit 80;
+
+    BEGIN
+    END.
+  }
+}

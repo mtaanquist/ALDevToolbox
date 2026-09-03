@@ -1,0 +1,17 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/configuration/workspace
+   New route: /admin/templates/workspace
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/admin/configuration/workspace"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    The Workspace settings page moved to /admin/templates/workspace. This stub
+    keeps the legacy bookmark working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/workspace", replace: true);
+}

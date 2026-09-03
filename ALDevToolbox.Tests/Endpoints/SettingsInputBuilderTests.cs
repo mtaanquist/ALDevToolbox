@@ -24,7 +24,6 @@ public class SettingsInputBuilderTests
         SmtpFromName: "AL Dev Toolbox",
         SmtpUseStartTls: startTls,
         BannerText: "Scheduled maintenance on Sunday.",
-        DefaultSignupAutoApprove: true,
         BackupScheduleEnabled: true,
         BackupScheduleTimeUtc: new TimeOnly(2, 0),
         BackupRetentionCount: 30,
@@ -82,18 +81,6 @@ public class SettingsInputBuilderTests
         input.SmtpUseStartTls.Should().BeFalse();
         input.SmtpHost.Should().Be("smtp.cronus.com");
         input.BannerText.Should().Be("Back on Monday.");
-    }
-
-    [Fact]
-    public void An_unposted_checkbox_still_reads_as_off()
-    {
-        // Plain checkboxes with no hidden partner keep working: the Tools tab
-        // treats an absent tool_<key> as "this tool is disabled".
-        var form = Form(("BannerText", [""]));
-
-        var input = SettingsInputBuilder.WithGeneral(Current(), form);
-
-        input.DefaultSignupAutoApprove.Should().BeFalse();
     }
 
     [Fact]

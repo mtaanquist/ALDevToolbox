@@ -4,7 +4,7 @@ using AwesomeAssertions;
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
-/// Pinning tests for <see cref="ReleaseImportService.ObjectHeaderRegex"/>.
+/// Pinning tests for <see cref="ReleaseSourceScanner.ObjectHeaderRegex"/>.
 /// The regex drives object-to-source-file linking, so a regression that
 /// either misses a real header or falsely matches a permissionset
 /// permission entry corrupts the catalog (the outline panel ends up
@@ -24,7 +24,7 @@ public sealed class ObjectHeaderRegexTests
     [InlineData("    permissionset 9054 \"Email - Read\"", "permissionset", "Email - Read")]
     public void Matches_real_object_headers(string line, string expectedKind, string expectedName)
     {
-        var m = ReleaseImportService.ObjectHeaderRegex.Match(line);
+        var m = ReleaseSourceScanner.ObjectHeaderRegex.Match(line);
         m.Success.Should().BeTrue();
         m.Groups[1].Value.Should().BeEquivalentTo(expectedKind);
         var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
@@ -46,7 +46,7 @@ public sealed class ObjectHeaderRegexTests
         // lines, otherwise the permissionset's file claims every object
         // it permissions and the real .Query.al / .Codeunit.al / etc.
         // file loses the link.
-        var m = ReleaseImportService.ObjectHeaderRegex.Match(line);
+        var m = ReleaseSourceScanner.ObjectHeaderRegex.Match(line);
         m.Success.Should().BeFalse(
             because: "permission grant entries share the `kind \"Name\"` shape but assign perms with `=`");
     }
@@ -62,7 +62,7 @@ public sealed class ObjectHeaderRegexTests
         // the report's top-level Properties list (Whse. Change Unit of
         // Measure shape). The regex needs to tolerate quoted +
         // bare-id forms with arbitrary leading whitespace.
-        var m = ReleaseImportService.SourceTablePropertyRegex.Match(line);
+        var m = ReleaseSourceScanner.SourceTablePropertyRegex.Match(line);
         m.Success.Should().BeTrue();
         var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
         name.Should().Be(expectedName);
@@ -74,7 +74,7 @@ public sealed class ObjectHeaderRegexTests
     [InlineData("Caption = 'SourceTable';")]
     public void SourceTablePropertyRegex_skips_non_property_lines(string line)
     {
-        var m = ReleaseImportService.SourceTablePropertyRegex.Match(line);
+        var m = ReleaseSourceScanner.SourceTablePropertyRegex.Match(line);
         m.Success.Should().BeFalse();
     }
 
@@ -108,7 +108,7 @@ public sealed class ObjectHeaderRegexTests
                 }
             }
             """;
-        var (extends, sourceTable) = ReleaseImportService.ScanFileForHeaderMetadata(src);
+        var (extends, sourceTable) = ReleaseSourceScanner.ScanFileForHeaderMetadata(src);
 
         extends.Should().BeNull();
         sourceTable.Should().Be("Warehouse Activity Line");
@@ -125,7 +125,7 @@ public sealed class ObjectHeaderRegexTests
                 procedure SetFilterItem(var NewItem: Record Item)
             }
             """;
-        var (extends, sourceTable) = ReleaseImportService.ScanFileForHeaderMetadata(src);
+        var (extends, sourceTable) = ReleaseSourceScanner.ScanFileForHeaderMetadata(src);
 
         extends.Should().Be("Inventory Adjustment");
         sourceTable.Should().BeNull();

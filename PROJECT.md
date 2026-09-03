@@ -16,6 +16,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
 | `Components/Shared/`         | Reusable components (`SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, `EnvironmentActivityFeed`, ...). Check here before building a new control. |
 | `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
+| `Startup/`                   | Service-registration groups, one file per area (`AddObjectExplorer`, `AddAccountServices`, `AddMcp`, `AddBackgroundWorkers`, …), called from `Program.cs` as `builder.Services.AddX()`. A new registration goes into the matching `Add*` method, not back into `Program.cs`. |
 | `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). Anything belonging to one tool or one concern goes in a subfolder rather than at the top level. |
 | `Services/Account/`          | Sign-in and account services: `AuthService`, `EntraSignInService`, `PasskeyService`, `EmailMfaService`. |
 | `Services/Al/` and `Services/Cal/` | The AL and C/AL source parsers and reference extractors (see the extractor guides in this file). |
@@ -122,7 +123,7 @@ A Claude Design handoff (the prototype HTML/CSS/JS a `.design/*.md` points at �
 The Object Explorer's reference extractor (`Services/Al/AlReferenceExtractor.cs`) reports an Unresolved count after each Phase-2 import. New BC releases occasionally ship new built-in methods, scalar types, runtime APIs, or platform virtual tables that need to land in our allow-lists to keep that number trustworthy. Two files cover the surface:
 
 - **`Services/Al/AlBuiltinMethods.cs`** — every category of "built-in name we expect to skip" (method sets per receiver kind, scalar types, system functions, statement keywords, DSL keywords, static-receiver names). The class-level doc-comment has a labelled `EXTENDING WHEN MICROSOFT ADDS NEW METHODS / TYPES` checklist mapping each kind of addition to the right `HashSet`.
-- **`Services/ObjectExplorer/ReleaseImportService.cs`** — `PlatformVirtualTables` (the named id → name map for the `2000000001..2000000999` runtime tables) and `FoundationalAppNames` (Microsoft umbrella apps every extension implicitly depends on). Both have `EXTENDING` notes at their definition.
+- **`Services/ObjectExplorer/ReleaseImportAllowLists.cs`** — `PlatformVirtualTables` (the named id → name map for the `2000000001..2000000999` runtime tables) and `FoundationalAppNames` (Microsoft umbrella apps every extension implicitly depends on). Both have `EXTENDING` notes at their definition. (They used to live in `ReleaseImportService.cs`; the file is theirs now.)
 
 `AlReferenceExtractor.IsPlatformVirtualTableId` is the range-check safety net for the platform-table ids — even if a numeric id isn't named, the diagnostic silences. Add to the named list when the symbol package resolves the id to a name (so `Record Field`-style chains work), not just to silence noise.
 
@@ -137,17 +138,19 @@ The MCP server (`Services/Mcp/Tools/*Tools.cs`) is a parallel front-end on the s
 - **Service-level features come for free.** If the new behaviour lives behind an existing service method (e.g. `FindReferencesAsync` matching a new `reference_kind`), the matching MCP tool usually picks it up automatically. Verify it actually reaches the MCP path — the tool may call a sibling method that doesn't see the new bucket.
 - **New DTOs and query paths need plumbing.** When a feature lands a new field on a DTO (e.g. `ObjectOutline.ImplementedBy`) or a separate query method (`FindReferencesForSymbolAsync` vs `FindReferencesAsync`), the MCP tool has to be updated to populate the field or route to the right query. Otherwise the web UI shows the relationship and MCP agents stay blind to it.
 
-- **A new gate is a feature too.** MCP tools resolve ids through their own private
-  `Resolve*Async` helpers, which query the DbSets directly rather than going through
-  the gated services the pages use — so an access rule added to a service does *not*
-  reach them for free. Each tool class has one such choke point (`ArtifactsTools`'s
-  `ResolveProjectAsync`/`ResolveReadyBuildAsync`, `DeliveryTools`'s
-  `EnsureReleasePipelineExistsAsync`, `ObjectExplorerTools`'s `ResolveReleaseAsync`);
-  put the check there rather than in each tool, then check the tools that *bypass*
-  the choke point (a `symbolId` argument that skips release resolution) and gate
-  those explicitly. A denied read answers the tool's existing "not found" message,
-  never a distinct refusal — see the project-visibility fence in
-  `.design/teams-and-visibility.md` for the worked example.
+- **A new gate is a feature too — and it lives on the service.** The MCP id resolvers
+  are methods on the service that owns the entity, not private helpers in the tool
+  classes: `ObjectExplorerService.ResolveReleaseAsync` /
+  `EnsureSymbolVisibleAsync` / `ResolveProcedureSymbolIdAsync`,
+  `ProjectService.ResolveProjectAsync` / `ResolveReadyBuildAsync`, and
+  `ReleasePipelineService.EnsureReleasePipelineExistsAsync`. Add an access rule
+  there and every tool that resolves an id through it inherits the gate — the tool
+  classes hold no `AppDbContext` of their own for these lookups. When you add a tool,
+  route its ids through the matching resolver rather than querying the DbSets; and
+  when a tool can *bypass* one (a `symbolId` argument that skips release resolution),
+  gate it explicitly with the entity's own visibility check. A denied read answers the
+  tool's existing "not found" message, never a distinct refusal — see the
+  project-visibility fence in `.design/teams-and-visibility.md` for the worked example.
 
 Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (resizers, badge styling, keyboard shortcuts), authoring flows that already have a dedicated MCP tool, or per-org admin pages that aren't part of the AL-reading surface. When in doubt, expose it through MCP; agents tend to want the same answers humans do.
 

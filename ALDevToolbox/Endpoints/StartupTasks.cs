@@ -57,10 +57,12 @@ internal static class StartupTasks
         // propagated to existing orgs via a one-off migration backfill (see
         // BackfillAppJsonAsIncludedFile), not on every boot.
         var allOrgIds = await db.Organizations
+            // Fence category 3 (startup, no request org): the platform-file seed needs every org.
             .IgnoreQueryFilters()
             .Select(o => o.Id)
             .ToListAsync(stopping);
         var orgIdsWithFiles = (await db.OrganizationFiles
+            // Same category 3 read: which orgs already have platform files.
             .IgnoreQueryFilters()
             .Select(f => f.OrganizationId)
             .Distinct()
@@ -98,6 +100,8 @@ internal static class StartupTasks
         // database. After that the env vars are read but ignored (logged).
         var bootstrapEmail = Environment.GetEnvironmentVariable("BOOTSTRAP_ADMIN_EMAIL");
         var bootstrapPassword = Environment.GetEnvironmentVariable("BOOTSTRAP_ADMIN_PASSWORD");
+        // Fence category 3 (startup, no request org): existence-only probe for the
+        // bootstrap-admin first-run check.
         var anyUsers = await db.Users.IgnoreQueryFilters().AnyAsync(stopping);
         if (!anyUsers && !string.IsNullOrWhiteSpace(bootstrapEmail) && !string.IsNullOrWhiteSpace(bootstrapPassword))
         {
@@ -177,6 +181,7 @@ internal static class StartupTasks
             .Select(j => j.ReleaseId)
             .ToListAsync(stopping);
         var stranded = await db.OeReleases
+            // Same category 3 read: the stranded releases matching the ids above.
             .IgnoreQueryFilters()
             .Where(r => r.Status == "ingesting" && !resumableReleaseIds.Contains(r.Id))
             .ToListAsync(stopping);
@@ -231,12 +236,14 @@ internal static class StartupTasks
     /// </summary>
     internal static async Task<Organization> EnsureSystemOrganizationAsync(AppDbContext db, CancellationToken ct)
     {
+        // Fence category 3 (startup, no request org): pinned to o.IsSystem.
         var systemOrg = await db.Organizations.IgnoreQueryFilters()
             .FirstOrDefaultAsync(o => o.IsSystem, ct);
         if (systemOrg is not null) return systemOrg;
 
         // No system org yet. Adopt an existing "default"-slug org (created
         // without the flag by the test EnsureCreated path) or create one.
+        // Fence category 3 (startup, no request org): pinned to the reserved default slug.
         systemOrg = await db.Organizations.IgnoreQueryFilters()
             .FirstOrDefaultAsync(o => o.Slug == "default", ct);
         if (systemOrg is null)

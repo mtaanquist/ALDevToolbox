@@ -34,6 +34,7 @@ public sealed class RecoveryCodeService
     /// </summary>
     public async Task<IReadOnlyList<string>> RegenerateAsync(int userId, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to c.UserId == userId.
         var existing = await _db.UserRecoveryCodes.IgnoreQueryFilters()
             .Where(c => c.UserId == userId).ToListAsync(ct);
         _db.UserRecoveryCodes.RemoveRange(existing);
@@ -65,6 +66,8 @@ public sealed class RecoveryCodeService
         var normalised = Normalise(code);
         if (normalised.Length != GroupLength * 2) return false;
 
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to c.UserId == userId
+        // (the half-authenticated MFA state).
         var candidates = await _db.UserRecoveryCodes.IgnoreQueryFilters()
             .Where(c => c.UserId == userId && c.ConsumedAt == null)
             .ToListAsync(ct);
@@ -82,6 +85,7 @@ public sealed class RecoveryCodeService
 
     /// <summary>Count of still-usable codes — surfaced on the /account page.</summary>
     public async Task<int> RemainingAsync(int userId, CancellationToken ct = default) =>
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to c.UserId == userId.
         await _db.UserRecoveryCodes.IgnoreQueryFilters()
             .CountAsync(c => c.UserId == userId && c.ConsumedAt == null, ct);
 

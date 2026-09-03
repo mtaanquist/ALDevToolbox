@@ -118,7 +118,6 @@ public sealed class SystemSettingsAuditTests : IDisposable
         SmtpFromName: null,
         SmtpUseStartTls: true,
         BannerText: null,
-        DefaultSignupAutoApprove: false,
         BackupScheduleEnabled: true,
         BackupScheduleTimeUtc: new TimeOnly(2, 0),
         BackupRetentionCount: 14,

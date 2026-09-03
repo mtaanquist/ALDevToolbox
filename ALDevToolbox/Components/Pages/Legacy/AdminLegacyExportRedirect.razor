@@ -1,0 +1,22 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/export
+   New route: /admin/administration/export
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
+@page "/admin/export"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/export moved to /admin/administration/export
+    when the per-org admin pages were consolidated. The POST endpoints
+    under /admin/export/download and /admin/export/import stayed at their
+    original URLs.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/export", replace: true);
+    }
+}

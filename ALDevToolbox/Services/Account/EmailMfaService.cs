@@ -46,6 +46,8 @@ public sealed class EmailMfaService
     {
         var now = _clock.GetUtcNow().UtcDateTime;
         var since = now - IssueWindow;
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to t.UserId == userId
+        // (the half-authenticated login state or the signed-in user).
         var recent = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .CountAsync(t => t.UserId == userId
                              && t.Purpose == TokenPurpose.EmailMfaChallenge
@@ -111,6 +113,7 @@ public sealed class EmailMfaService
     /// <summary>Flips <see cref="User.EmailMfaEnabled"/>. Caller verifies the code first.</summary>
     public async Task EnableAsync(int userId, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to u.Id == userId.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         user.EmailMfaEnabled = true;
         await _db.SaveChangesAsync(ct);
@@ -118,6 +121,7 @@ public sealed class EmailMfaService
 
     public async Task DisableAsync(int userId, CancellationToken ct = default)
     {
+        // Fence category 4 (explicitly scoped user-id lookup): pinned to u.Id == userId.
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         user.EmailMfaEnabled = false;
         await _db.SaveChangesAsync(ct);

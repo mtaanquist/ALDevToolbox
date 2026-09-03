@@ -168,6 +168,7 @@ public class OrganizationConfigService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var name = await db.Organizations
+            // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.Id == organizationId)
@@ -209,16 +210,21 @@ public class OrganizationConfigService
             return cached;
 
         var settings = await _db.OrganizationSettings
+            // Fence category 4 (explicitly scoped org-id lookup): the three reads below are all
+            // pinned to OrganizationId == organizationId, and the guard above refuses a request
+            // scoped to a different org.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.OrganizationId == organizationId, ct);
 
         var logo = await _db.OrganizationAssets
+            // Same category 4 read, pinned to a.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(a => a.OrganizationId == organizationId && a.Kind == OrganizationAssetKind.Logo, ct);
 
         var files = await _db.OrganizationFiles
+            // Same category 4 read, pinned to f.OrganizationId == organizationId.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(f => f.OrganizationId == organizationId)
@@ -581,30 +587,6 @@ public class OrganizationConfigService
         // into a 500 on the very next page load.
         _cache.Set(NameCacheKey(orgId), trimmed);
         _logger.LogInformation("Renamed org {OrgId} to {Name}.", orgId, trimmed);
-    }
-
-    /// <summary>
-    /// Extracts the domain part of an email and looks up the claiming
-    /// organisation, if any. Used by signup to route users to a known org
-    /// without requiring them to type a slug. Bypasses query filters because
-    /// signup runs pre-login (no org in scope) and the routing must see
-    /// claims across every org.
-    /// </summary>
-    public async Task<Organization?> ResolveOrganizationByEmailAsync(string email, CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(email)) return null;
-        var at = email.LastIndexOf('@');
-        if (at < 0 || at == email.Length - 1) return null;
-        var domain = email[(at + 1)..].Trim().ToLowerInvariant();
-        if (domain.Length == 0) return null;
-
-        var claim = await _db.OrganizationEmailDomains
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(d => d.Domain == domain)
-            .Select(d => d.Organization)
-            .FirstOrDefaultAsync(ct);
-        return claim;
     }
 
     /// <summary>

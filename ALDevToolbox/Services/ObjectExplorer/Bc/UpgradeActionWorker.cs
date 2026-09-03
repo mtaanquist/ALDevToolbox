@@ -105,6 +105,8 @@ public sealed class UpgradeActionWorker : BackgroundService
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // Fence category 3 (scheduler, no request org): the org enumeration; per-org work
+            // then runs inside that org's AmbientOrganizationScope.
             var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
                 .Where(o => !o.IsPending)
                 .Select(o => new { o.Id, o.IsSystem })

@@ -67,7 +67,7 @@ namespace ALDevToolbox.Services.Al;
 /// </list>
 ///
 /// <para>BC platform virtual-table ids and names live in a separate
-/// list at <c>ReleaseImportService.PlatformVirtualTables</c> — the
+/// list at <c>ReleaseImportAllowLists.PlatformVirtualTables</c> — the
 /// chain-walker also has a <c>IsPlatformVirtualTableId</c> range
 /// check (2000000000..2000000999) in <c>AlReferenceExtractor.cs</c>
 /// as a safety net.</para>
@@ -938,6 +938,15 @@ public static class AlBuiltinMethods
     /// </summary>
     public static bool IsStatementKeyword(string name) =>
         !string.IsNullOrEmpty(name) && StatementKeywords.Contains(name);
+
+    /// <summary>
+    /// True for the runtime-supplied FIELDS (as opposed to methods) a
+    /// record exposes — <c>SystemId</c> and friends. Used to keep a
+    /// paren-less built-in classified correctly: <c>Rec.Modify;</c> is a
+    /// call, <c>Rec.SystemId</c> is a read. See issue #712.
+    /// </summary>
+    public static bool IsBuiltinField(string memberName) =>
+        !string.IsNullOrEmpty(memberName) && RecordSystemFields.Contains(memberName);
 
     /// <summary>
     /// True when <paramref name="memberName"/> is a runtime built-in

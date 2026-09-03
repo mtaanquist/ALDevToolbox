@@ -100,6 +100,10 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Fence category 2 (SiteAdmin cross-org console): audit_log gained a
+        // tenant query filter in #678; this page is the SiteAdmin diff viewer
+        // and must open a row from any organisation. The route is behind the
+        // SiteAdmin authorization policy ([Authorize(Roles = SiteAdminRole)]).
         var entry = await Db.AuditLog
             .IgnoreQueryFilters()
             .AsNoTracking()
@@ -118,6 +122,9 @@
             ? "no prior state (created)"
             : entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
+        // Fence category 2 (SiteAdmin cross-org console): same category as the
+        // lookup above — the "after" snapshot lives in the same org as the
+        // entry we just loaded (the predicate below pins it to that org).
         var next = await Db.AuditLog
             .IgnoreQueryFilters()
             .AsNoTracking()

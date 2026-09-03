@@ -92,7 +92,9 @@ public sealed class ProjectBuildImporterTests : IDisposable
                 ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance),
             NullLogger<TranslationImportService>.Instance);
         var importer = new ReleaseImportService(
-            ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), translations, NullLogger<ReleaseImportService>.Instance);
+            ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), translations,
+            new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
+            NullLogger<ReleaseImportService>.Instance);
         var persistedJobs = new PersistedImportJobs(ctx, TimeProvider.System);
         var access = new ProjectAccess(ctx, _db.OrgContext);
         return new ProjectBuildImporter(

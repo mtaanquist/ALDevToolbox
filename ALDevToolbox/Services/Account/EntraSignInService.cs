@@ -13,7 +13,16 @@ namespace ALDevToolbox.Services.Account;
 /// <param name="ObjectId">The <c>oid</c> claim — the stable per-tenant account id we key links on.</param>
 /// <param name="Email">The <c>preferred_username</c>/<c>email</c> claim. Display + matching only, never the link key.</param>
 /// <param name="DisplayName">The <c>name</c> claim.</param>
-public sealed record EntraTokenIdentity(string TenantId, string ObjectId, string? Email, string? DisplayName);
+/// <param name="EmailVerified">
+/// The <c>xms_edov</c> claim ("email domain owner verified") — true only when
+/// Microsoft has confirmed the tenant owns the email's domain. Without it the
+/// address is attacker-influenceable (a B2B guest's UPN is their own external
+/// address), so <see cref="EntraSignInService.CompleteAsync"/> refuses to bind
+/// the token to an existing local account on the strength of the email alone.
+/// See the "unverified email claim" rule in <c>.design/auth-and-audit.md</c>.
+/// </param>
+public sealed record EntraTokenIdentity(
+    string TenantId, string ObjectId, string? Email, string? DisplayName, bool EmailVerified = false);
 
 /// <summary>Resolved app-registration credentials for one challenge.</summary>
 /// <param name="OrganizationId">The org the sign-in is routed to.</param>
@@ -35,6 +44,13 @@ public enum EntraCompletionOutcome
     EmailMissing,
     /// <summary>A local account with this email exists in a different organisation.</summary>
     EmailTakenElsewhere,
+    /// <summary>
+    /// A local account with this email exists in the resolved organisation, but
+    /// nothing proves the Entra tenant owns the address (no <c>xms_edov</c>, and
+    /// the domain isn't one the organisation has verified). Binding on an
+    /// unverified claim would be account takeover, so the sign-in is refused.
+    /// </summary>
+    EmailNotVerified,
     /// <summary>Matched an account that is still pending approval.</summary>
     AccountPending,
     /// <summary>Matched an account that has been disabled.</summary>
@@ -111,6 +127,8 @@ public sealed class EntraSignInService
     /// login page has no organisation yet, and "any org" is the question.
     /// </summary>
     public Task<bool> IsSignInAvailableAsync(CancellationToken ct = default) =>
+        // Fence category 1 (pre-auth routing): deployment-wide question asked by the
+        // anonymous login page.
         _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .AnyAsync(s => s.EntraEnabled, ct);
 
@@ -128,6 +146,7 @@ public sealed class EntraSignInService
         // organizations carries no query filter (it is the tenant root), so
         // this read needs no IgnoreQueryFilters.
         var orgCount = await _db.Organizations.AsNoTracking().CountAsync(ct);
+        // Fence category 1 (pre-auth routing): deployment-wide count for the anonymous login page.
         var entraOnlyCount = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .CountAsync(s => s.LocalLoginPolicy == Domain.ValueObjects.LocalLoginPolicy.EntraOnly, ct);
         return (true, orgCount > entraOnlyCount);
@@ -149,6 +168,8 @@ public sealed class EntraSignInService
         var domain = ExtractDomain(email);
         if (domain is not null)
         {
+            // Fence category 1 (pre-auth routing): routes one sign-in to one org; pinned to the
+            // typed email's domain.
             orgId = await _db.OrganizationEmailDomains.IgnoreQueryFilters().AsNoTracking()
                 .Where(d => d.Domain == domain)
                 .Select(d => (int?)d.OrganizationId)
@@ -157,6 +178,8 @@ public sealed class EntraSignInService
 
         if (orgId is null)
         {
+            // Fence category 1 (pre-auth routing): with no email, the challenge is only offered
+            // when exactly one org has Entra enabled.
             var enabledOrgIds = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
                 .Where(s => s.EntraEnabled)
                 .Select(s => s.OrganizationId)
@@ -167,6 +190,7 @@ public sealed class EntraSignInService
             else return (null, "entra-not-configured");
         }
 
+        // Fence category 1 (pre-auth routing): pinned to the org resolved above.
         var settings = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.OrganizationId == orgId && s.EntraEnabled)
             .Select(s => new { s.OrganizationId, s.EntraClientId })
@@ -200,6 +224,8 @@ public sealed class EntraSignInService
         IDataProtector protector;
         if (configSource == "org")
         {
+            // Fence category 1 (pre-auth routing): inside the OIDC handler; pinned to
+            // s.OrganizationId == organizationId from the signed challenge properties.
             ciphertext = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
                 .Where(s => s.OrganizationId == organizationId)
                 .Select(s => s.EntraClientSecretEncrypted)
@@ -242,11 +268,14 @@ public sealed class EntraSignInService
         var email = AuthService.NormaliseEmail(token.Email ?? string.Empty);
 
         // 1. Existing link — the fast path for every returning user.
+        // Fence category 1 (pre-auth routing): OIDC callback, no cookie yet; pinned to the
+        // token's (provider, issuer, subject).
         var link = await _db.UserExternalLogins.IgnoreQueryFilters()
             .Include(l => l.User!).ThenInclude(u => u.Organization)
             .FirstOrDefaultAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
         if (link is not null)
         {
+            // Fence category 1 (pre-auth routing): pinned to the linked user's own org.
             var linkedOrgAllows = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
                 .AnyAsync(s => s.OrganizationId == link.User!.OrganizationId
                     && s.EntraEnabled && s.EntraAllowedTenantIds.Contains(tid), ct);
@@ -259,6 +288,8 @@ public sealed class EntraSignInService
         }
 
         // 2. No link yet: which orgs would accept this tenant at all?
+        // Fence category 1 (pre-auth routing): which orgs allow this Entra tenant at all —
+        // the routing decision itself, made before any cookie exists.
         var candidates = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .Where(s => s.EntraEnabled && s.EntraAllowedTenantIds.Contains(tid))
             .Select(s => new { s.OrganizationId, s.AutoJoinVerifiedDomainUsers })
@@ -277,6 +308,7 @@ public sealed class EntraSignInService
 
         // Email-domain routing decides when several orgs share the tenant.
         var domain = ExtractDomain(email);
+        // Fence category 1 (pre-auth routing): email-domain tiebreak, pinned to the domain.
         var domainOrgId = domain is null ? null : await _db.OrganizationEmailDomains.IgnoreQueryFilters().AsNoTracking()
             .Where(d => d.Domain == domain)
             .Select(d => (int?)d.OrganizationId)
@@ -290,6 +322,8 @@ public sealed class EntraSignInService
         }
 
         // 3. Match an existing local account by verified email, in-org only.
+        // Fence category 1 (pre-auth routing): pinned to the token's verified email; the
+        // org match is enforced on the next line.
         var user = await _db.Users.IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstOrDefaultAsync(u => u.Email == email, ct);
@@ -300,6 +334,21 @@ public sealed class EntraSignInService
         }
         if (user is not null)
         {
+            // The email alone is not proof of anything: in an allow-listed
+            // partner or customer tenant an admin controls what lands in
+            // preferred_username/mail, and a B2B guest's UPN is their own
+            // external address. Bind only on positive evidence that the
+            // tenant owns the address — Microsoft's own xms_edov claim, or a
+            // domain this organisation has verified.
+            var domainVerifiedByOrg = domainOrgId is not null && domainOrgId == resolved.OrganizationId;
+            if (!token.EmailVerified && !domainVerifiedByOrg)
+            {
+                _logger.LogWarning(
+                    "Refused to link Entra tenant {Tid} to an existing account: the email domain {Domain} is unverified for that tenant (no xms_edov, domain not claimed by org {OrgId}).",
+                    tid, domain ?? "(none)", resolved.OrganizationId);
+                return await RefuseAsync(EntraCompletionOutcome.EmailNotVerified, email, ip, now,
+                    $"tenant {tid} did not prove ownership of domain {domain ?? "(none)"}", ct);
+            }
             var newLink = AddLink(user.Id, tid, token.ObjectId, email, now);
             _logger.LogInformation("Linked Entra identity {Tid}/{Oid} to existing user {Email} on first sign-in.", tid, token.ObjectId, email);
             return await FinishStatusCheckedAsync(user, newLink, email, ip, now, ct);

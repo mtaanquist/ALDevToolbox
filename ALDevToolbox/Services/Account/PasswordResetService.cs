@@ -39,6 +39,8 @@ public sealed class PasswordResetService
     public async Task<string?> CreatePasswordResetTokenAsync(string email, CancellationToken ct = default)
     {
         var normalised = AuthService.NormaliseEmail(email);
+        // Fence category 1 (pre-auth routing): password reset, before any cookie exists;
+        // pinned to the typed email.
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == normalised, ct);
         if (user is null || user.Status == UserStatus.Disabled)
         {
@@ -79,6 +81,7 @@ public sealed class PasswordResetService
 
         var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Fence category 1 (pre-auth routing): pinned to the reset token's hash.
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == TokenPurpose.PasswordReset, ct);
@@ -126,6 +129,7 @@ public sealed class PasswordResetService
             return null;
         }
 
+        // Fence category 1 (pre-auth routing): magic-link request; pinned to the typed email.
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == normalised, ct);
         if (user is null || user.Status != UserStatus.Active)
         {
@@ -166,6 +170,7 @@ public sealed class PasswordResetService
     {
         var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Fence category 1 (pre-auth routing): pinned to the magic-link token's hash.
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
                 .ThenInclude(u => u!.Organization)

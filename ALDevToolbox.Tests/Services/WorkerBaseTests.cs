@@ -1,0 +1,128 @@
+using ALDevToolbox.Services;
+using ALDevToolbox.Services.Workers;
+using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace ALDevToolbox.Tests.Services;
+
+/// <summary>
+/// The contracts the shared background-worker bases in <c>Services/Workers/</c> own on
+/// behalf of every queue, drain worker and scheduler built on them (issue #693): the
+/// in-flight dedupe gate, "one bad job never wedges the drain loop", and the
+/// <c>DISABLE_*</c> opt-out honoured inside the service rather than at registration.
+/// </summary>
+public sealed class WorkerBaseTests
+{
+    private sealed record TestJob(int Id, bool Throws = false);
+
+    private sealed class TestQueue : JobQueue<TestJob, int>
+    {
+        public TestQueue() : base(capacity: 8, keySelector: job => job.Id) { }
+    }
+
+    private sealed class TestDrainWorker : QueueDrainWorker<TestJob>
+    {
+        private readonly TestQueue _queue;
+        public List<int> Ran { get; } = new();
+
+        public TestDrainWorker(TestQueue queue, WorkerHeartbeatRegistry heartbeats)
+            : base(queue.Reader, NullLogger.Instance, heartbeats, "TestDrainWorker", TimeSpan.FromMinutes(1)) =>
+            _queue = queue;
+
+        protected override Task RunJobAsync(TestJob job, CancellationToken ct)
+        {
+            Ran.Add(job.Id);
+            if (job.Throws) throw new InvalidOperationException("job blew up");
+            return Task.CompletedTask;
+        }
+
+        protected override void OnJobFinished(TestJob job) => _queue.Complete(job.Id);
+
+        public Task RunLoopAsync(CancellationToken ct) => ExecuteAsync(ct);
+    }
+
+    private sealed class TestScheduler : PolledScheduler
+    {
+        public int Ticks;
+
+        public TestScheduler(WorkerHeartbeatRegistry heartbeats, string disableEnvVar)
+            : base(NullLogger.Instance, heartbeats, "TestScheduler",
+                pollInterval: TimeSpan.FromMilliseconds(10),
+                maxActiveDuration: TimeSpan.FromMinutes(1),
+                maxIdleSilence: TimeSpan.FromMinutes(1),
+                disableEnvVar: disableEnvVar)
+        { }
+
+        protected override Task TickAsync(CancellationToken ct)
+        {
+            Interlocked.Increment(ref Ticks);
+            return Task.CompletedTask;
+        }
+
+        public Task RunLoopAsync(CancellationToken ct) => ExecuteAsync(ct);
+    }
+
+    [Fact]
+    public async Task JobQueue_gates_on_the_key_until_the_job_completes()
+    {
+        var queue = new TestQueue();
+
+        (await queue.EnqueueAsync(new TestJob(7))).Should().BeTrue();
+        queue.IsInFlight(7).Should().BeTrue();
+        queue.IsInFlight(8).Should().BeFalse("only the enqueued key is in flight");
+
+        (await queue.EnqueueAsync(new TestJob(7))).Should()
+            .BeFalse("a job with the same key is already queued or running");
+        (await queue.EnqueueAsync(new TestJob(8))).Should().BeTrue("a different key is not gated");
+
+        queue.Complete(7);
+        queue.IsInFlight(7).Should().BeFalse();
+        (await queue.EnqueueAsync(new TestJob(7))).Should().BeTrue("the gate reopened on Complete");
+    }
+
+    [Fact]
+    public async Task QueueDrainWorker_completes_a_failed_job_and_keeps_draining()
+    {
+        var queue = new TestQueue();
+        var worker = new TestDrainWorker(queue, new WorkerHeartbeatRegistry());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await queue.EnqueueAsync(new TestJob(1, Throws: true));
+        var loop = worker.RunLoopAsync(cts.Token);
+
+        // The failing job releases its in-flight slot (OnJobFinished runs in finally)
+        // and the loop stays alive to take the next one.
+        while (queue.IsInFlight(1) && !cts.IsCancellationRequested) await Task.Delay(10, cts.Token);
+        queue.IsInFlight(1).Should().BeFalse("a thrown job must still release the gate");
+
+        (await queue.EnqueueAsync(new TestJob(2))).Should().BeTrue();
+        while (!worker.Ran.Contains(2) && !cts.IsCancellationRequested) await Task.Delay(10, cts.Token);
+        worker.Ran.Should().Equal(1, 2);
+
+        await cts.CancelAsync();
+        try { await loop; } catch (OperationCanceledException) { }
+    }
+
+    [Fact]
+    public async Task PolledScheduler_skips_the_loop_when_its_disable_variable_is_set()
+    {
+        // Unique per test run so a parallel test never sees this variable.
+        var envVar = "DISABLE_TEST_SCHEDULER_" + Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable(envVar, "1");
+        try
+        {
+            var scheduler = new TestScheduler(new WorkerHeartbeatRegistry(), envVar);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            // Returns immediately — no startup delay, no ticks — rather than running
+            // because the registration guard in Program.cs happened not to be there.
+            await scheduler.RunLoopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(2));
+
+            scheduler.Ticks.Should().Be(0);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envVar, null);
+        }
+    }
+}

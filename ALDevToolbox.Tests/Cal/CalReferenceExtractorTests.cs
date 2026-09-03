@@ -44,6 +44,32 @@ public sealed class CalReferenceExtractorTests
     }
 
     [Fact]
+    public void Paren_less_builtin_is_a_system_method_call()
+    {
+        // `SalesSetup.GET;` is a call, not a field read — classic C/AL drops
+        // the parentheses on parameterless built-ins. It belongs in the
+        // system-reference bucket like its parenthesised twin. See issue #712.
+        var result = CalReferenceExtractor.Extract("BEGIN SalesSetup.GET; END;", Scope());
+
+        result.SystemReferences.Should().ContainSingle(r => r.MemberName == "GET"
+            && r.ReferenceKind == "method_call" && r.TargetKind == "table" && r.TargetId == 311);
+        result.References.Should().NotContain(r => r.MemberName == "GET");
+    }
+
+    [Fact]
+    public void Paren_less_member_access_emits_a_row_the_import_can_reclassify()
+    {
+        // A paren-less call to a procedure on the receiver reads exactly like
+        // a field read here — the walker sees one object at a time, so the
+        // import's post-pass promotes the row to method_call when the name
+        // matches a procedure on the target. See issue #712.
+        var refs = Extract("BEGIN SalesSetup.\"Customer Nos.\"; END;");
+
+        refs.Should().ContainSingle(r => r.ReferenceKind == "field_access"
+            && r.TargetKind == "table" && r.TargetId == 311 && r.MemberName == "Customer Nos.");
+    }
+
+    [Fact]
     public void Field_name_taking_builtin_emits_field_access_for_first_arg()
     {
         var refs = Extract("BEGIN SalesSetup.TESTFIELD(\"Customer Nos.\"); END;");
