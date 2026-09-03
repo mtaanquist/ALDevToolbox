@@ -76,7 +76,8 @@ services:
       # it; unset, they fall back to the request's Host header. Set AllowedHosts
       # alongside it so a foreign Host is refused before any handler runs.
       # PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://toolbox.cronus.example}
-      # AllowedHosts: ${ALLOWED_HOSTS:-toolbox.cronus.example}
+      # Include localhost: the image HEALTHCHECK polls http://localhost:8080/healthz.
+      # AllowedHosts: ${ALLOWED_HOSTS:-toolbox.cronus.example;localhost}
       # Compose builds the connection string from the POSTGRES_* knobs so the
       # operator only manages credentials in one place. The `db` host name is
       # the compose service name above.
