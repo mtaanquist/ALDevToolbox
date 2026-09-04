@@ -12,6 +12,20 @@
     text-align: center;
 }
 
+/* The GitHub cards (#623). A stack with one rhythm - the picker or the
+   sentence, then whatever the last action had to say. Deliberately margins
+   rather than a grid: a grid would stretch the "Add to repository" button to
+   the full column, and the only full-width button in this aside is Generate. */
+.ext-repo > * + *,
+.ext-deliver > * + * {
+    margin-top: var(--space-2);
+}
+
+.ext-repo p,
+.ext-deliver p {
+    margin: 0;
+}
+
 /* Import-a-config card. The file input is hidden behind its own .btn label, so
    the control reads as a button rather than the browser's native file widget. */
 .ext-import {

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Security.Cryptography;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.GitHub;
 using ALDevToolbox.Services.Mcp.Dtos;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
@@ -21,6 +22,7 @@ public sealed class WorkspaceTools
     private readonly ModuleService _modules;
     private readonly CatalogService _catalog;
     private readonly GenerationService _generation;
+    private readonly GitHubExtensionDeliveryService _delivery;
     private readonly McpOptions _options;
 
     public WorkspaceTools(
@@ -28,12 +30,14 @@ public sealed class WorkspaceTools
         ModuleService modules,
         CatalogService catalog,
         GenerationService generation,
+        GitHubExtensionDeliveryService delivery,
         IOptions<McpOptions> options)
     {
         _templates = templates;
         _modules = modules;
         _catalog = catalog;
         _generation = generation;
+        _delivery = delivery;
         _options = options.Value;
     }
 
@@ -92,14 +96,27 @@ public sealed class WorkspaceTools
     }
 
     [McpServerTool(Name = "generate_extension", ReadOnly = false, Idempotent = false)]
-    [Description("Generates a single standalone BC extension as a ZIP. Pass the template key from list_templates, the extension details, its app ID range, publisher, and any optional dependencies. The ZIP is returned inline as base64-encoded contentBase64.")]
+    [Description("Generates a single standalone BC extension as a ZIP. Pass the template key from list_templates, the extension details, its app ID range, publisher, and any optional dependencies. The ZIP is returned inline as base64-encoded contentBase64. Set addToRepository to also add the extension to one of your organisation's GitHub repositories as a pull request.")]
     public async Task<WorkspaceResult> GenerateExtensionAsync(
         StandaloneExtensionPlanInput plan,
+        [Description("Optional. A repository as 'owner/name'. When set, the extension is committed to a new branch there and a pull request is opened for it, in your name and never onto the repository's default branch; addedToRepository in the result carries the pull request. Only repositories in the GitHub organisation your organisation has connected, and that you can open on GitHub yourself, are accepted.")]
+        string? addToRepository = null,
         CancellationToken ct = default)
     {
         try
         {
-            var archive = await _generation.GenerateExtensionAsync(plan.ToDomain(), sibling: null, ct);
+            if (!string.IsNullOrWhiteSpace(addToRepository))
+            {
+                // Routed through the same service the New Extension page uses,
+                // so the access rule is inherited rather than restated here -
+                // see "Keeping MCP parity with the web UI" in PROJECT.md. A
+                // repository the picker would not offer is refused here too.
+                var delivered = await _delivery.AddExtensionAsync(
+                    plan.ToDomain(), sibling: null, addToRepository!.Trim(), ct);
+                return BuildDeliveredResult(delivered);
+            }
+
+            var archive = await _generation.GenerateExtensionAsync(plan.ToDomain(), sibling: null, ct: ct);
             try { return BuildResult(archive); }
             finally { archive.Stream.Dispose(); }
         }
@@ -107,6 +124,40 @@ public sealed class WorkspaceTools
         {
             throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
         }
+        catch (GitHubApiException ex)
+        {
+            throw new McpException("GitHub refused the request: " + ex.Message);
+        }
+        catch (GitHubAppNotConfiguredException ex)
+        {
+            throw new McpException(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// The result for the add-to-repository path: the pull request, plus the
+    /// same ZIP that went into it.
+    ///
+    /// <para>An oversized ZIP is reported as no ZIP rather than as a failure.
+    /// The pull request already exists by this point, and swallowing that to
+    /// complain about a size cap would leave the caller unaware of a change
+    /// they made.</para>
+    /// </summary>
+    private WorkspaceResult BuildDeliveredResult(GitHubExtensionDelivery delivered)
+    {
+        var bytes = delivered.Archive;
+        var inline = bytes.Length <= _options.MaxWorkspaceBytes;
+        return new WorkspaceResult(
+            FileName: delivered.ArchiveFileName,
+            ContentBase64: inline ? Convert.ToBase64String(bytes) : string.Empty,
+            SizeBytes: bytes.Length,
+            Sha256: Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+            AddedToRepository: new RepositoryDeliveryResult(
+                RepositoryFullName: delivered.Repository.FullName,
+                Branch: delivered.PullRequest.HeadBranch,
+                BaseBranch: delivered.Repository.DefaultBranch,
+                PullRequestNumber: delivered.PullRequest.Number,
+                PullRequestUrl: delivered.PullRequest.HtmlUrl));
     }
 
     private WorkspaceResult BuildResult(GeneratedArchive archive)

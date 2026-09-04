@@ -25,9 +25,18 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     public List<string> OAuthBodies { get; } = new();
 
     /// <summary>
+    /// Every request body the handler saw, keyed by "METHOD absolute-uri" - so
+    /// a test can assert what went <em>into</em> a commit, not only that one was
+    /// attempted.
+    /// </summary>
+    public List<(string Call, string Body)> Bodies { get; } = new();
+
+    /// <summary>
     /// Registers a reply for requests whose path starts with
     /// <paramref name="path"/>. When several routes match, the longest wins, so
-    /// <c>/user/installations</c> is not swallowed by <c>/user</c>.
+    /// <c>/user/installations</c> is not swallowed by <c>/user</c>; between two
+    /// routes of the same length the later registration wins, so a helper's
+    /// default answer can be overridden by the test that needs a different one.
     /// </summary>
     public FakeGitHubApi On(HttpMethod method, string path, HttpStatusCode status, string? json = null)
     {
@@ -70,6 +79,40 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     public static string UserJson(long id = 4711, string login = "cronus-dev") =>
         $"{{\"id\":{id},\"login\":\"{login}\"}}";
 
+    /// <summary>One repository, in the shape every repository route returns.</summary>
+    public static string RepositoryJson(
+        string fullName,
+        string defaultBranch = "main",
+        bool isPrivate = true,
+        string? description = null)
+    {
+        var name = fullName.Split('/').Last();
+        var describe = description is null ? "null" : $"\"{description}\"";
+        return $$"""
+            {"full_name":"{{fullName}}","name":"{{name}}","default_branch":"{{defaultBranch}}",
+             "private":{{(isPrivate ? "true" : "false")}},"description":{{describe}},
+             "html_url":"https://github.com/{{fullName}}","clone_url":"https://github.com/{{fullName}}.git"}
+            """;
+    }
+
+    /// <summary>The <c>GET /installation/repositories</c> body.</summary>
+    public static string InstallationRepositoriesJson(params string[] fullNames) =>
+        $"{{\"total_count\":{fullNames.Length},\"repositories\":[{string.Join(',', fullNames.Select(f => RepositoryJson(f)))}]}}";
+
+    /// <summary>The <c>POST /app/installations/{id}/access_tokens</c> body.</summary>
+    public static string InstallationTokenJson(string token = "ghs_installation") =>
+        $"{{\"token\":\"{token}\",\"expires_at\":\"{DateTimeOffset.UtcNow.AddHours(1):O}\"}}";
+
+    /// <summary>The Contents API's body for one file.</summary>
+    public static string FileContentsJson(string path, string text, string sha = "blob-sha")
+    {
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+        return $"{{\"path\":\"{path}\",\"sha\":\"{sha}\",\"encoding\":\"base64\",\"content\":\"{encoded}\"}}";
+    }
+
+    /// <summary>A <c>{"sha": …}</c> body, which most Git Data writes answer with.</summary>
+    public static string ShaJson(string sha) => $"{{\"sha\":\"{sha}\"}}";
+
     /// <summary>The <c>GET /user/installations</c> body.</summary>
     public static string InstallationsJson(params long[] ids) =>
         $"{{\"total_count\":{ids.Length},\"installations\":[{string.Join(',', ids.Select(i => $"{{\"id\":{i}}}"))}]}}";
@@ -78,16 +121,21 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     {
         var uri = request.RequestUri!.ToString();
         Calls.Add($"{request.Method.Method} {uri}");
-        if (uri.Contains("login/oauth/access_token") && request.Content is not null)
+        if (request.Content is not null)
         {
-            OAuthBodies.Add(request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult());
+            var body = request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
+            Bodies.Add(($"{request.Method.Method} {uri}", body));
+            if (uri.Contains("login/oauth/access_token")) OAuthBodies.Add(body);
         }
 
         var path = request.RequestUri.AbsolutePath;
         var match = _routes
-            .Where(r => r.Method == request.Method.Method && path.StartsWith(r.Path, StringComparison.Ordinal))
-            .OrderByDescending(r => r.Path.Length)
-            .Select(r => (Route: r, Found: true))
+            .Select((Route, Index) => (Route, Index))
+            .Where(r => r.Route.Method == request.Method.Method
+                && path.StartsWith(r.Route.Path, StringComparison.Ordinal))
+            .OrderByDescending(r => r.Route.Path.Length)
+            .ThenByDescending(r => r.Index)
+            .Select(r => (r.Route, Found: true))
             .FirstOrDefault();
         if (match.Found) return Task.FromResult(match.Route.Reply(request));
 

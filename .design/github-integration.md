@@ -259,6 +259,19 @@ the three states every list in this app renders:
 - **Connected, linked, no results** - "No repositories match" / "You do not have
   access to any repositories in this organisation."
 
+As built (#623) there are two more, because both are real and neither is answered
+by the three above: the *deployment* has no GitHub App at all (only whoever runs
+the server can fix that, so no button is offered), and the user's link exists but
+its credentials no longer work (connect again). All five come from
+`GitHubRepositoryService.GetAccessAsync`, which reads the database and never calls
+GitHub - so the picker renders its guidance while GitHub is down. A sixth state
+belongs to GitHub itself being unreachable when the list is fetched: that one
+offers a retry rather than failing the page around it.
+
+The list is fetched when the user first reaches for the control, not on page load.
+Narrowing through `FilterAccessibleAsync` costs one call to GitHub per repository,
+and most visits to a page carrying the picker never open it.
+
 ## Feature flows
 
 ### #622 New workspace → create the repository
@@ -289,6 +302,21 @@ Two halves, both optional:
   a push to the default branch, even when it is unprotected. The success state links
   to the PR.
 
+Three details settled while building it. The commit carries the same file set the
+ZIP does - literally, by reading the generated archive back - **minus** the
+workspace-root files a template opts into (a `.gitignore`, a README stub, the
+shared ruleset): a repository already has a root of its own, which is the same
+reason sibling mode leaves them out. A folder that already exists in the
+repository is refused rather than overwritten, since a tree write would silently
+replace whatever is in it. And a branch name already taken is stepped
+(`-2`, `-3`, ...) rather than moved: the first attempt's pull request may be
+under review.
+
+`GitHubRepositoryService.ResolveAsync` is the gate both callers go through. It
+refuses anything outside the connected GitHub organisation - the picker offers
+nothing else, so neither does the MCP tool - and then asks GitHub, with the
+user's own token, whether they can open it.
+
 ### #624 Pipelines → assisted repository entry
 
 The repository field on the solution pipeline editor gains the picker. Selecting a
@@ -314,7 +342,10 @@ later decision.
 ## MCP parity
 
 - `generate_workspace` gains the create-repository option (#622).
-- `generate_extension` gains the add-to-repository option (#623).
+- `generate_extension` gains the add-to-repository option (#623). It returns the
+  pull request *and* the ZIP that went into it - generating a second time would
+  mint different extension GUIDs, so a download offered beside the pull request
+  has to be those same bytes.
 - Both resolve the repository through the same service the pages use, so the access
   gate is inherited rather than re-implemented in the tool class - see the resolver
   rule in PROJECT.md.

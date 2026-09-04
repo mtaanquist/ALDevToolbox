@@ -629,7 +629,7 @@ public sealed class McpToolTests : IDisposable
         var templates = new TemplateService(ctx2, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx2));
         var modules = new ModuleService(ctx2, NullLogger<ModuleService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx2));
         var catalog = new CatalogService(ctx2, NullLogger<CatalogService>.Instance, _db.OrgContext);
-        var tools = new WorkspaceTools(templates, modules, catalog, generation: null!, Options);
+        var tools = new WorkspaceTools(templates, modules, catalog, generation: null!, delivery: null!, Options);
 
         var active = await tools.ListTemplatesAsync(includeDeprecated: false);
         active.Select(t => t.Key).Should().Equal("runtime-15");
@@ -1055,6 +1055,6 @@ public sealed class McpToolTests : IDisposable
             mustache,
             new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(ctx)),
             NullLogger<GenerationService>.Instance);
-        return new WorkspaceTools(templates, modules, catalog, generation, options ?? Options);
+        return new WorkspaceTools(templates, modules, catalog, generation, delivery: null!, options ?? Options);
     }
 }

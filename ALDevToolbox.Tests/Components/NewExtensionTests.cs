@@ -51,6 +51,9 @@ public sealed class NewExtensionTests : IDisposable
         _ctx.Services.AddSingleton<ALDevToolbox.Services.Generation.MustacheRenderer>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.Generation.WorkspaceZipBuilder>();
         _ctx.Services.AddScoped<GenerationService>();
+        // The page carries the shared repository picker (#623), so its
+        // services have to resolve even on a deployment with no GitHub App.
+        _db.AddGitHubServices(_ctx.Services);
         _ctx.Services.AddDataProtection();
         _ctx.Services.AddScoped<WorkspaceConfigService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));

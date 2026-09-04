@@ -53,7 +53,8 @@ public static class McpToolCatalog
         new McpToolDescriptor("generate_workspace", Generation,
             "Builds a new workspace and hands back the ZIP.", true),
         new McpToolDescriptor("generate_extension", Generation,
-            "Builds a new standalone extension and hands back the ZIP.", true),
+            "Builds a new standalone extension and hands back the ZIP, or adds it to one of "
+            + "your GitHub repositories as a pull request.", true),
 
         // ---- Object Explorer ----
         new McpToolDescriptor("list_releases", ObjectExplorer,

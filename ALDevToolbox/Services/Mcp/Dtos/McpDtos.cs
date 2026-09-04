@@ -75,11 +75,28 @@ public sealed record DependencyEntryInput(string DepId, string DepName, string D
 /// What a <c>generate_*</c> tool returns. The ZIP is inlined as base64 so
 /// the agent has the bytes in hand without a follow-up download fetch.
 /// </summary>
+/// <param name="AddedToRepository">
+/// Set only when the caller asked for the result to be added to a GitHub
+/// repository (issue #623). The ZIP alongside it is the same one the pull
+/// request carries, so an agent can hand either to the user.
+/// </param>
 public sealed record WorkspaceResult(
     string FileName,
     string ContentBase64,
     int SizeBytes,
-    string Sha256);
+    string Sha256,
+    RepositoryDeliveryResult? AddedToRepository = null);
+
+/// <summary>
+/// The pull request a <c>generate_*</c> tool opened, when it was asked to add
+/// its result to an existing repository.
+/// </summary>
+public sealed record RepositoryDeliveryResult(
+    string RepositoryFullName,
+    string Branch,
+    string BaseBranch,
+    int PullRequestNumber,
+    string PullRequestUrl);
 
 /// <summary>Trimmed projection of <see cref="RuntimeTemplate"/> for tool callers.</summary>
 public sealed record TemplateSummary(

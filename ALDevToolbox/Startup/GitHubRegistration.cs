@@ -14,6 +14,10 @@ public static class GitHubRegistration
     {
         services.AddScoped<GitHubConnectionService>();
         services.AddScoped<GitHubAccessService>();
+        // The read gate the repository picker and every GitHub feature share,
+        // and the one write that rides it (issue #623).
+        services.AddScoped<GitHubRepositoryService>();
+        services.AddScoped<GitHubExtensionDeliveryService>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

@@ -278,6 +278,65 @@ public sealed class TestDb : IDisposable
     }
 
     /// <summary>
+    /// The repository picker's data source: the installation's list narrowed to
+    /// what one person can see. Takes the pieces so a test can decide what
+    /// GitHub answers and who is asking.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubRepositoryService NewGitHubRepositoryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(client, access, NewGitHubConnectionService(ctx, access), OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubRepositoryService>.Instance);
+
+    /// <summary>"Add to repository": generation, the access gate, and the commit.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService NewGitHubExtensionDeliveryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>.Instance);
+
+    /// <summary>The workspace / extension generator, wired to this fixture's database.</summary>
+    public GenerationService NewGenerationService(AppDbContext ctx)
+    {
+        var mustache = new ALDevToolbox.Services.Generation.MustacheRenderer(
+            NullLogger<ALDevToolbox.Services.Generation.MustacheRenderer>.Instance);
+        return new GenerationService(
+            ctx,
+            NewOrganizationConfigService(ctx),
+            new FolderTreeHydrator(ctx),
+            OrgContext,
+            mustache,
+            new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(ctx)),
+            NullLogger<GenerationService>.Instance);
+    }
+
+    /// <summary>
+    /// Registers the GitHub services a component under test injects, with
+    /// <paramref name="handler"/> standing in for api.github.com. Pass a
+    /// <c>FakeGitHubApi</c> to say what GitHub answers; pass nothing and every
+    /// call fails, which is the right default for a page that only has to
+    /// render its "GitHub is not set up" state.
+    /// </summary>
+    public void AddGitHubServices(IServiceCollection services, HttpMessageHandler? handler = null)
+    {
+        services.AddScoped(sp => NewGitHubAppClient(
+            sp.GetRequiredService<ALDevToolbox.Data.AppDbContext>(), handler ?? new UnreachableHandler()));
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubAccessService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubConnectionService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
+    }
+
+    /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>
+    private sealed class UnreachableHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new HttpRequestException("api.github.com is not reachable from tests.");
+    }
+
+    /// <summary>
     /// Returns a <see cref="StorageQuotaGuard"/> wired to the per-fixture
     /// context. With no system-settings row and no per-org quota override
     /// the guard treats every operation as unlimited, so tests that don't
