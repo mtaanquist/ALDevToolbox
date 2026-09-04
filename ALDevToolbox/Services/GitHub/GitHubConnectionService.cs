@@ -93,14 +93,26 @@ public sealed class GitHubConnectionService
 
     /// <summary>
     /// Records the installation the admin just completed on GitHub. Validation:
-    /// the installation id must be positive, the login must be non-empty, and
-    /// the installation must sit on a GitHub organisation — a personal-account
+    /// the installation id must be positive, the login must be non-empty, the
+    /// installation must sit on a GitHub organisation — a personal-account
     /// install cannot create repositories for a team or answer "is this person
-    /// in the organisation", so accepting one would only defer the failure.
+    /// in the organisation", so accepting one would only defer the failure — and
+    /// no other organisation on this server may already hold it.
     /// Throws <see cref="PlanValidationException"/> with field-keyed errors.
+    ///
+    /// <para><strong>The caller is not yet proven to administer this
+    /// installation.</strong> The App JWT can read every installation of the
+    /// App, and nothing in the handshake binds the <c>state</c> to the
+    /// <c>installation_id</c> that comes back, so a hand-edited callback can
+    /// name someone else's installation. The uniqueness check below is defence
+    /// in depth, not the fix: the fix is gating this on the acting user's own
+    /// <c>GET /user/installations</c>, which needs the linked user token from
+    /// issue #621. See "Binding the installation to the acting user" in
+    /// <c>.design/github-integration.md</c>.</para>
     /// </summary>
     public async Task ConnectAsync(GitHubInstallation installation, CancellationToken ct = default)
     {
+        var orgId = RequireOrganizationId();
         var errors = new Dictionary<string, string>();
         if (installation.Id <= 0)
         {
@@ -115,9 +127,28 @@ public sealed class GitHubConnectionService
             errors["GitHubOrgLogin"] =
                 $"'{installation.AccountLogin}' is a personal GitHub account, not an organisation. Install the app on your company's GitHub organisation instead.";
         }
+
+        if (errors.Count == 0)
+        {
+            var installationId = installation.Id;
+            // Fence category 6 (existence-only uniqueness probe): an installation belongs to
+            // one organisation deployment-wide; projects a bool, never a row, and the acting
+            // org is excluded so re-connecting your own installation still works.
+            var claimedElsewhere = await _db.OrganizationSettings
+                .IgnoreQueryFilters()
+                .AnyAsync(s => s.GitHubInstallationId == installationId && s.OrganizationId != orgId, ct);
+            if (claimedElsewhere)
+            {
+                _logger.LogWarning(
+                    "Org {OrgId} tried to connect GitHub installation {InstallationId}, which another organisation already holds.",
+                    orgId, installationId);
+                errors["GitHubOrgLogin"] =
+                    "That GitHub organisation is already connected to another organisation on this server. Ask whoever runs AL Dev Toolbox if you think that is wrong.";
+            }
+        }
+
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        var orgId = RequireOrganizationId();
         var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
         if (row is null)
         {
@@ -138,6 +169,41 @@ public sealed class GitHubConnectionService
         _logger.LogInformation(
             "Org {OrgId} connected GitHub organisation {OrgLogin} (installation {InstallationId}, {PermissionCount} permissions).",
             orgId, row.GitHubOrgLogin, installation.Id, installation.Permissions.Count);
+    }
+
+    /// <summary>
+    /// Re-reads what GitHub currently says about the connected installation:
+    /// the organisation's login (it can be renamed there) and the permissions
+    /// it holds. This is how an admin who has just widened the app's access on
+    /// GitHub sees the change here, without disconnecting and connecting again.
+    /// Leaves <see cref="OrganizationSettings.GitHubConnectedAt"/> alone — the
+    /// connection is the same one, so its date must not move.
+    ///
+    /// <para>Does nothing when the organisation is not connected, or when
+    /// <paramref name="installation"/> is a different installation than the one
+    /// on file: this refreshes a connection, it never makes one.</para>
+    /// </summary>
+    public async Task RefreshAsync(GitHubInstallation installation, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row?.GitHubInstallationId is not long current || current != installation.Id)
+        {
+            return;
+        }
+
+        row.GitHubOrgLogin = string.IsNullOrWhiteSpace(installation.AccountLogin)
+            ? row.GitHubOrgLogin
+            : installation.AccountLogin.Trim();
+        row.GitHubInstallationPermissions = SerialisePermissions(installation.Permissions);
+        row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+
+        await _db.SaveChangesAsync(ct);
+        _orgConfig.InvalidateCache(orgId);
+
+        _logger.LogInformation(
+            "Org {OrgId} refreshed GitHub installation {InstallationId}; it now holds {PermissionCount} permissions.",
+            orgId, installation.Id, installation.Permissions.Count);
     }
 
     /// <summary>

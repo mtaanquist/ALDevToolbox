@@ -601,13 +601,25 @@ public sealed class SystemSettingsService
     }
 
     /// <summary>
-    /// GitHub App slugs are lowercase letters, digits and hyphens — the same
-    /// shape GitHub puts in <c>github.com/apps/{slug}</c>. Validated so a
-    /// pasted full URL is rejected here rather than producing a 404 install
-    /// link the admin has to debug.
+    /// HTML <c>pattern</c> for the GitHub App id: a positive whole number.
+    /// Mirrored onto the field on <c>/site-admin/settings/github</c> so the
+    /// browser catches the obvious cases before the post, exactly as CLAUDE.md
+    /// asks — keep the two in step.
     /// </summary>
+    public const string GitHubAppIdPattern = "[1-9][0-9]{0,18}";
+
+    /// <summary>
+    /// HTML <c>pattern</c> for the GitHub App slug: letters, digits and inner
+    /// hyphens — the same shape GitHub puts in <c>github.com/apps/{slug}</c>.
+    /// Validated so a pasted full URL is rejected here rather than producing a
+    /// 404 install link the admin has to debug. <see cref="GitHubAppSlugRegex"/>
+    /// is built from this constant, so the browser rule and the server rule are
+    /// one string rather than two that can drift.
+    /// </summary>
+    public const string GitHubAppSlugPattern = "[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?";
+
     private static readonly System.Text.RegularExpressions.Regex GitHubAppSlugRegex = new(
-        "^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$",
+        $"^{GitHubAppSlugPattern}$",
         System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
@@ -639,9 +651,15 @@ public sealed class SystemSettingsService
         }
 
         var slug = NullIfBlank(input.AppSlug)?.ToLowerInvariant();
-        if (slug is not null && !GitHubAppSlugRegex.IsMatch(slug))
+        if (slug is not null && (slug.Length > 120 || !GitHubAppSlugRegex.IsMatch(slug)))
         {
             errors["GitHubAppSlug"] = "Enter just the app's name as it appears at the end of its GitHub URL, like al-dev-toolbox.";
+        }
+        else if (slug is null && rawAppId is not null)
+        {
+            // Without the slug there is no install URL, so an app id on its own
+            // leaves every organisation with a Connect button that goes nowhere.
+            errors["GitHubAppSlug"] = "Enter the app's name as it appears at the end of its GitHub URL - without it, nobody can install the app.";
         }
 
         var clientId = NullIfBlank(input.ClientId);

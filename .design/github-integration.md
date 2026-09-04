@@ -180,6 +180,31 @@ org through the normal query filter.
 `User` row is created, and `AuthService` is not touched. Microsoft Entra ID remains
 the one federated sign-in.
 
+### Binding the installation to the acting user (open gap, #621)
+
+`state` proves *who started* the handshake. It does not prove *which installation*
+came back, and the App JWT can read every installation of the App - so an Admin who
+starts Connect legitimately can hand-edit the redirect to
+`/github/setup?state=<their own valid state>&installation_id=<someone else's>` and the
+call succeeds. Installation ids are small sequential integers, so guessing one is not
+work.
+
+#620 ships two partial mitigations, and neither is the fix:
+
+- The callback refuses an installation that is not on a GitHub organisation, which
+  removes the personal-account half of the space.
+- `GitHubConnectionService.ConnectAsync` refuses an installation id already held by a
+  different toolbox organisation (a category-6 existence-only probe). That makes the
+  attack first-come-first-served rather than free, and it makes the collision visible
+  to the org that loses - but a customer who has not connected yet is still claimable.
+
+**The fix belongs to #621.** Once a member's GitHub account is linked, the acting
+user's own token can answer the question directly: `GET /user/installations` lists the
+installations that user may administer, and `ConnectAsync` must refuse an
+`installation_id` absent from that list. Until then the toolbox is trusting an org
+Admin not to hand-edit a URL, which is a weaker promise than the rest of the tenant
+fence makes. #621 must not close without this gate.
+
 ## The shared repository picker
 
 `Components/Shared/RepositoryPicker.razor`, built in #623 and reused by #624 and

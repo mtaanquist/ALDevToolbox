@@ -143,6 +143,105 @@ public sealed class GitHubConnectionServiceTests : IDisposable
             .Should().Be(1, "the connection lives on the org's single settings row");
     }
 
+    // --- The cross-organisation claim guard ---------------------------------
+
+    /// <summary>
+    /// Seeds another toolbox organisation that already holds
+    /// <paramref name="installationId"/>. Writes through the tracked context
+    /// directly: the query filter scopes reads, not inserts, so this needs no
+    /// bypass of its own.
+    /// </summary>
+    private async Task SeedOtherOrgConnectionAsync(long installationId)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+        {
+            OrganizationId = TestDb.OtherOrgId,
+            GitHubInstallationId = installationId,
+            GitHubOrgLogin = "cronus-uk",
+            GitHubConnectedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Connect_refuses_an_installation_another_organisation_already_holds()
+    {
+        // The setup callback trusts the installation_id GitHub hands back, and
+        // the App JWT can read every installation of the app - so this guard is
+        // what stops one tenant claiming another tenant's GitHub organisation.
+        // See "Binding the installation to the acting user" in the design doc.
+        await SeedOtherOrgConnectionAsync(42);
+
+        Func<Task> act = () => NewService().ConnectAsync(Installation(id: 42));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("GitHubOrgLogin");
+        (await NewService().GetStatusAsync()).IsConnected.Should().BeFalse("nothing was written");
+    }
+
+    [Fact]
+    public async Task Connect_allows_the_same_organisation_to_reconnect_its_own_installation()
+    {
+        await NewService().ConnectAsync(Installation(id: 42));
+
+        Func<Task> act = () => NewService().ConnectAsync(Installation(id: 42, permissions: [("contents", "write")]));
+
+        await act.Should().NotThrowAsync("the guard excludes the acting org, so re-connecting must still work");
+        var status = await NewService().GetStatusAsync();
+        status.InstallationId.Should().Be(42);
+        status.Permissions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Connect_allows_a_different_installation_while_another_org_holds_one()
+    {
+        await SeedOtherOrgConnectionAsync(42);
+
+        await NewService().ConnectAsync(Installation(id: 43));
+
+        (await NewService().GetStatusAsync()).InstallationId.Should().Be(43);
+    }
+
+    // --- Refresh ------------------------------------------------------------
+
+    [Fact]
+    public async Task Refresh_updates_the_permissions_and_login_without_moving_the_connected_date()
+    {
+        await NewService().ConnectAsync(Installation(permissions: [("metadata", "read")]));
+        var connectedAt = (await NewService().GetStatusAsync()).ConnectedAt;
+
+        await NewService().RefreshAsync(Installation(
+            login: "cronus-dk-renamed", permissions: [("metadata", "read"), ("administration", "write")]));
+
+        var status = await NewService().GetStatusAsync();
+        status.OrgLogin.Should().Be("cronus-dk-renamed");
+        status.CanCreateRepositories.Should().BeTrue("widening the app's access on GitHub shows up here");
+        status.ConnectedAt.Should().Be(connectedAt, "it is the same connection, so its date must not move");
+    }
+
+    [Fact]
+    public async Task Refresh_does_nothing_when_the_organisation_is_not_connected()
+    {
+        await NewService().RefreshAsync(Installation());
+
+        (await NewService().GetStatusAsync()).IsConnected.Should().BeFalse("refresh updates a connection, it never makes one");
+    }
+
+    [Fact]
+    public async Task Refresh_ignores_an_installation_that_is_not_the_connected_one()
+    {
+        await NewService().ConnectAsync(Installation(id: 42, permissions: [("metadata", "read")]));
+
+        await NewService().RefreshAsync(Installation(id: 99, login: "someone-else", permissions: [("administration", "write")]));
+
+        var status = await NewService().GetStatusAsync();
+        status.InstallationId.Should().Be(42);
+        status.OrgLogin.Should().Be("cronus-dk");
+        status.CanCreateRepositories.Should().BeFalse();
+    }
+
     // --- Disconnect ---------------------------------------------------------
 
     [Fact]

@@ -67,6 +67,35 @@ public sealed class GitHubAppSettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_rejects_an_app_id_with_no_slug_beside_it()
+    {
+        // Without the slug there is no install URL, so every organisation would
+        // get a Connect button that goes nowhere.
+        Func<Task> act = () => NewService().SaveGitHubAppAsync(Valid(slug: null));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("GitHubAppSlug");
+    }
+
+    [Fact]
+    public void The_html_patterns_match_the_rules_the_service_enforces()
+    {
+        // CLAUDE.md asks the browser rules to mirror the server's. They are one
+        // string here, so this only has to prove the string is the right one.
+        var appId = new System.Text.RegularExpressions.Regex($"^{SystemSettingsService.GitHubAppIdPattern}$");
+        appId.IsMatch("123456").Should().BeTrue();
+        appId.IsMatch("0").Should().BeFalse();
+        appId.IsMatch("12a").Should().BeFalse();
+
+        var slug = new System.Text.RegularExpressions.Regex($"^{SystemSettingsService.GitHubAppSlugPattern}$");
+        slug.IsMatch("al-dev-toolbox").Should().BeTrue();
+        slug.IsMatch("AL-Dev-Toolbox").Should().BeTrue("the service lowercases before storing");
+        slug.IsMatch("a").Should().BeTrue();
+        slug.IsMatch("-leading-hyphen").Should().BeFalse();
+        slug.IsMatch("https://github.com/apps/al-dev-toolbox").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Save_rejects_a_private_key_the_runtime_cannot_import()
     {
         Func<Task> act = () => NewService().SaveGitHubAppAsync(Valid(privateKey: "-----BEGIN RSA PRIVATE KEY-----\nnope\n-----END RSA PRIVATE KEY-----"));
@@ -164,10 +193,10 @@ public sealed class GitHubAppSettingsTests : IDisposable
     }
 
     [Fact]
-    public async Task View_is_not_configured_until_the_id_slug_and_key_are_all_present()
+    public async Task View_is_not_configured_until_the_key_is_present_too()
     {
-        await NewService().SaveGitHubAppAsync(Valid(slug: null));
-        (await NewService().GetGitHubAppViewAsync()).IsConfigured.Should().BeFalse("there is no install URL without the slug");
+        await NewService().SaveGitHubAppAsync(Valid());
+        (await NewService().GetGitHubAppViewAsync()).IsConfigured.Should().BeFalse("nothing can be signed without the key");
 
         await NewService().SaveGitHubAppAsync(Valid(privateKey: NewPrivateKey()));
         (await NewService().GetGitHubAppViewAsync()).IsConfigured.Should().BeTrue();

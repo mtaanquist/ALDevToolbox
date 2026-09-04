@@ -1,15 +1,46 @@
 @page "/site-admin/settings/github"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@rendermode InteractiveServer
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 @inject NavigationManager Nav
+@inject ILogger<SiteAdminSettingsGitHub> Log
+
+@*
+    The deployment-wide GitHub App registration. Interactive because the removal
+    control is a real ConfirmDialog rather than a browser confirm() hung off the
+    form - the values on this page cannot be recovered from GitHub once lost, so
+    the destructive gesture has to be explicit and its own control. The settings
+    form itself is still a plain post to a minimal API endpoint, as on every
+    sibling tab. See .design/github-integration.md.
+*@
 
 <PageTitle>GitHub · Site administration · AL Dev Toolbox</PageTitle>
 
 <SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.GitHub">
     <Alerts>
-        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="GitHub settings saved." />
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="GitHub settings saved.">
+            @if (!string.IsNullOrEmpty(Message))
+            {
+                @* The form posts and redirects, so a rejected save comes back with
+                   empty fields. For a password that is a shrug; the private key
+                   can only be downloaded from GitHub once, so say plainly that it
+                   has to be pasted again rather than letting someone assume it
+                   survived. *@
+                <p class="alert alert--warn" role="status">
+                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                    <span>Nothing was saved. If you had pasted the private key, paste it again before saving.</span>
+                </p>
+            }
+            @if (Ok == "removed")
+            {
+                <p class="alert alert--success" role="status">
+                    <Icon Name="circle-check" Width="16" Height="16" />
+                    <span>Removed. No organisation on this site can use GitHub until an app is set up again.</span>
+                </p>
+            }
+        </SettingsBanner>
     </Alerts>
     <Body>
         @if (_view is null)
@@ -18,13 +49,81 @@
         }
         else
         {
-            @* The confirm fires only when an App ID that *was* set is being
-               emptied - that disconnects every organisation on this server from
-               GitHub and drops the stored key and secret. Inline because this
-               form posts to a minimal API endpoint rather than through Blazor's
-               event pipeline, the same as the Microsoft sign-in tab. *@
-            <form method="post" action="/site-admin/settings/github/save" id="settings-github-form"
-                  onsubmit="var f = this.elements['GitHubAppId']; if (f.dataset.had === 'true' &amp;&amp; f.value.trim() === '') { return confirm('This will stop every organisation on this server from using GitHub, and remove the stored private key and client secret. Continue?'); } return true;">
+            <div class="card__body">
+                <div class="steps steps--wide">
+                    <div class="step @(IsConfigured ? "is-done" : "step--current")">
+                        <span class="step__n">
+                            @if (IsConfigured)
+                            {
+                                <Icon Name="check" Width="15" Height="15" />
+                            }
+                            else
+                            {
+                                <text>1</text>
+                            }
+                        </span>
+                        <span class="step__head"><span class="step__title">Register the app on GitHub</span></span>
+                        <span class="step__text">
+                            Sign in to GitHub as yourself and create a new app. It is under
+                            Settings, then Developer settings, then GitHub Apps. Any name will
+                            do - your customers will see it when they install it.
+                        </span>
+                        <span class="step__body">
+                            <span class="u-row">
+                                <a class="btn" href="https://github.com/settings/apps/new" target="_blank" rel="noopener">
+                                    <Icon Name="external-link" Width="16" Height="16" />
+                                    <span>Create the app on GitHub</span>
+                                </a>
+                            </span>
+                        </span>
+                    </div>
+
+                    <div class="step">
+                        <span class="step__n">2</span>
+                        <span class="step__head"><span class="step__title">Give it the Setup URL below</span></span>
+                        <span class="step__text">
+                            Copy the Setup URL from the first field below into the app's own
+                            Setup URL box. It is where GitHub sends an admin back to once they
+                            have installed the app, and nothing works without it.
+                        </span>
+                    </div>
+
+                    <div class="step">
+                        <span class="step__n">3</span>
+                        <span class="step__head"><span class="step__title">Let it be installed on any account</span></span>
+                        <span class="step__text">
+                            Choose "Any account" where GitHub asks where the app can be
+                            installed. Each customer installs it on their own GitHub
+                            organisation, so limiting it to yours would lock everyone else out.
+                        </span>
+                    </div>
+
+                    <div class="step">
+                        <span class="step__n">4</span>
+                        <span class="step__head"><span class="step__title">Tick the access it needs</span></span>
+                        <span class="step__text">
+                            Under Repository permissions and Organization permissions, allow the
+                            app to: create new repositories, read and write files in
+                            repositories, see repository names and descriptions, open and update
+                            pull requests, and see who is in the organisation. Anything you
+                            leave out simply turns off the part of the toolbox that needs it.
+                        </span>
+                    </div>
+
+                    <div class="step">
+                        <span class="step__n">5</span>
+                        <span class="step__head"><span class="step__title">Generate a private key, then fill in the form</span></span>
+                        <span class="step__text">
+                            At the bottom of the app's settings, generate a private key. GitHub
+                            downloads the file there and then and will never show it again - if
+                            you lose it, you generate a new one. Then copy the App ID, the app's
+                            name, the Client ID and a new client secret into the fields below.
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <form method="post" action="/site-admin/settings/github/save" id="settings-github-form">
                 <AntiforgeryToken />
                 <div class="setting-list">
                     <SettingRow Name="Setup URL"
@@ -33,18 +132,22 @@
                                aria-label="Setup URL to copy into GitHub" />
                     </SettingRow>
 
+                    @* required + pattern mirror SaveGitHubAppAsync's own rules, from
+                       the same constants, so the browser catches the obvious cases
+                       and the two can't drift. *@
                     <SettingRow Name="App ID"
                                 Hint="A number, shown near the top of the app's own settings page on GitHub.">
                         <input class="input" type="text" name="GitHubAppId" value="@_view.AppId"
-                               inputmode="numeric" maxlength="20" autocomplete="off"
-                               data-had="@(_view.AppId is null ? "false" : "true")"
+                               inputmode="numeric" maxlength="19" autocomplete="off" required
+                               pattern="@SystemSettingsService.GitHubAppIdPattern"
                                placeholder="e.g. 123456" />
                     </SettingRow>
 
                     <SettingRow Name="App name in its URL"
                                 Hint="The last part of the app's address on GitHub - for github.com/apps/al-dev-toolbox, enter al-dev-toolbox. This is what sends an admin to the right install page.">
                         <input class="input" type="text" name="GitHubAppSlug" value="@_view.AppSlug"
-                               maxlength="120" autocomplete="off"
+                               maxlength="120" autocomplete="off" required
+                               pattern="@SystemSettingsService.GitHubAppSlugPattern"
                                placeholder="e.g. al-dev-toolbox" />
                     </SettingRow>
 
@@ -64,14 +167,14 @@
                     </SettingRow>
 
                     <SettingRow Name="Client ID"
-                                Hint="Also on the app's settings page, under Client ID. Needed so people can link their own GitHub account.">
+                                Hint="Optional for now. Also on the app's settings page, under Client ID. Needed only once people start linking their own GitHub account.">
                         <input class="input" type="text" name="GitHubClientId" value="@_view.ClientId"
                                maxlength="120" autocomplete="off"
                                placeholder="e.g. Iv1.0123456789abcdef" />
                     </SettingRow>
 
                     <SettingRow Name="Client secret"
-                                Hint="Stored encrypted. Generate one on the app's settings page - GitHub shows it only once. Leave blank to keep the one already saved.">
+                                Hint="Optional for now, and stored encrypted. Generate one on the app's settings page - GitHub shows it only once. Leave blank to keep the one already saved.">
                         <input class="input" type="password" name="GitHubClientSecret" value=""
                                autocomplete="new-password"
                                placeholder="@(_view.HasClientSecret ? "Unchanged" : "Not set")" />
@@ -86,6 +189,22 @@
                     </SettingRow>
                 </div>
             </form>
+
+            @if (IsConfigured || _view.AppId is not null)
+            {
+                <div class="setting-list">
+                    <SettingRow Name="Remove the GitHub app" Danger="true"
+                                Lock="Asks for confirmation and is written to the audit log"
+                                Hint="Forgets the App ID, the app's name, the private key and the client secret. Every organisation on this site loses GitHub until an app is set up again. Nothing on GitHub is deleted.">
+                        <div class="u-row">
+                            <button type="button" class="btn btn--danger" @onclick="RemoveAsync" disabled="@_removing">
+                                <Icon Name="circle-minus" Width="16" Height="16" />
+                                <span>@(_removing ? "Removing..." : "Remove")</span>
+                            </button>
+                        </div>
+                    </SettingRow>
+                </div>
+            }
         }
     </Body>
     <Foot>
@@ -109,7 +228,7 @@
                     <span>
                         @(IsConfigured
                             ? "Set up. Organisations can now connect their own GitHub organisation."
-                            : "Not set up yet - no organisation can connect to GitHub. The App ID, the app name in its URL, and the private key are all needed.")
+                            : "Not set up yet. Follow the five steps, then fill in the form - organisations can connect once the App ID, the app's name and the private key are saved.")
                     </span>
                 </p>
             }
@@ -126,22 +245,65 @@
     </Aside>
 </SiteAdminSettingsPage>
 
+<ConfirmDialog @ref="_confirmRemove"
+               Title="Remove the GitHub app?"
+               Message="Every organisation on this site loses GitHub until an app is set up again. The private key and client secret are forgotten and cannot be recovered - GitHub only shows each of them once, so you would generate new ones."
+               ConfirmLabel="Remove"
+               ConfirmButtonClass="btn--danger" ConfirmIcon="circle-minus" />
+
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private GitHubAppView? _view;
     private DateTime? _updatedAt;
+    private bool _removing;
+    private ConfirmDialog? _confirmRemove;
 
     private bool IsConfigured => _view?.IsConfigured ?? false;
 
     private string SetupUrl => Nav.BaseUri.TrimEnd('/') + "/github/setup";
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
     {
         _view = await Settings.GetGitHubAppViewAsync();
         // GitHub lives on the same system_settings singleton as the rest of the
         // family, so that row's timestamp is this tab's "last saved" too.
         _updatedAt = (await Settings.GetViewAsync()).UpdatedAt;
+    }
+
+    /// <summary>
+    /// Clears the whole registration. Saving a null app id is what wipes the
+    /// slug, client id and both secrets with it (see
+    /// <see cref="SystemSettingsService.SaveGitHubAppAsync"/>), which is why the
+    /// form's own App ID field is <c>required</c>: removing is this control's
+    /// job, not an empty text box's.
+    /// </summary>
+    private async Task RemoveAsync()
+    {
+        if (_removing || _confirmRemove is null) return;
+        if (!await _confirmRemove.OpenAsync()) return;
+
+        _removing = true;
+        try
+        {
+            await Settings.SaveGitHubAppAsync(new GitHubAppInput(
+                AppId: null, AppSlug: null, ClientId: null,
+                ClientSecret: null, ClearClientSecret: true,
+                PrivateKeyPem: null, ClearPrivateKey: true));
+            Nav.NavigateTo("/site-admin/settings/github?ok=removed", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to remove the deployment-wide GitHub App registration.");
+            Nav.NavigateTo("/site-admin/settings/github?msg="
+                + Uri.EscapeDataString("That did not work. Nothing was removed."), forceLoad: true);
+        }
+        finally
+        {
+            _removing = false;
+        }
     }
 }

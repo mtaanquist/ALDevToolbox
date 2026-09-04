@@ -99,8 +99,13 @@ internal static class GitHubAppEndpoints
             if (!TryConsumeState(ctx.Request.Query["state"].ToString(), protection, cache, org, clock))
             {
                 logger.LogWarning("Rejected a GitHub install callback whose state did not validate.");
-                RedirectWithMessage(ctx,
-                    "That link has expired or was already used. Start again from Connect a GitHub organisation.");
+                // An org that is already connected has almost certainly just
+                // revisited a used link, and telling it to press a Connect
+                // button that isn't on the page would send it looking for one.
+                var alreadyConnected = (await connection.GetStatusAsync(ct)).IsConnected;
+                RedirectWithMessage(ctx, alreadyConnected
+                    ? "That setup link had already been used. Nothing changed - your GitHub organisation is still connected."
+                    : "That link has expired or was already used. Start again from Connect a GitHub organisation.");
                 return;
             }
 
