@@ -20,9 +20,20 @@
 
 /* The stack stays mounted whether or not there is a message, so the fade has
    something to run on. An invisible box in the bottom-right corner would still
-   swallow clicks, and the toast is never interactive, so neither takes them. */
+   swallow clicks, and the toast is never interactive, so neither takes them.
+
+   It is also a fixed pill that sizes to the one message inside it -- but it is
+   mounted at the page root, and a page frame can set a height on every root
+   child. The power-tool frame does (`.app__content-inner:has(.pw) > *` in
+   pages-power.css, for the panes that have to fill the column), and
+   `height: 100%` on a fixed box resolves against the VIEWPORT: the stack grew
+   to the full window and stretched its single grid row, so the Translator's
+   save confirmation was a message box the height of the screen. Same shape as
+   the `:not(.toast-stack)` width exclusion in app.css, kept here so the stack
+   is immune to the next frame rule too. */
 .toast-stack {
     pointer-events: none;
+    height: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
