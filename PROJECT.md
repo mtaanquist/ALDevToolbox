@@ -71,6 +71,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `environment-updates.md` — the Upgrades fleet page: the team-scoped grant, the mirrored next platform update, the two date writes, and the actions-and-history table behind them.
 - `ui-design.md` — page layout, copy, components to factor out.
 - `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
+- `github-integration.md` — the GitHub App: which credential acts (installation vs the user's link), the schema, and the four features built on them.
 - `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
 - `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
 
@@ -93,6 +94,7 @@ subsystem, start here rather than in `domain-model.md`:
 | BCQuality mirror                                                       | `bcquality.md`                                              |
 | MCP OAuth clients, tokens, grants                                      | `mcp-oauth.md`                                              |
 | System settings, backups, off-site storage                             | `deployment.md`                                             |
+| GitHub App installation, per-user account link, repository writes      | `github-integration.md`                                     |
 
 When implementing a milestone:
 
