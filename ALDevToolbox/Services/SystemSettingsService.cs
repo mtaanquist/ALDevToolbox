@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Services;
 
 /// <summary>
@@ -251,6 +253,7 @@ public sealed class SystemSettingsService
     public const string AzureBlobProviderName = "azure-blob";
 
     private readonly AppDbContext _db;
+    private readonly SmtpFallbackOptions _smtpFallback;
     private readonly IDataProtector _protector;
     private readonly IDataProtector _offsiteAccessProtector;
     private readonly IDataProtector _offsiteSecretProtector;
@@ -278,8 +281,10 @@ public sealed class SystemSettingsService
         TimeProvider clock,
         ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null,
         ALDevToolbox.Services.Tools.ToolAvailabilityState? toolAvailability = null,
-        IMemoryCache? cache = null)
+        IMemoryCache? cache = null,
+        SmtpFallbackOptions? smtpFallback = null)
     {
+        _smtpFallback = smtpFallback ?? new SmtpFallbackOptions();
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
         _offsiteAccessProtector = protectionProvider.CreateProtector(OffsiteAccessKeyProtectionPurpose);
@@ -429,7 +434,7 @@ public sealed class SystemSettingsService
     {
         var row = await _db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
-        return TryResolveFromDb(row) ?? ResolveFromEnv();
+        return TryResolveFromDb(row) ?? ResolveFromOptions();
     }
 
     private ResolvedSmtpSettings? TryResolveFromDb(SystemSettings? row)
@@ -465,15 +470,20 @@ public sealed class SystemSettingsService
             useStartTls: row.SmtpUseStartTls);
     }
 
-    private static ResolvedSmtpSettings? ResolveFromEnv() =>
+    /// <summary>
+    /// The deployment's SMTP settings, used until an admin fills in the
+    /// SiteAdmin form. The password is read from the file the options name, not
+    /// carried in the options themselves.
+    /// </summary>
+    private ResolvedSmtpSettings? ResolveFromOptions() =>
         ResolvedSmtpSettings.TryFrom(
-            host: Environment.GetEnvironmentVariable("SMTP_HOST"),
-            port: int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var p) ? p : null,
-            user: Environment.GetEnvironmentVariable("SMTP_USER"),
-            password: ReadSecret("SMTP_PASSWORD_FILE"),
-            from: Environment.GetEnvironmentVariable("SMTP_FROM"),
-            fromName: Environment.GetEnvironmentVariable("SMTP_FROM_NAME"),
-            useStartTls: ParseBool(Environment.GetEnvironmentVariable("SMTP_USE_STARTTLS")));
+            host: _smtpFallback.Host,
+            port: _smtpFallback.Port,
+            user: _smtpFallback.User,
+            password: ReadSecret(_smtpFallback.PasswordFile),
+            from: _smtpFallback.From,
+            fromName: _smtpFallback.FromName,
+            useStartTls: _smtpFallback.UseStartTls);
 
     /// <summary>Loads the off-site backup settings for the SiteAdmin form (no plaintext keys).</summary>
     public async Task<OffsiteSettingsView> GetOffsiteViewAsync(CancellationToken ct = default)
@@ -963,9 +973,8 @@ public sealed class SystemSettingsService
     private static bool? ParseBool(string? value) =>
         string.IsNullOrEmpty(value) ? null : value.Equals("true", StringComparison.OrdinalIgnoreCase);
 
-    private static string? ReadSecret(string envVarName)
+    private static string? ReadSecret(string? path)
     {
-        var path = Environment.GetEnvironmentVariable(envVarName);
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
         return File.ReadAllText(path).Trim();
     }

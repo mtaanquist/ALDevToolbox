@@ -27,7 +27,8 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
 | `Services/OAuth/`            | The MCP OAuth surface: client resolution, claims transformation, bearer policy. |
 | `Services/Offsite/`          | `IOffsiteStorageProvider` and its S3 / Azure Blob implementations.            |
-| `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST, the App JWT and the user-to-server token exchange), `GitHubConnectionService` (the per-organisation connection), `GitHubAccessService` (the per-user account link and the access checks every feature asks). |
+| `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST, the App JWT and the user-to-server token exchange), `GitHubConnectionService` (the per-organisation connection), `GitHubAccessService` (the per-user account link and the access checks every feature asks), `GitHubRepositoryService` (the shared repository resolver every caller routes through). |
+| `Services/Configuration/`    | Deployment configuration read once at startup (`BackupOptions`, `SmtpFallbackOptions`, `AlCompilerOptions`) and passed to the services that need it, rather than each service reaching into the process environment. The env var names stay the operator-facing interface. |
 | `Services/BcQuality/`, `Services/Cookbook/`, `Services/Diff/`, `Services/SingleTenant/`, `Services/Tools/` | One folder per remaining tool or cross-cutting concern. |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
@@ -182,7 +183,12 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 
 **Cutting a release:**
 
-1. Make sure `main` is green (the commit you're tagging passed `build.yml`).
+1. Make sure `main` is green (the commit you're tagging passed `build.yml`). This is a hard
+   requirement, not a courtesy: the tag push deliberately does **not** start its own
+   `build.yml` run (#729 — it would duplicate the one the branch push already did, and
+   double the wall-clock of every release). `release.yml`'s gate looks up the run by commit
+   SHA, so a tag on a commit that never reached a branch has no run to find and the release
+   is refused within a few minutes, naming that as the reason.
 2. Pick the version per the scheme above. Tag and push:
    ```bash
    git tag vX.Y.Z

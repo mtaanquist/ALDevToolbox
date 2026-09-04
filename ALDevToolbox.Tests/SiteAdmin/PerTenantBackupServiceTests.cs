@@ -17,6 +17,8 @@ using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
 using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
 using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Tests.SiteAdmin;
 
 /// <summary>
@@ -39,22 +41,22 @@ public sealed class PerTenantBackupServiceTests : IDisposable
 
     private readonly TestDb _db = new();
     private readonly string _backupsDir;
-    private readonly string? _previousBackupsDir;
+    private readonly BackupOptions _options;
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 9, 1, 3, 0, 0, TimeSpan.Zero));
 
     public PerTenantBackupServiceTests()
     {
         _backupsDir = Path.Combine(Path.GetTempPath(), "aldt-pertenant-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_backupsDir);
-        _previousBackupsDir = Environment.GetEnvironmentVariable("BACKUPS_DIR");
-        Environment.SetEnvironmentVariable("BACKUPS_DIR", _backupsDir);
+        // This fixture's own directory, handed to the service rather than set
+        // as a process-wide variable every other fixture also reads (#733).
+        _options = new BackupOptions { Directory = _backupsDir };
         _db.OrgContext.IsSiteAdmin = true;
         _db.OrgContext.CurrentUserId = null;
     }
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("BACKUPS_DIR", _previousBackupsDir);
         try { Directory.Delete(_backupsDir, recursive: true); } catch { /* best effort */ }
         _db.Dispose();
     }
@@ -193,7 +195,7 @@ public sealed class PerTenantBackupServiceTests : IDisposable
         }).Build();
         return new PerTenantBackupService(
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), config,
-            NullLogger<PerTenantBackupService>.Instance, _clock);
+            NullLogger<PerTenantBackupService>.Instance, _clock, _options);
     }
 
     private async Task<PerTenantBackup> CreateAsync(int organizationId)

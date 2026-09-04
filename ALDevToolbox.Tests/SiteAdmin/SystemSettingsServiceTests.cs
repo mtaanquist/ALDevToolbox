@@ -1,5 +1,6 @@
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Configuration;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -78,51 +79,35 @@ public sealed class SystemSettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Resolve_prefers_db_settings_over_env_vars()
+    public async Task Resolve_prefers_db_settings_over_the_deployment_fallback()
     {
-        var svc = NewService();
+        var fallback = new SmtpFallbackOptions { Host = "env.example.com", From = "env@example.com" };
+        var svc = NewService(fallback);
         await svc.SaveAsync(NewInput(host: "db.example.com", password: "db-password"));
 
-        Environment.SetEnvironmentVariable("SMTP_HOST", "env.example.com");
-        Environment.SetEnvironmentVariable("SMTP_FROM", "env@example.com");
-        try
-        {
-            var resolved = await svc.ResolveSmtpAsync();
-            resolved!.Host.Should().Be("db.example.com");
-            resolved.Password.Should().Be("db-password");
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("SMTP_HOST", null);
-            Environment.SetEnvironmentVariable("SMTP_FROM", null);
-        }
+        var resolved = await svc.ResolveSmtpAsync();
+        resolved!.Host.Should().Be("db.example.com");
+        resolved.Password.Should().Be("db-password");
     }
 
     [Fact]
-    public async Task Resolve_falls_back_to_env_vars_when_db_unset()
+    public async Task Resolve_falls_back_to_the_deployment_settings_when_db_unset()
     {
-        // Empty DB row: host left null. Env vars should be used.
-        Environment.SetEnvironmentVariable("SMTP_HOST", "env.example.com");
-        Environment.SetEnvironmentVariable("SMTP_FROM", "env@example.com");
-        Environment.SetEnvironmentVariable("SMTP_PORT", "2525");
-        try
+        // Empty DB row: host left null, so the deployment's own settings win.
+        var svc = NewService(new SmtpFallbackOptions
         {
-            var svc = NewService();
-            // GetView creates the singleton row but with no host/from — the
-            // resolver should still see the row as "unset" and fall back.
-            await svc.GetViewAsync();
+            Host = "env.example.com",
+            From = "env@example.com",
+            Port = 2525,
+        });
+        // GetView creates the singleton row but with no host/from — the
+        // resolver should still see the row as "unset" and fall back.
+        await svc.GetViewAsync();
 
-            var resolved = await svc.ResolveSmtpAsync();
-            resolved.Should().NotBeNull();
-            resolved!.Host.Should().Be("env.example.com");
-            resolved.Port.Should().Be(2525);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("SMTP_HOST", null);
-            Environment.SetEnvironmentVariable("SMTP_FROM", null);
-            Environment.SetEnvironmentVariable("SMTP_PORT", null);
-        }
+        var resolved = await svc.ResolveSmtpAsync();
+        resolved.Should().NotBeNull();
+        resolved!.Host.Should().Be("env.example.com");
+        resolved.Port.Should().Be(2525);
     }
 
     [Fact]
@@ -276,10 +261,11 @@ public sealed class SystemSettingsServiceTests : IDisposable
         SystemSettingsService.IsHostAllowed("download.microsoft.com", System.Array.Empty<string>()).Should().BeFalse();
     }
 
-    private SystemSettingsService NewService()
+    private SystemSettingsService NewService(SmtpFallbackOptions? smtpFallback = null)
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
-        return new SystemSettingsService(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        return new SystemSettingsService(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System,
+            smtpFallback: smtpFallback);
     }
 
     private static SystemSettingsInput NewInput(

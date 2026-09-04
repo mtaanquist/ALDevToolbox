@@ -2,6 +2,8 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
@@ -37,13 +39,19 @@ public sealed class AlCompilerProvisioner
     private readonly string? _versionPin;
     private readonly string? _explicitAlcPath;
 
-    public AlCompilerProvisioner(IHttpClientFactory httpFactory, ILogger<AlCompilerProvisioner> logger)
+    public AlCompilerProvisioner(
+        IHttpClientFactory httpFactory,
+        ILogger<AlCompilerProvisioner> logger,
+        // Optional so hand-built instances keep compiling; DI always supplies
+        // the instance registered from configuration.
+        AlCompilerOptions? options = null)
     {
         _httpFactory = httpFactory;
         _logger = logger;
-        _installDir = Environment.GetEnvironmentVariable("AL_COMPILER_DIR") ?? "/var/lib/aldevtoolbox/altool";
-        _versionPin = NullIfBlank(Environment.GetEnvironmentVariable("AL_COMPILER_VERSION"));
-        _explicitAlcPath = NullIfBlank(Environment.GetEnvironmentVariable("AL_COMPILER_PATH"));
+        var compilerOptions = options ?? new AlCompilerOptions();
+        _installDir = compilerOptions.InstallDirectory;
+        _versionPin = compilerOptions.VersionPin;
+        _explicitAlcPath = compilerOptions.ExplicitAlcPath;
     }
 
     private string BinDir => Path.Combine(_installDir, "bin");

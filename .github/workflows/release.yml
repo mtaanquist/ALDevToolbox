@@ -26,9 +26,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Gate: don't publish a commit that hasn't passed CI. build.yml runs on the
-  # tag push too (push event), so wait for its run on this exact SHA to conclude
-  # success before building/publishing the image. See issue #392.
+  # Gate: don't publish a commit that hasn't passed CI. build.yml does NOT run
+  # on the tag push (#729 excluded tags, because the run would duplicate one
+  # that already happened) — so what we wait for here is the run from the push
+  # that put this commit on its branch. Same SHA, same guarantee, one pipeline
+  # instead of two. See issue #392.
   require-green-build:
     runs-on: ubuntu-latest
     steps:
@@ -38,6 +40,14 @@ jobs:
         run: |
           sha='${{ github.sha }}'
           repo='${{ github.repository }}'
+          # A run that exists but is still going gets the full budget (30 min).
+          # A SHA with NO run at all only gets the first few attempts: since
+          # #729 the tag push no longer starts one, so the only way to reach
+          # this state is tagging a commit that never went through a branch,
+          # and no amount of waiting will conjure a run for it. The grace
+          # period covers GitHub taking a moment to create the branch-push run
+          # when a tag follows the merge closely.
+          grace=15
           for attempt in $(seq 1 90); do
             runs=$(gh api "repos/${repo}/actions/workflows/build.yml/runs?head_sha=${sha}&per_page=30" \
               --jq '.workflow_runs[] | "\(.status) \(.conclusion)"' || true)
@@ -50,7 +60,16 @@ jobs:
               echo "$runs" >&2
               exit 1
             fi
-            echo "Waiting for build.yml on ${sha} (attempt ${attempt})..."
+            if [ -z "$runs" ]; then
+              if [ "$attempt" -ge "$grace" ]; then
+                echo "No build.yml run exists for ${sha}, and the tag push does not start one (#729)." >&2
+                echo "Tag a commit that has been pushed to a branch and passed CI, then retry." >&2
+                exit 1
+              fi
+              echo "No build.yml run for ${sha} yet (attempt ${attempt}/${grace} of the grace period)..."
+            else
+              echo "Waiting for build.yml on ${sha} (attempt ${attempt})..."
+            fi
             sleep 20
           done
           echo "Timed out waiting for build.yml to finish for ${sha}." >&2

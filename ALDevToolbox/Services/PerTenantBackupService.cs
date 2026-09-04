@@ -8,6 +8,8 @@ using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Services;
 
 /// <summary>
@@ -86,7 +88,10 @@ public sealed class PerTenantBackupService
         StorageQuotaGuard quotaGuard,
         IConfiguration configuration,
         ILogger<PerTenantBackupService> logger,
-        TimeProvider clock)
+        TimeProvider clock,
+        // Optional so the tests that build this service by hand keep compiling.
+        // In production DI it is always the instance registered from configuration.
+        BackupOptions? options = null)
     {
         _db = db;
         _orgContext = orgContext;
@@ -96,8 +101,7 @@ public sealed class PerTenantBackupService
         _connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:DefaultConnection is required for PerTenantBackupService.");
-        _backupsRoot = Environment.GetEnvironmentVariable("BACKUPS_DIR")
-            ?? "/var/lib/aldevtoolbox/backups";
+        _backupsRoot = (options ?? new BackupOptions()).Directory;
     }
 
     /// <summary>Absolute path to the per-tenant subdirectory for the given org slug.</summary>
