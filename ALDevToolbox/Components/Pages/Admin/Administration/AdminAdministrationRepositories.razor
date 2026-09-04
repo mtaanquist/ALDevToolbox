@@ -4,6 +4,7 @@
 @inject OrganizationConfigService Config
 @inject GitHubConnectionService GitHub
 @inject GitHubAppClient GitHubApi
+@inject GitHubAccessService GitHubAccess
 @inject ILogger<AdminAdministrationRepositories> Log
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.GitHub
@@ -115,6 +116,35 @@
                                         </p>
                                     </NotAuthorized>
                                 </AuthorizeView>
+                            }
+                            else if (_myGitHub is not { IsLinked: true, NeedsRelink: false })
+                            {
+                                @* Connecting checks with GitHub that this admin
+                                   really manages the organisation coming back, and
+                                   that check is made with their own GitHub account.
+                                   Saying so here - with the door - beats sending
+                                   them to GitHub and refusing them on the way back. *@
+                                <div class="u-stack">
+                                    <p class="alert alert--info">
+                                        <Icon Name="info" Width="16" Height="16" />
+                                        <span>
+                                            First, connect your own GitHub account. GitHub will only
+                                            tell us which organisations you manage if it knows who you
+                                            are, and that is what stops someone connecting the wrong
+                                            company's GitHub here. It takes a moment and you only do
+                                            it once.
+                                        </span>
+                                    </p>
+                                    <div class="u-row">
+                                        <a class="btn @(GitHubNeedsConnecting ? "btn--primary" : null)"
+                                           href="/account?section=repos">
+                                            <Icon Name="link" Width="16" Height="16" />
+                                            <span>@(_myGitHub is { IsLinked: true }
+                                                ? "Connect your GitHub account again"
+                                                : "Connect your GitHub account")</span>
+                                        </a>
+                                    </div>
+                                </div>
                             }
                             else
                             {
@@ -290,6 +320,8 @@
     private bool _allowAzureDevOps;
 
     private GitHubConnectionStatus? _github;
+    /// <summary>This admin's own GitHub account link - a precondition of connecting, not a detail of it.</summary>
+    private GitHubLinkStatus? _myGitHub;
     private ConfirmDialog? _confirmDisconnect;
 
     /// <summary>
@@ -326,6 +358,7 @@
         _allowGitHub = allowed.Contains(RepositoryProvider.GitHub);
         _allowAzureDevOps = allowed.Contains(RepositoryProvider.AzureDevOps);
         _github = await GitHub.GetStatusAsync();
+        _myGitHub = await GitHubAccess.GetLinkStatusAsync();
     }
 
     private async Task SaveAsync()

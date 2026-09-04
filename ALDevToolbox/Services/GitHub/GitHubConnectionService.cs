@@ -46,6 +46,10 @@ public sealed record GitHubConnectionStatus(
 /// <see cref="OrganizationConfigService"/>'s cache, which is what holds the
 /// settings row every reader sees.</para>
 ///
+/// <para>The service also owns the gate that decides whether the acting user is
+/// entitled to the installation coming back from GitHub, which is why it holds
+/// a <see cref="GitHubAccessService"/> — see <see cref="ConnectAsync"/>.</para>
+///
 /// <para>See <c>.design/github-integration.md</c>.</para>
 /// </summary>
 public sealed class GitHubConnectionService
@@ -54,6 +58,7 @@ public sealed class GitHubConnectionService
     private readonly IOrganizationContext _orgContext;
     private readonly OrganizationConfigService _orgConfig;
     private readonly SystemSettingsService _systemSettings;
+    private readonly GitHubAccessService _access;
     private readonly ILogger<GitHubConnectionService> _logger;
     private readonly TimeProvider _clock;
 
@@ -62,6 +67,7 @@ public sealed class GitHubConnectionService
         IOrganizationContext orgContext,
         OrganizationConfigService orgConfig,
         SystemSettingsService systemSettings,
+        GitHubAccessService access,
         ILogger<GitHubConnectionService> logger,
         TimeProvider clock)
     {
@@ -69,12 +75,16 @@ public sealed class GitHubConnectionService
         _orgContext = orgContext;
         _orgConfig = orgConfig;
         _systemSettings = systemSettings;
+        _access = access;
         _logger = logger;
         _clock = clock;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException("No organization in scope; GitHub connection called outside an authenticated request.");
+
+    private int RequireUserId() => _orgContext.CurrentUserId
+        ?? throw new InvalidOperationException("No user in scope; GitHub connection called outside an authenticated request.");
 
     /// <summary>
     /// The acting organisation's GitHub connection, plus whether the deployment
@@ -103,19 +113,21 @@ public sealed class GitHubConnectionService
     /// no other organisation on this server may already hold it.
     /// Throws <see cref="PlanValidationException"/> with field-keyed errors.
     ///
-    /// <para><strong>The caller is not yet proven to administer this
-    /// installation.</strong> The App JWT can read every installation of the
-    /// App, and nothing in the handshake binds the <c>state</c> to the
-    /// <c>installation_id</c> that comes back, so a hand-edited callback can
-    /// name someone else's installation. The uniqueness check below is defence
-    /// in depth, not the fix: the fix is gating this on the acting user's own
-    /// <c>GET /user/installations</c>, which needs the linked user token from
-    /// issue #621. See "Binding the installation to the acting user" in
-    /// <c>.design/github-integration.md</c>.</para>
+    /// <para><strong>The acting user has to be entitled to the installation.</strong>
+    /// The App JWT is authorised for <em>every</em> installation of the App, and
+    /// the handshake's <c>state</c> proves only who started it, so without a
+    /// further check an admin could take their own valid state, hand-edit
+    /// <c>installation_id</c> to a neighbouring integer, and connect their
+    /// organisation to another customer's GitHub organisation. The one
+    /// credential that can settle it is the admin's own: GitHub will list the
+    /// installations <em>they</em> administer, and an id absent from that list
+    /// is refused. That is why connecting requires a linked GitHub account, and
+    /// why an answer we could not get is refused rather than assumed.</para>
     /// </summary>
     public async Task ConnectAsync(GitHubInstallation installation, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
+        var userId = RequireUserId();
         var errors = new Dictionary<string, string>();
         if (installation.Id <= 0)
         {
@@ -129,6 +141,25 @@ public sealed class GitHubConnectionService
         {
             errors["GitHubOrgLogin"] =
                 $"'{installation.AccountLogin}' is a personal GitHub account, not an organisation. Install the app on your company's GitHub organisation instead.";
+        }
+
+        if (errors.Count == 0)
+        {
+            var claim = await _access.CanAdministerInstallationAsync(userId, installation.Id, ct);
+            if (claim != GitHubInstallationClaim.Confirmed)
+            {
+                errors["GitHubInstallationId"] = claim switch
+                {
+                    GitHubInstallationClaim.NotLinked =>
+                        "Connect your own GitHub account first, on your account page under Repository access. The toolbox checks with GitHub that you can manage this organisation, and it needs your GitHub account to ask.",
+                    GitHubInstallationClaim.LinkUnusable =>
+                        "Your GitHub account is no longer connected to the toolbox. Connect it again on your account page under Repository access, then come back and try this.",
+                    GitHubInstallationClaim.NotTheirs =>
+                        "GitHub does not say you manage that organisation, so nothing was connected. Only someone GitHub lists as an owner there can connect it here - ask one of them to do it, or to make you an owner.",
+                    _ =>
+                        "The toolbox could not check with GitHub that you manage that organisation, so it did not connect anything. Try again in a minute.",
+                };
+            }
         }
 
         if (errors.Count == 0)

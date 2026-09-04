@@ -1,26 +1,96 @@
+using System.Net;
 using System.Security.Cryptography;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.GitHub;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Tests.GitHub;
 
 /// <summary>
-/// The per-organisation half of the GitHub App connection (issue #620): what
-/// the install callback writes, what the Repositories tab reads back, and the
-/// rules that keep a connection which cannot work from being stored in the
-/// first place.
+/// The per-organisation half of the GitHub App connection (issues #620 and
+/// #621): what the install callback writes, what the Repositories tab reads
+/// back, and the rules that keep a connection which cannot work - or which is
+/// not the acting user's to make - from being stored in the first place.
 /// </summary>
 public sealed class GitHubConnectionServiceTests : IDisposable
 {
+    private const int AdminUserId = 601;
+
     private readonly TestDb _db = new();
+
+    /// <summary>
+    /// What GitHub says the acting admin administers. Tests that care replace
+    /// the routes; the default is "the installations these tests connect".
+    /// </summary>
+    private FakeGitHubApi _api = InstallationsOwnedBy(42, 43, 77, 99);
+
+    public GitHubConnectionServiceTests()
+    {
+        using var ctx = _db.NewContext();
+        ctx.Users.Add(new User
+        {
+            Id = AdminUserId,
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = "admin@cronus.example",
+            DisplayName = "CRONUS admin",
+            PasswordHash = "x",
+            Role = UserRole.Admin,
+            Status = UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        });
+        ctx.SaveChanges();
+        _db.OrgContext.CurrentUserId = AdminUserId;
+        LinkAdminGitHubAccount();
+    }
 
     public void Dispose() => _db.Dispose();
 
-    private GitHubConnectionService NewService() => _db.NewGitHubConnectionService(_db.NewContext());
+    private static FakeGitHubApi InstallationsOwnedBy(params long[] ids) =>
+        new FakeGitHubApi().On(
+            HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(ids));
+
+    /// <summary>
+    /// Gives the acting admin a GitHub link with a non-expiring token, written
+    /// straight to the row so these tests do not have to replay the OAuth
+    /// handshake that <see cref="GitHubAccessServiceTests"/> already covers.
+    /// </summary>
+    private void LinkAdminGitHubAccount()
+    {
+        using var ctx = _db.NewContext();
+        ctx.UserExternalLogins.Add(new UserExternalLogin
+        {
+            UserId = AdminUserId,
+            Provider = GitHubAccessService.ProviderName,
+            Issuer = GitHubAccessService.IssuerValue,
+            Subject = "4711",
+            DisplayIdentity = "cronus-admin",
+            CreatedAt = DateTime.UtcNow,
+            AccessTokenEncrypted = _db.DataProtectionProvider
+                .CreateProtector(GitHubAccessService.AccessTokenProtectionPurpose)
+                .Protect("ghu_admin"),
+        });
+        ctx.SaveChanges();
+    }
+
+    /// <summary>Removes the acting admin's GitHub link, leaving nothing to prove the claim with.</summary>
+    private void UnlinkAdminGitHubAccount()
+    {
+        using var ctx = _db.NewContext();
+        ctx.UserExternalLogins.RemoveRange(ctx.UserExternalLogins.Where(l => l.UserId == AdminUserId));
+        ctx.SaveChanges();
+    }
+
+    private GitHubConnectionService NewService()
+    {
+        var ctx = _db.NewContext();
+        var access = _db.NewGitHubAccessService(ctx, _db.NewGitHubAppClient(ctx, _api));
+        return _db.NewGitHubConnectionService(ctx, access);
+    }
 
     private static GitHubInstallation Installation(
         long id = 42,
@@ -202,6 +272,50 @@ public sealed class GitHubConnectionServiceTests : IDisposable
         await NewService().ConnectAsync(Installation(id: 43));
 
         (await NewService().GetStatusAsync()).InstallationId.Should().Be(43);
+    }
+
+    // --- The installation-claim gate (issue #621) ---------------------------
+
+    [Fact]
+    public async Task Connect_refuses_an_installation_github_does_not_say_the_admin_manages()
+    {
+        // The App JWT is authorised for every installation of the app, and
+        // installation ids are small sequential integers - so without asking the
+        // admin's own credential, a hand-edited callback connects this org to
+        // somebody else's GitHub organisation. See the design doc's
+        // "Binding the installation to the acting user".
+        _api = InstallationsOwnedBy(7);
+
+        Func<Task> act = () => NewService().ConnectAsync(Installation(id: 42));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("GitHubInstallationId");
+        (await NewService().GetStatusAsync()).IsConnected.Should().BeFalse("nothing was written");
+    }
+
+    [Fact]
+    public async Task Connect_tells_an_admin_who_has_not_linked_github_what_to_do()
+    {
+        UnlinkAdminGitHubAccount();
+
+        Func<Task> act = () => NewService().ConnectAsync(Installation(id: 42));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors["GitHubInstallationId"].Should().Contain("Repository access",
+            "the requirement has to name where to go, not just refuse");
+    }
+
+    [Fact]
+    public async Task Connect_refuses_when_github_could_not_be_asked()
+    {
+        _api = new FakeGitHubApi().On(
+            HttpMethod.Get, "user/installations", HttpStatusCode.ServiceUnavailable, "{\"message\":\"unavailable\"}");
+
+        Func<Task> act = () => NewService().ConnectAsync(Installation(id: 42));
+
+        await act.Should().ThrowAsync<PlanValidationException>();
+        (await NewService().GetStatusAsync()).IsConnected
+            .Should().BeFalse("an answer we could not get is not a pass");
     }
 
     // --- Refresh ------------------------------------------------------------

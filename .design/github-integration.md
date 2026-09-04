@@ -160,6 +160,8 @@ link), transparent token refresh, and:
 - `IsOrgMemberAsync(userId, ct)` - membership in the connected org.
 - `FilterAccessibleAsync(userId, repos, ct)` - used by the repo picker so the list
   the installation returns is narrowed to what the user can actually see.
+- `CanAdministerInstallationAsync(userId, installationId, ct)` - the install gate; see
+  "Binding the installation to the acting user" below.
 - `ResolveUserTokenAsync(userId, ct)` - the decrypted, in-date token for the features
   in #623 and #625 that commit and open pull requests *as the user*. Null when there is
   no usable link, which those features render as "connect your GitHub account first"
@@ -208,16 +210,16 @@ drift apart behind a reverse proxy.
 `User` row is created, and `AuthService` is not touched. Microsoft Entra ID remains
 the one federated sign-in.
 
-### Binding the installation to the acting user (open gap, #621)
+### Binding the installation to the acting user (closed in #621)
 
 `state` proves *who started* the handshake. It does not prove *which installation*
-came back, and the App JWT can read every installation of the App - so an Admin who
-starts Connect legitimately can hand-edit the redirect to
+came back, and the App JWT is authorised for every installation of the App - so an
+Admin who starts Connect legitimately could hand-edit the redirect to
 `/github/setup?state=<their own valid state>&installation_id=<someone else's>` and the
-call succeeds. Installation ids are small sequential integers, so guessing one is not
-work.
+call would succeed. Installation ids are small sequential integers, so guessing one is
+not work.
 
-#620 ships two partial mitigations, and neither is the fix:
+#620 shipped two partial mitigations, and neither was the fix:
 
 - The callback refuses an installation that is not on a GitHub organisation, which
   removes the personal-account half of the space.
@@ -226,12 +228,22 @@ work.
   attack first-come-first-served rather than free, and it makes the collision visible
   to the org that loses - but a customer who has not connected yet is still claimable.
 
-**The fix belongs to #621.** Once a member's GitHub account is linked, the acting
-user's own token can answer the question directly: `GET /user/installations` lists the
-installations that user may administer, and `ConnectAsync` must refuse an
-`installation_id` absent from that list. Until then the toolbox is trusting an org
-Admin not to hand-edit a URL, which is a weaker promise than the rest of the tenant
-fence makes. #621 must not close without this gate.
+**The gate shipped in #621.** `ConnectAsync` now asks
+`GitHubAccessService.CanAdministerInstallationAsync(userId, installationId)`, which
+reads `GET /user/installations` with the acting Admin's *own* linked token - the only
+credential that can answer whose installation this is - and refuses anything the list
+does not contain. Its four refusals are distinct and all render as field-keyed errors
+on the Repositories tab: the Admin has not linked a GitHub account, their link no
+longer works, GitHub does not list them as an administrator of that installation, or
+GitHub could not be asked at all. **An answer we could not get is a refusal, never a
+pass.**
+
+The consequence is deliberate: connecting a GitHub organisation now requires the Admin
+to have linked their own GitHub account first. That is a precondition, so the
+Repositories tab states it *before* the round trip - while GitHub is set up for the
+deployment but the Admin is unlinked, the Connect button is replaced by the reason and
+a link to Account -> Repository access. Sending them to GitHub and refusing them on the
+way back would be the same rule with worse manners.
 
 ## The shared repository picker
 
@@ -311,10 +323,11 @@ later decision.
 
 ## Fences
 
-- **Tenant isolation.** Every new column is per-org or per-user. The install
-  handshake adds no `IgnoreQueryFilters()` call; anything the per-user link turns
-  out to need is category 1 (pre-auth routing) and carries its justification
-  comment.
+- **Tenant isolation.** Every new column is per-org or per-user. Neither the install
+  handshake nor the per-user link adds an `IgnoreQueryFilters()` call: all four routes
+  run inside the caller's own authenticated session, so the acting organisation and user
+  come from their cookie and the normal query filter applies. The milestone's only new
+  call site is #620's category-6 uniqueness probe.
 - **Secrets.** Three new key-ring-encrypted secrets (client secret, private key, and
   the per-user token pair). Same pattern as SMTP and the machine-translation key, all
   redacted in audit. Approved for this milestone; the PR body says so.

@@ -190,8 +190,9 @@ public sealed class TestDb : IDisposable
     /// config service (and therefore its cache) so a Connect made here is
     /// visible to the next read, as it is in the app.
     /// </summary>
-    public ALDevToolbox.Services.GitHub.GitHubConnectionService NewGitHubConnectionService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NewOrganizationConfigService(ctx), NewSystemSettingsService(ctx),
+    public ALDevToolbox.Services.GitHub.GitHubConnectionService NewGitHubConnectionService(
+        AppDbContext ctx, ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(ctx, OrgContext, NewOrganizationConfigService(ctx), NewSystemSettingsService(ctx), access,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubConnectionService>.Instance, TimeProvider.System);
 
     /// <summary>
