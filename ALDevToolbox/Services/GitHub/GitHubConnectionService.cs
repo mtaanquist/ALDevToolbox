@@ -38,10 +38,13 @@ public sealed record GitHubConnectionStatus(
 /// dropping it again.
 ///
 /// <para>Every read and write is pinned to the acting organisation through
-/// <see cref="IOrganizationContext"/> — no <c>IgnoreQueryFilters()</c> is added
-/// by this service. Writes go through <see cref="AppDbContext"/> directly and
-/// then invalidate <see cref="OrganizationConfigService"/>'s cache, which is
-/// what holds the settings row every reader sees.</para>
+/// <see cref="IOrganizationContext"/>. The one exception is the uniqueness
+/// probe in <see cref="ConnectAsync"/>, which asks deployment-wide whether
+/// another organisation already holds an installation — a fence category 6
+/// existence check that projects a bool and never a row. Writes go through
+/// <see cref="AppDbContext"/> directly and then invalidate
+/// <see cref="OrganizationConfigService"/>'s cache, which is what holds the
+/// settings row every reader sees.</para>
 ///
 /// <para>See <c>.design/github-integration.md</c>.</para>
 /// </summary>
