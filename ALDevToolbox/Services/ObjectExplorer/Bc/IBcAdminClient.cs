@@ -10,9 +10,11 @@ public interface IBcAdminClient
 {
     /// <summary>
     /// Lists the tenant's BC environments. Throws <see cref="BcApiException"/> on a
-    /// non-success status, carrying the status code and Microsoft's error detail so the
-    /// caller can tell 401 (app not authorized in BC) from 403 (app lacks permission)
-    /// and name the right fix. See <see cref="BcConstants.AdminEnvironmentsUrl"/>.
+    /// non-success status — a 404 included, because on this tenant-wide route it means the
+    /// call went somewhere wrong rather than that the tenant has no environments — carrying
+    /// the status code and Microsoft's error detail so the caller can tell 401 (app not
+    /// authorized in BC) from 403 (app lacks permission) and name the right fix.
+    /// See <see cref="BcConstants.AdminEnvironmentsUrl"/>.
     /// </summary>
     Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default);
 
@@ -28,17 +30,12 @@ public interface IBcAdminClient
     Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>
-    /// Reads the environment's <em>Microsoft platform-update window</em>
-    /// (<c>settings/upgrade</c>) — mirrored as context beside the toolbox's own delivery
-    /// slot, never as a source for it. Returns <c>null</c> when the environment has no
-    /// window configured (the API answers a literal <c>null</c> body) and when the
-    /// environment itself is gone (404), because neither is a fault the caller can act
-    /// on differently. Throws <see cref="BcApiException"/> on any other non-success.
-    /// </summary>
-    /// <summary>
     /// Lists the platform target versions for an environment — which Business Central
     /// release is coming next, whether it has been scheduled, and when. Read-only here.
-    /// Returns an empty list when the environment has none.
+    /// Returns an empty list when the environment has none, and when the environment
+    /// itself is gone (404): a removed environment has nothing on offer, which is the
+    /// same reading <see cref="GetEnvironmentAsync"/> gives a 404. Throws
+    /// <see cref="BcApiException"/> on any other non-success status.
     /// </summary>
     Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
@@ -91,6 +88,14 @@ public interface IBcAdminClient
         DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Reads the environment's <em>Microsoft platform-update window</em>
+    /// (<c>settings/upgrade</c>) — mirrored as context beside the toolbox's own delivery
+    /// slot, never as a source for it. Returns <c>null</c> when the environment has no
+    /// window configured (the API answers a literal <c>null</c> body) and when the
+    /// environment itself is gone (404), because neither is a fault the caller can act
+    /// on differently. Throws <see cref="BcApiException"/> on any other non-success.
+    /// </summary>
     Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>
