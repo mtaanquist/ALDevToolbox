@@ -25,10 +25,19 @@ namespace ALDevToolbox.Tests.Infrastructure;
 ///   * a Testcontainers <c>postgres:18-alpine</c> spun up on first use —
 ///     local-dev path. Requires Docker on the host.
 ///
-/// Each test fixture creates a unique database off the shared host, runs
-/// migrations against it, and drops it on dispose. Migrations apply in
-/// milliseconds against a small schema, so we don't bother template-database
-/// cloning — measure first if the wall-clock starts to bite.
+/// Each test fixture gets a unique database off the shared host and drops it
+/// on dispose. The schema is NOT migrated per fixture: it is built once per
+/// test process into a template database, and every fixture is a
+/// <c>CREATE DATABASE ... TEMPLATE</c> clone of it, which Postgres serves as a
+/// file copy.
+///
+/// <para>That indirection is the difference between a usable test suite and an
+/// unusable one. xUnit constructs a new instance of a test class for every test
+/// method, and ~164 classes hold this type as a field initialiser, so the old
+/// per-fixture <c>Migrate()</c> ran all 116 migrations roughly 3,200 times per
+/// run: 4.4 s per test measured, and a 34-minute CI test step. Cloning the
+/// template measured 165-260 ms against the same 81-table schema. See issue
+/// #728 for the numbers.</para>
 /// </summary>
 public sealed class TestDb : IDisposable
 {
@@ -36,6 +45,12 @@ public sealed class TestDb : IDisposable
     public const int OtherOrgId = 2;
 
     private static readonly Lazy<PostgresHost> SharedHost = new(PostgresHost.Start, isThreadSafe: true);
+
+    /// <summary>
+    /// The migrated, seeded database every fixture is cloned from. Built on
+    /// first use and shared by the whole test process (#728).
+    /// </summary>
+    private static readonly Lazy<string> SharedTemplate = new(BuildTemplate, isThreadSafe: true);
 
     private readonly string _databaseName;
     private readonly string _connectionString;
@@ -71,42 +86,78 @@ public sealed class TestDb : IDisposable
     {
         var host = SharedHost.Value;
         _databaseName = "aldt_test_" + Guid.NewGuid().ToString("N");
-        host.CreateDatabase(_databaseName);
+        host.CloneDatabase(_databaseName, SharedTemplate.Value);
         _connectionString = host.ConnectionStringFor(_databaseName);
 
-        _options = BuildOptions();
+        _options = BuildOptions(_connectionString);
         var options = _options;
         var orgContext = OrgContext;
         _scopeProvider = new Lazy<ServiceProvider>(() => new ServiceCollection()
             .AddScoped(_ => new AppDbContext(options, orgContext))
             .BuildServiceProvider());
-
-        using var ctx = new AppDbContext(_options, OrgContext);
-        ctx.Database.Migrate();
-
-        // Migration seeds the Default organisation and stamps it as the
-        // singleton system org. Add the Other organisation tests use to
-        // verify cross-org isolation; it stays a regular org.
-        ctx.Organizations.Add(new Organization
-        {
-            Id = OtherOrgId,
-            Name = "Other",
-            Slug = "other",
-            CreatedAt = DateTime.UtcNow,
-        });
-        ctx.SaveChanges();
-
-        // Postgres identity sequences don't advance when a row is inserted
-        // with an explicit id; the next nextval() would otherwise collide
-        // with our seeded OtherOrg at id=2. Re-align the sequence to MAX(id)
-        // so SignupAsync-style inserts in tests get a free id.
-        ctx.Database.ExecuteSqlRaw(
-            "SELECT setval(pg_get_serial_sequence('organizations', 'id'), (SELECT MAX(id) FROM organizations))");
     }
 
-    private DbContextOptions<AppDbContext> BuildOptions() =>
+    /// <summary>
+    /// Builds the process-wide template database: migrate once, seed once. Every
+    /// fixture is a clone of the result, so anything added here is visible to
+    /// every test and must stay as neutral as the migrated schema itself.
+    /// </summary>
+    private static string BuildTemplate()
+    {
+        var host = SharedHost.Value;
+        var name = "aldt_tmpl_" + Guid.NewGuid().ToString("N");
+        host.CreateDatabase(name);
+
+        // Pooling off for the build: Postgres refuses to clone a template while
+        // any session is connected to it, and a pooled connection outlives the
+        // DbContext that opened it. Npgsql would hand the clone a 55006 for
+        // every fixture in the run.
+        var connectionString = new NpgsqlConnectionStringBuilder(host.ConnectionStringFor(name))
+        {
+            Pooling = false,
+        }.ConnectionString;
+
+        var orgContext = new AmbientOrganizationContext { CurrentOrganizationId = DefaultOrgId };
+        using (var ctx = new AppDbContext(BuildOptions(connectionString), orgContext))
+        {
+            ctx.Database.Migrate();
+
+            // Migration seeds the Default organisation and stamps it as the
+            // singleton system org. Add the Other organisation tests use to
+            // verify cross-org isolation; it stays a regular org.
+            ctx.Organizations.Add(new Organization
+            {
+                Id = OtherOrgId,
+                Name = "Other",
+                Slug = "other",
+                CreatedAt = DateTime.UtcNow,
+            });
+            ctx.SaveChanges();
+
+            // Postgres identity sequences don't advance when a row is inserted
+            // with an explicit id; the next nextval() would otherwise collide
+            // with our seeded OtherOrg at id=2. Re-align the sequence to MAX(id)
+            // so SignupAsync-style inserts in tests get a free id.
+            ctx.Database.ExecuteSqlRaw(
+                "SELECT setval(pg_get_serial_sequence('organizations', 'id'), (SELECT MAX(id) FROM organizations))");
+        }
+
+        // The template outlives every fixture, so drop it when the process ends.
+        // On CI and on the Testcontainers path the whole server is thrown away
+        // anyway; this only matters for a developer pointing
+        // ALDT_TEST_POSTGRES_CONNECTION at a Postgres they keep around.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { host.DropDatabase(name); }
+            catch (Exception) { /* best effort: the run is already over */ }
+        };
+
+        return name;
+    }
+
+    private static DbContextOptions<AppDbContext> BuildOptions(string connectionString) =>
         new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(_connectionString)
+            .UseNpgsql(connectionString)
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
             .Options;
 
@@ -330,6 +381,38 @@ internal sealed class PostgresHost
         // GUID-derived string we control — never user input.
         cmd.CommandText = $"CREATE DATABASE \"{name}\"";
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Clones <paramref name="template"/> into a new database. Postgres refuses
+    /// this while any session is connected to the template, and the suite runs
+    /// fixtures in parallel, so a clone that loses that race retries rather than
+    /// failing the test. The template itself is only ever written once, by
+    /// <c>TestDb.BuildTemplate</c> over a non-pooled connection.
+    /// </summary>
+    public void CloneDatabase(string name, string template)
+    {
+        const int maxAttempts = 40;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var conn = new NpgsqlConnection(_adminConnectionString);
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                // Both identifiers are GUID-derived strings we control, never
+                // user input, so quoting them is sufficient.
+                cmd.CommandText = $"CREATE DATABASE \"{name}\" TEMPLATE \"{template}\"";
+                cmd.ExecuteNonQuery();
+                return;
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ObjectInUse && attempt < maxAttempts)
+            {
+                // 55006: another fixture is mid-clone, or a connection to the
+                // template has not closed yet. Back off briefly and retry.
+                Thread.Sleep(TimeSpan.FromMilliseconds(25 * attempt));
+            }
+        }
     }
 
     public void DropDatabase(string name)

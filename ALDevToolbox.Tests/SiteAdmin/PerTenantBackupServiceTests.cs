@@ -32,6 +32,8 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// table dropped from the snapshot, or restored under the wrong org, fails
 /// here rather than silently.
 /// </summary>
+// Mutates a process-wide environment variable; see the collection's doc comment.
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class PerTenantBackupServiceTests : IDisposable
 {
     private const int OrgA = TestDb.DefaultOrgId;

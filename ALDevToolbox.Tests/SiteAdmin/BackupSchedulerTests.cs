@@ -22,6 +22,8 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// "actually wrote a backup" assertions but still exercise the decision
 /// surface via the no-op branches.
 /// </summary>
+// Mutates a process-wide environment variable; see the collection's doc comment.
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class BackupSchedulerTests : IDisposable
 {
     private readonly TestDb _db = new();

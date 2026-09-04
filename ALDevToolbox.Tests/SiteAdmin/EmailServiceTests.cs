@@ -14,6 +14,8 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// Actual SMTP I/O is covered by the SiteAdmin "send a test email" flow
 /// against a real server.
 /// </summary>
+// Mutates a process-wide environment variable; see the collection's doc comment.
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class EmailServiceTests : IDisposable
 {
     private readonly TestDb _db = new();

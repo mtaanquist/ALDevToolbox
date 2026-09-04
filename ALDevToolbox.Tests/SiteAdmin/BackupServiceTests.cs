@@ -17,6 +17,8 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// runtime image ships them; <see cref="PgToolFactAttribute"/> skips when
 /// they aren't installed locally).
 /// </summary>
+// Mutates a process-wide environment variable; see the collection's doc comment.
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class BackupServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
