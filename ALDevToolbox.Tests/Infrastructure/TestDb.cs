@@ -186,6 +186,22 @@ public sealed class TestDb : IDisposable
             NullLogger<OrganizationAdminService>.Instance);
 
     /// <summary>
+    /// The per-organisation GitHub App connection. Shares this fixture's
+    /// config service (and therefore its cache) so a Connect made here is
+    /// visible to the next read, as it is in the app.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubConnectionService NewGitHubConnectionService(AppDbContext ctx) =>
+        new(ctx, OrgContext, NewOrganizationConfigService(ctx), NewSystemSettingsService(ctx),
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubConnectionService>.Instance, TimeProvider.System);
+
+    /// <summary>
+    /// A <see cref="SystemSettingsService"/> on this fixture's context and
+    /// in-memory key ring. The singleton row is created on first write.
+    /// </summary>
+    public SystemSettingsService NewSystemSettingsService(AppDbContext ctx) =>
+        new(ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+
+    /// <summary>
     /// Per-fixture MCP availability state. Defaults to enabled so tests that
     /// don't care about the toggle behave as if the SiteAdmin has flipped it
     /// on. Tests that care (the org-level toggle tests) flip this directly.
@@ -253,8 +269,7 @@ public sealed class TestDb : IDisposable
     /// </summary>
     public DatabaseUsageService NewDatabaseUsageService(AppDbContext ctx)
     {
-        var systemSettings = new SystemSettingsService(
-            ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        var systemSettings = NewSystemSettingsService(ctx);
         return new DatabaseUsageService(
             ctx, systemSettings, OrgContext, NullLogger<DatabaseUsageService>.Instance, TimeProvider.System);
     }

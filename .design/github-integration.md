@@ -43,7 +43,10 @@ see every repository the App was installed on - that gate is
    GitHub organisation: the install/authorise handshake returns an
    `installation_id`, stored on `organization_settings` with the org login and the
    permissions the installation was granted. Page: the existing Administration →
-   **Repositories** tab.
+   **Repositories** tab. The installation must sit on a GitHub *organisation*: a
+   personal-account install can neither create repositories for a team nor answer
+   "is this person in the organisation", so the callback refuses it with a message
+   saying where to install instead, rather than storing a connection that half-works.
 3. **User (any member).** Each member links their own GitHub account from Account →
    Repository tokens, storing a user-to-server access token and refresh token
    encrypted per user.
@@ -60,10 +63,12 @@ under Repositories, not next to Teams and Export.
 
 ## Schema
 
-All additions are per-org or per-user; none crosses the tenant fence. No
-`IgnoreQueryFilters()` call is added by this milestone except the two pre-auth
-callback lookups noted under Endpoints, which are category 1 (pre-auth routing) and
-carry the required justification comment.
+All additions are per-org or per-user; none crosses the tenant fence. The
+install handshake (#620) added no `IgnoreQueryFilters()` call at all: both of its
+routes run inside the Admin's existing session, so the acting organisation comes
+from the caller's own cookie and the normal query filter applies. If the per-user
+link (#621) turns out to need a pre-auth lookup, that call site is category 1
+(pre-auth routing) and carries the required justification comment.
 
 ### `system_settings` (singleton, SiteAdmin-managed)
 
@@ -115,7 +120,9 @@ would immediately wrap.
 
 - **App JWT.** RS256 over `{iat, exp, iss}` signed with the stored PEM, using
   `System.Security.Cryptography.RSA.ImportFromPem` and base64url encoding. Roughly
-  twenty lines; no new package reference. Lifetime 9 minutes (GitHub's limit is 10).
+  twenty lines; no new package reference. Lifetime 9 minutes (GitHub's limit is 10),
+  with `iat` backdated a minute for clock drift. It lives in `GitHubAppJwt`, apart
+  from the client, because that is the piece worth testing on its own.
 - **Installation token.** `POST /app/installations/{id}/access_tokens` with the JWT.
   Cached in memory per installation id until 5 minutes before expiry.
 - **User token refresh.** `POST https://github.com/login/oauth/access_token` with the
@@ -162,6 +169,12 @@ must take effect on the next page load, not on the next deploy.
 Both callbacks validate a signed, single-use `state` carrying the org id (and user id
 for the link flow) before touching anything. Antiforgery on every POST via
 `ValidateAntiforgeryAsync`, as the existing endpoints do.
+
+The install `state` is Data-Protection ciphertext over `orgId|userId|nonce|issuedAt`,
+paired with a memory-cache entry keyed on the nonce that the callback consumes - so a
+state is good once, for fifteen minutes, and only in the session that started it. Both
+install routes require the `Admin` role, which is also what lets them read the acting
+org through the normal query filter.
 
 **This is not a sign-in provider.** No cookie is issued by any of these routes, no
 `User` row is created, and `AuthService` is not touched. Microsoft Entra ID remains
@@ -245,9 +258,10 @@ later decision.
 
 ## Fences
 
-- **Tenant isolation.** Every new column is per-org or per-user. No new
-  `IgnoreQueryFilters()` outside the two pre-auth callbacks (category 1), each
-  carrying its justification comment.
+- **Tenant isolation.** Every new column is per-org or per-user. The install
+  handshake adds no `IgnoreQueryFilters()` call; anything the per-user link turns
+  out to need is category 1 (pre-auth routing) and carries its justification
+  comment.
 - **Secrets.** Three new key-ring-encrypted secrets (client secret, private key, and
   the per-user token pair). Same pattern as SMTP and the machine-translation key, all
   redacted in audit. Approved for this milestone; the PR body says so.

@@ -383,8 +383,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// Materialises an entry's original values into a dictionary, replacing
     /// <see cref="WorkspaceExtensionFile.Content"/> with a SHA-256 hash so the audit log
     /// stays compact even when files contain large AL bodies. Secret columns —
-    /// the encrypted SMTP password and off-site keys on <see cref="SystemSettings"/>,
-    /// the org MT API key, a user's repository PAT and BCrypt password hash, and a
+    /// the encrypted SMTP password, off-site keys and GitHub App credentials on
+    /// <see cref="SystemSettings"/>, the org MT API key, a user's repository PAT and
+    /// BCrypt password hash, and a
     /// project's BC client secret — are replaced with a fixed sentinel so the audit
     /// log never captures secret history (ciphertext would leak the structure of the
     /// protected blob; the password hash is offline-cracking material). See #476/#485.
@@ -395,8 +396,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var hashContent = entry.Entity is WorkspaceExtensionFile or ModuleExtensionFile or OrganizationFile;
         var hashRecipeContent = entry.Entity is RecipeFile or RecipeSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
-        // SystemSettings carries the encrypted SMTP password and the encrypted
-        // off-site storage access/secret keys. None of the ciphertext lands in
+        // SystemSettings carries the encrypted SMTP password, the encrypted
+        // off-site storage access/secret keys, and the GitHub App's client secret
+        // and private key. None of the ciphertext lands in
         // audit history — capturing it would leak the structure of the protected
         // blob and preserve it long after a SiteAdmin clears the keys. See #485.
         var redactSystemSecrets = entry.Entity is SystemSettings;
@@ -429,7 +431,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             else if (redactSystemSecrets && property.Name is nameof(SystemSettings.SmtpPasswordEncrypted)
                          or nameof(SystemSettings.OffsiteAccessKeyEncrypted)
                          or nameof(SystemSettings.OffsiteSecretKeyEncrypted)
-                         or nameof(SystemSettings.EntraClientSecretEncrypted))
+                         or nameof(SystemSettings.EntraClientSecretEncrypted)
+                         or nameof(SystemSettings.GitHubClientSecretEncrypted)
+                         or nameof(SystemSettings.GitHubPrivateKeyEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }

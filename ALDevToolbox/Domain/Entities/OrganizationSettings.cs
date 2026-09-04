@@ -188,5 +188,32 @@ public class OrganizationSettings
     /// </summary>
     public ValueObjects.LocalLoginPolicy LocalLoginPolicy { get; set; }
 
+    /// <summary>
+    /// The GitHub App installation this organisation connected. Null means "not
+    /// connected" and doubles as the master switch for every GitHub feature,
+    /// matching how <see cref="AutoImportReleasesEnabled"/> and
+    /// <see cref="MtTrigger.Off"/> work. Set by the install callback; cleared by
+    /// Disconnect (which leaves the installation itself in place on GitHub).
+    /// See <c>.design/github-integration.md</c>.
+    /// </summary>
+    public long? GitHubInstallationId { get; set; }
+
+    /// <summary>
+    /// Login of the connected GitHub organisation — shown to admins and used as
+    /// the <c>{org}</c> in <c>POST /orgs/{org}/repos</c>. Null when not connected.
+    /// </summary>
+    public string? GitHubOrgLogin { get; set; }
+
+    /// <summary>
+    /// The permissions GitHub reported for the installation at connect time, as
+    /// a JSON object of <c>permission -&gt; read|write</c>. Kept so the
+    /// Repositories tab can say "this installation cannot create repositories"
+    /// before someone hits that wall from New Workspace. Null when not connected.
+    /// </summary>
+    public string? GitHubInstallationPermissions { get; set; }
+
+    /// <summary>When the connection was made (UTC). Null when not connected.</summary>
+    public DateTime? GitHubConnectedAt { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

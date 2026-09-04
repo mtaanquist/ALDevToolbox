@@ -52,6 +52,13 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
             .IsRequired();
         entity.Property(e => e.EntraClientId).HasColumnName("entra_client_id").HasMaxLength(64);
         entity.Property(e => e.EntraClientSecretEncrypted).HasColumnName("entra_client_secret_encrypted");
+        // Deployment-wide GitHub App registration. The two *_encrypted columns
+        // hold Data-Protection ciphertext and are redacted by AuditInterceptor.
+        entity.Property(e => e.GitHubAppId).HasColumnName("github_app_id");
+        entity.Property(e => e.GitHubAppSlug).HasColumnName("github_app_slug").HasMaxLength(120);
+        entity.Property(e => e.GitHubClientId).HasColumnName("github_client_id").HasMaxLength(120);
+        entity.Property(e => e.GitHubClientSecretEncrypted).HasColumnName("github_client_secret_encrypted");
+        entity.Property(e => e.GitHubPrivateKeyEncrypted).HasColumnName("github_private_key_encrypted");
         entity.Property(e => e.SignupEmailDomainAllowlist).HasColumnName("signup_email_domain_allowlist");
         entity.Property(e => e.ReleaseDownloadDomainAllowlist).HasColumnName("release_download_domain_allowlist");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
