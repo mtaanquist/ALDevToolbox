@@ -80,11 +80,13 @@
 
                     <div class="step">
                         <span class="step__n">2</span>
-                        <span class="step__head"><span class="step__title">Give it the Setup URL below</span></span>
+                        <span class="step__head"><span class="step__title">Give it the two web addresses below</span></span>
                         <span class="step__text">
-                            Copy the Setup URL from the first field below into the app's own
-                            Setup URL box. It is where GitHub sends an admin back to once they
-                            have installed the app, and nothing works without it.
+                            Copy the Setup URL and the Callback URL from the first two fields
+                            below into the app's own boxes of the same names. One is where
+                            GitHub sends an admin back to after they install the app; the other
+                            is where it sends anyone who connects their own GitHub account.
+                            Nothing works without both.
                         </span>
                     </div>
 
@@ -118,6 +120,8 @@
                             downloads the file there and then and will never show it again - if
                             you lose it, you generate a new one. Then copy the App ID, the app's
                             name, the Client ID and a new client secret into the fields below.
+                            While you are there, tick "Expire user authorization tokens" - it is
+                            on by default, and the toolbox renews them for people quietly.
                         </span>
                     </div>
                 </div>
@@ -130,6 +134,12 @@
                                 Hint="On GitHub, put this in the app's Setup URL box before you save here. Without it, GitHub has nowhere to send an admin back to after they install the app.">
                         <input class="input input--ro" type="text" value="@SetupUrl" readonly
                                aria-label="Setup URL to copy into GitHub" />
+                    </SettingRow>
+
+                    <SettingRow Name="Callback URL"
+                                Hint="On GitHub, put this in the app's Callback URL box. It is where someone lands after connecting their own GitHub account, and without it nobody on this site can do that.">
+                        <input class="input input--ro" type="text" value="@CallbackUrl" readonly
+                               aria-label="Callback URL to copy into GitHub" />
                     </SettingRow>
 
                     @* required + pattern mirror SaveGitHubAppAsync's own rules, from
@@ -167,14 +177,14 @@
                     </SettingRow>
 
                     <SettingRow Name="Client ID"
-                                Hint="Optional for now. Also on the app's settings page, under Client ID. Needed only once people start linking their own GitHub account.">
+                                Hint="Also on the app's settings page, under Client ID. Without it, nobody on this site can connect their own GitHub account - and connecting a GitHub organisation needs that too.">
                         <input class="input" type="text" name="GitHubClientId" value="@_view.ClientId"
                                maxlength="120" autocomplete="off"
                                placeholder="e.g. Iv1.0123456789abcdef" />
                     </SettingRow>
 
                     <SettingRow Name="Client secret"
-                                Hint="Optional for now, and stored encrypted. Generate one on the app's settings page - GitHub shows it only once. Leave blank to keep the one already saved.">
+                                Hint="Stored encrypted, and needed alongside the Client ID. Generate one on the app's settings page - GitHub shows it only once. Leave blank to keep the one already saved.">
                         <input class="input" type="password" name="GitHubClientSecret" value=""
                                autocomplete="new-password"
                                placeholder="@(_view.HasClientSecret ? "Unchanged" : "Not set")" />
@@ -262,7 +272,15 @@
 
     private bool IsConfigured => _view?.IsConfigured ?? false;
 
-    private string SetupUrl => Nav.BaseUri.TrimEnd('/') + "/github/setup";
+    private string SetupUrl => Nav.BaseUri.TrimEnd('/') + Endpoints.GitHubAppEndpoints.SetupCallbackPath;
+
+    /// <summary>
+    /// Where GitHub returns someone who has just connected their own account.
+    /// The handshake sends no redirect_uri of its own, so this is the single
+    /// place the address is written down - which is why it is read-only here
+    /// and copied to GitHub rather than typed into both.
+    /// </summary>
+    private string CallbackUrl => Nav.BaseUri.TrimEnd('/') + Endpoints.GitHubAppEndpoints.LinkCallbackPath;
 
     protected override async Task OnInitializedAsync() => await ReloadAsync();
 

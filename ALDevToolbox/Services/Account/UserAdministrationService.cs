@@ -413,7 +413,10 @@ public sealed class UserAdministrationService
             .ThenBy(u => u.DisplayName)
             .ToListAsync(ct);
 
+        // Entra only: the "signs in with Microsoft" badge on the Users tab must
+        // not light up for a GitHub account link (issue #621) in the same table.
         var entraLinked = (await _db.UserExternalLogins.AsNoTracking()
+            .Where(l => l.Provider == EntraSignInService.ProviderName)
             .Select(l => l.UserId)
             .Distinct()
             .ToListAsync(ct)).ToHashSet();

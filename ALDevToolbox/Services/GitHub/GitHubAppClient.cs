@@ -21,6 +21,24 @@ public sealed record GitHubInstallation(
 }
 
 /// <summary>
+/// One user-to-server token pair, as GitHub's OAuth token endpoint returns it.
+///
+/// <para><see cref="ExpiresAt"/> and <see cref="RefreshToken"/> are null when the
+/// App has not opted in to expiring user tokens: in that case the access token
+/// stands until the person revokes it on GitHub, and there is nothing to
+/// refresh. Every other case gets an 8-hour access token and a 6-month refresh
+/// token. See <c>.design/github-integration.md</c>.</para>
+/// </summary>
+public sealed record GitHubUserTokens(
+    string AccessToken,
+    DateTimeOffset? ExpiresAt,
+    string? RefreshToken,
+    DateTimeOffset? RefreshTokenExpiresAt);
+
+/// <summary>Who a user-to-server token belongs to: GitHub's stable numeric id and the renameable login.</summary>
+public sealed record GitHubUserIdentity(long Id, string Login);
+
+/// <summary>
 /// The toolbox's client for the GitHub REST API, acting as the GitHub App.
 ///
 /// <para>Hand-rolled on <see cref="HttpClient"/> rather than Octokit: the
@@ -33,6 +51,12 @@ public sealed record GitHubInstallation(
 /// connected organisation and is what every later feature carries; it lasts an
 /// hour and is cached per installation until five minutes before it lapses, so
 /// a page that makes several calls does not mint several tokens.</para>
+///
+/// <para>From issue #621 a third credential passes through: a <em>user-to-server
+/// token</em>, which acts as one person and is what every question of the form
+/// "may this person see or do this?" is asked with. It is minted and refreshed
+/// here and stored, encrypted, by <see cref="GitHubAccessService"/> — this class
+/// never touches the database.</para>
 /// </summary>
 public sealed class GitHubAppClient
 {
@@ -141,6 +165,224 @@ public sealed class GitHubAppClient
         return token;
     }
 
+    // ── User-to-server: acting as one person rather than as the organisation ──
+
+    /// <summary>
+    /// Trades the <c>code</c> GitHub sent back to <c>/signin-github</c> for a
+    /// user-to-server token pair. No <c>redirect_uri</c> is sent: GitHub then
+    /// uses the App's own registered callback URL, which is one fewer thing to
+    /// keep in step across a reverse proxy.
+    /// </summary>
+    /// <exception cref="GitHubAppNotConfiguredException">No app id, private key, or OAuth client id/secret on this deployment.</exception>
+    /// <exception cref="GitHubApiException">GitHub refused the exchange (a stale or reused code).</exception>
+    public Task<GitHubUserTokens> ExchangeUserCodeAsync(string code, CancellationToken ct = default) =>
+        PostOAuthAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+        }, "authorization code exchange", ct);
+
+    /// <summary>
+    /// Mints a fresh access token from a stored refresh token. GitHub rotates
+    /// the refresh token too, so the caller must persist the whole returned
+    /// pair, not just the access half.
+    /// </summary>
+    /// <exception cref="GitHubAppNotConfiguredException">No app id, private key, or OAuth client id/secret on this deployment.</exception>
+    /// <exception cref="GitHubApiException">The refresh token has expired or been revoked; the user has to link again.</exception>
+    public Task<GitHubUserTokens> RefreshUserTokenAsync(string refreshToken, CancellationToken ct = default) =>
+        PostOAuthAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+        }, "token refresh", ct);
+
+    /// <summary>
+    /// Who the token belongs to. The numeric id is what we store: a GitHub
+    /// login can be renamed, and matching on it would silently follow whoever
+    /// claimed the old name next.
+    /// </summary>
+    /// <exception cref="GitHubApiException">GitHub refused the call, e.g. a revoked token.</exception>
+    public async Task<GitHubUserIdentity> GetAuthenticatedUserAsync(string userToken, CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Get, "user", userToken);
+        using var document = await SendAsync(request, ct);
+        var root = document.RootElement;
+        var id = root.TryGetProperty("id", out var idElement) && idElement.TryGetInt64(out var idValue) ? idValue : 0;
+        var login = root.TryGetProperty("login", out var loginElement) ? loginElement.GetString() ?? string.Empty : string.Empty;
+        if (id <= 0 || login.Length == 0)
+        {
+            throw new GitHubApiException(HttpStatusCode.BadGateway, "GitHub did not say which account that was.");
+        }
+        return new GitHubUserIdentity(id, login);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="userToken"/>'s owner can see
+    /// <c>{owner}/{repo}</c>.
+    ///
+    /// <para><strong>GitHub answers 404, not 403, for a repository you cannot
+    /// see</strong> — telling you it exists would itself leak something. So a
+    /// 404 here means "not visible to this person", never "gone", and the two
+    /// are not distinguishable from outside. A 301 means the repository was
+    /// renamed and is still visible.</para>
+    /// </summary>
+    public async Task<bool> UserCanSeeRepositoryAsync(
+        string userToken, string owner, string repo, CancellationToken ct = default)
+    {
+        var status = await ProbeAsync(
+            HttpMethod.Get,
+            $"repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}",
+            userToken, ct);
+        return status is HttpStatusCode.OK or HttpStatusCode.MovedPermanently;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="username"/> is a member of <paramref name="org"/>,
+    /// asked with that person's own token.
+    ///
+    /// <para>GitHub answers 204 for "yes", 404 for "no", and 302 when the
+    /// asker is not in the organisation at all — which, since the asker here is
+    /// the person being asked about, is another way of saying no. The client
+    /// does not follow redirects (see <c>GitHubRegistration</c>) precisely so
+    /// that 302 stays visible instead of turning into a confusing 403 from
+    /// wherever it pointed.</para>
+    /// </summary>
+    public async Task<bool> UserIsOrgMemberAsync(
+        string userToken, string org, string username, CancellationToken ct = default)
+    {
+        var status = await ProbeAsync(
+            HttpMethod.Get,
+            $"orgs/{Uri.EscapeDataString(org)}/members/{Uri.EscapeDataString(username)}",
+            userToken, ct);
+        return status == HttpStatusCode.NoContent;
+    }
+
+    /// <summary>
+    /// The installations of this App that <paramref name="userToken"/>'s owner
+    /// may administer. This is the only credential that can answer that — the
+    /// App JWT can read <em>every</em> installation of the App, which is why
+    /// the install callback cannot use it to decide whose organisation is
+    /// being connected. See "Binding the installation to the acting user" in
+    /// <c>.design/github-integration.md</c>.
+    /// </summary>
+    /// <exception cref="GitHubApiException">GitHub refused the call, e.g. a revoked token.</exception>
+    public async Task<IReadOnlyList<long>> ListUserInstallationIdsAsync(
+        string userToken, CancellationToken ct = default)
+    {
+        var ids = new List<long>();
+        // GitHub pages this at 30 by default; 100 is the cap and nobody
+        // administers more installations of one app than that in practice.
+        var path = "user/installations?per_page=100";
+        using var request = NewRequest(HttpMethod.Get, path, userToken);
+        using var document = await SendAsync(request, ct);
+
+        if (document.RootElement.TryGetProperty("installations", out var list)
+            && list.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in list.EnumerateArray())
+            {
+                if (element.TryGetProperty("id", out var id) && id.TryGetInt64(out var value))
+                {
+                    ids.Add(value);
+                }
+            }
+        }
+
+        _logger.LogInformation("GitHub reported {InstallationCount} installations for the acting user.", ids.Count);
+        return ids;
+    }
+
+    /// <summary>
+    /// Posts to GitHub's OAuth token endpoint, which lives on <c>github.com</c>
+    /// rather than the API host and answers <c>200 OK</c> even for failures,
+    /// with an <c>error</c> field instead of an error status. Both cases are
+    /// normalised into <see cref="GitHubApiException"/> here so callers see one
+    /// failure shape.
+    /// </summary>
+    private async Task<GitHubUserTokens> PostOAuthAsync(
+        IDictionary<string, string> form, string what, CancellationToken ct)
+    {
+        var app = await _settings.ResolveGitHubAppAsync(ct) ?? throw new GitHubAppNotConfiguredException();
+        if (string.IsNullOrEmpty(app.ClientId) || string.IsNullOrEmpty(app.ClientSecret))
+        {
+            throw new GitHubAppNotConfiguredException();
+        }
+
+        form["client_id"] = app.ClientId;
+        form["client_secret"] = app.ClientSecret;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, OAuthTokenUrl)
+        {
+            Content = new FormUrlEncodedContent(form),
+        };
+        // The endpoint defaults to a form-encoded body; ask for JSON, and don't
+        // let the API host's vendor Accept header ride along.
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var (message, url) = ReadError(body);
+            _logger.LogWarning("GitHub refused a user {What} with {Status}: {Message}", what, (int)response.StatusCode, message);
+            throw new GitHubApiException(response.StatusCode, message, url);
+        }
+
+        using var document = ParseOrThrow(body, OAuthTokenUrl);
+        var root = document.RootElement;
+        if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
+        {
+            var description = root.TryGetProperty("error_description", out var d) ? d.GetString() : null;
+            var message = string.IsNullOrWhiteSpace(description) ? error.GetString()! : description!;
+            _logger.LogWarning("GitHub refused a user {What}: {Message}", what, message);
+            throw new GitHubApiException(HttpStatusCode.BadRequest, message);
+        }
+
+        var accessToken = root.TryGetProperty("access_token", out var at) ? at.GetString() : null;
+        if (string.IsNullOrEmpty(accessToken))
+        {
+            throw new GitHubApiException(HttpStatusCode.BadGateway, "GitHub did not return an access token.");
+        }
+
+        var now = _clock.GetUtcNow();
+        _logger.LogInformation("Completed a GitHub user {What}.", what);
+        return new GitHubUserTokens(
+            AccessToken: accessToken,
+            ExpiresAt: ReadLifetime(root, "expires_in") is { } ttl ? now.Add(ttl) : null,
+            RefreshToken: root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null,
+            RefreshTokenExpiresAt: ReadLifetime(root, "refresh_token_expires_in") is { } refreshTtl
+                ? now.Add(refreshTtl)
+                : null);
+    }
+
+    /// <summary>
+    /// Reads one of GitHub's <c>*_in</c> second counts. Absent means the App
+    /// does not expire user tokens, which is a supported configuration, not an
+    /// error — the caller stores a null expiry and never refreshes.
+    /// </summary>
+    private static TimeSpan? ReadLifetime(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var element) && element.TryGetInt32(out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : null;
+
+    /// <summary>
+    /// Sends a request whose <em>status</em> is the answer, and returns it
+    /// rather than throwing. Used for the yes/no probes where GitHub's
+    /// not-found is a legitimate "no" rather than a failure.
+    /// </summary>
+    private async Task<HttpStatusCode> ProbeAsync(
+        HttpMethod method, string path, string credential, CancellationToken ct)
+    {
+        using var request = NewRequest(method, path, credential);
+        using var response = await _http.SendAsync(request, ct);
+        _logger.LogDebug("GitHub answered {Status} for {Method} {Path}.", (int)response.StatusCode, method, path);
+        return response.StatusCode;
+    }
+
+    /// <summary>GitHub's OAuth token endpoint. Not on the API host, so it is addressed absolutely.</summary>
+    private const string OAuthTokenUrl = "https://github.com/login/oauth/access_token";
+
     /// <summary>Reads the flat <c>permissions</c> object into a name -&gt; read|write map.</summary>
     private static IReadOnlyDictionary<string, string> ReadPermissions(JsonElement root)
     {
@@ -209,14 +451,23 @@ public sealed class GitHubAppClient
             throw new GitHubApiException(response.StatusCode, message, documentationUrl);
         }
 
+        return ParseOrThrow(body, request.RequestUri?.ToString());
+    }
+
+    /// <summary>
+    /// Parses a body we have already decided is a success, turning "GitHub
+    /// answered with something that isn't JSON" (a proxy's HTML page, most
+    /// often) into the same failure shape as a refusal.
+    /// </summary>
+    private JsonDocument ParseOrThrow(string body, string? path)
+    {
         try
         {
             return JsonDocument.Parse(body);
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "GitHub returned a body that is not JSON for {Method} {Path}.",
-                request.Method, request.RequestUri);
+            _logger.LogError(ex, "GitHub returned a body that is not JSON for {Path}.", path);
             throw new GitHubApiException(HttpStatusCode.BadGateway, "GitHub returned an unexpected response.");
         }
     }

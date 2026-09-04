@@ -106,11 +106,21 @@ do not use them:
 | `refresh_token_encrypted` | Key-ring encrypted refresh token. Expires in 6 months. |
 | `access_token_expires_at` | UTC expiry, so refresh happens before a call rather than after a 401. |
 
-Add all three to `AuditInterceptor`'s redaction list.
+All three are redacted by `AuditInterceptor`. A GitHub App whose "expire user
+authorization tokens" option is off returns neither an expiry nor a refresh token; the
+columns stay null and nothing is refreshed, which is a supported configuration rather
+than a broken link.
+
+Because two providers now share this table, every query that means *"this person can
+sign in with Microsoft"* filters on `provider = 'entra'`: strong-auth checks, the
+Microsoft-only local-login policy guard, the Users tab badge, and the /account link
+list. A GitHub row authorises; it signs nobody in.
 
 `is_org_member` (bool, nullable) records whether the user was a member of the
-connected GitHub org at link time, so "why can't I see any repositories" has an
-answer on the Account row.
+connected GitHub org the last time we asked - at link time, and again whenever
+`IsOrgMemberAsync` runs or they press Check again on the Account row - so "why can't I
+see any repositories" has an answer there. Null means we never established it (no
+connected org, or GitHub would not say), which is deliberately not the same as a no.
 
 ## `GitHubAppClient`
 
@@ -150,9 +160,20 @@ link), transparent token refresh, and:
 - `IsOrgMemberAsync(userId, ct)` - membership in the connected org.
 - `FilterAccessibleAsync(userId, repos, ct)` - used by the repo picker so the list
   the installation returns is narrowed to what the user can actually see.
+- `ResolveUserTokenAsync(userId, ct)` - the decrypted, in-date token for the features
+  in #623 and #625 that commit and open pull requests *as the user*. Null when there is
+  no usable link, which those features render as "connect your GitHub account first"
+  rather than as a failure.
 
-Results are cached per request, not across requests: a permission revoked on GitHub
-must take effect on the next page load, not on the next deploy.
+Every one of these returns "no" when GitHub could not be asked. Nothing here promotes
+an unanswered question into permission.
+
+Results are remembered for thirty seconds, not for the life of the service. The rule
+being served is "a permission revoked on GitHub takes effect on the next page load, not
+on the next deploy", and a Blazor Server scope is a *circuit* that can outlive a working
+day - so an instance-lifetime cache would be exactly the staleness the rule bans. A short
+window collapses the burst of questions one render asks (the picker checks every row)
+while guaranteeing the answer is re-asked well before anyone reloads.
 
 ## Endpoints
 
@@ -170,11 +191,18 @@ Both callbacks validate a signed, single-use `state` carrying the org id (and us
 for the link flow) before touching anything. Antiforgery on every POST via
 `ValidateAntiforgeryAsync`, as the existing endpoints do.
 
-The install `state` is Data-Protection ciphertext over `orgId|userId|nonce|issuedAt`,
+Both `state` values are Data-Protection ciphertext over `orgId|userId|nonce|issuedAt`,
 paired with a memory-cache entry keyed on the nonce that the callback consumes - so a
-state is good once, for fifteen minutes, and only in the session that started it. Both
-install routes require the `Admin` role, which is also what lets them read the acting
-org through the normal query filter.
+state is good once, for fifteen minutes, and only in the session that started it. The
+two handshakes use different Data Protection purpose strings, so a state minted for one
+cannot be spent on the other. Both install routes require the `Admin` role, which is
+also what lets them read the acting org through the normal query filter; the link
+routes need only an authenticated user, because the link is about that one person.
+
+Neither handshake sends a `redirect_uri`. GitHub then uses the App's own registered
+Setup URL and Callback URL, both shown read-only on `/site-admin/settings/github` for
+the SiteAdmin to copy across - one address written down once, rather than two that can
+drift apart behind a reverse proxy.
 
 **This is not a sign-in provider.** No cookie is issued by any of these routes, no
 `User` row is created, and `AuthService` is not touched. Microsoft Entra ID remains

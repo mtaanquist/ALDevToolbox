@@ -19,6 +19,13 @@ internal sealed class UserExternalLoginConfiguration : IEntityTypeConfiguration<
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
 
+        // GitHub account links only (issue #621). Nullable throughout because the
+        // Entra rows that shared this table first hold no token of ours.
+        entity.Property(e => e.AccessTokenEncrypted).HasColumnName("access_token_encrypted");
+        entity.Property(e => e.RefreshTokenEncrypted).HasColumnName("refresh_token_encrypted");
+        entity.Property(e => e.AccessTokenExpiresAt).HasColumnName("access_token_expires_at");
+        entity.Property(e => e.IsOrgMember).HasColumnName("is_org_member");
+
         // An external identity maps to exactly one local user.
         entity.HasIndex(e => new { e.Provider, e.Issuer, e.Subject }).IsUnique();
         entity.HasIndex(e => e.UserId);

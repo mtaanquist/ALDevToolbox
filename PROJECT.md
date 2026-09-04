@@ -27,7 +27,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
 | `Services/OAuth/`            | The MCP OAuth surface: client resolution, claims transformation, bearer policy. |
 | `Services/Offsite/`          | `IOffsiteStorageProvider` and its S3 / Azure Blob implementations.            |
-| `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST + the App JWT), `GitHubConnectionService` (the per-organisation connection). |
+| `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST, the App JWT and the user-to-server token exchange), `GitHubConnectionService` (the per-organisation connection), `GitHubAccessService` (the per-user account link and the access checks every feature asks). |
 | `Services/BcQuality/`, `Services/Cookbook/`, `Services/Diff/`, `Services/SingleTenant/`, `Services/Tools/` | One folder per remaining tool or cross-cutting concern. |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |

@@ -425,10 +425,13 @@ public sealed class EntraSignInService
     /// The user's linked Microsoft identities, for the /account page.
     /// Filtered: <c>user_external_logins</c> is org-scoped through its User
     /// principal, so this can only return links from the caller's own org.
+    /// The provider predicate matters since issue #621 put GitHub account links
+    /// in the same table: those are authorisation, not a way to sign in, and
+    /// must never appear as a Microsoft account.
     /// </summary>
     public Task<List<UserExternalLogin>> ListLinksAsync(int userId, CancellationToken ct = default) =>
         _db.UserExternalLogins.AsNoTracking()
-            .Where(l => l.UserId == userId)
+            .Where(l => l.UserId == userId && l.Provider == ProviderName)
             .OrderBy(l => l.CreatedAt)
             .ToListAsync(ct);
 
@@ -501,11 +504,11 @@ public sealed class EntraSignInService
         // themselves. A link id from another org simply doesn't resolve.
         var user = await _db.Users.FirstAsync(u => u.Id == userId, ct);
         var link = await _db.UserExternalLogins
-            .FirstOrDefaultAsync(l => l.Id == linkId && l.UserId == userId, ct);
+            .FirstOrDefaultAsync(l => l.Id == linkId && l.UserId == userId && l.Provider == ProviderName, ct);
         if (link is null) return;
 
         var linkCount = await _db.UserExternalLogins
-            .CountAsync(l => l.UserId == userId, ct);
+            .CountAsync(l => l.UserId == userId && l.Provider == ProviderName, ct);
         if (linkCount == 1 && await _auth.IsLocalLoginDisabledAsync(user, ct))
         {
             throw new PlanValidationException(new Dictionary<string, string>

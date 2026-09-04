@@ -195,6 +195,42 @@ public sealed class TestDb : IDisposable
             NullLogger<ALDevToolbox.Services.GitHub.GitHubConnectionService>.Instance, TimeProvider.System);
 
     /// <summary>
+    /// The per-user GitHub account link. Takes the API client so a test can
+    /// decide what GitHub answers; <paramref name="clock"/> lets the token-expiry
+    /// tests move time without waiting eight hours.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubAccessService NewGitHubAccessService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        TimeProvider? clock = null) =>
+        new(ctx, client, OrgContext, NewOrganizationConfigService(ctx), DataProtectionProvider,
+            clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubAccessService>.Instance);
+
+    /// <summary>
+    /// A <see cref="ALDevToolbox.Services.GitHub.GitHubAppClient"/> whose HTTP
+    /// goes to <paramref name="handler"/> instead of api.github.com, wired with
+    /// the same base address and headers <c>GitHubRegistration</c> configures.
+    /// A stub handler never redirects, so the no-auto-redirect rule that makes
+    /// GitHub's 302 "you are not in this organisation" answer visible is the
+    /// registration's business, not this fixture's.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubAppClient NewGitHubAppClient(
+        AppDbContext ctx, HttpMessageHandler handler, TimeProvider? clock = null)
+    {
+        var http = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri(ALDevToolbox.Services.GitHub.GitHubAppClient.ApiBaseUrl),
+        };
+        http.DefaultRequestHeaders.Accept.Add(
+            new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("ALDevToolbox");
+        return new ALDevToolbox.Services.GitHub.GitHubAppClient(
+            http, NewSystemSettingsService(ctx), _memoryCache, clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubAppClient>.Instance);
+    }
+
+    /// <summary>
     /// A <see cref="SystemSettingsService"/> on this fixture's context and
     /// in-memory key ring. The singleton row is created on first write.
     /// </summary>

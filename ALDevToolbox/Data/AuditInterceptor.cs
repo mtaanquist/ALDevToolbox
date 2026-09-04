@@ -407,6 +407,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var redactOrgSecrets = entry.Entity is OrganizationSettings;
         // A user's encrypted repository PAT is redacted the same way.
         var redactRepoToken = entry.Entity is UserRepositoryToken;
+        // A GitHub account link carries the user-to-server token pair. The row type
+        // is not in AuditedTypeMap today, so nothing reaches this method through it
+        // yet - the branch is here so adding it later cannot quietly start copying
+        // ciphertext into history. See .design/github-integration.md.
+        var redactGitHubUserTokens = entry.Entity is UserExternalLogin;
         // A customer's encrypted BC S2S client secret on the project never lands in history.
         var redactProjectBcSecret = entry.Entity is OeProject;
         // A user's BCrypt password hash is offline-cracking material — redact it so
@@ -448,6 +453,15 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             }
             else if (redactRepoToken && property.Name == nameof(UserRepositoryToken.TokenEncrypted))
             {
+                dict[property.Name] = value is null ? null : "[redacted]";
+            }
+            else if (redactGitHubUserTokens && property.Name is nameof(UserExternalLogin.AccessTokenEncrypted)
+                         or nameof(UserExternalLogin.RefreshTokenEncrypted)
+                         or nameof(UserExternalLogin.AccessTokenExpiresAt))
+            {
+                // The expiry is not itself a secret, but it is part of the same
+                // token record and turns over on every silent refresh; keeping it
+                // would fill history with churn that means nothing on its own.
                 dict[property.Name] = value is null ? null : "[redacted]";
             }
             else if (redactProjectBcSecret && property.Name == nameof(OeProject.BcClientSecretEncrypted))

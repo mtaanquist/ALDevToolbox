@@ -3,6 +3,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -249,7 +250,11 @@ public sealed class StrongAuthGateTests : IDisposable
             ctx.UserExternalLogins.Add(new UserExternalLogin
             {
                 UserId = user.Id,
-                Provider = "Microsoft",
+                // The discriminator the app actually stamps. It matters since
+                // issue #621 put GitHub links in this table: the gate now asks
+                // for an Entra row specifically, because a GitHub link is
+                // authorisation and not a way to sign in.
+                Provider = EntraSignInService.ProviderName,
                 Issuer = "https://login.microsoftonline.com/tid/v2.0",
                 Subject = "sub-1",
                 DisplayIdentity = "alice@cronus.test",
