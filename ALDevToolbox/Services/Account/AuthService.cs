@@ -229,16 +229,13 @@ public sealed class AuthService
     public async Task<bool> IsRateLimitedAsync(string email, string ip, DateTime now, CancellationToken ct)
     {
         var window = now - RateWindow;
+        // login_attempts is org-less rate-limit data with no tenant query filter,
+        // so these pre-auth reads have nothing to bypass.
         var perEmail = await _db.LoginAttempts
-            // Fence category 1 (pre-auth routing): login_attempts is org-less rate-limit data,
-            // read before any cookie exists; pinned to the email / IP being throttled.
-            .IgnoreQueryFilters()
             .CountAsync(a => a.Email == email && a.Timestamp >= window, ct);
         if (perEmail >= MaxAttemptsPerEmail) return true;
         if (string.IsNullOrEmpty(ip)) return false;
         var perIp = await _db.LoginAttempts
-            // Same category 1 read, pinned to the caller's IP.
-            .IgnoreQueryFilters()
             .CountAsync(a => a.Ip == ip && a.Timestamp >= window, ct);
         return perIp >= MaxAttemptsPerIp;
     }
@@ -251,8 +248,6 @@ public sealed class AuthService
     {
         var window = now - LockoutWindow;
         var recent = await _db.LoginAttempts
-            // Fence category 1 (pre-auth routing): lockout check during login; pinned to the email.
-            .IgnoreQueryFilters()
             .Where(a => a.Email == email && a.Timestamp >= window)
             .OrderByDescending(a => a.Timestamp)
             .Take(LockoutThreshold)
@@ -278,8 +273,6 @@ public sealed class AuthService
         if (email is null) return false;
         var window = now - LockoutWindow;
         var recent = await _db.LoginAttempts
-            // Same category 1 read, pinned to that user's email.
-            .IgnoreQueryFilters()
             .Where(a => a.Email == email && a.Timestamp >= window)
             .OrderByDescending(a => a.Timestamp)
             .Take(MaxMfaAttempts)

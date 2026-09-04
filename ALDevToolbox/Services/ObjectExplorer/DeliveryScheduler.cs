@@ -10,8 +10,8 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// straight from the request). Mirrors <see cref="ReleaseAutoImportScheduler"/>: poll
 /// on a short interval, enumerate active orgs, and do the per-org work inside that org's
 /// <see cref="AmbientOrganizationScope"/> so the EF query filter behaves exactly as in a
-/// request. The <em>only</em> cross-org read is the active-org enumeration (the same
-/// blessed <c>IgnoreQueryFilters()</c> the existing schedulers use); the due-delivery
+/// request. The <em>only</em> cross-org read is the active-org enumeration, which needs
+/// no bypass because the organisations table carries no tenant filter; the due-delivery
 /// query and the publish itself stay org-scoped — no <c>IgnoreQueryFilters()</c> on
 /// <c>oe_project_deliveries</c>, per the design's tenant-isolation fence.
 ///
@@ -71,7 +71,7 @@ public sealed class DeliveryScheduler : PolledScheduler
             // signups are skipped. Unlike ReleaseAutoImportScheduler we do NOT skip the
             // system org: in single-tenant (and fresh bootstrap-admin) deployments the
             // working org IS the system org, so its scheduled deliveries must run.
-            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Organizations.AsNoTracking()
                 .Where(o => !o.IsPending)
                 .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);

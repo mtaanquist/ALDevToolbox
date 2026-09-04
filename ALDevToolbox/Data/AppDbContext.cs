@@ -142,8 +142,9 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<SignupRequest> SignupRequests => Set<SignupRequest>();
     // Pre-account email verification (email-first signup). Org-less and
-    // user-less, so deliberately NOT scoped by the tenant query filter — read
-    // via IgnoreQueryFilters() like Invites / PasswordResetTokens.
+    // user-less, so deliberately NOT scoped by the tenant query filter — and
+    // with no filter on the table there is nothing for its reads to escape,
+    // so no IgnoreQueryFilters() belongs on its read path.
     public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
@@ -334,6 +335,15 @@ public class AppDbContext : DbContext
         // same rows for every tenant. There is no filter here to escape, so no
         // IgnoreQueryFilters() call belongs anywhere on their read path.
         // See .design/bcquality.md.
+        // NOTE (#701): the same "nothing to escape" rule covers every other
+        // entity this method never scopes — Organization, PendingSignup,
+        // LoginAttempt, SystemSettings, Backup, PerTenantBackup,
+        // OrganizationUsageSnapshot and OeFileContent. An IgnoreQueryFilters()
+        // on a query *rooted* at one of those is a no-op that still reads to a
+        // reviewer as a deliberate tenant-fence crossing, so it does not belong
+        // there. The exception is a query that reaches a filtered entity from
+        // such a root (an Include of a User, say) — that bypass is real.
+        // IgnoreQueryFiltersUnfilteredRootTests enforces the rule.
         ScopeToOrganization<TranslationMemoryEntry>(modelBuilder);
         ScopeToOrganization<TranslationMemoryVote>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);

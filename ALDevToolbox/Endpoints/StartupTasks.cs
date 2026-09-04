@@ -56,9 +56,9 @@ internal static class StartupTasks
         // defaults they deliberately removed. Genuinely new platform files are
         // propagated to existing orgs via a one-off migration backfill (see
         // BackfillAppJsonAsIncludedFile), not on every boot.
+        // organizations is the tenant table itself and carries no query filter,
+        // so this every-org read needs no bypass.
         var allOrgIds = await db.Organizations
-            // Fence category 3 (startup, no request org): the platform-file seed needs every org.
-            .IgnoreQueryFilters()
             .Select(o => o.Id)
             .ToListAsync(stopping);
         var orgIdsWithFiles = (await db.OrganizationFiles
@@ -236,15 +236,13 @@ internal static class StartupTasks
     /// </summary>
     internal static async Task<Organization> EnsureSystemOrganizationAsync(AppDbContext db, CancellationToken ct)
     {
-        // Fence category 3 (startup, no request org): pinned to o.IsSystem.
-        var systemOrg = await db.Organizations.IgnoreQueryFilters()
+        var systemOrg = await db.Organizations
             .FirstOrDefaultAsync(o => o.IsSystem, ct);
         if (systemOrg is not null) return systemOrg;
 
         // No system org yet. Adopt an existing "default"-slug org (created
         // without the flag by the test EnsureCreated path) or create one.
-        // Fence category 3 (startup, no request org): pinned to the reserved default slug.
-        systemOrg = await db.Organizations.IgnoreQueryFilters()
+        systemOrg = await db.Organizations
             .FirstOrDefaultAsync(o => o.Slug == "default", ct);
         if (systemOrg is null)
         {

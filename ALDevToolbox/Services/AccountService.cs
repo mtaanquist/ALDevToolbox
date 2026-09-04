@@ -184,10 +184,9 @@ public sealed class AccountService
         }
         else
         {
+            // Resolves which org a signup joins; no cookie exists yet. organizations
+            // is the tenant table and carries no query filter, so nothing is bypassed.
             var match = await _db.Organizations
-                // Fence category 1 (pre-auth routing): resolves which org a signup joins, pinned
-                // to the requested slug. No cookie exists yet.
-                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(o => o.Slug == slug, ct);
             if (match is null)
             {
@@ -480,9 +479,9 @@ public sealed class AccountService
         var safeSlug = Slugify(slug);
         var candidate = safeSlug;
         var disambiguator = 1;
-        // Fence category 1 (pre-auth routing): slug-uniqueness probe while creating the
-        // signup's new org; existence-only (AnyAsync), pinned to the candidate slug.
-        while (await _db.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Slug == candidate, ct))
+        // Slugs are unique deployment-wide, and organizations carries no tenant
+        // query filter, so this existence-only probe sees every org as it must.
+        while (await _db.Organizations.AnyAsync(o => o.Slug == candidate, ct))
         {
             disambiguator++;
             candidate = $"{safeSlug}-{disambiguator}";

@@ -162,14 +162,12 @@ public class OrganizationConfigService
         // warming the cache elsewhere first made the crash disappear 3/3 while
         // going straight to the page crashed 3/3.
         //
-        // A child scope gives this one read its own context. No new
-        // IgnoreQueryFilters() call site: the existing one moves with the query,
-        // and this read is by explicit org id rather than under tenant scope.
+        // A child scope gives this one read its own context. The read is by
+        // explicit org id rather than under tenant scope, and organizations is the
+        // tenant table itself, so no query filter is being crossed here.
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var name = await db.Organizations
-            // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == organizationId.
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.Id == organizationId)
             .Select(o => o.Name)

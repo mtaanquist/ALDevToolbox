@@ -85,9 +85,9 @@ public sealed class PendingSignupService
         // Opportunistic cleanup + supersede in one pass: drop every expired row
         // (bounds the table) and any still-in-flight attempt for this email so
         // the newest start is canonical and the partial unique index holds.
-        // Fence category 1 (pre-auth routing): pending_signups is org-less by design; this
-        // cleanup is pinned to expiry and to the email being signed up.
-        var stale = await _db.PendingSignups.IgnoreQueryFilters()
+        // pending_signups is org-less by design and carries no tenant query
+        // filter, so the reads in this service have nothing to bypass.
+        var stale = await _db.PendingSignups
             .Where(p => p.ExpiresAt <= now || (p.Email == normalised && p.CompletedAt == null))
             .ToListAsync(ct);
         if (stale.Count > 0) _db.PendingSignups.RemoveRange(stale);
@@ -131,8 +131,7 @@ public sealed class PendingSignupService
         if (string.IsNullOrWhiteSpace(rawToken)) return null;
         var hash = TokenIssuer.Sha256Hex(rawToken);
         var now = _clock.GetUtcNow().UtcDateTime;
-        // Fence category 1 (pre-auth routing): pinned to the verification link's token hash.
-        var row = await _db.PendingSignups.IgnoreQueryFilters()
+        var row = await _db.PendingSignups
             .FirstOrDefaultAsync(p => p.LinkTokenHash == hash, ct);
         if (row is null || row.CompletedAt is not null || row.ExpiresAt <= now) return null;
         if (row.VerifiedAt is null)
@@ -156,8 +155,7 @@ public sealed class PendingSignupService
         if (trimmed.Length != 6 || !trimmed.All(char.IsDigit)) return null;
         var normalised = AuthService.NormaliseEmail(email);
         var now = _clock.GetUtcNow().UtcDateTime;
-        // Fence category 1 (pre-auth routing): pinned to the email being verified.
-        var row = await _db.PendingSignups.IgnoreQueryFilters()
+        var row = await _db.PendingSignups
             .Where(p => p.Email == normalised && p.CompletedAt == null && p.ExpiresAt > now)
             .OrderByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync(ct);
@@ -195,8 +193,7 @@ public sealed class PendingSignupService
     {
         var normalised = AuthService.NormaliseEmail(email);
         var now = _clock.GetUtcNow().UtcDateTime;
-        // Fence category 1 (pre-auth routing): pinned to the email being completed.
-        return await _db.PendingSignups.IgnoreQueryFilters()
+        return await _db.PendingSignups
             .Where(p => p.Email == normalised
                         && p.VerifiedAt != null
                         && p.CompletedAt == null

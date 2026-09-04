@@ -112,6 +112,9 @@ public sealed class PerTenantBackupService
         _orgContext.RequireSiteAdmin();
         var q = _db.PerTenantBackups
             // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
+            // per_tenant_backups carries no query filter of its own — this bypass is for
+            // the CreatedByUser include, since User IS filtered and this list spans orgs.
+            // Do not drop it: without it the creator column blanks out for every other org.
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
@@ -149,8 +152,6 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
-            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -179,7 +180,7 @@ public sealed class PerTenantBackupService
         // user snapshot any org. (Verified: the only Scheduled call site is
         // BackupScheduler; every endpoint passes AdHoc.)
         if (kind == BackupKind.AdHoc) _orgContext.RequireSiteAdmin();
-        var org = await _db.Organizations.IgnoreQueryFilters().AsNoTracking()
+        var org = await _db.Organizations.AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == organizationId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -273,8 +274,6 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
-            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(b => b.Organization)
             .FirstOrDefaultAsync(b => b.Id == id, ct)
@@ -421,8 +420,6 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
-            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
-            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(b => b.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["BackupId"] = "Backup not found." });
         if (row.IsPinned == pinned) return;
@@ -435,8 +432,6 @@ public sealed class PerTenantBackupService
     {
         _orgContext.RequireSiteAdmin();
         var row = await _db.PerTenantBackups
-            // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
-            .IgnoreQueryFilters()
             .Include(b => b.Organization)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
         if (row is null) return;
@@ -462,9 +457,8 @@ public sealed class PerTenantBackupService
         if (retention < 1) retention = 1;
 
         var rows = await _db.PerTenantBackups
-            // Fence category 3 (scheduler/maintenance, no request org): retention pruning is
-            // driven by the backup scheduler; pinned to b.OrganizationId == organizationId.
-            .IgnoreQueryFilters()
+            // Retention pruning is driven by the backup scheduler; pinned to
+            // b.OrganizationId == organizationId.
             .Include(b => b.Organization)
             .Where(b => b.OrganizationId == organizationId && !b.IsPinned)
             .OrderByDescending(b => b.CreatedAt)

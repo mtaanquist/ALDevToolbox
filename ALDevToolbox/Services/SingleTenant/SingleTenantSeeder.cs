@@ -46,8 +46,7 @@ public static class SingleTenantSeeder
         ILogger logger,
         CancellationToken ct)
     {
-        // Fence category 3 (startup seed, no request org): pinned to o.IsSystem.
-        var org = await db.Organizations.IgnoreQueryFilters()
+        var org = await db.Organizations
             .FirstOrDefaultAsync(o => o.IsSystem, ct);
         if (org is null) return;
 

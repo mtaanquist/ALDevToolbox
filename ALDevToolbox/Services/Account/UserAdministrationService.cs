@@ -54,9 +54,9 @@ public sealed class UserAdministrationService
         // The org carrying the new user becomes non-pending the moment its
         // first signup is approved. Subsequent admin login triggers the
         // first-time seed (see Program.cs bootstrap path).
-        // Fence category 4 (explicitly scoped org-id lookup): pinned to req.OrganizationId,
-        // which LoadSignupRequestAsync already checked equals actingOrgId.
-        var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == req.OrganizationId, ct);
+        // Pinned to req.OrganizationId, which LoadSignupRequestAsync already
+        // checked equals actingOrgId.
+        var org = await _db.Organizations.FirstAsync(o => o.Id == req.OrganizationId, ct);
         org.IsPending = false;
         await _db.SaveChangesAsync(ct);
     }
