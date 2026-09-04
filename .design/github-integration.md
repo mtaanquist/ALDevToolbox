@@ -252,8 +252,8 @@ way back would be the same rule with worse manners.
 through `GitHubAccessService.FilterAccessibleAsync`, debounced client-side. Renders
 the three states every list in this app renders:
 
-- **Not connected** - "Your organisation has not connected a GitHub organisation yet."
-  plus a link to the Repositories tab for admins, and plain text for everyone else.
+- **Not connected** - "No GitHub organisation is connected yet." plus a link to the
+  Repositories tab for admins, and plain text for everyone else.
 - **Not linked** - "Link your GitHub account to see the repositories you can access,"
   with a link to Account.
 - **Connected, linked, no results** - "No repositories match" / "You do not have
@@ -271,6 +271,15 @@ offers a retry rather than failing the page around it.
 The list is fetched when the user first reaches for the control, not on page load.
 Narrowing through `FilterAccessibleAsync` costs one call to GitHub per repository,
 and most visits to a page carrying the picker never open it.
+
+The picker holds one repository at a time, which is what a form with a repository
+field wants. A page that adds several in a row - #624's solution repositories -
+turns on two optional modes rather than working around the single-selection
+shape: `IsAlreadyAdded` marks the repositories the caller already has and makes
+those rows unclickable, so a duplicate is impossible rather than refused after
+the click, and `ClearAfterSelect` hands the pick over and puts the search box
+straight back. Both default to today's behaviour; nothing else about the
+parameter surface changes once a second caller is compiling against it.
 
 ## Feature flows
 

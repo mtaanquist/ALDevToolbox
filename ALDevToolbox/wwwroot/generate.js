@@ -108,6 +108,17 @@
             if (!form) return;
             beginSubmission(form);
             form.submit();
+        },
+
+        // Sends the user to the field that has to be fixed. The generator pages
+        // put their delivery buttons in a sticky aside, far from the fields, so
+        // a refusal that only rendered next to the button would leave the user
+        // hunting for what to change.
+        focusField: function (id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.scrollIntoView({ block: "center", behavior: "smooth" });
+            el.focus({ preventScroll: true });
         }
     };
 

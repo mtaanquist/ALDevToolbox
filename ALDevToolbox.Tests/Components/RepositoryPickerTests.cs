@@ -91,6 +91,104 @@ public sealed class RepositoryPickerTests : IDisposable
     }
 
     [Fact]
+    public void A_site_admin_is_offered_the_page_that_sets_github_up()
+    {
+        _auth.SetRoles("SiteAdmin");
+        _db.AddGitHubServices(_ctx.Services);
+
+        var cut = _ctx.Render<RepositoryPicker>();
+
+        // The person who can fix this is the one reading it; telling them to ask
+        // whoever runs the server would be telling them to ask themselves.
+        cut.WaitForAssertion(() =>
+            cut.Find("a.empty-state__action").GetAttribute("href")
+                .Should().Be("/site-admin/settings/github"));
+    }
+
+    [Fact]
+    public void The_label_is_only_a_label_when_there_is_something_to_label()
+    {
+        _db.AddGitHubServices(_ctx.Services);
+
+        var cut = _ctx.Render<RepositoryPicker>();
+
+        // No input in this state, so a <label for> would point at nothing.
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("label").Should().BeEmpty();
+            cut.Markup.Should().Contain("Repository");
+        });
+    }
+
+    [Fact]
+    public async Task The_hosts_hint_is_held_back_until_it_is_true()
+    {
+        await ConfigureDeploymentAsync();
+        _db.AddGitHubServices(_ctx.Services);
+
+        var cut = _ctx.Render<RepositoryPicker>(ps => ps
+            .Add(p => p.Hint, "Picking one fills this form in."));
+
+        // Promising what picking a repository leads to, under a state that
+        // cannot offer one, is a promise the page cannot keep.
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Picking one fills this form in."));
+    }
+
+    [Fact]
+    public async Task A_ready_picker_does_show_the_hosts_hint()
+    {
+        var api = ListableApi("cronus-dk/solution-a");
+        await ReadyAsync(api);
+        _db.AddGitHubServices(_ctx.Services, api);
+
+        var cut = _ctx.Render<RepositoryPicker>(ps => ps
+            .Add(p => p.Hint, "Picking one fills this form in."));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("label").GetAttribute("for").Should().Be("repo-picker");
+            cut.Markup.Should().Contain("Picking one fills this form in.");
+        });
+    }
+
+    [Fact]
+    public async Task Having_access_to_nothing_is_a_dead_end_with_a_way_out()
+    {
+        var api = ListableApi();
+        await ReadyAsync(api);
+        _db.AddGitHubServices(_ctx.Services, api);
+
+        var cut = _ctx.Render<RepositoryPicker>();
+        await cut.WaitForElement("input").FocusAsync(new());
+
+        // A full stop, not a footnote: the same quiet empty state the guidance
+        // states use, and the retry this control already has.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".empty-state").TextContent.Should().Contain("cannot open any");
+            cut.FindAll("button").Select(b => b.TextContent.Trim()).Should().Contain("Try again");
+        });
+    }
+
+    [Fact]
+    public async Task The_chosen_repositorys_branch_is_named_rather_than_left_bare()
+    {
+        var api = ListableApi("cronus-dk/solution-a");
+        await ReadyAsync(api);
+        _db.AddGitHubServices(_ctx.Services, api);
+
+        var cut = _ctx.Render<RepositoryPicker>();
+        await cut.WaitForElement("input").FocusAsync(new());
+        cut.WaitForElement("button.repo-picker__result").Click();
+
+        // An unlabelled branch beside a repository reads as the branch about to
+        // be written to, which is the one thing it is not.
+        cut.WaitForAssertion(() =>
+            cut.Find(".repo-picker__branch").TextContent.Should().Contain("default branch"));
+    }
+
+    [Fact]
     public async Task An_admin_of_an_unconnected_organisation_is_offered_the_page_that_connects_one()
     {
         _auth.SetRoles("Admin");
@@ -101,7 +199,7 @@ public sealed class RepositoryPickerTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("has not connected a GitHub organisation yet");
+            cut.Markup.Should().Contain("No GitHub organisation is connected yet");
             cut.Find("a.empty-state__action").GetAttribute("href")
                 .Should().Be("/admin/administration/repositories");
         });
@@ -231,6 +329,61 @@ public sealed class RepositoryPickerTests : IDisposable
             cut.Markup.Should().Contain("cronus-dk/solution-a");
             cut.FindAll("input").Should().BeEmpty();
             cut.FindAll("button").Select(b => b.TextContent.Trim()).Should().Contain("Change");
+        });
+    }
+
+    [Fact]
+    public async Task A_repository_the_caller_already_has_cannot_be_picked_again()
+    {
+        var api = ListableApi("cronus-dk/solution-a", "cronus-dk/solution-b");
+        await ReadyAsync(api);
+        _db.AddGitHubServices(_ctx.Services, api);
+
+        var picked = 0;
+        var cut = _ctx.Render<RepositoryPicker>(ps => ps
+            .Add(p => p.IsAlreadyAdded,
+                (Func<GitHubRepositorySummary, bool>)(r => r.Name == "solution-a"))
+            .Add(p => p.SelectedChanged, (GitHubRepositorySummary? _) => picked++));
+
+        await cut.WaitForElement("input").FocusAsync(new());
+
+        // Refusing the second click after the fact reads as "you added two" to
+        // anyone who does not stop to read the note, so the click cannot happen.
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll("button.repo-picker__result");
+            rows.Should().HaveCount(2);
+            var alreadyAdded = rows.Single(r => r.TextContent.Contains("solution-a"));
+            alreadyAdded.HasAttribute("disabled").Should().BeTrue();
+            alreadyAdded.TextContent.Should().Contain("Added");
+            rows.Single(r => r.TextContent.Contains("solution-b"))
+                .HasAttribute("disabled").Should().BeFalse();
+        });
+        picked.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_caller_adding_several_in_a_row_gets_the_search_box_straight_back()
+    {
+        var api = ListableApi("cronus-dk/solution-a");
+        await ReadyAsync(api);
+        _db.AddGitHubServices(_ctx.Services, api);
+
+        var seen = new List<GitHubRepositorySummary?>();
+        var cut = _ctx.Render<RepositoryPicker>(ps => ps
+            .Add(p => p.ClearAfterSelect, true)
+            .Add(p => p.SelectedChanged, (GitHubRepositorySummary? r) => seen.Add(r)));
+
+        await cut.WaitForElement("input").FocusAsync(new());
+        cut.WaitForElement("button.repo-picker__result").Click();
+
+        // The caller is handed the pick and then given the control back, so a
+        // chosen row it has already moved past never flashes on screen.
+        seen.Select(r => r?.FullName).Should().Equal("cronus-dk/solution-a", null);
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".repo-picker__chosen").Should().BeEmpty();
+            cut.FindAll("input").Should().HaveCount(1);
         });
     }
 

@@ -76,11 +76,6 @@
     font-weight: var(--fw-medium);
 }
 
-.repo-picker__private {
-    display: inline-flex;
-    color: var(--ink-4);
-}
-
 .repo-picker__result-sub {
     font-size: var(--text-xs);
     color: var(--ink-3);
@@ -94,6 +89,7 @@
 .repo-picker__chosen {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
@@ -117,9 +113,28 @@
     white-space: nowrap;
 }
 
+/* Named rather than bare - see the markup's note - so this is a phrase with a
+   branch in it rather than a lone monospace chip. */
 .repo-picker__branch {
     flex: none;
-    font-family: var(--font-mono);
     font-size: var(--text-2xs);
     color: var(--ink-4);
+}
+
+.repo-picker__private {
+    display: inline-flex;
+    color: var(--ink-4);
+}
+
+/* A repository the caller already has. Quiet - it is a statement of fact on a
+   row that cannot be clicked, not an outcome the user just produced. */
+.repo-picker__added {
+    flex: none;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--surface);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-medium);
+    color: var(--ink-3);
 }

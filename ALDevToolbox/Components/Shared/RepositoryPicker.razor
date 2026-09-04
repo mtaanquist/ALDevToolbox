@@ -23,7 +23,18 @@
 *@
 
 <div class="repo-picker">
-    <label class="field__label" for="@InputId">@Label</label>
+    @* The label is only a label when there is something to label. In the five
+       states that render prose instead of a control, a <label for> would point
+       at an element that does not exist, so the same words render as a plain
+       heading. *@
+    @if (ShowsInput)
+    {
+        <label class="field__label" for="@InputId">@Label</label>
+    }
+    else
+    {
+        <span class="field__label">@Label</span>
+    }
 
     @if (_access is null)
     {
@@ -36,24 +47,45 @@
         <div class="repo-picker__chosen">
             <span class="repo-picker__mark"><Icon Name="folder-git-2" Width="15" Height="15" /></span>
             <a class="repo-picker__name" href="@Selected.HtmlUrl" target="_blank" rel="noopener">@Selected.FullName</a>
-            <span class="repo-picker__branch">@Selected.DefaultBranch</span>
+            @* Named, not bare: an unlabelled branch beside a repository reads as
+               "the branch this is about to write to", which is the one thing it
+               is not. *@
+            <span class="repo-picker__branch">default branch <code class="code">@Selected.DefaultBranch</code></span>
             <button type="button" class="btn btn--sm" disabled="@Disabled" @onclick="ClearAsync">Change</button>
         </div>
     }
     else if (_access.Readiness == GitHubRepositoryReadiness.NotConfigured)
     {
+        @* Nothing here may say what else the host page offers instead: this
+           control is shared, and what is true beside it on New Extension is
+           false beside it on a pipeline editor. A host that has a fallback
+           says so through Hint. *@
         <div class="empty-state empty-state--quiet">
             <span class="empty-state__title">GitHub is not set up on this server yet</span>
-            <span class="empty-state__text">
-                Ask whoever runs AL Dev Toolbox to set it up. Until then, use the
-                other options on this page instead.
-            </span>
+            <AuthorizeView Roles="SiteAdmin">
+                <Authorized>
+                    <span class="empty-state__text">
+                        Register the GitHub app for this server and repositories can be
+                        listed here.
+                    </span>
+                    <a class="btn empty-state__action" href="/site-admin/settings/github">
+                        <Icon Name="folder-git-2" Width="15" Height="15" />
+                        <span>Set up GitHub</span>
+                    </a>
+                </Authorized>
+                <NotAuthorized>
+                    <span class="empty-state__text">
+                        Until whoever runs AL Dev Toolbox sets it up, there are no
+                        repositories to list here.
+                    </span>
+                </NotAuthorized>
+            </AuthorizeView>
         </div>
     }
     else if (_access.Readiness == GitHubRepositoryReadiness.NotConnected)
     {
         <div class="empty-state empty-state--quiet">
-            <span class="empty-state__title">Your organisation has not connected a GitHub organisation yet</span>
+            <span class="empty-state__title">No GitHub organisation is connected yet</span>
             <AuthorizeView Roles="Admin">
                 <Authorized>
                     <span class="empty-state__text">
@@ -78,9 +110,13 @@
     {
         <div class="empty-state empty-state--quiet">
             <span class="empty-state__title">Connect your GitHub account to see your repositories</span>
+            @* This is the moment someone decides whether to let the toolbox near
+               a customer's code, so it says what the toolbox will and will not be
+               able to do - not how many clicks it takes. *@
             <span class="empty-state__text">
-                The toolbox shows you the repositories you can already open on GitHub, and
-                no others. It takes one trip to GitHub and back.
+                The toolbox will list the repositories you can already open on GitHub,
+                and no others. It never changes who can see what there, it never acts
+                as anyone else, and you can disconnect it whenever you like.
             </span>
             <a class="btn empty-state__action" href="/account?section=repos">
                 <Icon Name="link" Width="15" Height="15" />
@@ -94,7 +130,8 @@
             <span class="empty-state__title">Your GitHub account needs connecting again</span>
             <span class="empty-state__text">
                 The toolbox can no longer act as you on GitHub - most often because the
-                connection was removed there.
+                toolbox was removed from your authorised apps there, under your GitHub
+                Settings &#8594; Applications. Connecting again puts it back.
             </span>
             <a class="btn empty-state__action" href="/account?section=repos">
                 <Icon Name="refresh-cw" Width="15" Height="15" />
@@ -139,28 +176,53 @@
             var matches = Matches();
             if (_all.Count == 0)
             {
-                <p class="field__hint">
-                    You cannot open any of @OrgName's repositories on GitHub yet. Ask an owner
-                    there to give you access, then reload this page.
-                </p>
+                @* A dead end, not a footnote: the same quiet empty state the four
+                   guidance states use, with the retry this control already has. *@
+                <div class="empty-state empty-state--quiet">
+                    <span class="empty-state__title">You cannot open any of @OrgName's repositories yet</span>
+                    <span class="empty-state__text">
+                        The toolbox lists only what you can already open on GitHub. Ask an
+                        owner of @OrgName to give you access, then look again.
+                    </span>
+                    <button type="button" class="btn empty-state__action" @onclick="ReloadAsync">
+                        <Icon Name="refresh-cw" Width="15" Height="15" />
+                        <span>Try again</span>
+                    </button>
+                </div>
             }
             else if (matches.Count == 0)
             {
-                <p class="field__hint">None of @OrgName's repositories match "@_applied".</p>
+                <p class="field__hint">
+                    None of @OrgName's repositories match "@_applied".
+                    <button type="button" class="btn btn--sm" @onclick="ClearSearchAsync">Clear search</button>
+                </p>
             }
             else
             {
                 <ul class="repo-picker__results">
                     @foreach (var repo in matches)
                     {
+                        var added = IsAlreadyAdded?.Invoke(repo) == true;
                         <li>
+                            @* A repository the caller already has is shown and
+                               unclickable, not hidden: hiding it invites the
+                               user to go looking for one that is right there,
+                               and leaving it clickable lets them add it twice
+                               and be told afterwards. *@
                             <button type="button" class="repo-picker__result"
-                                    disabled="@Disabled" @onclick="() => SelectAsync(repo)">
+                                    disabled="@(Disabled || added)" @onclick="() => SelectAsync(repo)">
                                 <span class="repo-picker__result-name">
                                     <span>@repo.Name</span>
                                     @if (repo.IsPrivate)
                                     {
-                                        <span class="repo-picker__private" title="Private repository"><Icon Name="lock" Width="12" Height="12" /></span>
+                                        <span class="repo-picker__private">
+                                            <Icon Name="lock" Width="12" Height="12" />
+                                            <span class="u-sr">Private repository</span>
+                                        </span>
+                                    }
+                                    @if (added)
+                                    {
+                                        <span class="repo-picker__added">Added</span>
                                     }
                                 </span>
                                 @if (!string.IsNullOrWhiteSpace(repo.Description))
@@ -173,13 +235,27 @@
                 </ul>
                 @if (_hiddenCount > 0)
                 {
-                    <p class="field__hint">@_hiddenCount more. Keep typing to narrow the list.</p>
+                    @* What is on screen and what is not, rather than an
+                       instruction: the search box above already says how to
+                       narrow it. *@
+                    <p class="field__hint">Showing @matches.Count of @(matches.Count + _hiddenCount) repositories.</p>
                 }
             }
         }
     }
 
-    @if (!string.IsNullOrWhiteSpace(Hint))
+    @* The result count out loud. The list appears without the page moving and
+       without focus leaving the search box, so a screen reader user is
+       otherwise told nothing at all about what typing just did. *@
+    @if (ShowsInput && _announcement is { Length: > 0 })
+    {
+        <span class="u-sr" role="status" aria-live="polite">@_announcement</span>
+    }
+
+    @* The hint describes what picking a repository leads to, so it only belongs
+       where picking one is possible. Below a "GitHub is not set up" state it
+       would promise something the page cannot do. *@
+    @if (!string.IsNullOrWhiteSpace(Hint) && (ShowsInput || Selected is not null))
     {
         <span class="field__hint">@Hint</span>
     }
@@ -227,6 +303,23 @@
     /// <summary>The input's id, so the caller's label and hints can point at it.</summary>
     [Parameter] public string InputId { get; set; } = "repo-picker";
 
+    /// <summary>
+    /// Says which repositories the caller already has. Rows it matches are shown
+    /// but cannot be clicked, so adding the same one twice is impossible rather
+    /// than refused afterwards. Optional: without it every row is selectable,
+    /// which is what a single-selection caller wants.
+    /// </summary>
+    [Parameter] public Func<GitHubRepositorySummary, bool>? IsAlreadyAdded { get; set; }
+
+    /// <summary>
+    /// For callers that add several repositories one after another: the
+    /// selection is handed over and then cleared, so the control goes straight
+    /// back to being a search box instead of showing a chosen row the page has
+    /// already moved past. Off by default - a form with one repository field
+    /// wants the chosen row to stay.
+    /// </summary>
+    [Parameter] public bool ClearAfterSelect { get; set; }
+
     private GitHubRepositoryAccess? _access;
     private IReadOnlyList<GitHubRepositorySummary> _all = [];
     private bool _loading;
@@ -236,9 +329,16 @@
     private string _query = string.Empty;
     private string _applied = string.Empty;
     private int _hiddenCount;
+    private string _announcement = string.Empty;
     private CancellationTokenSource? _debounce;
 
     private string OrgName => string.IsNullOrWhiteSpace(_access?.OrgLogin) ? "your organisation" : _access!.OrgLogin!;
+
+    /// <summary>
+    /// Whether this render puts a search box on screen. Drives the label-versus-
+    /// heading choice and whether the caller's hint is true yet.
+    /// </summary>
+    private bool ShowsInput => _access is not null && _access.IsReady && Selected is null;
 
     private string SearchPlaceholder => Placeholder
         ?? (string.IsNullOrWhiteSpace(_access?.OrgLogin)
@@ -328,15 +428,41 @@
         }
         var all = rows.ToList();
         _hiddenCount = Math.Max(0, all.Count - MaxResults);
+        // Nothing to announce when there is nothing to search: that state says
+        // its own piece, at length, in the empty state below.
+        _announcement = _all.Count == 0 ? string.Empty : all.Count switch
+        {
+            0 => $"No repositories match \"{_applied}\".",
+            1 => "1 repository matches.",
+            _ => $"{all.Count} repositories match.",
+        };
         return all.Take(MaxResults).ToList();
     }
 
     private async Task SelectAsync(GitHubRepositorySummary repo)
     {
-        Selected = repo;
         _query = string.Empty;
         _applied = string.Empty;
+        _announcement = string.Empty;
+        Selected = repo;
         await SelectedChanged.InvokeAsync(repo);
+
+        // The caller has taken it; put the search box back for the next one.
+        // Done here rather than by the caller nulling the binding after the
+        // fact, which shows the chosen row for a render on the way past.
+        if (ClearAfterSelect)
+        {
+            Selected = null;
+            await SelectedChanged.InvokeAsync(null);
+        }
+    }
+
+    /// <summary>Empties the search box, from the state that says nothing matched.</summary>
+    private async Task ClearSearchAsync()
+    {
+        _query = string.Empty;
+        _applied = string.Empty;
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ClearAsync()
