@@ -437,7 +437,7 @@ public sealed class ObjectSearchService
                 if (lines[i].Contains(needle, StringComparison.OrdinalIgnoreCase))
                 {
                     var snippet = lines[i].Trim();
-                    if (snippet.Length > 200) snippet = snippet[..200] + "…";
+                    if (snippet.Length > 200) snippet = snippet[..200] + "...";
                     results.Add(new ReleaseContentMatch(
                         FileId: c.Id,
                         FilePath: c.Path,

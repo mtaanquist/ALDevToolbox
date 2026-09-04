@@ -816,7 +816,7 @@ public sealed class ReferenceQueryService
                 && lookup.TryGetValue((fid, ln), out var row))
             {
                 var raw = (row.Text ?? string.Empty).TrimEnd();
-                if (raw.Length > 200) raw = raw[..200] + "…";
+                if (raw.Length > 200) raw = raw[..200] + "...";
                 enriched.Add(m with { SourceFilePath = row.Path, Snippet = raw });
             }
             else

@@ -614,7 +614,7 @@ public sealed class SourceViewerService
             if (lines[i].Contains(word, StringComparison.Ordinal))
             {
                 var trimmed = lines[i].TrimEnd();
-                if (trimmed.Length > 200) trimmed = trimmed[..200] + "…";
+                if (trimmed.Length > 200) trimmed = trimmed[..200] + "...";
                 occurrences.Add(new FileWordOccurrence(i + 1, trimmed));
             }
         }

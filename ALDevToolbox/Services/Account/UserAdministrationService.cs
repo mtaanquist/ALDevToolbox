@@ -119,7 +119,7 @@ public sealed class UserAdministrationService
         var trimmed = newDisplayName?.Trim() ?? string.Empty;
         if (trimmed.Length is < 2 or > 80)
         {
-            throw new PlanValidationException(new Dictionary<string, string> { ["DisplayName"] = "Full name must be 2–80 characters." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["DisplayName"] = "Full name must be 2-80 characters." });
         }
         user.DisplayName = trimmed;
         await _db.SaveChangesAsync(ct);
