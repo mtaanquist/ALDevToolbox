@@ -51,10 +51,9 @@ public sealed class TemplateImportService
     /// </summary>
     public async Task<List<SystemTemplateSummary>> ListSystemTemplatesAsync(CancellationToken ct = default)
     {
+        // Finds the singleton system org to fork from; pinned to o.IsSystem and
+        // projects only its id.
         var systemOrgId = await _db.Organizations
-            // Fence category 5 (system-org fork read): finds the singleton system org to fork
-            // from; pinned to o.IsSystem and projects only its id.
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.IsSystem)
             .Select(o => (int?)o.Id)
@@ -127,9 +126,8 @@ public sealed class TemplateImportService
 
         await _quotaGuard.EnsureCanWriteAsync(ct);
 
+        // The singleton system org to fork from; pinned to o.IsSystem, id only.
         var systemOrgId = await _db.Organizations
-            // Fence category 5 (system-org fork read): pinned to o.IsSystem, id only.
-            .IgnoreQueryFilters()
             .Where(o => o.IsSystem)
             .Select(o => (int?)o.Id)
             .FirstOrDefaultAsync(ct);

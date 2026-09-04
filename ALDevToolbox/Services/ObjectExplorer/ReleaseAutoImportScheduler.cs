@@ -96,9 +96,9 @@ public sealed class ReleaseAutoImportScheduler : PolledScheduler
     internal static async Task<List<(int OrganizationId, string Countries, bool IsSystem)>> ResolveTargetsAsync(
         AppDbContext db, bool includeSystemOrg, CancellationToken ct)
     {
-        // Fence category 3 (scheduler, no request org): enumerates the orgs to sweep; each
-        // org's import then runs pinned inside its own AmbientOrganizationScope.
-        var activeOrgs = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+        // Enumerates the orgs to sweep; each org's import then runs pinned inside
+        // its own AmbientOrganizationScope.
+        var activeOrgs = await db.Organizations.AsNoTracking()
             .Where(o => (includeSystemOrg || !o.IsSystem) && !o.IsPending)
             .Select(o => new { o.Id, o.IsSystem })
             .ToListAsync(ct).ConfigureAwait(false);

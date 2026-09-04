@@ -243,8 +243,7 @@ public sealed class SiteAdminService
     public Task<List<Organization>> ListOrganizationsAsync(CancellationToken ct = default)
     {
         RequireSiteAdmin();
-        // Fence category 2 (SiteAdmin cross-org console): RequireSiteAdmin() above.
-        return _db.Organizations.IgnoreQueryFilters()
+        return _db.Organizations
             .AsNoTracking()
             .OrderBy(o => o.Name)
             .ToListAsync(ct);

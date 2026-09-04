@@ -93,7 +93,10 @@
     <div class="pw__body">
         @* No change rail: the two panes are the whole comparison, so there is
            no list of other files to walk. *@
-        <div class="cmp cmp--norail">
+        @* The server's per-side cap, published so source-viewer.js can say
+           "too large" without first uploading the text that is too large. The
+           number comes from the endpoint itself so the two can't drift. *@
+        <div class="cmp cmp--norail" data-compare-max-length="@ALDevToolbox.Endpoints.CompareEndpoints.MaxInputLength">
             <div class="cmp__view">
                 <div class="cmp__vbar">
                     @* The live read-out. Sits where the file diff puts its

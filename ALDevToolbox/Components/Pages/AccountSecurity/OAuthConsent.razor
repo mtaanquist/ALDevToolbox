@@ -146,9 +146,6 @@ else
         var orgId = Org.CurrentOrganizationId ?? 0;
         var userId = Org.CurrentUserId ?? 0;
         _orgName = await Db.Organizations
-            // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == orgId from
-            // the signed-in user's context.
-            .IgnoreQueryFilters()
             .Where(o => o.Id == orgId)
             .Select(o => o.Name)
             .FirstOrDefaultAsync() ?? "your organisation";
@@ -157,10 +154,9 @@ else
 
         if (userId > 0 && orgId > 0 && !string.IsNullOrEmpty(clientId))
         {
+            // The page is [Authorize], so orgId is the signed-in org and the
+            // predicate below already repeats the tenant filter's own clause.
             var existing = await Db.OAuthConsents
-                // Fence category 4 (explicitly scoped user-id lookup): pinned to the signed-in
-                // user's own id and org.
-                .IgnoreQueryFilters()
                 .Where(c => c.UserId == userId && c.OrganizationId == orgId && c.ClientId == clientId && c.RevokedAt == null)
                 .Select(c => c.ScopesGranted)
                 .FirstOrDefaultAsync();

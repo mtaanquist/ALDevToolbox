@@ -1,6 +1,7 @@
 @page "/object-explorer/module/{ModuleId:long}"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
@@ -220,7 +221,10 @@
 
     private async Task ReloadAsync()
     {
-        await _reloadGate.WaitAsync();
+        // Navigating away mid-query disposes the gate underneath an in-flight
+        // reload, so both halves tolerate finding it gone.
+        try { await _reloadGate.WaitAsync(); }
+        catch (ObjectDisposedException) { return; }
         try
         {
             _objects = await ObjectExplorer.ListObjectsAsync(
@@ -231,6 +235,19 @@
                 skip: 0,
                 take: PageSize);
         }
-        finally { _reloadGate.Release(); }
+        finally
+        {
+            try { _reloadGate.Release(); }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    public void Dispose()
+    {
+        // The last debounce token source holds a live Task.Delay registration,
+        // so without this it outlives every visit to the page.
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        _reloadGate.Dispose();
     }
 }

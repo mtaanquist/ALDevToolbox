@@ -36,10 +36,13 @@ public static class OperationsRegistration
             .AddCheck<BackgroundWorkerHealthCheck>("background-workers", tags: new[] { "workers" })
             .AddCheck<StartupReadinessHealthCheck>("startup", tags: new[] { "readyz" });
 
-        // Rate limiter for the anonymous, unbounded-write surfaces. /oauth/register
-        // (RFC 7591 Dynamic Client Registration) is AllowAnonymous and creates an
+        // Rate limiter for the anonymous surfaces. /oauth/register (RFC 7591
+        // Dynamic Client Registration) is AllowAnonymous and creates an
         // oauth_applications row per POST, so a trivial script could grow the table
         // without limit. A per-IP fixed window caps the drip. See issue #378.
+        // POST /api/compare/diff is anonymous for a different reason — the Diff
+        // tool is deliberately account-free — and costs CPU rather than rows, so
+        // it gets its own policy below. See issue #673.
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -50,6 +53,30 @@ public static class OperationsRegistration
                     {
                         PermitLimit = 10,
                         Window = TimeSpan.FromMinutes(10),
+                        QueueLimit = 0,
+                    }));
+
+            // The Diff tool re-diffs on a 300 ms debounce as the reader types
+            // (source-viewer.js), so the request rate a *person* can produce is
+            // bounded by that debounce at a little over three per second, and
+            // only if they type one character per pause for minutes on end. A
+            // token bucket is the right shape for that traffic: it lets a burst
+            // through (a paste, a Swap, a Clear and an Ignore-whitespace toggle
+            // all fire immediately, undebounced) and then meters the steady
+            // state. 40 tokens per 10 seconds is four per second sustained —
+            // above the debounce's own ceiling, so interactive editing never
+            // trips it — with a 60-token burst on top. Rejections are 429 and
+            // the client says so; nothing is queued, because a diff that
+            // arrives late has already been superseded by the next keystroke.
+            options.AddPolicy(CompareEndpoints.DiffRateLimitPolicy, httpContext =>
+                RateLimitPartition.GetTokenBucketLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new TokenBucketRateLimiterOptions
+                    {
+                        TokenLimit = 60,
+                        TokensPerPeriod = 40,
+                        ReplenishmentPeriod = TimeSpan.FromSeconds(10),
+                        AutoReplenishment = true,
                         QueueLimit = 0,
                     }));
         });

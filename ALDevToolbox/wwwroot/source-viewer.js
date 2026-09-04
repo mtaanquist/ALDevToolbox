@@ -728,6 +728,28 @@ function wireCompareRailFilter() {
     });
 }
 
+// What the read-out says when the server refuses a re-diff. Every branch ends
+// on the same instruction, because the retry is the same in all of them: the
+// next edit to either pane schedules another comparison.
+function compareRequestError(status) {
+    if (status === 429) {
+        return "Too many comparisons at once. Wait a few seconds, then edit either side to retry.";
+    }
+    if (status === 413) {
+        return "The texts are too large to compare. Trim them, then edit either side to retry.";
+    }
+    return "Could not compare. Edit either side to retry.";
+}
+
+// The same sentence the server answers an over-cap paste with, so the two
+// routes to it read alike. Said here first where we can: the text is already
+// in the browser, and shipping four megabytes across the wire to be told it is
+// four megabytes is a slow way to hear it.
+function compareTooLargeMessage(longest, max) {
+    return `One of the texts is too large (${longest.toLocaleString()} characters). `
+        + `Trim it under ${max.toLocaleString()} and try again.`;
+}
+
 // ── Editable Diff tool: live re-diff across two editable panes ──
 //
 // Both panes are editable CodeMirror editors (mountCompareEditor). On any
@@ -748,6 +770,11 @@ function wireEditableCompare(left, right) {
     // counts mean something different with it on, and a setting silently
     // carried over from last week is a bad thing to read numbers through.
     const ignoreWsBox = document.querySelector("[data-compare-ignore-ws]");
+    // The endpoint's per-side cap, rendered into the page by Diff.razor from
+    // the constant the endpoint itself checks against (#673). Zero when the
+    // attribute is missing, which just means the check falls to the server.
+    const maxInputLength = Number(
+        document.querySelector("[data-compare-max-length]")?.dataset.compareMaxLength ?? 0) || 0;
 
     const HINT = "Nothing to compare yet.";
     // What the read-out says while only one pane has text (#615). Names the
@@ -865,6 +892,17 @@ function wireEditableCompare(left, right) {
             setNavEnabled(false);
             return;
         }
+        // Past the cap there is no diff to be had, and the request would come
+        // back with this same sentence after uploading both texts to earn it.
+        if (maxInputLength > 0
+            && (leftText.length > maxInputLength || rightText.length > maxInputLength)) {
+            seq++;
+            clearDiff();
+            setSummary(compareTooLargeMessage(
+                Math.max(leftText.length, rightText.length), maxInputLength), true);
+            setNavEnabled(false);
+            return;
+        }
         const mine = ++seq;
         setSummary("Comparing...", false);
         let data;
@@ -878,6 +916,17 @@ function wireEditableCompare(left, right) {
                     ignoreWhitespace: ignoreWsBox ? ignoreWsBox.checked : true,
                 }),
             });
+            // A refused request carries no diff and usually no body either: an
+            // oversized paste is dropped before the handler runs, and so is a
+            // throttled one. Reading it as JSON would throw and land in the
+            // catch below, which would blame the connection for something the
+            // reader can actually act on. Say what happened instead; the panes
+            // keep the diff they already have and the next edit retries.
+            if (!res.ok) {
+                if (mine !== seq) return;
+                setSummary(compareRequestError(res.status), true);
+                return;
+            }
             data = await res.json();
         } catch {
             setSummary("Could not compare. Check your connection, then edit either side to retry.", true);

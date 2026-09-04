@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
@@ -5,6 +6,9 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// <inheritdoc cref="IBcAdminClient"/>
 public sealed class BcAdminClient : IBcAdminClient
 {
+    /// <summary>Stands in for the environment name in logs for the tenant-wide calls.</summary>
+    private const string TenantScope = "the tenant";
+
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<BcAdminClient> _logger;
 
@@ -19,36 +23,12 @@ public sealed class BcAdminClient : IBcAdminClient
         using var request = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminEnvironmentsUrl);
         request.UseBearer(accessToken);
 
-        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
-        HttpResponseMessage response;
-        try
-        {
-            response = await client.SendAsync(request, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
-        }
-
-        using (response)
-        {
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                // Read the error envelope, don't just log the status. Microsoft returns a
-                // stable `code` and a diagnostic `message` here, and without them a 401 is
-                // indistinguishable from a 403 in the logs — which is how "the app isn't on
-                // the authorized-apps list" got misread as "GDAP is missing" for a customer
-                // who had no GDAP relationship in the first place.
-                var detail = ExtractError(body);
-                _logger.LogWarning("BC admin environments call returned {Status}. {Detail}",
-                    response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
-                throw new BcApiException(response.StatusCode,
-                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
-            }
-
-            return ParseEnvironments(body);
-        }
+        // A 404 on the tenant-wide list is not "this tenant has no environments" — that
+        // answer comes back as an empty envelope. It means the route or the token's tenant
+        // is wrong, and reporting it as an empty fleet would hide a broken connection.
+        var body = await SendAsync(request, "reading the environments", TenantScope, NotFoundPolicy.Error, ct)
+            .ConfigureAwait(false);
+        return ParseEnvironments(body!);
     }
 
     public async Task<BcEnvironment?> GetEnvironmentAsync(
@@ -58,35 +38,11 @@ public sealed class BcAdminClient : IBcAdminClient
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.UseBearer(accessToken);
 
-        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
-        HttpResponseMessage response;
-        try
-        {
-            response = await client.SendAsync(request, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
-        }
-
-        using (response)
-        {
-            // A hard-deleted environment is a 404, which is an answer, not a fault:
-            // the caller turns "no longer there" into its own message.
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
-
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                var detail = ExtractError(body);
-                _logger.LogWarning("BC admin environment call for {Environment} returned {Status}. {Detail}",
-                    environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
-                throw new BcApiException(response.StatusCode,
-                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
-            }
-
-            return ParseEnvironment(body);
-        }
+        // A hard-deleted environment is a 404, which is an answer, not a fault:
+        // the caller turns "no longer there" into its own message.
+        var body = await SendAsync(request, "reading the environment", environmentName, NotFoundPolicy.Absent, ct)
+            .ConfigureAwait(false);
+        return body is null ? null : ParseEnvironment(body);
     }
 
     public async Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
@@ -96,40 +52,20 @@ public sealed class BcAdminClient : IBcAdminClient
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.UseBearer(accessToken);
 
-        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
-        HttpResponseMessage response;
-        try
-        {
-            response = await client.SendAsync(request, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
-        }
-
-        using (response)
-        {
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return Array.Empty<BcEnvironmentUpdate>();
-
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                var detail = ExtractError(body);
-                _logger.LogWarning("BC environment updates call for {Environment} returned {Status}. {Detail}",
-                    environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
-                throw new BcApiException(response.StatusCode,
-                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
-            }
-
-            return ParseEnvironmentUpdates(body);
-        }
+        // Same reading of a 404 as GetEnvironmentAsync: the environment is gone, so it has
+        // no updates on offer. Both readers — the nightly mirror and the environment panel —
+        // want that as "nothing scheduled" rather than as an error they can't act on.
+        var body = await SendAsync(
+                request, "reading the Business Central updates", environmentName, NotFoundPolicy.Absent, ct)
+            .ConfigureAwait(false);
+        return body is null ? Array.Empty<BcEnvironmentUpdate>() : ParseEnvironmentUpdates(body);
     }
 
     public async Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminTimezonesUrl);
         request.UseBearer(accessToken);
-        var body = await SendSettingsAsync(request, "reading the time zones", "the tenant", ct).ConfigureAwait(false);
+        var body = await SendSettingsAsync(request, "reading the time zones", TenantScope, ct).ConfigureAwait(false);
         return ParseTimezones(body);
     }
 
@@ -240,7 +176,40 @@ public sealed class BcAdminClient : IBcAdminClient
     /// error <em>code</em>. Returns the body so a reader can parse it.
     /// </summary>
     private async Task<string> SendSettingsAsync(
-        HttpRequestMessage request, string action, string environmentName, CancellationToken ct)
+        HttpRequestMessage request, string action, string environmentName, CancellationToken ct) =>
+        // Never null: a 404 is a refusal here, so the send has already thrown.
+        (await SendAsync(request, action, environmentName, NotFoundPolicy.Error, ct,
+            (status, body) => DescribeSettingsFailure(status, body, action)).ConfigureAwait(false))!;
+
+    /// <summary>What a <c>404</c> means for one Admin Center call.</summary>
+    private enum NotFoundPolicy
+    {
+        /// <summary>A 404 is a fault like any other status and becomes a <see cref="BcApiException"/>.</summary>
+        Error,
+
+        /// <summary>
+        /// A 404 means Business Central no longer has the thing being asked about, which is an
+        /// answer rather than a fault: the send returns null and the caller turns that into its
+        /// own empty result.
+        /// </summary>
+        Absent,
+    }
+
+    /// <summary>
+    /// Sends one Admin Center request and maps transport faults and non-success statuses to
+    /// <see cref="BcApiException"/> with a short, secret-free detail.
+    /// <paramref name="action"/> is a gerund for the message ("reading the environments").
+    /// <paramref name="environmentName"/> names the environment in the log, or
+    /// <see cref="TenantScope"/> for a call that isn't about one environment.
+    /// <paramref name="describeFailure"/> replaces the generic refusal wording for the calls
+    /// whose error codes are worth translating into something a consultant can act on.
+    /// </summary>
+    /// <returns>
+    /// The response body, or <c>null</c> for a 404 the caller asked to read as absent.
+    /// </returns>
+    private async Task<string?> SendAsync(
+        HttpRequestMessage request, string action, string environmentName, NotFoundPolicy notFound,
+        CancellationToken ct, Func<HttpStatusCode, string, string>? describeFailure = null)
     {
         var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
         HttpResponseMessage response;
@@ -255,12 +224,22 @@ public sealed class BcAdminClient : IBcAdminClient
 
         using (response)
         {
+            if (notFound == NotFoundPolicy.Absent && response.StatusCode == HttpStatusCode.NotFound) return null;
+
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (response.IsSuccessStatusCode) return body;
 
-            _logger.LogWarning("BC settings call ({Action}) for {Environment} returned {Status}.",
-                action, environmentName, response.StatusCode);
-            throw new BcApiException(response.StatusCode, DescribeSettingsFailure(response.StatusCode, body, action));
+            // Read the error envelope, don't just log the status. Microsoft returns a
+            // stable `code` and a diagnostic `message` here, and without them a 401 is
+            // indistinguishable from a 403 in the logs — which is how "the app isn't on
+            // the authorized-apps list" got misread as "GDAP is missing" for a customer
+            // who had no GDAP relationship in the first place.
+            var detail = ExtractError(body);
+            _logger.LogWarning("BC admin call ({Action}) for {Environment} returned {Status}. {Detail}",
+                action, environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
+            throw new BcApiException(response.StatusCode, describeFailure is null
+                ? $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd()
+                : describeFailure(response.StatusCode, body));
         }
     }
 
@@ -268,7 +247,7 @@ public sealed class BcAdminClient : IBcAdminClient
     /// Turns a refused settings write into something a consultant can act on, keyed on the
     /// error code rather than Microsoft's prose.
     /// </summary>
-    internal static string DescribeSettingsFailure(System.Net.HttpStatusCode status, string body, string action)
+    internal static string DescribeSettingsFailure(HttpStatusCode status, string body, string action)
     {
         var code = ErrorCode(body);
         var detail = ExtractError(body);
@@ -326,35 +305,11 @@ public sealed class BcAdminClient : IBcAdminClient
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.UseBearer(accessToken);
 
-        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
-        HttpResponseMessage response;
-        try
-        {
-            response = await client.SendAsync(request, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
-        }
-
-        using (response)
-        {
-            // An environment that has since been removed is an answer, not a fault - the
-            // same treatment GetEnvironmentAsync gives a 404.
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
-
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                var detail = ExtractError(body);
-                _logger.LogWarning("BC update-settings read for {Environment} returned {Status}. {Detail}",
-                    environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
-                throw new BcApiException(response.StatusCode,
-                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
-            }
-
-            return ParseUpdateSettings(body);
-        }
+        // An environment that has since been removed is an answer, not a fault - the
+        // same treatment GetEnvironmentAsync gives a 404.
+        var body = await SendAsync(request, "reading the update window", environmentName, NotFoundPolicy.Absent, ct)
+            .ConfigureAwait(false);
+        return body is null ? null : ParseUpdateSettings(body);
     }
 
     public async Task SetUpdateSettingsAsync(
@@ -369,7 +324,7 @@ public sealed class BcAdminClient : IBcAdminClient
 
         // The wall-time + timezone parameter set, never the UTC one: the UTC set resets
         // the time zone the admin center displays to the country default.
-        var payload = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["preferredStartTime"] = start.ToString("HH\\:mm"),
             ["preferredEndTime"] = end.ToString("HH\\:mm"),
@@ -383,32 +338,15 @@ public sealed class BcAdminClient : IBcAdminClient
         };
         request.UseBearer(accessToken);
 
-        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
-        HttpResponseMessage response;
-        try
-        {
-            response = await client.SendAsync(request, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
-        }
+        // A 404 on a write is a refusal, not an absence: the environment has to exist for
+        // the window to be worth setting, and DescribeUpdateSettingsFailure turns the
+        // environmentNotFound code into "refresh the environments and try again".
+        await SendAsync(request, "setting the update window", environmentName, NotFoundPolicy.Error, ct,
+            DescribeUpdateSettingsFailure).ConfigureAwait(false);
 
-        using (response)
-        {
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode)
-            {
-                _logger.LogInformation(
-                    "Set the Business Central update window for {Environment} to {Start}-{End} ({TimeZone}).",
-                    environmentName, start, end, windowsTimeZoneId);
-                return;
-            }
-
-            _logger.LogWarning("BC update-settings write for {Environment} returned {Status}.",
-                environmentName, response.StatusCode);
-            throw new BcApiException(response.StatusCode, DescribeUpdateSettingsFailure(response.StatusCode, body));
-        }
+        _logger.LogInformation(
+            "Set the Business Central update window for {Environment} to {Start}-{End} ({TimeZone}).",
+            environmentName, start, end, windowsTimeZoneId);
     }
 
     /// <summary>
@@ -416,7 +354,7 @@ public sealed class BcAdminClient : IBcAdminClient
     /// on the error <em>code</em>, because the accompanying message is Microsoft's prose
     /// and not guaranteed stable.
     /// </summary>
-    internal static string DescribeUpdateSettingsFailure(System.Net.HttpStatusCode status, string body)
+    internal static string DescribeUpdateSettingsFailure(HttpStatusCode status, string body)
     {
         var code = ErrorCode(body);
         var detail = ExtractError(body);

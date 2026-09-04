@@ -485,7 +485,6 @@ public sealed class OffsiteBackupService
         // into a brand-new org would tangle FK references the manifest
         // doesn't know about. Look it up before downloading so we fail fast.
         var org = await _db.Organizations
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(o => o.Slug == slug, ct)
             ?? throw new InvalidOperationException(

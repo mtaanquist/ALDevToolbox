@@ -11,8 +11,8 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// live round trips. Mirrors <see cref="DeliveryScheduler"/>: poll on a short interval,
 /// enumerate active orgs, and do the per-org work inside that org's
 /// <see cref="AmbientOrganizationScope"/> so the EF query filter behaves exactly as in a
-/// request. The <em>only</em> cross-org read is the active-org enumeration (the same
-/// blessed <c>IgnoreQueryFilters()</c> the existing schedulers use); the project query
+/// request. The <em>only</em> cross-org read is the active-org enumeration, which needs
+/// no bypass because the organisations table carries no tenant filter; the project query
 /// stays org-scoped.
 ///
 /// <para>
@@ -86,7 +86,7 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
             // The one sanctioned cross-org read: which orgs to sweep. Only pending
             // signups are skipped — like DeliveryScheduler, the system org is swept too,
             // since in single-tenant deployments it is the working org.
-            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Organizations.AsNoTracking()
                 .Where(o => !o.IsPending)
                 .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);

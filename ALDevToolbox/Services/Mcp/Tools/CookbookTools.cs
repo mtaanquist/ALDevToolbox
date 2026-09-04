@@ -75,12 +75,12 @@ public sealed class CookbookTools
         new Dictionary<string, string>
         {
             ["Snippet"] =
-                "1–2 files, flat (no folders). A single self-contained AL artefact you can describe in one sentence: " +
+                "1-2 files, flat (no folders). A single self-contained AL artefact you can describe in one sentence: " +
                 "an OnAfterValidate subscriber for X, a tableextension adding field Y, a helper codeunit that does Z. " +
                 "No setup tables, no permission sets, no folder structure. " +
                 "Not a Snippet if: more than one AL object type is involved, or files need to live in different folders.",
             ["Pattern"] =
-                "3–8 files, often one or two folders. A coordinated set of files solving one bounded problem. " +
+                "3-8 files, often one or two folders. A coordinated set of files solving one bounded problem. " +
                 "Typical shapes: an event subscriber + the table/page it modifies; a setup table + setup page + install " +
                 "codeunit so a feature has somewhere to keep its configuration; a factbox + its subscriber + the " +
                 "pageextensions that surface it. May use RelativePath to group related objects (Setup/, Events/). " +
@@ -185,7 +185,7 @@ public sealed class CookbookTools
         "The submission is NOT immediately visible from search_recipes — an admin must approve it first. " +
         "Use this when you have a useful AL pattern (e.g. extracted and generalised from a customer codebase, " +
         "with customer-specific names stripped) that the team's Cookbook is missing. " +
-        "Provide a descriptive Title, a 1–3 sentence Description of when to use it, comma-separated Keywords, " +
+        "Provide a descriptive Title, a 1-3 sentence Description of when to use it, comma-separated Keywords, " +
         "a Type (Snippet / Pattern / Module — see get_cookbook_guidance for definitions), and one or more files. " +
         "Optionally propose EstimatedValueHours — roughly how many hours of implementer work the recipe saves. " +
         "Each file has a flat FileName (no slashes), an optional RelativePath for the folder it lives in (no '..', " +

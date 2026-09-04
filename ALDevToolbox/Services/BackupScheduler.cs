@@ -139,7 +139,6 @@ public sealed class BackupScheduler : PolledScheduler
         // still exists if a per-tenant write fails midway. Each org is
         // independent — a failure on one org logs and continues.
         var orgs = await db.Organizations
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => !o.IsSystem && !o.IsPending)
             .Select(o => o.Id)
@@ -150,9 +149,7 @@ public sealed class BackupScheduler : PolledScheduler
             try
             {
                 var lastPerTenant = await db.PerTenantBackups
-                    // Fence category 3 (scheduler, no request org): pinned to b.OrganizationId == orgId
-                    // from the sweep's own org enumeration.
-                    .IgnoreQueryFilters()
+                    // Pinned to b.OrganizationId == orgId from the sweep's own org enumeration.
                     .AsNoTracking()
                     .Where(b => b.OrganizationId == orgId && b.Kind == BackupKind.Scheduled)
                     .OrderByDescending(b => b.CreatedAt)
