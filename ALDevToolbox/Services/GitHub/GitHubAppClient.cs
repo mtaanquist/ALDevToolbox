@@ -40,6 +40,26 @@ public sealed record GitHubUserTokens(
 public sealed record GitHubUserIdentity(long Id, string Login);
 
 /// <summary>
+/// One entry in a repository's file listing: its full path from the root, its
+/// kind (<c>blob</c> for a file, <c>tree</c> for a folder) and the sha of what
+/// it points at.
+/// </summary>
+public sealed record GitHubTreeEntry(string Path, string Type, string Sha);
+
+/// <summary>
+/// A repository's files at one commit. <see cref="Truncated"/> is GitHub
+/// saying the repository was too large to list in one answer, so a caller that
+/// found nothing should say "not found here" rather than "not there".
+/// </summary>
+public sealed record GitHubTree(IReadOnlyList<GitHubTreeEntry> Entries, bool Truncated);
+
+/// <summary>
+/// What one file write produced: the sha of the new version of the file - the
+/// base the <em>next</em> write has to quote - and the commit it landed in.
+/// </summary>
+public sealed record GitHubFileWrite(string ContentSha, string CommitSha);
+
+/// <summary>
 /// The toolbox's client for the GitHub REST API, acting as the GitHub App.
 ///
 /// <para>Hand-rolled on <see cref="HttpClient"/> rather than Octokit: the
@@ -614,6 +634,144 @@ public sealed class GitHubAppClient
             "Opened pull request #{PullRequestNumber} on {Owner}/{Repo} from {Head} into {Base}.",
             number, owner, repo, head, baseBranch);
         return new GitHubPullRequest(number, htmlUrl!, head);
+    }
+
+    /// <summary>
+    /// The open pull request whose head is <paramref name="headBranch"/>, or
+    /// <see langword="null"/> when there is not one.
+    ///
+    /// <para>This is what lets a second save add a commit to a pull request
+    /// that is already under review instead of opening another one beside it
+    /// (issue #625). GitHub matches the head as <c>owner:branch</c>.</para>
+    /// </summary>
+    public async Task<GitHubPullRequest?> FindOpenPullRequestAsync(
+        string credential, string owner, string repo, string headBranch, CancellationToken ct = default)
+    {
+        var head = Uri.EscapeDataString($"{owner}:{headBranch}");
+        using var request = NewRequest(
+            HttpMethod.Get, $"{RepoPath(owner, repo)}/pulls?state=open&head={head}", credential);
+        using var document = await SendOrNotFoundAsync(request, ct);
+        if (document is null || document.RootElement.ValueKind != JsonValueKind.Array) return null;
+
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var number = item.TryGetProperty("number", out var n) && n.TryGetInt32(out var value) ? value : 0;
+            var htmlUrl = item.TryGetProperty("html_url", out var u) ? u.GetString() : null;
+            if (number > 0 && !string.IsNullOrEmpty(htmlUrl))
+            {
+                return new GitHubPullRequest(number, htmlUrl!, headBranch);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Every file in a commit, a branch or a tag, in one call.
+    ///
+    /// <para>One recursive read rather than a Contents listing per folder: the
+    /// Translator has to find <c>Translations</c> folders whose place it cannot
+    /// predict - an AL workspace keeps one inside every extension folder - and
+    /// walking for them would cost a call per folder. Empty when there is no
+    /// such tree, which is also the answer for a repository with no commits.</para>
+    /// </summary>
+    public async Task<GitHubTree> ListTreeAsync(
+        string credential, string owner, string repo, string treeIsh, CancellationToken ct = default)
+    {
+        using var request = NewRequest(
+            HttpMethod.Get, $"{RepoPath(owner, repo)}/git/trees/{EscapePath(treeIsh)}?recursive=1", credential);
+        using var document = await SendOrNotFoundAsync(request, ct);
+        if (document is null) return new GitHubTree([], false);
+
+        var root = document.RootElement;
+        var entries = new List<GitHubTreeEntry>();
+        if (root.TryGetProperty("tree", out var tree) && tree.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in tree.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var path = item.TryGetProperty("path", out var p) ? p.GetString() : null;
+                var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
+                if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(type)) continue;
+                entries.Add(new GitHubTreeEntry(
+                    path!, type!,
+                    item.TryGetProperty("sha", out var s) ? s.GetString() ?? string.Empty : string.Empty));
+            }
+        }
+
+        // GitHub caps a recursive listing and says so rather than failing. What
+        // to tell the user is the caller's decision; here it is only reported.
+        var truncated = root.TryGetProperty("truncated", out var flag) && flag.ValueKind == JsonValueKind.True;
+        if (truncated)
+        {
+            _logger.LogWarning(
+                "GitHub truncated the file list for {Owner}/{Repo} at {Ref}; {EntryCount} entries came back.",
+                owner, repo, treeIsh, entries.Count);
+        }
+        return new GitHubTree(entries, truncated);
+    }
+
+    /// <summary>
+    /// Writes one file onto <paramref name="branch"/> as a single commit.
+    ///
+    /// <para><paramref name="baseSha"/> is the blob sha of the version being
+    /// replaced, and it is the whole point of this method: GitHub refuses the
+    /// write when the file has moved on since, which is the only thing standing
+    /// between a translator and quietly committing over a colleague's work.
+    /// Pass <see langword="null"/> only to create a file that is not there yet.
+    /// A refusal comes back as <see cref="GitHubContentConflictException"/>.</para>
+    /// </summary>
+    /// <exception cref="GitHubContentConflictException">The file changed in the repository since it was read.</exception>
+    /// <exception cref="GitHubApiException">GitHub refused the write for any other reason.</exception>
+    public async Task<GitHubFileWrite> PutFileAsync(
+        string credential, string owner, string repo, string path, string branch,
+        string commitMessage, byte[] content, string? baseSha, CancellationToken ct = default)
+    {
+        var encoded = Convert.ToBase64String(content);
+        object body = baseSha is null
+            ? new { message = commitMessage, content = encoded, branch }
+            : new { message = commitMessage, content = encoded, branch, sha = baseSha };
+
+        using var request = NewJsonRequest(
+            HttpMethod.Put, $"{RepoPath(owner, repo)}/contents/{EscapePath(path)}", credential, body);
+        using var response = await _http.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var (message, url) = ReadError(responseBody);
+            // 409 is GitHub's documented answer for "the sha you quoted is not
+            // this file's current one". The same complaint also arrives as a
+            // 422 on some repositories, so both are read as the conflict they
+            // are rather than as a request that went wrong.
+            if (response.StatusCode == HttpStatusCode.Conflict
+                || (response.StatusCode == HttpStatusCode.UnprocessableEntity
+                    && message.Contains("does not match", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogInformation(
+                    "GitHub refused to write {Path} on {Owner}/{Repo}: it has changed since it was read.",
+                    path, owner, repo);
+                throw new GitHubContentConflictException(path, message);
+            }
+
+            _logger.LogWarning(
+                "GitHub refused to write {Path} on {Owner}/{Repo} with {Status}: {Message}",
+                path, owner, repo, (int)response.StatusCode, message);
+            throw new GitHubApiException(response.StatusCode, message, url);
+        }
+
+        using var document = ParseOrThrow(responseBody, request.RequestUri?.ToString());
+        var root = document.RootElement;
+        var contentSha = ReadSha(root, "content");
+        var commitSha = ReadSha(root, "commit");
+        if (string.IsNullOrEmpty(contentSha) || string.IsNullOrEmpty(commitSha))
+        {
+            throw new GitHubApiException(HttpStatusCode.BadGateway, "GitHub did not say what it committed.");
+        }
+
+        _logger.LogInformation(
+            "Committed {Path} to {Owner}/{Repo} on {Branch} as {CommitSha}.",
+            path, owner, repo, branch, commitSha);
+        return new GitHubFileWrite(contentSha!, commitSha!);
     }
 
     /// <summary>Reads GitHub's repository object into the one shape the toolbox carries.</summary>

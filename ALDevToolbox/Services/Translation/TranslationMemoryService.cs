@@ -41,6 +41,63 @@ public sealed class TranslationMemoryService
         ?? throw new InvalidOperationException("No user in scope; TranslationMemoryService vote called outside an authenticated request.");
 
     /// <summary>
+    /// Learns from a finished XLIFF: every translated unit in it becomes a
+    /// memory pair, so the next file that says the same thing gets it offered.
+    ///
+    /// <para>Best effort by design, and both callers rely on that - the
+    /// Translator's export (<c>TranslatorEndpoints</c>) and its save back to a
+    /// repository (<see cref="ALDevToolbox.Services.GitHub.GitHubTranslationService"/>)
+    /// have already given the user what they asked for by the time this runs,
+    /// so a file this cannot parse, or one with no source language to pair
+    /// against, is nothing to learn from rather than something to fail
+    /// over.</para>
+    /// </summary>
+    /// <param name="xml">The finished file.</param>
+    /// <param name="origin">
+    /// What to credit the pairs to. Null falls back to the file's own
+    /// <c>&lt;file original&gt;</c> name, then to "Translator".
+    /// </param>
+    /// <returns>How many pairs were new.</returns>
+    public async Task<int> LearnFromXliffAsync(string xml, string? origin = null, CancellationToken ct = default)
+    {
+        XliffDocument parsed;
+        try
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+            parsed = AlXliffParser.Parse(stream);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+        {
+            _logger.LogDebug(ex, "Nothing to learn from: the file did not parse as XLIFF.");
+            return 0;
+        }
+
+        if (string.IsNullOrEmpty(parsed.SourceLanguage)) return 0;
+        var label = origin
+            ?? (string.IsNullOrEmpty(parsed.OriginalName) ? "Translator" : parsed.OriginalName);
+        return await UpsertAsync(PairsFrom(parsed, label), ct);
+    }
+
+    /// <summary>
+    /// Projects a parsed XLIFF's translated units into memory-upsert rows.
+    /// Callers pass the <paramref name="origin"/> label - the
+    /// <c>&lt;file original&gt;</c> name on export, the uploaded file name on
+    /// import - so a pair's source is visible on the memory page. The caller
+    /// must have confirmed <see cref="XliffDocument.SourceLanguage"/> is
+    /// non-null.
+    /// </summary>
+    public static IEnumerable<TranslationMemoryUpsert> PairsFrom(XliffDocument parsed, string origin) =>
+        parsed.Units
+            .Where(u => !string.IsNullOrEmpty(u.TargetText))
+            .Select(u => new TranslationMemoryUpsert(
+                parsed.SourceLanguage!,
+                parsed.TargetLanguage,
+                u.SourceText,
+                u.TargetText,
+                AlXliffParser.BucketKind(u.Hint),
+                origin));
+
+    /// <summary>
     /// Inserts new <c>(source, target)</c> pairs and bumps
     /// <see cref="TranslationMemoryEntry.HitCount"/> / <c>LastSeenAt</c> on
     /// pairs already known. Empty source or target entries are skipped, as are

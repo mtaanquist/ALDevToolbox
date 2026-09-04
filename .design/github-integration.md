@@ -395,6 +395,44 @@ later decision.
   five. A 409 is the conflict signal and surfaces as "this file changed in the
   repository since you opened it" with a re-open - never a silent overwrite.
 
+Five details settled while building it.
+
+The file list comes from **one recursive Git Data tree read**, not a Contents
+listing per folder: "one level under `Translations/`" is the rule, but the depth
+of that folder is not fixed - an AL workspace keeps one inside every extension -
+so walking for them would cost a call per folder and still miss the ones nobody
+guessed. The rule is "a `.xlf` whose parent folder is called `Translations`", at
+any depth, and the list groups by the folder above it, because two extensions in
+one repository can both have a `da-DK` file.
+
+The remembered SHA **follows each save**: it starts as the load-time blob SHA and
+becomes the SHA the write returns. It is the version the editor's content is
+based on, not the version first read - otherwise the second save of an afternoon
+would collide with the first one's own commit.
+
+The conflict is caught **before the write as well as by it**. The file on the
+target branch is read first, and a SHA that is not the one this session started
+from stops there; GitHub's 409 is the backstop for losing that race. Both end in
+the same message, so the user never meets two versions of one problem. (A 422
+whose message says the SHA does not match is read as the same answer.)
+
+A translation started from the `.g.xlf` **saves beside it**, to
+`<name>.<language>.xlf`, and never back over the generated file - that one
+belongs to the compiler. Its remembered SHA is null, meaning "creating this", and
+the path is re-derived if the target language changes. Finding a file already at
+that path is *not* a conflict but a translation somebody has been working on, so
+it gets its own refusal: open that file instead.
+
+A save feeds the **translation memory** exactly as an export does
+(`TranslationMemoryService.LearnFromXliffAsync`, which both paths now share).
+Taking delivery through GitHub rather than through a download should not cost the
+organisation what it just learned.
+
+The one thing the page shows that the service does not decide: the toolbar's
+primary button becomes **Save to repository** when the open file came from one,
+with the download beside it. There is still one primary button, and it is the
+one that matches how the file arrived.
+
 ## MCP parity
 
 - `generate_workspace` gains the create-repository option (#622). It returns the
