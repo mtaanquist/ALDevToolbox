@@ -1,6 +1,6 @@
 @page "/piper"
 @rendermode InteractiveServer
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 
 <PageTitle>Piper · AL Dev Toolbox</PageTitle>
@@ -482,19 +482,18 @@
         _selectedColumn = null;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _copyTimer?.Cancel();
         _copyTimer?.Dispose();
-        // Fire-and-forget JS detach + module dispose. Both calls go via the
-        // circuit and can fault if it's already torn down; swallow.
+        // Await the JS teardown before releasing the callback reference: a
+        // fire-and-forget detach can still be running when _selfRef goes, and
+        // the module would then call back into a disposed reference. Both calls
+        // go via the circuit and can fault if it's already torn down; swallow.
         if (_module is not null)
         {
-            _ = Task.Run(async () =>
-            {
-                try { await _module.InvokeVoidAsync("detach"); } catch { }
-                try { await _module.DisposeAsync(); } catch { }
-            });
+            try { await _module.InvokeVoidAsync("detach"); } catch { }
+            try { await _module.DisposeAsync(); } catch { }
         }
         _selfRef?.Dispose();
     }
