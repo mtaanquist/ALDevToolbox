@@ -13,6 +13,8 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// and round-trips through Data Protection, and the hybrid SMTP resolver
 /// prefers DB values over env vars.
 /// </summary>
+// Mutates a process-wide environment variable; see the collection's doc comment.
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class SystemSettingsServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
