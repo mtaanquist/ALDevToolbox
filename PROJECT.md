@@ -179,7 +179,12 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 
 **Cutting a release:**
 
-1. Make sure `main` is green (the commit you're tagging passed `build.yml`).
+1. Make sure `main` is green (the commit you're tagging passed `build.yml`). This is a hard
+   requirement, not a courtesy: the tag push deliberately does **not** start its own
+   `build.yml` run (#729 — it would duplicate the one the branch push already did, and
+   double the wall-clock of every release). `release.yml`'s gate looks up the run by commit
+   SHA, so a tag on a commit that never reached a branch has no run to find and the release
+   is refused within a few minutes, naming that as the reason.
 2. Pick the version per the scheme above. Tag and push:
    ```bash
    git tag vX.Y.Z
