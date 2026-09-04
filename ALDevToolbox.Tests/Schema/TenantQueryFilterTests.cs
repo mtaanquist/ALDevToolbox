@@ -20,7 +20,7 @@ public sealed class TenantQueryFilterTests
     private static readonly Dictionary<string, string> Unfiltered = new()
     {
         ["organization_usage_snapshots"] = "Written and read off-request by the usage scheduler and the SiteAdmin storage page via raw SQL, both cross-org by design.",
-        ["per_tenant_backups"] = "SiteAdmin-only surface; every read already calls IgnoreQueryFilters() to list snapshots across orgs.",
+        ["per_tenant_backups"] = "SiteAdmin-only surface, read across orgs; every method gates on RequireSiteAdmin() first.",
     };
 
     [Fact]

@@ -147,7 +147,7 @@ public sealed class ObjectExplorerTools
         var rows = await _search.SearchContentInReleaseAsync(releaseId, query, moduleId, MaxResults, 3, ct);
         // Snippet is whatever the line carries; cap to keep responses bounded.
         return rows.Select(r => r.Snippet.Length > 500
-            ? r with { Snippet = r.Snippet[..500] + "…" }
+            ? r with { Snippet = r.Snippet[..500] + "..." }
             : r).Take(MaxResults).ToList();
     }
 

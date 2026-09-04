@@ -157,8 +157,8 @@ rows by polling the table every 30 seconds, so a slot booked for tonight survive
 afternoon's deploy, which an in-memory channel would not. Only "update now" offers a slot;
 push-to-latest is housekeeping ahead of a release and is always immediate, though it records
 its rows the same way so one feed reads uniformly. The worker's per-org enumeration is the
-one cross-org read, the same blessed `IgnoreQueryFilters()` the existing schedulers use;
-per-org work stays inside the filter.
+one cross-org read, and it needs no bypass — the organisations table carries no tenant
+filter; per-org work stays inside the filter.
 
 **The race rule.** Cancel works until the worker sends. The worker claims a row by stamping
 `sent_at` while it is still `Pending`; a cancel is an `UPDATE ... WHERE status = 'Pending'

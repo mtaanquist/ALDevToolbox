@@ -45,7 +45,7 @@ public static class MustacheVariableCatalog
         new("platform_version", "Platform version from the template defaults.", AvailableInAdminContent: true),
         new("application_version", "Application version resolved for the current extension (after \"Latest\" substitution).", AvailableInAdminContent: true),
         new("runtime", "AL runtime version resolved for the current extension.", AvailableInAdminContent: true),
-        new("dependencies_array", "Raw JSON array of resolved dependency objects, e.g. [{\"id\":\"…\",\"name\":\"…\"}]. Embed verbatim where a JSON array is expected.", AvailableInAdminContent: true),
+        new("dependencies_array", "Raw JSON array of resolved dependency objects, e.g. [{\"id\":\"...\",\"name\":\"...\"}]. Embed verbatim where a JSON array is expected.", AvailableInAdminContent: true),
         new("id_ranges_array", "Raw JSON array of resolved id range objects, e.g. [{\"from\":50000,\"to\":50099}].", AvailableInAdminContent: true),
         new("name", "Resolved name of the current extension (per-file context only — prefer {{extension_name}} in admin-edited files).", AvailableInAdminContent: false),
         new("module_name", "Module name when generating from a catalogue module clone.", AvailableInAdminContent: false),

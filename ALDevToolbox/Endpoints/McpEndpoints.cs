@@ -113,9 +113,6 @@ internal static class McpEndpoints
                 }
                 var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
                 var enabled = await db.Organizations
-                    // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == orgId.Value
-                    // from the authenticated principal; projects only the McpEnabled flag.
-                    .IgnoreQueryFilters()
                     .Where(o => o.Id == orgId.Value)
                     .Select(o => (bool?)o.McpEnabled)
                     .FirstOrDefaultAsync(ctx.HttpContext.RequestAborted);

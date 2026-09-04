@@ -94,8 +94,8 @@ public sealed class UpgradeActionWorker : BackgroundService
     /// <summary>
     /// Runs <paramref name="perOrg"/> once per active organisation, inside that org's
     /// <see cref="AmbientOrganizationScope"/> so the EF query filter behaves exactly as
-    /// it would in a request. The active-org enumeration is the one cross-org read — the
-    /// same blessed <c>IgnoreQueryFilters()</c> the existing schedulers use.
+    /// it would in a request. The active-org enumeration is the one cross-org read; the
+    /// organisations table carries no tenant filter, so it needs no bypass.
     /// </summary>
     private async Task ForEachOrgAsync(Func<int, bool, CancellationToken, Task> perOrg, CancellationToken ct)
     {
@@ -105,9 +105,9 @@ public sealed class UpgradeActionWorker : BackgroundService
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            // Fence category 3 (scheduler, no request org): the org enumeration; per-org work
-            // then runs inside that org's AmbientOrganizationScope.
-            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            // The org enumeration; per-org work then runs inside that org's
+            // AmbientOrganizationScope.
+            var rows = await db.Organizations.AsNoTracking()
                 .Where(o => !o.IsPending)
                 .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);

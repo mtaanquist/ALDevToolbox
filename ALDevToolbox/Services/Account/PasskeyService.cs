@@ -310,7 +310,7 @@ public sealed class PasskeyService
         var trimmed = (newName ?? string.Empty).Trim();
         if (trimmed.Length is 0 or > 80)
         {
-            throw new PlanValidationException(new Dictionary<string, string> { ["Name"] = "Name must be 1–80 characters." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["Name"] = "Name must be 1-80 characters." });
         }
         // Fence category 4 (explicitly scoped user-id lookup): pinned to p.UserId == userId.
         var row = await _db.UserPasskeys.IgnoreQueryFilters()

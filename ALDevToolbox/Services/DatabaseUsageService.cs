@@ -65,9 +65,9 @@ public sealed class DatabaseUsageService
         DateTime? ComputedAt = null);
 
     /// <summary>
-    /// Cross-organisation usage listing. SiteAdmin-only — bypasses the EF
-    /// query filter by reading the orgs table with
-    /// <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{TEntity}"/>.
+    /// Cross-organisation usage listing. SiteAdmin-only. The orgs table carries
+    /// no tenant query filter, so the enumeration spans every organisation
+    /// without a bypass; the caller is gated by the SiteAdmin role.
     /// </summary>
     public async Task<IReadOnlyList<OrgUsageRow>> ListAsync(CancellationToken ct)
     {
@@ -75,9 +75,9 @@ public sealed class DatabaseUsageService
         var multiplier = settings.IndexSizeMultiplier;
         var systemDefault = settings.DefaultStorageQuotaMb;
 
-        // Fence category 2 (SiteAdmin cross-org console): only caller is /site-admin/backup-storage/storage,
-        // which is gated by [Authorize(Roles = SiteAdminRole)].
-        var orgs = await _db.Organizations.IgnoreQueryFilters()
+        // SiteAdmin-only surface: the only caller is /site-admin/backup-storage/storage,
+        // gated by [Authorize(Roles = SiteAdminRole)].
+        var orgs = await _db.Organizations
             .OrderBy(o => o.IsSystem ? 0 : 1).ThenBy(o => o.Name)
             .Select(o => new { o.Id, o.Name, o.Slug, o.IsSystem, o.StorageQuotaMb })
             .ToListAsync(ct);
@@ -126,9 +126,8 @@ public sealed class DatabaseUsageService
         if (orgId is null) return null;
 
         var settings = await _systemSettings.GetViewAsync(ct);
-        // Fence category 4 (explicitly scoped org-id lookup): pinned to o.Id == orgId.Value
-        // taken from the authenticated principal's IOrganizationContext.
-        var org = await _db.Organizations.IgnoreQueryFilters()
+        // Pinned to o.Id == orgId.Value, taken from the authenticated principal.
+        var org = await _db.Organizations
             .Where(o => o.Id == orgId.Value)
             .Select(o => new { o.Id, o.Name, o.Slug, o.IsSystem, o.StorageQuotaMb })
             .FirstOrDefaultAsync(ct);
@@ -322,9 +321,9 @@ public sealed class DatabaseUsageService
         {
             throw new ArgumentOutOfRangeException(nameof(quotaMb), "Quota must be non-negative.");
         }
-        // Fence category 2 (SiteAdmin cross-org console): quota override, reached only from
-        // /site-admin/backup-storage/storage; pinned to o.Id == organizationId.
-        var org = await _db.Organizations.IgnoreQueryFilters()
+        // Quota override, reached only from /site-admin/backup-storage/storage;
+        // pinned to o.Id == organizationId.
+        var org = await _db.Organizations
             .FirstOrDefaultAsync(o => o.Id == organizationId, ct)
             ?? throw new InvalidOperationException($"Organization {organizationId} not found.");
         org.StorageQuotaMb = quotaMb;

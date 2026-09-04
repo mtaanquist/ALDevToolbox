@@ -54,9 +54,9 @@ public sealed class UserAdministrationService
         // The org carrying the new user becomes non-pending the moment its
         // first signup is approved. Subsequent admin login triggers the
         // first-time seed (see Program.cs bootstrap path).
-        // Fence category 4 (explicitly scoped org-id lookup): pinned to req.OrganizationId,
-        // which LoadSignupRequestAsync already checked equals actingOrgId.
-        var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == req.OrganizationId, ct);
+        // Pinned to req.OrganizationId, which LoadSignupRequestAsync already
+        // checked equals actingOrgId.
+        var org = await _db.Organizations.FirstAsync(o => o.Id == req.OrganizationId, ct);
         org.IsPending = false;
         await _db.SaveChangesAsync(ct);
     }
@@ -119,7 +119,7 @@ public sealed class UserAdministrationService
         var trimmed = newDisplayName?.Trim() ?? string.Empty;
         if (trimmed.Length is < 2 or > 80)
         {
-            throw new PlanValidationException(new Dictionary<string, string> { ["DisplayName"] = "Full name must be 2–80 characters." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["DisplayName"] = "Full name must be 2-80 characters." });
         }
         user.DisplayName = trimmed;
         await _db.SaveChangesAsync(ct);

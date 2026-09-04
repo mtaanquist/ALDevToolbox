@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
@@ -128,11 +129,24 @@ public sealed class CompareEndpointTests : IDisposable
         summary.GetProperty("modified").GetInt32().Should().Be(0);
     }
 
+    /// <summary>
+    /// The per-side cap is this endpoint's own (#673), not Piper's 50 MB one:
+    /// the route is anonymous and does a full diff plus six serialisations and
+    /// a unified rebuild per request, so it is bounded by what a person pastes
+    /// rather than by what DiffPlex survives. Pinned here so nobody quietly points it back at
+    /// <see cref="PiperTransform.MaxInputLength"/>.
+    /// </summary>
+    [Fact]
+    public void The_per_side_cap_is_far_below_Pipers()
+    {
+        CompareEndpoints.MaxInputLength.Should().BeLessThan(PiperTransform.MaxInputLength / 10);
+    }
+
     [Fact]
     public async Task Oversize_input_returns_a_friendly_error()
     {
         using var client = _factory.CreateClient();
-        var huge = new string('a', PiperTransform.MaxInputLength + 1);
+        var huge = new string('a', CompareEndpoints.MaxInputLength + 1);
         using var response = await client.PostAsJsonAsync("/api/compare/diff",
             new { left = huge, right = "b" });
 
@@ -140,5 +154,32 @@ public sealed class CompareEndpointTests : IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
         error.GetString().Should().Contain("too large");
+        // The number the reader is asked to get under is the endpoint's, and
+        // the message has to name it or "trim it" is not actionable.
+        error.GetString().Should().Contain(CompareEndpoints.MaxInputLength.ToString("N0"));
+    }
+
+    /// <summary>
+    /// The route is anonymous by design, so the per-IP token bucket is the only
+    /// thing keeping a script from spending the whole container's CPU on
+    /// diffs (#673). A burst well past the bucket must start getting 429s —
+    /// and the burst size here is far more than the Diff tool's 300 ms debounce
+    /// can produce, so an actual reader never sees one.
+    /// </summary>
+    [Fact]
+    public async Task A_sustained_burst_is_throttled_with_429()
+    {
+        using var client = _factory.CreateClient();
+        var sawTooManyRequests = false;
+
+        for (var i = 0; i < 120 && !sawTooManyRequests; i++)
+        {
+            using var response = await client.PostAsJsonAsync("/api/compare/diff",
+                new { left = "a", right = "b" });
+            sawTooManyRequests = response.StatusCode == HttpStatusCode.TooManyRequests;
+        }
+
+        sawTooManyRequests.Should().BeTrue(
+            because: "the anonymous diff route is rate limited per caller");
     }
 }

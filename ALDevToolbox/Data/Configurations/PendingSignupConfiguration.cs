@@ -33,7 +33,7 @@ internal sealed class PendingSignupConfiguration : IEntityTypeConfiguration<Pend
             .IsUnique()
             .HasFilter("verified_at IS NULL AND completed_at IS NULL")
             .HasDatabaseName("ux_pending_signups_email_active");
-        // No organization_id, no query filter: a pre-auth, org-less row read via
-        // IgnoreQueryFilters() like invites / password_reset_tokens.
+        // No organization_id, no query filter: a pre-auth, org-less row. With no
+        // filter to escape, its reads carry no IgnoreQueryFilters() bypass.
     }
 }

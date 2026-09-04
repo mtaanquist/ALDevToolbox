@@ -9,10 +9,11 @@ namespace ALDevToolbox.Domain.Entities;
 ///
 /// <para>
 /// The row is org-less and user-less by design (it exists before any account
-/// does), so it sits outside the multi-tenant query filter and is always read
-/// via <c>IgnoreQueryFilters()</c> — the same trust posture as
-/// <see cref="Invite"/>, <see cref="PasswordResetToken"/> and
-/// <see cref="LoginAttempt"/>.
+/// does), so it sits outside the multi-tenant query filter — the same pre-auth
+/// trust posture as <see cref="LoginAttempt"/>. With no filter on the table,
+/// its reads need no <c>IgnoreQueryFilters()</c> bypass and must not carry one
+/// (<see cref="Invite"/> and <see cref="PasswordResetToken"/> differ: those
+/// <em>are</em> filtered, so their pre-auth reads do bypass).
 /// </para>
 ///
 /// <para>
