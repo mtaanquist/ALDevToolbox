@@ -360,10 +360,25 @@ user's own token, whether they can open it.
 
 ### #624 Pipelines → assisted repository entry
 
-The repository field on the solution pipeline editor gains the picker. Selecting a
-repository fills the clone URL and display name and suggests GitHub's default branch.
-Free text remains available and unchanged for Azure DevOps and for GitHub
-repositories outside the connected org.
+A solution's repositories are entered on its **Repositories** tab, and that is where
+the picker goes - a pipeline compiles extensions found in them, it does not name a
+repository of its own. Picking one appends a row filled in from GitHub: the clone URL
+and the repository name. Free text remains available and unchanged for Azure DevOps
+and for GitHub repositories outside the connected org, so the tab keeps its
+"Add a repository URL" row alongside the picker.
+
+The picker only appears when it can offer something: the organisation allows GitHub
+repositories, it has connected a GitHub organisation, and the person looking has
+linked their own account. Every other case renders the tab exactly as it was before -
+an organisation on Azure DevOps is shown no GitHub machinery at all, rather than an
+explanation of a feature it cannot use. `GetAccessAsync` answers all of that from the
+database, so an unreachable GitHub never holds the page up.
+
+**The suggested branch is named, not stored.** A solution repository has no branch
+column, and the build clones the remote's default branch - so the branch GitHub
+reports is what a build will use, and the tab says so when a repository is picked
+rather than offering a field with one legal value. Choosing a branch per repository
+is a schema change and a change to the clone, and belongs with whatever asks for it.
 
 The clone itself keeps using the user's PAT (`UserRepositoryTokenService`). Moving
 solution builds onto the linked token changes who a build fails for and is a separate,
