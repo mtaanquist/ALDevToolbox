@@ -268,6 +268,15 @@ GitHub - so the picker renders its guidance while GitHub is down. A sixth state
 belongs to GitHub itself being unreachable when the list is fetched: that one
 offers a retry rather than failing the page around it.
 
+Both of the picker's own reads - readiness, and the list - run in a service scope
+the component makes for itself rather than the page's. A child component is
+mounted during its host's first render, which Blazor performs while that host's
+own `OnInitializedAsync` is still awaiting the database, so sharing the page's
+`AppDbContext` meant two operations on one context and a dead page ("a second
+operation was started on this context instance") - a crash the host had no part
+in beyond placing the control. Hosts must not have to gate the picker behind
+their own load; `SiteBanner` reached for the same answer for the same reason.
+
 The list is fetched when the user first reaches for the control, not on page load.
 Narrowing through `FilterAccessibleAsync` costs one call to GitHub per repository,
 and most visits to a page carrying the picker never open it.

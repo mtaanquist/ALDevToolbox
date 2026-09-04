@@ -1,6 +1,7 @@
 @using ALDevToolbox.Services.GitHub
+@using Microsoft.Extensions.DependencyInjection
 @implements IDisposable
-@inject GitHubRepositoryService Repositories
+@inject IServiceScopeFactory Scopes
 @inject ILogger<RepositoryPicker> Logger
 
 @*
@@ -12,6 +13,16 @@
     user's own token narrows it to what they can open. Both are
     GitHubRepositoryService's business - see its note - so a second caller
     cannot widen the list by accident.
+
+    Both reads run in this component's own service scope, not the page's. A
+    component is mounted during its host page's first render, which Blazor does
+    while that page's own OnInitializedAsync is still awaiting the database - so
+    sharing the page's AppDbContext meant two operations on one context and a
+    dead page ("a second operation was started on this context instance"), a
+    crash the host had no part in beyond placing this control. A private scope
+    makes mounting it safe whatever the host is doing, and is the same answer
+    SiteBanner reached for the same reason. Each read costs one extra context;
+    the readiness read happens once per mount and the list once per visit.
 
     Everything before "Ready" is answered from the database, so this renders its
     guidance even when GitHub is unreachable. The repository list itself is
@@ -347,7 +358,18 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _access = await Repositories.GetAccessAsync();
+        _access = await ReadAsync(r => r.GetAccessAsync());
+    }
+
+    /// <summary>
+    /// Runs one read through this component's own scope - see the note at the
+    /// top of the file. Nothing here writes, so a scope per read is the whole
+    /// of the isolation needed.
+    /// </summary>
+    private async Task<T> ReadAsync<T>(Func<GitHubRepositoryService, Task<T>> read)
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+        return await read(scope.ServiceProvider.GetRequiredService<GitHubRepositoryService>());
     }
 
     public void Dispose()
@@ -374,7 +396,7 @@
         StateHasChanged();
         try
         {
-            _all = await Repositories.ListAccessibleAsync();
+            _all = await ReadAsync(r => r.ListAccessibleAsync());
             _loaded = true;
         }
         catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)

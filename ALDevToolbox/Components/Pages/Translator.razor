@@ -127,23 +127,8 @@
                 </div>
             </div>
 
-            @* Held back until this page's own initialiser has finished. Blazor
-               renders once before an async OnInitializedAsync completes, and the
-               picker reads the database the moment it is mounted - on that first
-               render that read would start while this page's own is still in
-               flight, which is two operations on one scoped DbContext. *@
-            @if (_initialised)
-            {
-                <RepositoryPicker Selected="_repo" SelectedChanged="OnRepositoryChangedAsync"
-                                  Label="Repository" InputId="tr-repo" Disabled="@_busy" />
-            }
-            else
-            {
-                <div>
-                    <span class="field__label">Repository</span>
-                    <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-                </div>
-            }
+            <RepositoryPicker Selected="_repo" SelectedChanged="OnRepositoryChangedAsync"
+                              Label="Repository" InputId="tr-repo" Disabled="@_busy" />
 
             @if (_repo is not null)
             {
@@ -902,10 +887,6 @@ else
     // target language, and re-derived from this whenever that language changes.
     private string? _repoGeneratedPath;
 
-    // True once OnInitializedAsync has finished. Gates the repository picker;
-    // see the note beside it in the markup.
-    private bool _initialised;
-
     private GitHubPullRequest? _pullRequest;
     private bool _repoSaving;
     private bool _repoSaveExplained;
@@ -936,8 +917,6 @@ else
             Log.LogWarning(ex, "Failed to load machine-translation settings; treating as off.");
             _mtTrigger = MtTrigger.Off;
         }
-
-        _initialised = true;
     }
 
     private async ValueTask OnLocationChangingAsync(LocationChangingContext context)

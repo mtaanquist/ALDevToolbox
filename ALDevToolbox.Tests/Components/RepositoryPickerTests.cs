@@ -10,6 +10,8 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Bunit;
 using Bunit.TestDoubles;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -385,6 +387,64 @@ public sealed class RepositoryPickerTests : IDisposable
             cut.FindAll(".repo-picker__chosen").Should().BeEmpty();
             cut.FindAll("input").Should().HaveCount(1);
         });
+    }
+
+    [Fact]
+    public async Task Mounting_it_inside_a_page_that_is_still_loading_does_not_break_the_page()
+    {
+        var api = ListableApi("cronus-dk/solution-a");
+        await ReadyAsync(api);
+        _db.AddGitHubServices(_ctx.Services, api);
+
+        // The host is every page that carries this control: its own initialiser
+        // is still awaiting the database when Blazor renders the first time, and
+        // that first render is what mounts the picker. If the picker reads the
+        // database as it mounts, the two reads meet on one scoped DbContext and
+        // the page dies with "A second operation was started on this context
+        // instance" - which is a crash in the host, caused by a child it only
+        // placed on the page.
+        var cut = _ctx.Render<SlowLoadingHost>();
+
+        cut.WaitForAssertion(() =>
+            cut.Find("input.repo-picker__input").Should().NotBeNull());
+        cut.Instance.Failure.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A stand-in for New Extension, Translator and the solution detail page:
+    /// several awaited reads in <c>OnInitializedAsync</c>, with the picker on
+    /// the page from the first render. Written in C# rather than markup because
+    /// the test project compiles no Razor.
+    /// </summary>
+    private sealed class SlowLoadingHost : ComponentBase
+    {
+        [Inject] public ALDevToolbox.Data.AppDbContext Db { get; set; } = default!;
+
+        /// <summary>What the host's own load died of, if it died.</summary>
+        public Exception? Failure { get; private set; }
+
+        protected override async Task OnInitializedAsync()
+        {
+            try
+            {
+                // New Extension awaits four of these in a row, deliberately, so
+                // the page paints while they run. That is the window.
+                for (var i = 0; i < 4; i++)
+                {
+                    await Db.Users.AsNoTracking().Select(u => u.Id).ToListAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Failure = ex;
+            }
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder builder)
+        {
+            builder.OpenComponent<RepositoryPicker>(0);
+            builder.CloseComponent();
+        }
     }
 
     // --- helpers ------------------------------------------------------------
