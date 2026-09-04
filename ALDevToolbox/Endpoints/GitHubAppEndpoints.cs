@@ -60,6 +60,15 @@ internal static class GitHubAppEndpoints
     private const string AccountReposSection = "/account?section=repos";
 
     /// <summary>
+    /// The one place a member can be sent to link from and expect to be sent
+    /// back: Administration -> Repositories, where connecting the organisation
+    /// now needs the admin's own link first. Deliberately a closed vocabulary
+    /// of one literal rather than a URL - a caller-supplied return address
+    /// riding a handshake is how open redirects happen.
+    /// </summary>
+    public const string AdminRepositoriesReturn = "admin-repos";
+
+    /// <summary>
     /// How long a started handshake stays valid. Long enough to read GitHub's
     /// permission screen, short enough that an abandoned state is not a
     /// standing invitation.
@@ -184,7 +193,12 @@ internal static class GitHubAppEndpoints
                 return;
             }
 
-            var state = TryCreateState(LinkStateProtectionPurpose, protection, cache, org, clock);
+            // Only the one literal survives; anything else is dropped rather than
+            // followed. See AdminRepositoriesReturn.
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var returnTo = form["Return"].ToString() == AdminRepositoriesReturn ? AdminRepositoriesReturn : null;
+
+            var state = TryCreateState(LinkStateProtectionPurpose, protection, cache, org, clock, returnTo);
             if (state is null)
             {
                 ctx.Response.Redirect(RouteConstants.Login);
@@ -215,11 +229,14 @@ internal static class GitHubAppEndpoints
         {
             var logger = loggerFactory.CreateLogger("GitHubAccountLink");
 
-            if (!TryConsumeState(LinkStateProtectionPurpose, ctx.Request.Query["state"].ToString(), protection, cache, org, clock))
+            if (!TryConsumeState(LinkStateProtectionPurpose, ctx.Request.Query["state"].ToString(),
+                    protection, cache, org, clock, out var returnTo))
             {
                 logger.LogWarning("Rejected a GitHub account-link callback whose state did not validate.");
-                RedirectToAccount(ctx,
-                    "That link has expired or was already used. Choose Connect GitHub again.");
+                // No field-name prefix on this one: they pressed a button, and
+                // "GitHub:" in front of it reads as a rejected form field.
+                RedirectToAccountPlain(ctx,
+                    "Connecting your GitHub account did not finish in time, or had already been done. Choose Connect GitHub to start again.");
                 return;
             }
 
@@ -237,7 +254,8 @@ internal static class GitHubAppEndpoints
             try
             {
                 await access.LinkAsync(code, ct);
-                ctx.Response.Redirect($"{AccountReposSection}&{RouteConstants.OkQuery}=github-linked");
+                var next = returnTo is null ? string.Empty : $"&return={returnTo}";
+                ctx.Response.Redirect($"{AccountReposSection}&{RouteConstants.OkQuery}=github-linked{next}");
             }
             catch (PlanValidationException ex)
             {
@@ -301,6 +319,15 @@ internal static class GitHubAppEndpoints
         RedirectWithMessage(ctx, $"{AccountReposSection}&{RouteConstants.ErrQuery}=GitHub", message);
 
     /// <summary>
+    /// The same, without the <c>err=</c> field label. For the things that went
+    /// nowhere rather than went wrong - an abandoned handshake, a link the
+    /// person came back to twice - where naming a field would invent a form
+    /// they never filled in.
+    /// </summary>
+    private static void RedirectToAccountPlain(HttpContext ctx, string message) =>
+        RedirectWithMessage(ctx, AccountReposSection, message);
+
+    /// <summary>
     /// Mints a single-use <c>state</c> for one handshake: Data Protection
     /// ciphertext over <c>orgId|userId|nonce|issuedAt</c>, paired with a cache
     /// entry the callback consumes. Returns <see langword="null"/> when there is
@@ -311,7 +338,8 @@ internal static class GitHubAppEndpoints
         IDataProtectionProvider protection,
         IMemoryCache cache,
         IOrganizationContext org,
-        TimeProvider clock)
+        TimeProvider clock,
+        string? returnTo = null)
     {
         var orgId = org.CurrentOrganizationId;
         var userId = org.CurrentUserId;
@@ -321,8 +349,12 @@ internal static class GitHubAppEndpoints
         // Single-use: the callback consumes the cache entry, so a replayed
         // (or shared) callback URL finds nothing and is refused.
         cache.Set(NonceCacheKey(purpose, nonce), true, StateLifetime);
-        return protection.CreateProtector(purpose).Protect(
-            $"{orgId.Value}|{userId.Value}|{nonce}|{clock.GetUtcNow().ToUnixTimeSeconds()}");
+        // The optional fifth segment is where the person should be offered next,
+        // sealed with the rest so it cannot be edited on the way past GitHub.
+        // The install handshake passes none and keeps its four-part shape.
+        var payload = $"{orgId.Value}|{userId.Value}|{nonce}|{clock.GetUtcNow().ToUnixTimeSeconds()}";
+        if (returnTo is not null) payload += $"|{returnTo}";
+        return protection.CreateProtector(purpose).Protect(payload);
     }
 
     /// <summary>
@@ -339,8 +371,19 @@ internal static class GitHubAppEndpoints
         IDataProtectionProvider protection,
         IMemoryCache cache,
         IOrganizationContext org,
-        TimeProvider clock)
+        TimeProvider clock) =>
+        TryConsumeState(purpose, state, protection, cache, org, clock, out _);
+
+    private static bool TryConsumeState(
+        string purpose,
+        string? state,
+        IDataProtectionProvider protection,
+        IMemoryCache cache,
+        IOrganizationContext org,
+        TimeProvider clock,
+        out string? returnTo)
     {
+        returnTo = null;
         if (string.IsNullOrWhiteSpace(state)) return false;
 
         string payload;
@@ -354,7 +397,7 @@ internal static class GitHubAppEndpoints
         }
 
         var parts = payload.Split('|');
-        if (parts.Length != 4) return false;
+        if (parts.Length is not (4 or 5)) return false;
         if (!int.TryParse(parts[0], out var orgId)) return false;
         if (!int.TryParse(parts[1], out var userId)) return false;
         if (!long.TryParse(parts[3], out var issuedAt)) return false;
@@ -366,6 +409,9 @@ internal static class GitHubAppEndpoints
         var key = NonceCacheKey(purpose, parts[2]);
         if (!cache.TryGetValue(key, out bool _)) return false;
         cache.Remove(key);
+        // Sealed by us, but still narrowed to the one marker we honour: a
+        // future segment must never become a redirect target by accident.
+        returnTo = parts.Length == 5 && parts[4] == AdminRepositoriesReturn ? AdminRepositoriesReturn : null;
         return true;
     }
 }

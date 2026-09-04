@@ -366,7 +366,7 @@ public sealed class ProjectBuildService
                 var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
                 if (string.IsNullOrEmpty(pat))
                 {
-                    failures.Add($"No {repo.Provider.DisplayName()} token for \"{repo.DisplayName}\" — add one under Account → Repository tokens.");
+                    failures.Add($"No {repo.Provider.DisplayName()} token for \"{repo.DisplayName}\" — add one under Account → Repository access.");
                     continue;
                 }
 
@@ -762,7 +762,7 @@ public sealed class ProjectBuildService
             if (string.IsNullOrEmpty(pat))
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
-                    $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository tokens, then rebuild.",
+                    $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository access, then rebuild.",
                     RepoUrl: repo.Url));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
                     $"Skipped: no {repo.Provider.DisplayName()} token for the user who started this build."));
