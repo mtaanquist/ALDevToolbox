@@ -70,6 +70,14 @@ public enum AuditEntityType
     /// the Refresh rewrites. See <c>.design/saas-delivery.md</c>.
     /// </summary>
     ProjectEnvironment,
+
+    /// <summary>
+    /// A repository created in the organisation's connected GitHub organisation
+    /// from New Workspace (issue #622). The one audited subject that is not a
+    /// row of ours - it lives on GitHub - so its entries carry the repository's
+    /// full name and no entity id.
+    /// </summary>
+    GitHubRepository,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

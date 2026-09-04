@@ -173,7 +173,7 @@ public sealed class GitHubExtensionDeliveryService
         var tree = await _github.CreateTreeAsync(token, repo.Owner, repo.Name, baseTree, blobs, ct);
         var commit = await _github.CreateCommitAsync(
             token, repo.Owner, repo.Name,
-            $"Add the {plan.ExtensionName} extension", tree, baseSha, ct);
+            $"Add the {plan.ExtensionName} extension", tree, baseSha, ct: ct);
 
         var branch = await CreateBranchAsync(token, repo, folderName, commit, ct);
         var pullRequest = await _github.CreatePullRequestAsync(

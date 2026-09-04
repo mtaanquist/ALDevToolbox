@@ -129,6 +129,7 @@ public static class AdminPageHelpers
         // setting" rather than "Project environment" so the sentence reads "changed an
         // environment setting" - the row is only ever written for a deliberate change.
         AuditEntityType.ProjectEnvironment => "Environment setting",
+        AuditEntityType.GitHubRepository => "GitHub repository",
         _ => type.ToString(),
     };
 

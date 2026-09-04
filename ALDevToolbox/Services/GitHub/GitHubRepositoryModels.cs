@@ -43,3 +43,35 @@ public sealed record GitHubCommitFile(string Path, byte[] Content);
 
 /// <summary>A pull request the toolbox opened, as the success state needs it.</summary>
 public sealed record GitHubPullRequest(int Number, string HtmlUrl, string HeadBranch);
+
+/// <summary>Who a commit is credited to, when the toolbox has to say (issue #622).</summary>
+/// <param name="Name">The display name git records as the author.</param>
+/// <param name="Email">
+/// The author's email. GitHub links a commit to an account by this address,
+/// which is why a person's <c>users.noreply.github.com</c> address is the one
+/// worth sending: it always resolves, and it is not their private address.
+/// </param>
+public sealed record GitHubCommitAuthor(string Name, string Email);
+
+/// <summary>What <c>POST /orgs/{org}/repos</c> did.</summary>
+public enum GitHubRepositoryCreationOutcome
+{
+    /// <summary>The repository now exists.</summary>
+    Created,
+
+    /// <summary>The organisation already has a repository by that name.</summary>
+    NameTaken,
+
+    /// <summary>The installation was not granted permission to create repositories.</summary>
+    NotPermitted,
+}
+
+/// <summary>
+/// The outcome of asking GitHub for a new repository, with the repository
+/// itself when there is one. The two refusals are carried rather than thrown
+/// because a page can word both of them for the user, beside the field that
+/// caused them.
+/// </summary>
+public sealed record GitHubRepositoryCreationResult(
+    GitHubRepositoryCreationOutcome Outcome,
+    GitHubRepositorySummary? Repository);

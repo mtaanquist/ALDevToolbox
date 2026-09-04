@@ -277,10 +277,10 @@ and most visits to a page carrying the picker never open it.
 ### #622 New workspace → create the repository
 
 Generation is unchanged: in memory, synchronous. After the file set exists, one
-commit is built through the Git Data API (blobs → tree → commit → `PUT /git/refs/heads/main`)
-and pushed to a repository created with the installation token via
-`POST /orgs/{org}/repos`. Ordered, in-process, behind the Generate button's existing
-loading state. No queue.
+commit is built through the Git Data API (blobs → tree → commit → the
+`refs/heads/{default branch}` ref) into a repository created with the
+installation token via `POST /orgs/{org}/repos`. Ordered, in-process, behind the
+Generate button's existing loading state. No queue.
 
 Before creating, the user must be a member of the connected GitHub org
 (`IsOrgMemberAsync`). Failure modes rendered inline next to the field, not as a
@@ -288,6 +288,38 @@ generic error: name already taken, the installation lacks `administration:write`
 the user is not an org member.
 
 The created repository is recorded in the audit log against the generation.
+
+Four details settled while building it (`GitHubWorkspaceRepositoryService`).
+
+**The first commit rides the installation token too**, which is the one place a
+write does not go out as the user. The credential table above is about writing
+into a repository that already exists, where GitHub enforcing the user's own
+permissions is exactly what we want. This repository is seconds old and was
+created by the app: depending on the organisation's base permission the person
+who asked for it may have no access to it yet, so asking with their token would
+fail for a reason they could do nothing about. The commit is instead *credited*
+to them - author name and their `users.noreply.github.com` address, taken from
+their link - so the history still says who asked. The membership check is what
+their own token is for.
+
+**The workspace's folder comes off the paths.** The ZIP nests everything under
+the workspace folder because that folder is what a user unzips; a repository
+*is* that folder, so `CRONUSCustomer/app.json` is committed as `app.json`.
+`workspace.aldt.toml` is among them, which is what lets #623 hydrate from the
+repository later.
+
+**Nothing is created until every refusal has been ruled out** - plan, name,
+readiness, membership, and the recorded installation permissions - so a
+generator failure or a name GitHub would rewrite never leaves an empty
+repository behind. The one refusal that cannot be pre-empted is the name being
+taken, which GitHub reports as a 422 whose `message` says only that creation
+failed and whose `errors[]` carries the reason.
+
+**The organisation is not a parameter.** Callers name a repository, never an
+owner; the organisation is the connected one. That is how the MCP tool inherits
+the gate - there is nothing in `generate_workspace` for an agent to aim
+somewhere else, and `create_repository` with a slash in it is refused as a name
+GitHub would not keep rather than quietly re-aimed.
 
 ### #623 New extension → add to an existing repository
 
@@ -341,7 +373,9 @@ later decision.
 
 ## MCP parity
 
-- `generate_workspace` gains the create-repository option (#622).
+- `generate_workspace` gains the create-repository option (#622). It returns the
+  repository *and* the ZIP whose files are in it, for the same reason
+  `generate_extension` does.
 - `generate_extension` gains the add-to-repository option (#623). It returns the
   pull request *and* the ZIP that went into it - generating a second time would
   mint different extension GUIDs, so a download offered beside the pull request

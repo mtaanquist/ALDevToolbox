@@ -59,6 +59,10 @@ public sealed class NewWorkspaceTests : IDisposable
         _ctx.Services.AddSingleton<ALDevToolbox.Services.Generation.MustacheRenderer>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.Generation.WorkspaceZipBuilder>();
         _ctx.Services.AddScoped<GenerationService>();
+        // The page offers to create the workspace as a GitHub repository
+        // (#622), so its services have to resolve even on a deployment with no
+        // GitHub App - which is exactly the state these tests render in.
+        _db.AddGitHubServices(_ctx.Services);
         _ctx.Services.AddDataProtection();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
@@ -151,6 +155,114 @@ public sealed class NewWorkspaceTests : IDisposable
                 "CLAUDE.md §\"Visual hierarchy\": the Generate button is the only "
                 + "primary action on the page");
         });
+    }
+
+    [Fact]
+    public async Task The_repository_name_input_pattern_matches_the_rule_the_service_enforces()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-15"));
+            await seed.SaveChangesAsync();
+        }
+        await ConnectGitHubAsync();
+        await LinkGitHubAccountAsync();
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var input = cut.Find("input#ws-repo-name");
+            // CLAUDE.md: the HTML rule must mirror the server's. Both sides read
+            // the same constant, so they cannot drift - this pins that they do.
+            input.GetAttribute("pattern").Should()
+                .Be(ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService.NamePattern);
+            input.HasAttribute("required").Should().BeTrue();
+            // Defaulted from the workspace name, in the shape GitHub keeps.
+            input.GetAttribute("value").Should().BeEmpty("the workspace has no name yet");
+        });
+    }
+
+    [Fact]
+    public async Task Without_a_github_organisation_the_card_says_what_to_set_up_rather_than_offering_a_field()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-15"));
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Create it on GitHub");
+            cut.Markup.Should().Contain("GitHub is not set up on this server yet");
+            cut.FindAll("input#ws-repo-name").Should().BeEmpty(
+                "a field that cannot lead anywhere is worse than a sentence saying why");
+            // The rule from CLAUDE.md that this card is most likely to break.
+            cut.FindAll("button.btn--primary").Should().HaveCount(1,
+                "Generate is still the page's only primary action");
+        });
+    }
+
+    /// <summary>
+    /// The GitHub connection this organisation would have made from
+    /// Administration -> Repositories. The link half is deliberately left
+    /// undone: it is the state a first-time user is actually in, and it is the
+    /// one the card has to explain.
+    /// </summary>
+    private async Task ConnectGitHubAsync()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(
+            new ALDevToolbox.Services.GitHubAppInput(
+                AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+                ClientSecret: "s3cr3t", ClearClientSecret: false,
+                PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
+
+        await using var ctx = _db.NewContext();
+        ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            GitHubInstallationId = 42,
+            GitHubOrgLogin = "cronus-dk",
+            GitHubConnectedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The signed-in user's own GitHub link, which is the last thing standing
+    /// between the card's guidance and its form.
+    /// </summary>
+    private async Task LinkGitHubAccountAsync()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.Add(new ALDevToolbox.Domain.Entities.User
+            {
+                Id = 621,
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "tester@example.com",
+                DisplayName = "tester@example.com",
+                PasswordHash = "x",
+                Role = ALDevToolbox.Domain.Entities.UserRole.User,
+                Status = ALDevToolbox.Domain.Entities.UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        _db.OrgContext.CurrentUserId = 621;
+
+        var api = new ALDevToolbox.Tests.GitHub.FakeGitHubApi()
+            .On(HttpMethod.Post, "login/oauth/access_token", System.Net.HttpStatusCode.OK,
+                ALDevToolbox.Tests.GitHub.FakeGitHubApi.TokenJson())
+            .On(HttpMethod.Get, "/user", System.Net.HttpStatusCode.OK,
+                ALDevToolbox.Tests.GitHub.FakeGitHubApi.UserJson());
+        await using var ctx = _db.NewContext();
+        await _db.NewGitHubAccessService(ctx, _db.NewGitHubAppClient(ctx, api)).LinkAsync("the-code");
     }
 
     /// <summary>

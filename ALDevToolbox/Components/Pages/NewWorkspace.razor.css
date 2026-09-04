@@ -18,3 +18,15 @@
 /* The hidden-checkbox and focus-within rules that used to live here moved into
    components.css: .module-card is a shared component and every call site that
    wraps a real checkbox needs them (the per-org tool switches, for one). */
+
+/* The create-a-repository card (#622). A plain stack with one rhythm - the
+   sentence, the two fields, then whatever the last attempt had to say.
+   Margins rather than a grid: a grid would stretch the button to the full
+   column, and the only full-width button in this aside is Generate. */
+.ws-repo > * + * {
+    margin-top: var(--space-2);
+}
+
+.ws-repo p {
+    margin: 0;
+}

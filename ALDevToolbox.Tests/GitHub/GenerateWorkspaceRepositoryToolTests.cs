@@ -17,27 +17,29 @@ using ModelContextProtocol;
 namespace ALDevToolbox.Tests.GitHub;
 
 /// <summary>
-/// MCP parity for "add to repository" (issue #623).
+/// MCP parity for "create repository" (issue #622).
 ///
 /// <para>The point being pinned is not that the option exists but that it goes
-/// through the same service the New Extension page uses, so an agent cannot
-/// reach a repository the picker would have refused - see "Keeping MCP parity
-/// with the web UI" in PROJECT.md.</para>
+/// through the same service the New Workspace page uses, so an agent gets the
+/// same answers a person would - see "Keeping MCP parity with the web UI" in
+/// PROJECT.md. In particular the tool takes a repository <em>name</em> and never
+/// an owner: the organisation is the one this organisation connected, so there
+/// is nothing for an agent to point somewhere else.</para>
 /// </summary>
-public sealed class GenerateExtensionRepositoryToolTests : IDisposable
+public sealed class GenerateWorkspaceRepositoryToolTests : IDisposable
 {
-    private const int UserId = 901;
+    private const int UserId = 902;
     private const long InstallationId = 42;
     private const string OrgLogin = "cronus-dk";
-    private const string Repo = "cronus-dk/solution-a";
-    private const string BaseSha = "base-commit-sha";
+    private const string RepoName = "CRONUS-Customer";
+    private const string Repo = $"{OrgLogin}/{RepoName}";
 
     private readonly TestDb _db = new();
 
     private static readonly IOptions<McpOptions> Options =
         Microsoft.Extensions.Options.Options.Create(new McpOptions());
 
-    public GenerateExtensionRepositoryToolTests()
+    public GenerateWorkspaceRepositoryToolTests()
     {
         using var ctx = _db.NewContext();
         ctx.Users.Add(new User
@@ -61,52 +63,72 @@ public sealed class GenerateExtensionRepositoryToolTests : IDisposable
     public async Task Without_the_option_it_still_just_hands_back_the_zip()
     {
         await ReadyAsync();
-        var (tools, ctx) = NewTools(WritableApi());
+        var api = WritableApi();
+        var (tools, ctx) = NewTools(api);
         await using var _ = ctx;
 
-        var result = await tools.GenerateExtensionAsync(PlanInput());
+        var result = await tools.GenerateWorkspaceAsync(PlanInput());
 
-        result.AddedToRepository.Should().BeNull();
+        result.CreatedRepository.Should().BeNull();
         result.ContentBase64.Should().NotBeEmpty();
+        api.Calls.Should().BeEmpty("nothing is asked of GitHub unless a repository was asked for");
     }
 
     [Fact]
-    public async Task With_the_option_it_reports_the_pull_request_it_opened()
+    public async Task With_the_option_it_reports_the_repository_it_created()
     {
         await ReadyAsync();
         var (tools, ctx) = NewTools(WritableApi());
         await using var _ = ctx;
 
-        var result = await tools.GenerateExtensionAsync(PlanInput(), addToRepository: Repo);
+        var result = await tools.GenerateWorkspaceAsync(PlanInput(), createRepository: RepoName);
 
-        result.AddedToRepository.Should().NotBeNull();
-        result.AddedToRepository!.PullRequestNumber.Should().Be(7);
-        result.AddedToRepository.RepositoryFullName.Should().Be(Repo);
-        result.AddedToRepository.Branch.Should().Be("aldt/add-MyCustomFeature");
-        result.AddedToRepository.BaseBranch.Should().Be("main");
-        // The ZIP alongside it is the one that went into the pull request, not
+        result.CreatedRepository.Should().NotBeNull();
+        result.CreatedRepository!.RepositoryFullName.Should().Be(Repo);
+        result.CreatedRepository.HtmlUrl.Should().Be($"https://github.com/{Repo}");
+        result.CreatedRepository.CloneUrl.Should().Be($"https://github.com/{Repo}.git");
+        result.CreatedRepository.DefaultBranch.Should().Be("main");
+        result.CreatedRepository.IsPrivate.Should().BeTrue();
+        result.CreatedRepository.FileCount.Should().BeGreaterThan(0);
+        // The ZIP alongside it is the one whose files are in the repository, not
         // a second generation with different extension GUIDs.
         result.ContentBase64.Should().NotBeEmpty();
     }
 
     [Fact]
-    public async Task It_cannot_reach_a_repository_outside_the_connected_organisation()
+    public async Task It_can_only_create_in_the_organisation_the_toolbox_organisation_connected()
     {
         await ReadyAsync();
-        var api = WritableApi()
-            // The agent's user can see this one on GitHub; it is simply not in
-            // the organisation the toolbox organisation connected, so the web
-            // UI would never offer it - and neither may the tool.
-            .On(HttpMethod.Get, "/repos/someone-else/theirs", HttpStatusCode.OK,
-                FakeGitHubApi.RepositoryJson("someone-else/theirs"));
+        var api = WritableApi();
         var (tools, ctx) = NewTools(api);
         await using var _ = ctx;
 
-        var act = () => tools.GenerateExtensionAsync(PlanInput(), addToRepository: "someone-else/theirs");
+        // An agent naming an owner does not get one: the whole string is the
+        // repository name, and a name with a slash in it is not one GitHub
+        // would keep - so it is refused rather than quietly re-aimed.
+        var act = () => tools.GenerateWorkspaceAsync(
+            PlanInput(), createRepository: "someone-else/theirs");
 
         (await act.Should().ThrowAsync<McpException>())
             .Which.Message.Should().Contain("Validation failed");
-        api.Calls.Should().NotContain(c => c.Contains("git/blobs"));
+        api.Calls.Should().NotContain(c => c.Contains("someone-else"));
+        api.Calls.Should().NotContain(c => c.Contains("/repos"));
+    }
+
+    [Fact]
+    public async Task A_caller_outside_the_github_organisation_is_refused()
+    {
+        await ReadyAsync();
+        var api = WritableApi()
+            .On(HttpMethod.Get, $"/orgs/{OrgLogin}/members/", HttpStatusCode.NotFound);
+        var (tools, ctx) = NewTools(api);
+        await using var _ = ctx;
+
+        var act = () => tools.GenerateWorkspaceAsync(PlanInput(), createRepository: RepoName);
+
+        (await act.Should().ThrowAsync<McpException>())
+            .Which.Message.Should().Contain(OrgLogin);
+        api.Calls.Should().NotContain(c => c.Contains($"/orgs/{OrgLogin}/repos"));
     }
 
     [Fact]
@@ -118,7 +140,7 @@ public sealed class GenerateExtensionRepositoryToolTests : IDisposable
         var (tools, ctx) = NewTools(WritableApi());
         await using var _ = ctx;
 
-        var act = () => tools.GenerateExtensionAsync(PlanInput(), addToRepository: Repo);
+        var act = () => tools.GenerateWorkspaceAsync(PlanInput(), createRepository: RepoName);
 
         (await act.Should().ThrowAsync<McpException>())
             .Which.Message.Should().Contain("Connect your own GitHub account");
@@ -142,35 +164,31 @@ public sealed class GenerateExtensionRepositoryToolTests : IDisposable
         return (tools, ctx);
     }
 
-    private static StandaloneExtensionPlanInput PlanInput() => new(
+    private static ProjectPlanInput PlanInput() => new(
         TemplateKey: "runtime-test",
-        ExtensionName: "My Custom Feature",
-        Brief: "Standalone brief.",
-        Description: "Standalone description.",
+        WorkspaceName: "CRONUS Customer",
+        ExtensionPrefix: "CRONUS",
+        Brief: "Test brief.",
+        Description: "Test description.",
         ApplicationVersion: "24.0.0.0",
         RuntimeVersion: "15",
-        IdRangeFrom: 70000,
-        IdRangeTo: 70999,
+        CoreIdRangeFrom: 90000,
+        CoreIdRangeTo: 90999,
         IncludeExamples: true,
-        Publisher: "CRONUS",
-        Dependencies: null);
+        SelectedExtensionPaths: null,
+        SelectedModuleKeys: null);
 
     private static FakeGitHubApi WritableApi() =>
         new FakeGitHubApi()
             .On(HttpMethod.Post, $"/app/installations/{InstallationId}/access_tokens",
                 HttpStatusCode.Created, FakeGitHubApi.InstallationTokenJson())
-            .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(Repo))
-            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/main", HttpStatusCode.OK,
-                $"{{\"ref\":\"refs/heads/main\",\"object\":{{\"sha\":\"{BaseSha}\"}}}}")
-            .On(HttpMethod.Get, $"/repos/{Repo}/git/commits/{BaseSha}", HttpStatusCode.OK,
-                $"{{\"sha\":\"{BaseSha}\",\"tree\":{{\"sha\":\"base-tree-sha\"}}}}")
-            .On(HttpMethod.Get, $"/repos/{Repo}/contents/", HttpStatusCode.NotFound)
+            .On(HttpMethod.Get, $"/orgs/{OrgLogin}/members/", HttpStatusCode.NoContent)
+            .On(HttpMethod.Post, $"/orgs/{OrgLogin}/repos", HttpStatusCode.Created,
+                FakeGitHubApi.RepositoryJson(Repo))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/blobs", HttpStatusCode.Created, FakeGitHubApi.ShaJson("blob-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/trees", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-tree-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/commits", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
-            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
-            .On(HttpMethod.Post, $"/repos/{Repo}/pulls", HttpStatusCode.Created,
-                "{\"number\":7,\"html_url\":\"https://github.com/cronus-dk/solution-a/pull/7\"}");
+            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"));
 
     private async Task ConfigureDeploymentAsync()
     {

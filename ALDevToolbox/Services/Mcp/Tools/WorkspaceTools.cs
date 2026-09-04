@@ -23,6 +23,7 @@ public sealed class WorkspaceTools
     private readonly CatalogService _catalog;
     private readonly GenerationService _generation;
     private readonly GitHubExtensionDeliveryService _delivery;
+    private readonly GitHubWorkspaceRepositoryService _repositories;
     private readonly McpOptions _options;
 
     public WorkspaceTools(
@@ -31,6 +32,7 @@ public sealed class WorkspaceTools
         CatalogService catalog,
         GenerationService generation,
         GitHubExtensionDeliveryService delivery,
+        GitHubWorkspaceRepositoryService repositories,
         IOptions<McpOptions> options)
     {
         _templates = templates;
@@ -38,6 +40,7 @@ public sealed class WorkspaceTools
         _catalog = catalog;
         _generation = generation;
         _delivery = delivery;
+        _repositories = repositories;
         _options = options.Value;
     }
 
@@ -78,13 +81,30 @@ public sealed class WorkspaceTools
     }
 
     [McpServerTool(Name = "generate_workspace", ReadOnly = false, Idempotent = false)]
-    [Description("Generates a new BC workspace as a ZIP. Pass the template key from list_templates, the workspace details, and the Core ID range. The ZIP is returned inline as base64-encoded contentBase64 alongside its file name, size, and SHA-256.")]
+    [Description("Generates a new BC workspace as a ZIP. Pass the template key from list_templates, the workspace details, and the Core ID range. The ZIP is returned inline as base64-encoded contentBase64 alongside its file name, size, and SHA-256. Set createRepository to also create a repository for it in your organisation's connected GitHub organisation and commit the generated files to it.")]
     public async Task<WorkspaceResult> GenerateWorkspaceAsync(
         ProjectPlanInput plan,
+        [Description("Optional. A repository name (no owner - it is created in the GitHub organisation your organisation has connected, and nowhere else). When set, the repository is created and the generated files are committed to it; createdRepository in the result carries its link. You have to be a member of that GitHub organisation.")]
+        string? createRepository = null,
+        [Description("Whether a repository created by createRepository is private. Defaults to true.")]
+        bool repositoryPrivate = true,
         CancellationToken ct = default)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(createRepository))
+            {
+                // Routed through the same service the New Workspace page uses,
+                // so the organisation, the membership check and the credential
+                // split are inherited rather than restated here - see "Keeping
+                // MCP parity with the web UI" in PROJECT.md. The tool names a
+                // repository, never an owner, so an agent cannot aim it at an
+                // organisation the page would not offer.
+                var created = await _repositories.CreateAsync(
+                    plan.ToDomain(), createRepository!.Trim(), repositoryPrivate, ct);
+                return BuildCreatedResult(created);
+            }
+
             var archive = await _generation.GenerateWorkspaceAsync(plan.ToDomain(), ct);
             try { return BuildResult(archive); }
             finally { archive.Stream.Dispose(); }
@@ -92,6 +112,14 @@ public sealed class WorkspaceTools
         catch (PlanValidationException ex)
         {
             throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+        catch (GitHubApiException ex)
+        {
+            throw new McpException("GitHub refused the request: " + ex.Message);
+        }
+        catch (GitHubAppNotConfiguredException ex)
+        {
+            throw new McpException(ex.Message);
         }
     }
 
@@ -158,6 +186,33 @@ public sealed class WorkspaceTools
                 BaseBranch: delivered.Repository.DefaultBranch,
                 PullRequestNumber: delivered.PullRequest.Number,
                 PullRequestUrl: delivered.PullRequest.HtmlUrl));
+    }
+
+    /// <summary>
+    /// The result for the create-a-repository path: the repository, plus the
+    /// same ZIP whose files are in it.
+    ///
+    /// <para>An oversized ZIP is reported as no ZIP rather than as a failure,
+    /// for the same reason as above: the repository already exists by this
+    /// point, and failing over a size cap would leave the caller unaware of
+    /// something they created.</para>
+    /// </summary>
+    private WorkspaceResult BuildCreatedResult(GitHubWorkspaceRepository created)
+    {
+        var bytes = created.Archive;
+        var inline = bytes.Length <= _options.MaxWorkspaceBytes;
+        return new WorkspaceResult(
+            FileName: created.ArchiveFileName,
+            ContentBase64: inline ? Convert.ToBase64String(bytes) : string.Empty,
+            SizeBytes: bytes.Length,
+            Sha256: Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+            CreatedRepository: new RepositoryCreationResult(
+                RepositoryFullName: created.Repository.FullName,
+                HtmlUrl: created.Repository.HtmlUrl,
+                CloneUrl: created.Repository.CloneUrl,
+                DefaultBranch: created.Repository.DefaultBranch,
+                IsPrivate: created.Repository.IsPrivate,
+                FileCount: created.FileCount));
     }
 
     private WorkspaceResult BuildResult(GeneratedArchive archive)

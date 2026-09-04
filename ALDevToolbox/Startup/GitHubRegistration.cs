@@ -18,6 +18,8 @@ public static class GitHubRegistration
         // and the one write that rides it (issue #623).
         services.AddScoped<GitHubRepositoryService>();
         services.AddScoped<GitHubExtensionDeliveryService>();
+        // Creating a repository and filling it with a generated workspace (#622).
+        services.AddScoped<GitHubWorkspaceRepositoryService>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

@@ -348,6 +348,15 @@ public sealed class TestDb : IDisposable
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>.Instance);
 
+    /// <summary>"Create repository": generation, the membership gate, and the first commit.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService NewGitHubWorkspaceRepositoryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
+            NewGitHubConnectionService(ctx, access), access, client, ctx, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
+
     /// <summary>The workspace / extension generator, wired to this fixture's database.</summary>
     public GenerationService NewGenerationService(AppDbContext ctx)
     {
@@ -378,6 +387,7 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubConnectionService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>();
     }
 
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>

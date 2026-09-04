@@ -32,6 +32,14 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     public List<(string Call, string Body)> Bodies { get; } = new();
 
     /// <summary>
+    /// The bearer token each request carried, keyed by "METHOD absolute-uri" -
+    /// so a test can assert <em>which credential</em> made a call, which is the
+    /// security decision this milestone turns on rather than an implementation
+    /// detail.
+    /// </summary>
+    public List<(string Call, string? Token)> Credentials { get; } = new();
+
+    /// <summary>
     /// Registers a reply for requests whose path starts with
     /// <paramref name="path"/>. When several routes match, the longest wins, so
     /// <c>/user/installations</c> is not swallowed by <c>/user</c>; between two
@@ -121,6 +129,7 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     {
         var uri = request.RequestUri!.ToString();
         Calls.Add($"{request.Method.Method} {uri}");
+        Credentials.Add(($"{request.Method.Method} {uri}", request.Headers.Authorization?.Parameter));
         if (request.Content is not null)
         {
             var body = request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
