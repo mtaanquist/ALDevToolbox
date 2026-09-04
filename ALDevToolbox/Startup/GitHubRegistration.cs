@@ -18,6 +18,9 @@ public static class GitHubRegistration
         // and the one write that rides it (issue #623).
         services.AddScoped<GitHubRepositoryService>();
         services.AddScoped<GitHubExtensionDeliveryService>();
+        // The Translator's round trip: list a repository's XLIFF files, open
+        // one, save it back as a pull request (issue #625).
+        services.AddScoped<GitHubTranslationService>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

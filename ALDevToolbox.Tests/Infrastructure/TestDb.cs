@@ -348,6 +348,14 @@ public sealed class TestDb : IDisposable
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>.Instance);
 
+    /// <summary>The Translator's repository round trip: list, open, save back.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubTranslationService NewGitHubTranslationService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubTranslationService>.Instance);
+
     /// <summary>The workspace / extension generator, wired to this fixture's database.</summary>
     public GenerationService NewGenerationService(AppDbContext ctx)
     {
@@ -378,6 +386,7 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubConnectionService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubTranslationService>();
     }
 
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>

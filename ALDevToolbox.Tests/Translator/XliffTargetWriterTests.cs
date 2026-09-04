@@ -181,6 +181,60 @@ public sealed class XliffTargetWriterTests
         reparsed.Units.Single(u => u.Id == "t1").TargetText.Should().Be("Bogføringsdato");
     }
 
+    // ── Restating the target language (issue #625) ───────────────────────
+    // A translation started from the compiler's generated .g.xlf inherits that
+    // file's target-language, which is its source language. The new language
+    // file has to say which language it is actually in.
+
+    [Fact]
+    public void Setting_the_target_language_rewrites_the_attribute_and_nothing_else()
+    {
+        const string original = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <xliff version="1.2">
+              <file datatype="xml" source-language="en-US" target-language="en-US" original="App">
+                <body />
+              </file>
+            </xliff>
+            """;
+
+        var result = XliffTargetWriter.SetTargetLanguage(original, "da-DK");
+
+        result.Should().Contain("target-language=\"da-DK\"");
+        result.Should().Contain("source-language=\"en-US\"", "only the target language is being restated");
+        result.Should().Be(original.Replace("target-language=\"en-US\"", "target-language=\"da-DK\""));
+    }
+
+    [Fact]
+    public void A_file_element_with_no_target_language_gets_one()
+    {
+        const string original = """<xliff><file source-language="en-US"><body /></file></xliff>""";
+
+        XliffTargetWriter.SetTargetLanguage(original, "nb-NO")
+            .Should().Contain("<file source-language=\"en-US\" target-language=\"nb-NO\">");
+    }
+
+    [Fact]
+    public void Only_the_first_file_elements_language_is_restated()
+    {
+        const string original = """
+            <xliff><file target-language="en-US"><body /></file><file target-language="en-US"><body /></file></xliff>
+            """;
+
+        var result = XliffTargetWriter.SetTargetLanguage(original, "da-DK");
+
+        result.Should().Contain("<file target-language=\"da-DK\">");
+        result.Should().Contain("<file target-language=\"en-US\">",
+            "the parser only ever reads the first <file>, so the rest is left alone");
+    }
+
+    [Fact]
+    public void Something_that_is_not_an_xliff_comes_back_unchanged()
+    {
+        const string original = "not xliff at all";
+        XliffTargetWriter.SetTargetLanguage(original, "da-DK").Should().Be(original);
+    }
+
     /// <summary>Concatenates everything that sits *outside* the matched blocks.</summary>
     private static string Between(string s, Regex blocks)
     {

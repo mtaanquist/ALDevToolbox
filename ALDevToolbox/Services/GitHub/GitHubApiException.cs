@@ -38,3 +38,23 @@ public sealed class GitHubAppNotConfiguredException : Exception
     {
     }
 }
+
+/// <summary>
+/// A write was refused because the file in the repository is no longer the
+/// version the toolbox read. Its own type rather than a
+/// <see cref="GitHubApiException"/> because it is not a failure to report: it
+/// is the answer that stops the Translator committing over somebody else's
+/// work, and the page it reaches renders a way back rather than an error.
+/// See <c>.design/github-integration.md</c>, issue #625.
+/// </summary>
+public sealed class GitHubContentConflictException : Exception
+{
+    public GitHubContentConflictException(string path, string message)
+        : base(message)
+    {
+        Path = path;
+    }
+
+    /// <summary>The repository-relative path whose contents moved on.</summary>
+    public string Path { get; }
+}

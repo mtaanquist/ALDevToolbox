@@ -51,6 +51,15 @@ public static class XliffTargetWriter
         @"</source>",
         RegexOptions.Compiled);
 
+    // The first <file> open tag, and the target-language attribute on it.
+    private static readonly Regex FileOpenTagRegex = new(
+        @"<file\b[^>]*>",
+        RegexOptions.Compiled);
+
+    private static readonly Regex TargetLanguageAttrRegex = new(
+        "\\btarget-language\\s*=\\s*(?:\"[^\"]*\"|'[^']*')",
+        RegexOptions.Compiled);
+
     private static readonly Regex SourceIndentRegex = new(
         @"(?<indent>[^\S\r\n]*)<source\b",
         RegexOptions.Compiled);
@@ -61,6 +70,43 @@ public static class XliffTargetWriter
     /// the document are ignored; trans-units not present in the map are left
     /// untouched.
     /// </summary>
+    /// <summary>
+    /// Restates the <c>&lt;file&gt;</c> element's <c>target-language</c>.
+    ///
+    /// <para>Used by exactly one caller: a translation started from the AL
+    /// compiler's generated <c>.g.xlf</c>, which declares its target language to
+    /// be its source language because nothing in it is translated yet (issue
+    /// #625). The file being written is a new language file, and a
+    /// <c>da-DK.xlf</c> that says <c>target-language="en-US"</c> is not a Danish
+    /// translation as far as AL is concerned.</para>
+    ///
+    /// <para>Deliberately not applied to an ordinary save: the byte-fidelity
+    /// contract above is what keeps diffs clean, and a file that already names
+    /// its language has nothing to correct. Returns the input unchanged when
+    /// there is no <c>&lt;file&gt;</c> element to touch.</para>
+    /// </summary>
+    public static string SetTargetLanguage(string originalXml, string language)
+    {
+        ArgumentNullException.ThrowIfNull(originalXml);
+        ArgumentException.ThrowIfNullOrWhiteSpace(language);
+
+        var file = FileOpenTagRegex.Match(originalXml);
+        if (!file.Success) return originalXml;
+
+        var tag = file.Value;
+        var attribute = $"target-language=\"{language}\"";
+        var updated = TargetLanguageAttrRegex.IsMatch(tag)
+            ? TargetLanguageAttrRegex.Replace(tag, attribute, 1)
+            // No attribute at all: put one just before the tag closes, keeping
+            // whatever form that close takes.
+            : tag.Insert(tag.Length - (tag.EndsWith("/>", StringComparison.Ordinal) ? 2 : 1), $" {attribute}");
+
+        return string.Concat(
+            originalXml.AsSpan(0, file.Index),
+            updated,
+            originalXml.AsSpan(file.Index + file.Length));
+    }
+
     public static string ApplyEdits(string originalXml, IReadOnlyDictionary<string, TargetEdit> edits)
     {
         ArgumentNullException.ThrowIfNull(originalXml);
