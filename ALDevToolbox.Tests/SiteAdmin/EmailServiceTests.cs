@@ -1,4 +1,5 @@
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Configuration;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -14,23 +15,19 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// Actual SMTP I/O is covered by the SiteAdmin "send a test email" flow
 /// against a real server.
 /// </summary>
-// Mutates a process-wide environment variable; see the collection's doc comment.
-[Collection(EnvironmentVariableCollection.Name)]
 public sealed class EmailServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
-    public EmailServiceTests()
-    {
-        // Make sure no test pollution from sibling tests leaves SMTP_* set.
-        ClearSmtpEnv();
-    }
+    /// <summary>
+    /// The deployment SMTP fallback this fixture's service sees. Empty unless a
+    /// test asks for one, and private to this instance: it used to be the
+    /// process-wide SMTP_* variables, which every sibling fixture read and
+    /// cleared out from under each other (#733).
+    /// </summary>
+    private SmtpFallbackOptions _smtpFallback = new();
 
-    public void Dispose()
-    {
-        ClearSmtpEnv();
-        _db.Dispose();
-    }
+    public void Dispose() => _db.Dispose();
 
     [Fact]
     public async Task IsConfiguredAsync_returns_false_when_nothing_is_set()
@@ -58,10 +55,9 @@ public sealed class EmailServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task IsConfiguredAsync_returns_true_when_env_vars_supply_smtp()
+    public async Task IsConfiguredAsync_returns_true_when_the_deployment_supplies_smtp()
     {
-        Environment.SetEnvironmentVariable("SMTP_HOST", "env.example.com");
-        Environment.SetEnvironmentVariable("SMTP_FROM", "env@example.com");
+        _smtpFallback = new SmtpFallbackOptions { Host = "env.example.com", From = "env@example.com" };
 
         var email = NewService();
         (await email.IsConfiguredAsync()).Should().BeTrue();
@@ -86,17 +82,9 @@ public sealed class EmailServiceTests : IDisposable
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
         var settings = new SystemSettingsService(ctx, _db.DataProtectionProvider,
-            NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+            NullLogger<SystemSettingsService>.Instance, TimeProvider.System,
+            smtpFallback: _smtpFallback);
         return new SmtpEmailService(settings, NullLogger<SmtpEmailService>.Instance);
     }
 
-    private static void ClearSmtpEnv()
-    {
-        Environment.SetEnvironmentVariable("SMTP_HOST", null);
-        Environment.SetEnvironmentVariable("SMTP_PORT", null);
-        Environment.SetEnvironmentVariable("SMTP_USER", null);
-        Environment.SetEnvironmentVariable("SMTP_PASSWORD", null);
-        Environment.SetEnvironmentVariable("SMTP_FROM", null);
-        Environment.SetEnvironmentVariable("SMTP_USE_STARTTLS", null);
-    }
 }
