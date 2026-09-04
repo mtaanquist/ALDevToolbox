@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Tests.SiteAdmin;
 
 /// <summary>
@@ -17,8 +19,6 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// runtime image ships them; <see cref="PgToolFactAttribute"/> skips when
 /// they aren't installed locally).
 /// </summary>
-// Mutates a process-wide environment variable; see the collection's doc comment.
-[Collection(EnvironmentVariableCollection.Name)]
 public sealed class BackupServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
@@ -28,14 +28,15 @@ public sealed class BackupServiceTests : IDisposable
     // advancing it, rather than sleeping on the real clock (flaky at coarse
     // resolution / under CI load). See issue #395.
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 5, 14, 0, 0, 0, TimeSpan.Zero));
-    private readonly string? _previousBackupsDir;
+    private readonly BackupOptions _options;
 
     public BackupServiceTests()
     {
         _backupsDir = Path.Combine(Path.GetTempPath(), "aldt-backup-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_backupsDir);
-        _previousBackupsDir = Environment.GetEnvironmentVariable("BACKUPS_DIR");
-        Environment.SetEnvironmentVariable("BACKUPS_DIR", _backupsDir);
+        // This fixture's own directory, handed to the service rather than set
+        // as a process-wide variable every other fixture also reads (#733).
+        _options = new BackupOptions { Directory = _backupsDir };
         // BackupService treats SiteAdmin as required for AdHoc operations.
         _db.OrgContext.IsSiteAdmin = true;
         _db.OrgContext.CurrentUserId = null;
@@ -43,7 +44,6 @@ public sealed class BackupServiceTests : IDisposable
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("BACKUPS_DIR", _previousBackupsDir);
         try { Directory.Delete(_backupsDir, recursive: true); } catch { /* best effort */ }
         _db.Dispose();
     }
@@ -233,6 +233,6 @@ public sealed class BackupServiceTests : IDisposable
             })
             .Build();
         return new BackupService(ctx, _db.OrgContext, _maintenance, config,
-            NullLogger<BackupService>.Instance, _clock);
+            NullLogger<BackupService>.Instance, _clock, _options);
     }
 }

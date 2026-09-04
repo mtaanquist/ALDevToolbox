@@ -1,5 +1,7 @@
 using ALDevToolbox.Services;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Startup;
 
 /// <summary>
@@ -11,6 +13,12 @@ public static class SiteAdminRegistration
     /// <summary>Registers the SiteAdmin services, backups and the off-site restore worker.</summary>
     public static IServiceCollection AddSiteAdmin(this IServiceCollection services)
     {
+        // Deployment configuration read once here rather than from the process
+        // environment inside each service, so a caller (a test, most of all) can
+        // hand an instance its own values instead of mutating a process-wide
+        // variable every other instance also reads. See #733.
+        services.AddSingleton(sp => BackupOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
+        services.AddSingleton(sp => SmtpFallbackOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<SiteAdminService>();
         services.AddScoped<BackupService>();

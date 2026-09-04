@@ -10,6 +10,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Tests.SiteAdmin;
 
 /// <summary>
@@ -22,13 +24,11 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// "actually wrote a backup" assertions but still exercise the decision
 /// surface via the no-op branches.
 /// </summary>
-// Mutates a process-wide environment variable; see the collection's doc comment.
-[Collection(EnvironmentVariableCollection.Name)]
 public sealed class BackupSchedulerTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly string _backupsDir;
-    private readonly string? _previousBackupsDir;
+    private readonly BackupOptions _options;
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 5, 14, 0, 0, 0, TimeSpan.Zero));
     private readonly MaintenanceModeState _maintenance = new();
 
@@ -36,15 +36,15 @@ public sealed class BackupSchedulerTests : IDisposable
     {
         _backupsDir = Path.Combine(Path.GetTempPath(), "aldt-scheduler-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_backupsDir);
-        _previousBackupsDir = Environment.GetEnvironmentVariable("BACKUPS_DIR");
-        Environment.SetEnvironmentVariable("BACKUPS_DIR", _backupsDir);
+        // This fixture's own directory, handed to the services rather than set
+        // as a process-wide variable every other fixture also reads (#733).
+        _options = new BackupOptions { Directory = _backupsDir };
         _db.OrgContext.IsSiteAdmin = true;
         _db.OrgContext.CurrentUserId = null;
     }
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("BACKUPS_DIR", _previousBackupsDir);
         try { Directory.Delete(_backupsDir, recursive: true); } catch { /* best effort */ }
         _db.Dispose();
     }
@@ -160,10 +160,10 @@ public sealed class BackupSchedulerTests : IDisposable
         }).Build();
         var backups = new BackupService(
             ctx, _db.OrgContext, _maintenance, config,
-            NullLogger<BackupService>.Instance, _clock);
+            NullLogger<BackupService>.Instance, _clock, _options);
         var perTenant = new PerTenantBackupService(
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), config,
-            NullLogger<PerTenantBackupService>.Instance, _clock);
+            NullLogger<PerTenantBackupService>.Instance, _clock, _options);
         var systemSettings = new SystemSettingsService(
             ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
         var providerFactory = new OffsiteStorageProviderFactory(NullLoggerFactory.Instance);

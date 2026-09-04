@@ -23,6 +23,10 @@ public static class ObjectExplorerRegistration
         // URL download) so the admin isn't held on the page while they ingest.
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
         // Owns the on-disk AL compiler volume; singleton so its provisioning gate is shared.
+        // AL_COMPILER_* read once here rather than in the provisioner's
+        // constructor; see #733 and Services/Configuration/.
+        services.AddSingleton(sp => ALDevToolbox.Services.Configuration.AlCompilerOptions
+            .FromConfiguration(sp.GetRequiredService<IConfiguration>()));
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();

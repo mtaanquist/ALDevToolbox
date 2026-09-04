@@ -27,6 +27,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
 | `Services/OAuth/`            | The MCP OAuth surface: client resolution, claims transformation, bearer policy. |
 | `Services/Offsite/`          | `IOffsiteStorageProvider` and its S3 / Azure Blob implementations.            |
+| `Services/Configuration/`    | Deployment configuration read once at startup (`BackupOptions`, `SmtpFallbackOptions`, `AlCompilerOptions`) and passed to the services that need it, rather than each service reaching into the process environment. The env var names stay the operator-facing interface. |
 | `Services/BcQuality/`, `Services/Cookbook/`, `Services/Diff/`, `Services/SingleTenant/`, `Services/Tools/` | One folder per remaining tool or cross-cutting concern. |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |

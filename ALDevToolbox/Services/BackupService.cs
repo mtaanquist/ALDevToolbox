@@ -5,6 +5,8 @@ using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
+using ALDevToolbox.Services.Configuration;
+
 namespace ALDevToolbox.Services;
 
 /// <summary>
@@ -57,7 +59,10 @@ public sealed class BackupService
         MaintenanceModeState maintenance,
         IConfiguration configuration,
         ILogger<BackupService> logger,
-        TimeProvider clock)
+        TimeProvider clock,
+        // Optional so the tests that build this service by hand keep compiling.
+        // In production DI it is always the instance registered from configuration.
+        BackupOptions? options = null)
     {
         _db = db;
         _orgContext = orgContext;
@@ -67,10 +72,10 @@ public sealed class BackupService
         _connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:DefaultConnection is required for BackupService.");
-        _backupsDirectory = Environment.GetEnvironmentVariable("BACKUPS_DIR")
-            ?? "/var/lib/aldevtoolbox/backups";
-        _pgDumpPath = Environment.GetEnvironmentVariable("PG_DUMP_PATH") ?? "pg_dump";
-        _pgRestorePath = Environment.GetEnvironmentVariable("PG_RESTORE_PATH") ?? "pg_restore";
+        var backupOptions = options ?? new BackupOptions();
+        _backupsDirectory = backupOptions.Directory;
+        _pgDumpPath = backupOptions.PgDumpPath;
+        _pgRestorePath = backupOptions.PgRestorePath;
     }
 
     /// <summary>Absolute path to the backups directory. Created on demand.</summary>
