@@ -30,3 +30,11 @@
 .ws-repo p {
     margin: 0;
 }
+
+/* A clone command is one long unbreakable token, and .code is nowrap by
+   design - together they widen the sticky aside and push the whole page
+   sideways. Inside this card it wraps instead. */
+.ws-repo code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}

@@ -19,10 +19,15 @@ public sealed class AuditDisplayTests
     public void No_audit_entity_label_reaches_the_reader_as_a_camel_case_identifier()
     {
         var glued = new Regex("[a-z][A-Z]");
+        // A brand name is not an identifier: "GitHub repository" is written for
+        // the reader and only trips the check because of how GitHub spells
+        // itself. Folding the known proper nouns first keeps the rule aimed at
+        // enum names that reached the screen, which is what it is for.
+        var properNouns = new Regex("GitHub");
 
         var offenders = Enum.GetValues<AuditEntityType>()
             .Select(t => (Type: t, Label: AdminPageHelpers.FriendlyAuditType(t)))
-            .Where(x => glued.IsMatch(x.Label))
+            .Where(x => glued.IsMatch(properNouns.Replace(x.Label, "Github")))
             .Select(x => $"{x.Type} -> \"{x.Label}\"")
             .ToList();
 

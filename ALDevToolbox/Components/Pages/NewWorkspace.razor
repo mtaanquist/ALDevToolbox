@@ -503,9 +503,13 @@
                                 <div class="field">
                                     <label class="field__label" for="ws-repo-visibility">Who can see it</label>
                                     <span class="select-wrap">
-                                        <select class="select" id="ws-repo-visibility" @bind="_repoPrivate">
-                                            <option value="true">Only people in @_gitHub.OrgLogin</option>
-                                            <option value="false">Anyone on GitHub</option>
+                                        @* Bound as text, not as the bool it stands
+                                           for: Blazor formats a bool as "True",
+                                           which matches no option value and leaves
+                                           the control looking empty. *@
+                                        <select class="select" id="ws-repo-visibility" @bind="_repoVisibility">
+                                            <option value="private">Only people in @_gitHub.OrgLogin</option>
+                                            <option value="public">Anyone on GitHub</option>
                                         </select>
                                         <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                                     </span>
@@ -575,7 +579,12 @@
     /// not quietly undo a name they chose.
     /// </summary>
     private bool _repositoryNameEdited;
-    private bool _repoPrivate = true;
+    /// <summary>
+    /// Who will be able to see the repository, as the select's own value.
+    /// Private by default: a customer's code is the norm, and the choice that
+    /// cannot be undone quietly is the one that should not be the default.
+    /// </summary>
+    private string _repoVisibility = "private";
     private bool _repoBusy;
     private Dictionary<string, string> _repoErrors = new();
     private GitHubWorkspaceRepository? _createdRepo;
@@ -693,7 +702,8 @@
         _repoBusy = true;
         try
         {
-            _createdRepo = await GitHubCreate.CreateAsync(plan, RepositoryName, _repoPrivate);
+            _createdRepo = await GitHubCreate.CreateAsync(
+                plan, RepositoryName, isPrivate: _repoVisibility != "public");
         }
         catch (PlanValidationException ex)
         {
