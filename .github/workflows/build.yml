@@ -13,7 +13,17 @@ on:
   # docs-only PR ran no workflow at all, and because no check was required, a
   # red build on a *code* PR didn't block the merge either. Make `ci-gate` the
   # required check on the branch protection rule to enforce it.
+  # Tags are excluded deliberately. A `vX.Y.Z` tag always points at a commit
+  # that already reached `main` through a PR, so this workflow has already run
+  # for that exact SHA on the branch push; letting the tag push start a second
+  # identical run doubled the wall-clock of every release for no added signal.
+  # release.yml's `require-green-build` gate is unaffected: it looks up
+  # build.yml runs by `head_sha`, and the branch-push run carries the same SHA.
+  # A tag on a commit that never reached a branch therefore has no run to find,
+  # and the gate refuses to publish it, which is the outcome we want. See #729.
   push:
+    tags-ignore:
+      - "v*.*.*"
   pull_request:
   workflow_dispatch:
 
