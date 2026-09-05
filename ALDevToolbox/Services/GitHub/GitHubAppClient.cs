@@ -840,12 +840,22 @@ public sealed class GitHubAppClient
     /// <exception cref="GitHubApiException">GitHub refused the write for any other reason.</exception>
     public async Task<GitHubFileWrite> PutFileAsync(
         string credential, string owner, string repo, string path, string branch,
-        string commitMessage, byte[] content, string? baseSha, CancellationToken ct = default)
+        string commitMessage, byte[] content, string? baseSha,
+        GitHubCommitAuthor? author = null, CancellationToken ct = default)
     {
         var encoded = Convert.ToBase64String(content);
-        object body = baseSha is null
-            ? new { message = commitMessage, content = encoded, branch }
-            : new { message = commitMessage, content = encoded, branch, sha = baseSha };
+        // GitHub credits the writing credential when no author is given, which
+        // on an installation token is the app rather than the person who asked
+        // for the work. Both objects are sent so the commit reads as theirs on
+        // either side of GitHub's author/committer split.
+        object? who = author is null ? null : new { name = author.Name, email = author.Email };
+        object body = (baseSha, who) switch
+        {
+            (null, null) => new { message = commitMessage, content = encoded, branch },
+            (null, _) => new { message = commitMessage, content = encoded, branch, author = who, committer = who },
+            (_, null) => new { message = commitMessage, content = encoded, branch, sha = baseSha },
+            _ => new { message = commitMessage, content = encoded, branch, sha = baseSha, author = who, committer = who },
+        };
 
         using var request = NewJsonRequest(
             HttpMethod.Put, $"{RepoPath(owner, repo)}/contents/{EscapePath(path)}", credential, body);
@@ -858,10 +868,15 @@ public sealed class GitHubAppClient
             // 409 is GitHub's documented answer for "the sha you quoted is not
             // this file's current one". The same complaint also arrives as a
             // 422 on some repositories, so both are read as the conflict they
-            // are rather than as a request that went wrong.
+            // are rather than as a request that went wrong. The third shape is
+            // a write that quoted no sha at all landing on a path that already
+            // exists - GitHub answers "'sha' wasn't supplied", which means the
+            // same thing to a caller that expected to be creating the file.
             if (response.StatusCode == HttpStatusCode.Conflict
                 || (response.StatusCode == HttpStatusCode.UnprocessableEntity
-                    && message.Contains("does not match", StringComparison.OrdinalIgnoreCase)))
+                    && (message.Contains("does not match", StringComparison.OrdinalIgnoreCase)
+                        || message.Contains("wasn't supplied", StringComparison.OrdinalIgnoreCase)
+                        || message.Contains("was not supplied", StringComparison.OrdinalIgnoreCase))))
             {
                 _logger.LogInformation(
                     "GitHub refused to write {Path} on {Owner}/{Repo}: it has changed since it was read.",

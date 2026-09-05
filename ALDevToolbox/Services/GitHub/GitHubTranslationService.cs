@@ -220,7 +220,9 @@ public sealed class GitHubTranslationService
 
         var write = await _github.PutFileAsync(
             token, repo.Owner, repo.Name, source.Path, branch,
-            $"Translate {source.FileName}", Encoding.UTF8.GetBytes(xml), current?.Sha, ct);
+            // No author: this write goes out on the user's own token, so GitHub
+            // already credits the commit to them.
+            $"Translate {source.FileName}", Encoding.UTF8.GetBytes(xml), current?.Sha, ct: ct);
 
         // Find before create: a pull request that is still open takes the new
         // commit, so a second afternoon's work joins the first one's review

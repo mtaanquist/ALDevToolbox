@@ -174,6 +174,54 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task The_seed_commit_names_the_same_person_as_the_workspace_commit()
+    {
+        await ReadyAsync();
+        var api = WritableApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // The seed goes out on the installation token, so with no author GitHub
+        // credits it to the app - leaving a new repository opening on an initial
+        // commit by a bot followed by one by the person who asked for it.
+        var seed = BodyOf(api, "PUT", "/contents/");
+        seed.Should().Contain("cronus-dev@users.noreply.github.com");
+        seed.Should().Contain("\"name\":\"cronus-dev\"");
+        // Both objects: GitHub splits author from committer, and the committer
+        // is the one its commit list shows.
+        seed.Should().Contain("\"committer\":");
+
+        var commit = BodyOf(api, "POST", "/git/commits");
+        commit.Should().Contain("cronus-dev@users.noreply.github.com");
+    }
+
+    [Fact]
+    public async Task Something_else_writing_the_seed_path_first_is_refused_as_a_race()
+    {
+        await ReadyAsync();
+        var api = WritableApi()
+            // The seed write quotes no sha, so GitHub answers an existing path
+            // with this 422 rather than the 409 a stale-sha write gets. Both
+            // mean the same thing to a caller that expected to be creating the
+            // file, and in a repository this new it means something else got in
+            // between the create and the first write.
+            .On(HttpMethod.Put, $"/repos/{Repo}/contents/", HttpStatusCode.UnprocessableEntity,
+                """{"message":"Invalid request. \"sha\" wasn't supplied."}""");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var act = () => service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // The race refusal, not the generic "GitHub refused the request" - the
+        // user is told what happened and that the repository is already there.
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Values.Should().ContainSingle()
+            .Which.Should().Contain("pushed to");
+    }
+
+    [Fact]
     public async Task The_workspace_commit_carries_every_generated_file_including_the_seeded_one()
     {
         await ReadyAsync();

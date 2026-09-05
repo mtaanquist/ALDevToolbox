@@ -315,12 +315,17 @@ public sealed class GitHubWorkspaceRepositoryService
             return;
         }
 
+        // Both commits name the same person: without an author the seed is
+        // credited to the app, so a new repository would open on an initial
+        // commit by a bot followed by one by the consultant who asked for it.
+        var author = await ResolveAuthorAsync(userId, ct);
+
         GitHubFileWrite seedCommit;
         try
         {
             seedCommit = await _github.PutFileAsync(
                 token, repository.Owner, repository.Name, seed.Path, repository.DefaultBranch,
-                "Initial commit", seed.Content, baseSha: null, ct);
+                "Initial commit", seed.Content, baseSha: null, author: author, ct: ct);
         }
         catch (GitHubContentConflictException)
         {
@@ -346,7 +351,7 @@ public sealed class GitHubWorkspaceRepositoryService
         var commit = await _github.CreateCommitAsync(
             token, repository.Owner, repository.Name,
             $"Add the {plan.WorkspaceName} workspace", tree, parentSha: seedCommit.CommitSha,
-            author: await ResolveAuthorAsync(userId, ct), ct: ct);
+            author: author, ct: ct);
 
         if (!await _github.UpdateBranchAsync(
                 token, repository.Owner, repository.Name, repository.DefaultBranch, commit, ct))
