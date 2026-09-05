@@ -454,6 +454,23 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>();
     }
 
+    /// <summary>
+    /// The translation-memory ingest (#631): the org's GitHub connection, the
+    /// API client, and the memory it feeds. Reads go out on the installation
+    /// token, so no user link is involved.
+    /// </summary>
+    public ALDevToolbox.Services.Translation.TranslationMemoryIngestService NewTranslationMemoryIngestService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        TimeProvider? clock = null) =>
+        new(ctx, NewGitHubConnectionService(ctx, access), client,
+            new ALDevToolbox.Services.Translation.TranslationMemoryService(
+                ctx, OrgContext,
+                NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance),
+            OrgContext, clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryIngestService>.Instance);
+
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>
     private sealed class UnreachableHandler : HttpMessageHandler
     {

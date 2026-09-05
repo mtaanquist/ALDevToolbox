@@ -12,6 +12,10 @@ public static class TranslatorRegistration
         services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryService>();
         services.AddScoped<ALDevToolbox.Services.Translation.MachineTranslationService>();
         services.AddScoped<ALDevToolbox.Services.Translation.TranslationSuggestionCoordinator>();
+        // Fills the memory from the .xlf files in the organisation's own
+        // repositories (issue #631) - nightly, and on demand from the admin
+        // Translation memory page.
+        services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryIngestService>();
         services.AddSingleton<ALDevToolbox.Services.Translation.Providers.IMachineTranslationProviderFactory,
             ALDevToolbox.Services.Translation.Providers.MachineTranslationProviderFactory>();
         // DeepL machine-translation client (per-tenant BYOK). Fixed public hosts

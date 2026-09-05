@@ -86,7 +86,11 @@ public sealed class TranslationMemoryService
     /// must have confirmed <see cref="XliffDocument.SourceLanguage"/> is
     /// non-null.
     /// </summary>
-    public static IEnumerable<TranslationMemoryUpsert> PairsFrom(XliffDocument parsed, string origin) =>
+    public static IEnumerable<TranslationMemoryUpsert> PairsFrom(
+        XliffDocument parsed,
+        string origin,
+        string? sourceRepository = null,
+        string? sourcePath = null) =>
         parsed.Units
             .Where(u => !string.IsNullOrEmpty(u.TargetText))
             .Select(u => new TranslationMemoryUpsert(
@@ -95,7 +99,9 @@ public sealed class TranslationMemoryService
                 u.SourceText,
                 u.TargetText,
                 AlXliffParser.BucketKind(u.Hint),
-                origin));
+                origin,
+                sourceRepository,
+                sourcePath));
 
     /// <summary>
     /// Inserts new <c>(source, target)</c> pairs and bumps
@@ -128,7 +134,9 @@ public sealed class TranslationMemoryService
             var tgtHash = Hash(e.TargetText);
             var key = $"{srcLang}{tgtLang}{srcHash}{tgtHash}";
             // Last write wins on collision within the batch.
-            byKey[key] = new PreparedEntry(srcLang, tgtLang, e.SourceText, e.TargetText, srcHash, tgtHash, e.Kind, e.Origin);
+            byKey[key] = new PreparedEntry(
+                srcLang, tgtLang, e.SourceText, e.TargetText, srcHash, tgtHash, e.Kind,
+                e.Origin, e.SourceRepository, e.SourcePath);
         }
 
         if (byKey.Count == 0) return 0;
@@ -157,6 +165,13 @@ public sealed class TranslationMemoryService
                     row.HitCount += 1;
                     row.LastSeenAt = now;
                     row.UpdatedAt = now;
+                    // Most recent file wins. A pair that appears in two files
+                    // would otherwise keep whichever one happened to be read
+                    // first, and "where did this come from" would point at a
+                    // file that may no longer say it.
+                    row.Origin = c.Origin;
+                    row.SourceRepository = c.SourceRepository;
+                    row.SourcePath = c.SourcePath;
                     if (row.DeletedAt is not null) row.DeletedAt = null; // resurrect
                     continue;
                 }
@@ -172,6 +187,8 @@ public sealed class TranslationMemoryService
                     TargetHash = c.TargetHash,
                     Kind = string.IsNullOrEmpty(c.Kind) ? "other" : c.Kind,
                     Origin = c.Origin,
+                    SourceRepository = c.SourceRepository,
+                    SourcePath = c.SourcePath,
                     HitCount = 1,
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -222,7 +239,9 @@ public sealed class TranslationMemoryService
                 && e.SourceHash == srcHash && e.SourceText == sourceText)
             .OrderByDescending(e => e.Score).ThenByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
             .Take(limit)
-            .Select(e => new TranslationSuggestion(e.Id, e.TargetText, e.Origin, e.Kind, 1.0, e.Score, 0))
+            .Select(e => new TranslationSuggestion(
+                e.Id, e.TargetText, e.Origin, e.Kind, 1.0, e.Score, 0, false,
+                e.SourceRepository, e.SourcePath))
             .ToListAsync(ct).ConfigureAwait(false);
 
         var results = new List<TranslationSuggestion>(exact);
@@ -245,6 +264,8 @@ public sealed class TranslationMemoryService
                     e.Origin,
                     e.Kind,
                     e.Score,
+                    e.SourceRepository,
+                    e.SourcePath,
                     Similarity = EF.Functions.TrigramsSimilarity(e.SourceText, sourceText),
                 })
                 .OrderByDescending(x => x.Similarity)
@@ -257,7 +278,9 @@ public sealed class TranslationMemoryService
             {
                 if (results.Count >= limit) break;
                 if (!seenTargets.Add(f.TargetText)) continue;
-                results.Add(new TranslationSuggestion(f.Id, f.TargetText, f.Origin, f.Kind, f.Similarity, f.Score, 0));
+                results.Add(new TranslationSuggestion(
+                    f.Id, f.TargetText, f.Origin, f.Kind, f.Similarity, f.Score, 0, false,
+                    f.SourceRepository, f.SourcePath));
             }
         }
 
@@ -325,14 +348,16 @@ public sealed class TranslationMemoryService
                     && (src == null || e.SourceLanguage == src)
                     && set.Contains(e.SourceHash))
                 .OrderByDescending(e => e.Score).ThenByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
-                .Select(e => new { e.Id, e.SourceText, e.TargetText, e.Origin, e.Kind, e.Score })
+                .Select(e => new { e.Id, e.SourceText, e.TargetText, e.Origin, e.Kind, e.Score, e.SourceRepository, e.SourcePath })
                 .ToListAsync(ct).ConfigureAwait(false);
 
             foreach (var r in rows)
             {
                 // First row per source wins (best score, then hit_count, above).
                 if (result.ContainsKey(r.SourceText)) continue;
-                result[r.SourceText] = new TranslationSuggestion(r.Id, r.TargetText, r.Origin, r.Kind, 1.0, r.Score, 0);
+                result[r.SourceText] = new TranslationSuggestion(
+                    r.Id, r.TargetText, r.Origin, r.Kind, 1.0, r.Score, 0, false,
+                    r.SourceRepository, r.SourcePath);
             }
         }
 
@@ -529,7 +554,8 @@ public sealed class TranslationMemoryService
             .Select(e => new
             {
                 e.Id, e.SourceLanguage, e.TargetLanguage, e.SourceText, e.TargetText,
-                e.Kind, e.Origin, e.HitCount, e.Score, e.CreatedAt, e.LastSeenAt, e.DeletedAt,
+                e.Kind, e.Origin, e.SourceRepository, e.SourcePath,
+                e.HitCount, e.Score, e.CreatedAt, e.LastSeenAt, e.DeletedAt,
             })
             .ToListAsync(ct).ConfigureAwait(false);
 
@@ -546,14 +572,16 @@ public sealed class TranslationMemoryService
 
         var items = rows.Select(r => new MemoryEntryView(
             r.Id, r.SourceLanguage, r.TargetLanguage, r.SourceText, r.TargetText, r.Kind, r.Origin,
-            r.HitCount, r.Score, myVotes.GetValueOrDefault(r.Id), r.CreatedAt, r.LastSeenAt, r.DeletedAt != null)).ToList();
+            r.HitCount, r.Score, myVotes.GetValueOrDefault(r.Id), r.CreatedAt, r.LastSeenAt, r.DeletedAt != null,
+            r.SourceRepository, r.SourcePath)).ToList();
         return new MemorySearchResult(items, total);
     }
 
     private sealed class PreparedEntry
     {
         public PreparedEntry(string sourceLanguage, string targetLanguage, string sourceText,
-            string targetText, string sourceHash, string targetHash, string kind, string? origin)
+            string targetText, string sourceHash, string targetHash, string kind, string? origin,
+            string? sourceRepository, string? sourcePath)
         {
             SourceLanguage = sourceLanguage;
             TargetLanguage = targetLanguage;
@@ -563,6 +591,8 @@ public sealed class TranslationMemoryService
             TargetHash = targetHash;
             Kind = kind;
             Origin = origin;
+            SourceRepository = sourceRepository;
+            SourcePath = sourcePath;
         }
 
         public string SourceLanguage { get; }
@@ -573,6 +603,8 @@ public sealed class TranslationMemoryService
         public string TargetHash { get; }
         public string Kind { get; }
         public string? Origin { get; }
+        public string? SourceRepository { get; }
+        public string? SourcePath { get; }
     }
 
     /// <summary>MD5 hex of the text — a bounded key for the unique index, not a security primitive.</summary>
@@ -601,13 +633,17 @@ public sealed class TranslationMemoryService
 }
 
 /// <summary>A pair offered for insertion into the translation memory.</summary>
+/// <param name="SourceRepository">The repository (<c>owner/name</c>) the pair was read from, when it came from one (#631).</param>
+/// <param name="SourcePath">Where in that repository the file lives. Null unless the pair came from a repository.</param>
 public sealed record TranslationMemoryUpsert(
     string SourceLanguage,
     string TargetLanguage,
     string SourceText,
     string TargetText,
     string Kind,
-    string? Origin);
+    string? Origin,
+    string? SourceRepository = null,
+    string? SourcePath = null);
 
 /// <summary>
 /// One suggested target for a source string: its memory-entry id (for voting /
@@ -616,6 +652,10 @@ public sealed record TranslationMemoryUpsert(
 /// ephemeral provider-generated suggestion (<c>EntryId</c> 0, no vote/remove
 /// controls, rendered with an "MT" badge) so the editor can tell it apart from
 /// memory and in-file matches.
+///
+/// <para><see cref="SourceRepository"/> / <see cref="SourcePath"/> are set when
+/// the pair was learned from a file in one of the organisation's repositories,
+/// which is what lets the chip's caption link to that file (#631).</para>
 /// </summary>
 public sealed record TranslationSuggestion(
     long EntryId,
@@ -625,7 +665,9 @@ public sealed record TranslationSuggestion(
     double Similarity,
     int Score,
     int MyVote,
-    bool IsMachineTranslation = false);
+    bool IsMachineTranslation = false,
+    string? SourceRepository = null,
+    string? SourcePath = null);
 
 /// <summary>Result of a vote: the entry's new net score and the user's resulting vote (-1/0/1).</summary>
 public sealed record VoteResult(long EntryId, int Score, int MyVote);
@@ -641,7 +683,11 @@ public sealed record MemorySearchQuery(
     int Skip = 0,
     int Take = 50);
 
-/// <summary>One memory entry as shown in the management list.</summary>
+/// <summary>
+/// One memory entry as shown in the management list.
+/// <c>SourceRepository</c> / <c>SourcePath</c> are set for pairs learned from a
+/// file in one of the organisation's repositories (#631), and null otherwise.
+/// </summary>
 public sealed record MemoryEntryView(
     long Id,
     string SourceLanguage,
@@ -655,7 +701,9 @@ public sealed record MemoryEntryView(
     int MyVote,
     DateTime CreatedAt,
     DateTime LastSeenAt,
-    bool IsDeleted);
+    bool IsDeleted,
+    string? SourceRepository = null,
+    string? SourcePath = null);
 
 /// <summary>A page of <see cref="MemoryEntryView"/> plus the total match count.</summary>
 public sealed record MemorySearchResult(IReadOnlyList<MemoryEntryView> Items, int Total);

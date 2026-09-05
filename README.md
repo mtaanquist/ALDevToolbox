@@ -165,6 +165,7 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER`       | `1` to disable the daily auto-import of new Microsoft OnPrem releases for orgs that opted in. | unset |
 | `DISABLE_DELIVERY_SCHEDULER`                  | `1` to disable the scheduler that enqueues due deliveries, so scheduled publishes never fire. | unset |
 | `DISABLE_ENVIRONMENT_REFRESH_SCHEDULER`       | `1` to disable the nightly refresh of Business Central environment data behind the Upgrades page. | unset |
+| `DISABLE_TRANSLATION_MEMORY_INGEST_SCHEDULER` | `1` to disable the nightly pass that fills the translation memory from the `.xlf` files in each organisation's own repositories. | unset |
 | `DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER`       | `1` to disable the periodic prune of old login-attempt rows. | unset                |
 | `RELEASE_AUTO_IMPORT_HOUR_UTC`                | Hour (UTC, `0`-`23`) the release auto-import runs at.     | `4`                    |
 | `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated `https://` origins. Leave blank to disable the passkey UI. | unset |

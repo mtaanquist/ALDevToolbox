@@ -92,6 +92,11 @@ internal static class TenantTableCatalog
         // lives (ignored_at), which no sweep can work out again. Its only parent
         // is organizations, so it can sit last.
         "github_repository_candidates",
+        // Which repository file each learned pair last came from, and the
+        // version of it already read. Restorable content: without it a restored
+        // organisation would re-read every translation file once, which costs
+        // calls and teaches nothing new.
+        "translation_memory_sources",
     ];
 
     /// <summary>

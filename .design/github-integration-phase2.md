@@ -472,7 +472,57 @@ suggestions without anyone uploading anything.
 
 **As built**
 
-_(appended by the implementer)_
+Seven things settled while building it.
+
+**The generated `.g.xlf` is skipped without being read.** `TranslationFileRules` already
+tells a source file from a translation, and a `.g.xlf` holds every string with no
+translations in it - so the parser would yield nothing from one. Reading it would cost a
+call per extension per night to learn nothing, so the ingest filters it out of the tree
+listing rather than downloading it and discovering that.
+
+**The tree and the file reads are taken at `HEAD`, not at a branch name we looked up.**
+GitHub resolves `HEAD` to the repository's own default branch server-side, so this is the
+same branch a build clones, costs one call fewer than asking the repository what its
+default branch is called, and cannot go stale when somebody renames it. The same reasoning
+gives the "From" links their shape: `https://github.com/{repo}/blob/HEAD/{path}` needs no
+stored branch and survives a rename, so no column carries one.
+
+**A truncated tree suspends the deletion half of the sweep, not the learning half.**
+GitHub caps a recursive listing and says so. Learning from the part that came back is
+strictly better than learning from none; but treating the files it did *not* list as
+"gone" would throw away their recorded blob shas and make the next night re-read the whole
+repository. So a truncated listing still ingests, and simply skips the removal pass.
+
+**`GetFileAsync` was returning an empty file where it promised null.** Its own comment
+said a file too large for the Contents API to inline comes back as null; in fact GitHub
+answers with a complete-looking object whose `encoding` is `"none"` and whose `content` is
+`""`, which the method decoded into a file whose text was empty - indistinguishable from a
+genuinely empty file. It now returns null unless the encoding is `base64`, which makes the
+documented contract true and is what triggers the ingest's fall back to `GetBlobAsync`.
+The Translator's own open path gets the same fix for free: a huge file now reads as "not
+there" rather than as an empty editor.
+
+**Scope is narrowed twice, and neither narrowing is optional.** The tracked list comes out
+of `oe_project_repositories` under the ordinary tenant filter, and each row's clone URL
+must also name the connected organisation's login. The installation token can reach every
+repository the App was installed on, so without the second check a solution pointing at
+`someone-else/their-app` would be read with this organisation's credential. A repository
+tracked by two solutions is read once.
+
+**The whole feature adds no `IgnoreQueryFilters()` call.** The scheduler enumerates
+`organizations` (no tenant filter on that table), enters the org's `AmbientOrganizationScope`,
+and asks `GitHubConnectionService.GetStatusAsync` from the database before spending
+anything on GitHub - so an organisation with no connection costs one cached read and no
+call at all.
+
+**The page states the two counts a person actually asks about.** "Refresh from
+repositories" reports what it read, what it learned, and - only when they are non-zero -
+how many files had not changed and how many repositories could not be read. It never
+fails: an unreachable GitHub becomes a sentence, and the button is offered only once the
+organisation has connected a GitHub organisation, because with nothing connected the only
+answer it could give is that nothing is connected. Rendered evidence is
+`ALDevToolbox.Tests/Components/AdminTranslationMemoryTests.cs`; a screenshot was not
+possible in the build environment.
 
 ## #630 Dependency drift: pull requests bumping app.json when a new release is imported
 

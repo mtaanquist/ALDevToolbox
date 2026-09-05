@@ -52,6 +52,21 @@ public class TranslationMemoryEntry
     /// <summary>Free-text provenance shown next to a suggestion (e.g. module / extension name, or <c>"Translator"</c>).</summary>
     public string? Origin { get; set; }
 
+    /// <summary>
+    /// The repository (<c>owner/name</c>) the pair was last read from, when it
+    /// came from one - the ingest that walks the organisation's repositories
+    /// (#631) sets it, everything else leaves it null.
+    ///
+    /// <para>With <see cref="SourcePath"/> it turns "where did this come from"
+    /// into a link to the file itself. The unique pair index is unchanged, so a
+    /// pair that appears in two files keeps the most recent file's attribution:
+    /// one answer, and a real one.</para>
+    /// </summary>
+    public string? SourceRepository { get; set; }
+
+    /// <summary>Where in <see cref="SourceRepository"/> that file lives, from the root. Null unless the pair came from a repository.</summary>
+    public string? SourcePath { get; set; }
+
     /// <summary>How many times this exact pair has been seen — a recency/popularity tie-breaker for ranking.</summary>
     public int HitCount { get; set; }
 

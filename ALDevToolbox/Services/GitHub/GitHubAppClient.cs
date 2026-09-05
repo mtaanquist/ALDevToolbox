@@ -538,6 +538,18 @@ public sealed partial class GitHubAppClient
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
         if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.String) return null;
+        // A file over the Contents API's 1 MB inlining limit comes back as a
+        // complete-looking object whose `encoding` is "none" and whose `content`
+        // is empty. Handing that back as a file whose text is "" would be worse
+        // than saying there is nothing to read: the caller cannot tell it from
+        // an empty file. Callers that must have the bytes read the blob by sha
+        // instead (see GetBlobAsync).
+        var encoding = root.TryGetProperty("encoding", out var enc) ? enc.GetString() : null;
+        if (!string.Equals(encoding, "base64", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("GitHub would not inline {Path}; its encoding is {Encoding}.", path, encoding ?? "absent");
+            return null;
+        }
         var sha = root.TryGetProperty("sha", out var shaElement) ? shaElement.GetString() ?? string.Empty : string.Empty;
 
         try

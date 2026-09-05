@@ -35,6 +35,9 @@ public static class BackgroundWorkerRegistration
         // Nightly sweep that re-reads every BC-connected project's environments, keeping the
         // mirrored next-platform-update columns fresh for the fleet view.
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshScheduler>();
+        // Nightly pass over every GitHub-connected organisation's tracked repositories,
+        // learning from the translation files that have changed since the last one.
+        services.AddHostedService<ALDevToolbox.Services.Translation.TranslationMemoryIngestScheduler>();
         // Mirrors Microsoft's BCQuality knowledge base into Postgres for the MCP
         // tools: a first ingest shortly after startup, then daily. With the refresh
         // disabled the tools report an empty knowledge base rather than failing.

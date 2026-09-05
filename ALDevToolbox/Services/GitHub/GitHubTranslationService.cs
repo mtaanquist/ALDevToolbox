@@ -1,5 +1,6 @@
 using System.Text;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Translation;
 
 namespace ALDevToolbox.Services.GitHub;
 
@@ -86,12 +87,6 @@ public sealed class GitHubTranslationService
     /// <summary>Branch names are <c>aldt/translate-&lt;language&gt;</c>, per the design doc.</summary>
     public const string BranchPrefix = "aldt/translate-";
 
-    /// <summary>The folder AL keeps translation files in.</summary>
-    private const string TranslationsFolder = "Translations";
-
-    /// <summary>The suffix the AL compiler gives the generated source file.</summary>
-    private const string SourceFileSuffix = ".g.xlf";
-
     private readonly GitHubRepositoryService _repositories;
     private readonly GitHubAccessService _access;
     private readonly GitHubAppClient _github;
@@ -134,8 +129,8 @@ public sealed class GitHubTranslationService
 
         var files = tree.Entries
             .Where(e => string.Equals(e.Type, "blob", StringComparison.Ordinal))
-            .Where(e => IsTranslationFile(e.Path))
-            .Select(Describe)
+            .Where(e => TranslationFileRules.IsTranslationFile(e.Path))
+            .Select(e => Describe(e.Path))
             .OrderBy(f => f.Folder, StringComparer.OrdinalIgnoreCase)
             .ThenByDescending(f => f.IsSource)
             .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
@@ -315,48 +310,16 @@ public sealed class GitHubTranslationService
     }
 
     /// <summary>
-    /// True for a file sitting directly inside a folder called
-    /// <c>Translations</c>, at any depth. "One level under
-    /// <c>Translations/</c>" is the rule from the design doc; the folder's own
-    /// depth is not fixed, because an AL workspace keeps one per extension.
+    /// One tree entry as the list shows it. The rules themselves live in
+    /// <see cref="TranslationFileRules"/>, which the translation-memory ingest
+    /// shares - "which files in this repository are translations" is one
+    /// question and two answers to it would drift apart.
     /// </summary>
-    private static bool IsTranslationFile(string path)
+    private static RepositoryTranslationFile Describe(string path)
     {
-        var segments = path.Split('/');
-        if (segments.Length < 2) return false;
-        if (!string.Equals(segments[^2], TranslationsFolder, StringComparison.OrdinalIgnoreCase)) return false;
-        var name = segments[^1];
-        return name.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)
-            || name.EndsWith(".xliff", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static RepositoryTranslationFile Describe(GitHubTreeEntry entry)
-    {
-        var segments = entry.Path.Split('/');
-        var name = segments[^1];
-        var folder = segments.Length >= 3 ? string.Join('/', segments[..^2]) : string.Empty;
-        var isSource = name.EndsWith(SourceFileSuffix, StringComparison.OrdinalIgnoreCase);
-        return new RepositoryTranslationFile(entry.Path, name, folder, isSource ? null : ReadLanguage(name), isSource);
-    }
-
-    /// <summary>
-    /// The language tag out of an AL translation file name - the <c>da-DK</c>
-    /// in <c>Base Application.da-DK.xlf</c>. Null when the name does not carry
-    /// one, which is not a problem: the list falls back to the file name and
-    /// the language the file itself declares is read when it is opened.
-    /// </summary>
-    private static string? ReadLanguage(string fileName)
-    {
-        var withoutExtension = fileName[..fileName.LastIndexOf('.')];
-        var dot = withoutExtension.LastIndexOf('.');
-        if (dot < 0) return null;
-
-        var candidate = withoutExtension[(dot + 1)..];
-        var parts = candidate.Split('-');
-        if (parts.Length is < 1 or > 3) return null;
-        if (parts[0].Length is < 2 or > 3 || !parts[0].All(char.IsAsciiLetter)) return null;
-        if (parts.Skip(1).Any(p => p.Length is < 2 or > 4 || !p.All(char.IsAsciiLetterOrDigit))) return null;
-        return candidate;
+        var place = TranslationFileRules.Describe(path);
+        return new RepositoryTranslationFile(
+            place.Path, place.FileName, place.Folder, place.Language, place.IsSource);
     }
 
     /// <summary>The pull request's description: what changed, and where it came from.</summary>

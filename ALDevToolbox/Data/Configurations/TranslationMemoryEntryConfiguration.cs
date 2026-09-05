@@ -20,6 +20,8 @@ internal sealed class TranslationMemoryEntryConfiguration : IEntityTypeConfigura
         entity.Property(e => e.TargetHash).HasColumnName("target_hash").IsRequired();
         entity.Property(e => e.Kind).HasColumnName("kind").IsRequired();
         entity.Property(e => e.Origin).HasColumnName("origin");
+        entity.Property(e => e.SourceRepository).HasColumnName("source_repository").HasMaxLength(300);
+        entity.Property(e => e.SourcePath).HasColumnName("source_path").HasMaxLength(1000);
         entity.Property(e => e.HitCount).HasColumnName("hit_count").IsRequired();
         entity.Property(e => e.Score).HasColumnName("score").IsRequired().HasDefaultValue(0);
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();

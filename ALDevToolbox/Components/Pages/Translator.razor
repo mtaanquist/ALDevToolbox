@@ -494,7 +494,24 @@ else
                                                     <div class="tr-sugg__body">
                                                         <div class="tr-stext">@s.TargetText</div>
                                                         <div class="tr-smeta">
-                                                            <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "Your organisation")</span>
+                                                            @if (s.SourceRepository is not null && s.SourcePath is not null)
+                                                            {
+                                                                @* Learned from a file in one of the organisation's own
+                                                                   repositories, so the caption can go there. The click is
+                                                                   stopped from filling the target - opening the file and
+                                                                   accepting the suggestion are different intentions. *@
+                                                                <a class="tr-sorigin tr-sorigin--link"
+                                                                   href="@RepositoryFileUrl(s.SourceRepository, s.SourcePath)"
+                                                                   target="_blank" rel="noopener noreferrer"
+                                                                   title="@($"{s.SourceRepository} - {s.SourcePath}")"
+                                                                   @onclick:stopPropagation="true">
+                                                                    <Icon Name="external-link" Width="12" Height="12" />from @(s.Origin ?? s.SourceRepository)
+                                                                </a>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "Your organisation")</span>
+                                                            }
                                                         </div>
                                                     </div>
                                                     <div class="tr-sugg__side">
@@ -2399,6 +2416,14 @@ else
 
     private static string SimClass(double sim) => sim >= 0.99 ? "exact" : sim >= 0.8 ? "high" : "mid";
     private static string SimLabel(double sim) => sim >= 0.99 ? "Exact" : $"{Math.Round(sim * 100)}%";
+
+    /// <summary>
+    /// The file a suggestion was learned from, on GitHub. The ref is HEAD, which
+    /// GitHub resolves to the repository's current default branch, so the link
+    /// survives a rename.
+    /// </summary>
+    private static string RepositoryFileUrl(string repository, string path) =>
+        $"https://github.com/{repository}/blob/HEAD/{path}";
 
     public async ValueTask DisposeAsync()
     {

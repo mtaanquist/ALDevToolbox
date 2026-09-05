@@ -435,6 +435,80 @@ public sealed class TranslationMemoryServiceTests : IDisposable
         (await NewMemory(ctx).LearnFromXliffAsync(Xliff("Amount", ""))).Should().Be(0);
     }
 
+    // ── Where a pair came from (#631) ────────────────────────────────────
+
+    [Fact]
+    public async Task A_pair_learned_from_a_repository_carries_the_file_into_its_suggestions()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync(new[]
+            {
+                new TranslationMemoryUpsert("en-US", "da-DK", "Posting Date", "Bogføringsdato", "caption",
+                    "customer-app / PaymentImport", "cronus-dk/customer-app",
+                    "PaymentImport/Translations/PaymentImport.da-DK.xlf"),
+            });
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var hit = (await NewMemory(ctx).SuggestAsync("Posting Date", "en-US", "da-DK")).Single();
+            hit.SourceRepository.Should().Be("cronus-dk/customer-app");
+            hit.SourcePath.Should().Be("PaymentImport/Translations/PaymentImport.da-DK.xlf");
+
+            var view = (await NewMemory(ctx).SearchAsync(new MemorySearchQuery(Text: "Posting"))).Items.Single();
+            view.SourceRepository.Should().Be("cronus-dk/customer-app");
+            view.SourcePath.Should().Be("PaymentImport/Translations/PaymentImport.da-DK.xlf");
+        }
+    }
+
+    [Fact]
+    public async Task Seeing_a_pair_in_a_second_file_moves_the_attribution_to_that_file()
+    {
+        // The unique pair index is unchanged, so a pair in two files keeps one
+        // attribution - and it has to be the most recent one, or "where did this
+        // come from" points at a file that may no longer say it.
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync(new[]
+            {
+                new TranslationMemoryUpsert("en-US", "da-DK", "Quantity", "Antal", "caption",
+                    "customer-app / PaymentImport", "cronus-dk/customer-app", "PaymentImport/Translations/a.da-DK.xlf"),
+            });
+        }
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync(new[]
+            {
+                new TranslationMemoryUpsert("en-US", "da-DK", "Quantity", "Antal", "caption",
+                    "other-app / Sales", "cronus-dk/other-app", "Sales/Translations/b.da-DK.xlf"),
+            });
+        }
+
+        await using (var read = _db.NewContext())
+        {
+            var row = await read.TranslationMemory.SingleAsync(e => e.SourceText == "Quantity");
+            row.HitCount.Should().Be(2);
+            row.Origin.Should().Be("other-app / Sales");
+            row.SourceRepository.Should().Be("cronus-dk/other-app");
+            row.SourcePath.Should().Be("Sales/Translations/b.da-DK.xlf");
+        }
+    }
+
+    [Fact]
+    public async Task A_pair_that_came_from_an_upload_names_no_repository()
+    {
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).UpsertAsync(new[] { Pair("Amount", "Beløb") });
+
+        await using (var ctx = _db.NewContext())
+        {
+            var hit = (await NewMemory(ctx).SuggestAsync("Amount", "en-US", "da-DK")).Single();
+            hit.SourceRepository.Should().BeNull();
+            hit.SourcePath.Should().BeNull();
+        }
+    }
+
     private static string Xliff(string source, string target) => $"""
         <?xml version="1.0" encoding="utf-8"?>
         <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">

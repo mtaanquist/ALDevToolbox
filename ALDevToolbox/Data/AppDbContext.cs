@@ -220,6 +220,9 @@ public class AppDbContext : DbContext
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
+    // Which file in which repository each learned pair last came from, so the
+    // nightly ingest reads only what has changed (#631).
+    public DbSet<TranslationMemorySource> TranslationMemorySources => Set<TranslationMemorySource>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
     public DbSet<RecipeDownload> RecipeDownloads => Set<RecipeDownload>();
@@ -350,6 +353,7 @@ public class AppDbContext : DbContext
         // IgnoreQueryFiltersUnfilteredRootTests enforces the rule.
         ScopeToOrganization<TranslationMemoryEntry>(modelBuilder);
         ScopeToOrganization<TranslationMemoryVote>(modelBuilder);
+        ScopeToOrganization<TranslationMemorySource>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);
         ScopeToOrganization<RecipeFile>(modelBuilder);
         ScopeToOrganization<RecipeDownload>(modelBuilder);
