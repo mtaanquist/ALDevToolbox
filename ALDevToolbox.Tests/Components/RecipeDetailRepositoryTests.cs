@@ -178,6 +178,9 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
     {
         await cut.WaitForElement("#dl-repo", TimeSpan.FromSeconds(5)).FocusAsync(new());
         cut.WaitForElement("button.repo-picker__result", TimeSpan.FromSeconds(5)).Click();
+        // The pick reaches the page through SelectedChanged on a later render;
+        // clicking "Open pull request" before the chip is there races it.
+        cut.WaitForElement(".repo-picker__chosen", TimeSpan.FromSeconds(5));
     }
 
     private async Task<int> SeedRecipeAsync()
