@@ -10,6 +10,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
 @inject ALDevToolbox.Services.OrganizationConfigService Config
 @inject ALDevToolbox.Services.TeamService Teams
+@inject ALDevToolbox.Services.GitHub.GitHubRepositoryService GitHubRepos
 @inject NavigationManager Nav
 @inject ILogger<ProjectDetail> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -18,6 +19,7 @@
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Bc
+@using ALDevToolbox.Services.GitHub
 
 @*
     One solution's settings, grouped behind a left sub-nav so each concern loads on
@@ -260,6 +262,25 @@
                     <p class="form-sec__cap">Source repositories compiled into this solution's <code>.app</code> deliverables. Each build pulls the latest commit from every repository.</p>
                     <div class="card">
                         <div class="card__body">
+                            @* Assistance, never a gate: when this organisation is on Azure
+                               DevOps only, has not connected a GitHub organisation, or the
+                               person looking has not connected their own account, the picker
+                               is absent and the tab is exactly what it was before. See
+                               .design/github-integration.md, issue #624. *@
+                            @if (_canPickFromGitHub)
+                            {
+                                <div class="pd-repo-pick">
+                                    <RepositoryPicker Label="Add a repository from GitHub"
+                                                      InputId="pd-repo-pick"
+                                                      Selected="_pickedRepo"
+                                                      SelectedChanged="AddRepoFromGitHub"
+                                                      Disabled="@_saving" />
+                                    @if (_repoPickNote is { } note)
+                                    {
+                                        <p class="field__hint pd-repo-pick__note">@note</p>
+                                    }
+                                </div>
+                            }
                             @if (_edit.Repos.Count == 0)
                             {
                                 <div class="empty-state empty-state--quiet">
@@ -347,7 +368,7 @@
                                 <div class="form-actions">
                                     <button type="button" class="btn btn--sm" @onclick="AddRepo" disabled="@_saving">
                                         <Icon Name="plus" Width="14" Height="14" />
-                                        <span>Add repository</span>
+                                        <span>@(_canPickFromGitHub ? "Add a repository URL" : "Add repository")</span>
                                     </button>
                                 </div>
                             }
@@ -1199,6 +1220,26 @@
     private ProjectHeader? _header;
     private List<Pipeline> _pipelines = new();
     private List<RepositoryProvider> _providers = new();
+
+    /// <summary>
+    /// Whether this person can be offered repositories to pick from, rather than
+    /// left to type a URL. False for an organisation on Azure DevOps only, one
+    /// that has not connected a GitHub organisation, and anyone who has not
+    /// connected their own GitHub account - all of which fall back to the field
+    /// they already had. Answered from the database; GitHub is not asked.
+    /// </summary>
+    private bool _canPickFromGitHub;
+
+    /// <summary>
+    /// The repository just picked, held for exactly one render - see
+    /// <see cref="OnAfterRender"/>. The row it produced in the table below is
+    /// the record of the pick, so the control goes back to being a search box
+    /// rather than sitting on the last answer.
+    /// </summary>
+    private GitHubRepositorySummary? _pickedRepo;
+
+    /// <summary>What the last pick did, so the row that appeared is accounted for.</summary>
+    private string? _repoPickNote;
     private EditModel _edit = new();
     private PipelineEditorDialog? _editor;
 
@@ -1355,6 +1396,21 @@
         }
     }
 
+    /// <summary>
+    /// Returns the repository picker to its search box after a pick. The control
+    /// keeps whichever repository it is handed, and Blazor only re-supplies a
+    /// parameter whose value <em>changed</em> - so letting go of one takes a
+    /// render where this page agrees a repository is chosen, then one where it
+    /// no longer is. Nothing else on the page holds a repository, so the guard
+    /// makes this a no-op on every other render.
+    /// </summary>
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_pickedRepo is null) return;
+        _pickedRepo = null;
+        StateHasChanged();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
@@ -1382,7 +1438,27 @@
                 }
             }
         }
+        await LoadGitHubAssistAsync();
         _loading = false;
+    }
+
+    /// <summary>
+    /// Decides whether the Repositories tab can offer a list to pick from. Two
+    /// reads and no call to GitHub, so a slow or unreachable GitHub cannot hold
+    /// up the page - and a no is silent: someone who cannot use the picker is
+    /// not shown machinery explaining why.
+    /// </summary>
+    private async Task LoadGitHubAssistAsync()
+    {
+        if (!_canManage || _notFound || !_providers.Contains(RepositoryProvider.GitHub)) return;
+        try
+        {
+            _canPickFromGitHub = (await GitHubRepos.GetAccessAsync()).IsReady;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Could not tell whether solution {ProjectId} can pick repositories from GitHub.", Id);
+        }
     }
 
     private async Task LoadBcAsync()
@@ -1483,8 +1559,55 @@
         else if (_repoErrors.Count > 0) _section = Section.Repos;
     }
 
-    private void AddRepo() { _edit.Repos.Add(new RepoRow { Provider = DefaultProvider }); _dirty = true; }
-    private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _dirty = true; }
+    // The note under the picker describes the list as it was one pick ago, so any
+    // other change to the list retires it.
+    private void AddRepo() { _edit.Repos.Add(new RepoRow { Provider = DefaultProvider }); _repoPickNote = null; _dirty = true; }
+    private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _repoPickNote = null; _dirty = true; }
+
+    /// <summary>
+    /// Turns a repository picked on GitHub into a row, filled in from what GitHub
+    /// itself says it is - which is the whole point: a clone URL nobody typed
+    /// cannot be the reason a build fails twenty minutes from now.
+    ///
+    /// <para>The build clones the default branch, so it is named here rather than
+    /// stored: a solution repository has no branch of its own to set.</para>
+    /// </summary>
+    private void AddRepoFromGitHub(GitHubRepositorySummary? repo)
+    {
+        _pickedRepo = repo;
+        if (repo is null) return;
+
+        if (_edit.Repos.Any(r => SameRepository(r.Url, repo.CloneUrl)))
+        {
+            _repoPickNote = $"{repo.Name} is already in this solution.";
+            return;
+        }
+
+        _edit.Repos.Add(new RepoRow
+        {
+            Provider = RepositoryProvider.GitHub,
+            Url = repo.CloneUrl,
+            DisplayName = repo.Name,
+        });
+        _repoPickNote = $"Added {repo.Name}. Builds use its {repo.DefaultBranch} branch.";
+        _dirty = true;
+    }
+
+    /// <summary>
+    /// Whether two URLs name the same repository. GitHub's clone URL ends in
+    /// <c>.git</c> and a URL someone pasted usually does not, so comparing them
+    /// as typed would let the same repository in twice.
+    /// </summary>
+    private static bool SameRepository(string? a, string b) =>
+        string.Equals(Canonical(a), Canonical(b), StringComparison.OrdinalIgnoreCase);
+
+    private static string Canonical(string? url)
+    {
+        var trimmed = (url ?? string.Empty).Trim().TrimEnd('/');
+        return trimmed.EndsWith(".git", StringComparison.OrdinalIgnoreCase)
+            ? trimmed[..^4]
+            : trimmed;
+    }
 
     private RepositoryProvider DefaultProvider =>
         _providers.Contains(RepositoryProvider.GitHub) ? RepositoryProvider.GitHub

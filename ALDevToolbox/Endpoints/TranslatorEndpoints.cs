@@ -75,7 +75,7 @@ internal static class TranslatorEndpoints
             // download the user actually asked for.
             try
             {
-                await PopulateMemoryAsync(result, memory, ct);
+                await memory.LearnFromXliffAsync(result, ct: ct);
             }
             catch (Exception ex)
             {
@@ -148,7 +148,8 @@ internal static class TranslatorEndpoints
 
             var origin = Path.GetFileName(file.FileName);
             if (string.IsNullOrWhiteSpace(origin)) origin = "Imported XLIFF";
-            var inserted = await memory.UpsertAsync(BuildPairs(parsed, origin), ct);
+            var inserted = await memory.UpsertAsync(
+                TranslationMemoryService.PairsFrom(parsed, origin), ct);
 
             ctx.Response.Redirect(
                 "/admin/translation-memory/import"
@@ -187,42 +188,6 @@ internal static class TranslatorEndpoints
         }
         return edits;
     }
-
-    private static async Task PopulateMemoryAsync(string xml, TranslationMemoryService memory, CancellationToken ct)
-    {
-        XliffDocument parsed;
-        try
-        {
-            using var ms = new MemoryStream(Encoding.UTF8.GetBytes(xml));
-            parsed = AlXliffParser.Parse(ms);
-        }
-        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
-        {
-            return; // unparseable result — nothing to learn from
-        }
-
-        if (string.IsNullOrEmpty(parsed.SourceLanguage)) return;
-        var origin = string.IsNullOrEmpty(parsed.OriginalName) ? "Translator" : parsed.OriginalName;
-        await memory.UpsertAsync(BuildPairs(parsed, origin), ct);
-    }
-
-    /// <summary>
-    /// Projects a parsed XLIFF's translated units into memory-upsert rows. Shared
-    /// by the export round-trip and the standalone memory import; callers pass the
-    /// <paramref name="origin"/> label (the <c>&lt;file original&gt;</c> name on
-    /// export, the uploaded file name on import). Caller must have confirmed
-    /// <see cref="XliffDocument.SourceLanguage"/> is non-null.
-    /// </summary>
-    private static IEnumerable<TranslationMemoryUpsert> BuildPairs(XliffDocument parsed, string origin) =>
-        parsed.Units
-            .Where(u => !string.IsNullOrEmpty(u.TargetText))
-            .Select(u => new TranslationMemoryUpsert(
-                parsed.SourceLanguage!,
-                parsed.TargetLanguage,
-                u.SourceText,
-                u.TargetText,
-                AlXliffParser.BucketKind(u.Hint),
-                origin));
 
     /// <summary>Strips path separators and control characters so the download name is safe.</summary>
     private static string SanitiseFileName(string name)

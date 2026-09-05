@@ -198,7 +198,10 @@ public sealed class AuthService
         // A linked Microsoft account counts: MFA is the Entra tenant's job
         // there, and without this a RequireStrongAuth org would trap its
         // federated users on /account with nothing to enrol. See issue #552.
-        return await _db.UserExternalLogins.AnyAsync(l => l.UserId == userId, ct);
+        // Entra only - a GitHub account link (issue #621) shares this table but
+        // signs nobody in, so it is no evidence of strong authentication.
+        return await _db.UserExternalLogins
+            .AnyAsync(l => l.UserId == userId && l.Provider == EntraSignInService.ProviderName, ct);
     }
 
     public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password, BcryptWorkFactor);

@@ -135,7 +135,7 @@ internal static class GenerationEndpoints
 
             try
             {
-                var archive = await gen.GenerateExtensionAsync(plan, sibling, ct);
+                var archive = await gen.GenerateExtensionAsync(plan, sibling, ct: ct);
                 WriteAttachmentHeaders(ctx, archive.FileName);
                 SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
                 archive.Stream.Position = 0;

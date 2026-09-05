@@ -297,12 +297,15 @@ public sealed class OrganizationAdminService
             .Select(s => new { s.RequireStrongAuth, s.AutoJoinVerifiedDomainUsers })
             .FirstOrDefaultAsync(ct);
 
-        // Query filters scope all three of these to this org.
+        // Query filters scope all three of these to this org. The provider
+        // predicate keeps GitHub account links (issue #621), which share this
+        // table but sign nobody in, out of the Microsoft counts.
         var adminHasEntraLink = await _db.UserExternalLogins
-            .AnyAsync(l => l.User!.Role == UserRole.Admin && l.User.Status == UserStatus.Active, ct);
+            .AnyAsync(l => l.Provider == EntraSignInService.ProviderName
+                && l.User!.Role == UserRole.Admin && l.User.Status == UserStatus.Active, ct);
         var membersTotal = await _db.Users.CountAsync(u => u.Status == UserStatus.Active, ct);
         var linkedMembers = await _db.UserExternalLogins
-            .Where(l => l.User!.Status == UserStatus.Active)
+            .Where(l => l.Provider == EntraSignInService.ProviderName && l.User!.Status == UserStatus.Active)
             .Select(l => l.UserId).Distinct().CountAsync(ct);
 
         return new OrgIdentityView(
@@ -404,7 +407,8 @@ public sealed class OrganizationAdminService
                 // working Microsoft link. SiteAdmin password login survives
                 // regardless as break-glass (enforced in AuthService).
                 var adminHasLink = await _db.UserExternalLogins
-                    .AnyAsync(l => l.User!.OrganizationId == orgId
+                    .AnyAsync(l => l.Provider == EntraSignInService.ProviderName
+                        && l.User!.OrganizationId == orgId
                         && l.User.Role == UserRole.Admin
                         && l.User.Status == UserStatus.Active, ct);
                 if (!adminHasLink)

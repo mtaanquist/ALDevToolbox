@@ -97,9 +97,25 @@ public class GenerationService
     /// scaffold (typically Core); dependencies come from the form rather than
     /// the template's declarations.
     /// </summary>
+    /// <param name="plan">The extension to build.</param>
+    /// <param name="sibling">
+    /// The workspace this extension is being added to, when there is one. Its
+    /// presence switches on the regenerated <c>.code-workspace</c> file and
+    /// switches off the workspace-root files (that workspace already has them).
+    /// </param>
+    /// <param name="includeWorkspaceRootFiles">
+    /// Whether the workspace-root files the template opts into (a .gitignore, a
+    /// README stub, the shared ruleset) ride along. True for a download, whose
+    /// extension folder <em>is</em> the root of what the user unzips. False when
+    /// the extension is being added into somewhere that already has a root of
+    /// its own - see <see cref="GitHub.GitHubExtensionDeliveryService"/>.
+    /// Ignored in sibling mode, which never carries them.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<GeneratedArchive> GenerateExtensionAsync(
         StandaloneExtensionPlan plan,
         SiblingWorkspaceContext? sibling = null,
+        bool includeWorkspaceRootFiles = true,
         CancellationToken ct = default)
     {
         ValidateExtensionPlan(plan);
@@ -125,7 +141,7 @@ public class GenerationService
         var orgConfig = await GetOrgConfigAsync(ct);
 
         var (stream, fileCount, folderName) = await _zipBuilder.BuildStandaloneAsync(
-            plan, template, folderRoots, sibling, orgConfig, ct);
+            plan, template, folderRoots, sibling, orgConfig, includeWorkspaceRootFiles, ct);
         stopwatch.Stop();
 
         _logger.LogInformation(

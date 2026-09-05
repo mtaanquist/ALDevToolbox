@@ -51,9 +51,11 @@ public static class McpToolCatalog
         new McpToolDescriptor("list_well_known_dependencies", Generation,
             "Lists the dependencies your organisation has on file, so the assistant names them correctly.", false),
         new McpToolDescriptor("generate_workspace", Generation,
-            "Builds a new workspace and hands back the ZIP.", true),
+            "Builds a new workspace and hands back the ZIP, or creates a repository for it in "
+            + "your GitHub organisation.", true),
         new McpToolDescriptor("generate_extension", Generation,
-            "Builds a new standalone extension and hands back the ZIP.", true),
+            "Builds a new standalone extension and hands back the ZIP, or adds it to one of "
+            + "your GitHub repositories as a pull request.", true),
 
         // ---- Object Explorer ----
         new McpToolDescriptor("list_releases", ObjectExplorer,

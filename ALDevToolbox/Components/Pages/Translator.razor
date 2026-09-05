@@ -12,12 +12,15 @@
 @using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.Translation
 @using ALDevToolbox.Services.Translation.Providers
+@using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.ValueObjects
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @inject MachineTranslationService Mt
 @inject TranslationSuggestionCoordinator Coordinator
+@inject GitHubTranslationService RepoFiles
+@inject TranslationMemoryService Memory
 @inject ILogger<Translator> Log
 @inject IServiceScopeFactory ScopeFactory
 
@@ -102,6 +105,91 @@
                 <p class="tdrop__note tdrop__note--error"><Icon Name="circle-x" Width="14" Height="14" /> @_parseError</p>
             }
         </div>
+
+        @* Open from a repository (issue #625). Below the upload panel and
+           without a primary button of its own: "Choose file" is this page's one
+           primary action, and a file in the list below opens when it is
+           clicked, so there is nothing here to press twice.
+
+           The sentence about the pull request is here rather than beside the
+           Save button because this is where there is room for it, and because
+           it is what makes someone willing to press Save later. *@
+        <div class="trepo">
+            <div class="trepo__head">
+                <span class="trepo__icon"><Icon Name="folder-git-2" Width="18" Height="18" /></span>
+                <div>
+                    <div class="trepo__title">Or open one from a repository</div>
+                    <p class="trepo__sub">
+                        Pick the repository and the toolbox lists the <code>.xlf</code> files in it. When you
+                        save, your translation goes back on a branch of its own and opens a pull request -
+                        nothing on the repository's own branch changes until someone merges it.
+                    </p>
+                </div>
+            </div>
+
+            <RepositoryPicker Selected="_repo" SelectedChanged="OnRepositoryChangedAsync"
+                              Label="Repository" InputId="tr-repo" Disabled="@_busy" />
+
+            @if (_repo is not null)
+            {
+                @if (_repoListLoading)
+                {
+                    <div class="loading-block">
+                        <span class="spinner"></span><span>Looking for translation files...</span>
+                    </div>
+                }
+                else if (_repoListError is not null)
+                {
+                    <p class="alert alert--warn" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" />
+                        <span class="u-stack">
+                            <span>@_repoListError</span>
+                            <span><button type="button" class="btn btn--sm" @onclick="ReloadRepositoryFilesAsync">Try again</button></span>
+                        </span>
+                    </p>
+                }
+                else if (_repoList.Count == 0)
+                {
+                    <p class="field__hint">
+                        @_repo.FullName has no translation files yet. AL keeps them in a
+                        <code>Translations</code> folder inside each extension.
+                    </p>
+                }
+                else
+                {
+                    <ul class="trepo__files">
+                        @foreach (var group in _repoList.GroupBy(f => f.Folder))
+                        {
+                            @if (!string.IsNullOrEmpty(group.Key))
+                            {
+                                <li class="trepo__group">@group.Key</li>
+                            }
+                            @foreach (var file in group)
+                            {
+                                <li>
+                                    <button type="button" class="trepo__file" disabled="@_busy"
+                                            @onclick="() => OpenFromRepositoryAsync(file)">
+                                        <span class="trepo__file-icon"><Icon Name="file-code" Width="15" Height="15" /></span>
+                                        <span class="trepo__file-text">
+                                            <span class="trepo__file-name">@file.FileName</span>
+                                            @if (file.IsSource)
+                                            {
+                                                <span class="trepo__file-sub">All the strings, none translated - start a new language here</span>
+                                            }
+                                            else if (file.Language is not null)
+                                            {
+                                                <span class="trepo__file-sub">@LanguageLabel(file.Language)</span>
+                                            }
+                                        </span>
+                                        <span class="trepo__file-go"><Icon Name="chevron-right" Width="15" Height="15" /></span>
+                                    </button>
+                                </li>
+                            }
+                        }
+                    </ul>
+                }
+            }
+        </div>
     </div>
 }
 else
@@ -142,6 +230,17 @@ else
                     <span class="tr-dirty" title="You have edits that are not saved to a file yet"
                           aria-label="Unsaved edits"></span>
                 }
+                @* The payoff of the whole round trip, kept next to the file it
+                   belongs to. The status line at the bottom has no width to
+                   spare for it, and this is not a status - it is the thing the
+                   translator wants to open next. *@
+                @if (_pullRequest is not null)
+                {
+                    <a class="tr-pr" href="@_pullRequest.HtmlUrl" target="_blank" rel="noopener"
+                       title="Open the pull request on GitHub">
+                        <Icon Name="external-link" Width="12" Height="12" />Pull request #@_pullRequest.Number
+                    </a>
+                }
             </div>
 
             <span class="pw__sep"></span>
@@ -166,7 +265,21 @@ else
                     title="Fill every untranslated string that has an exact match in your organisation's memory">
                 <Icon Name="zap" Width="14" Height="14" Css="btn__icon" /><span>Pre-translate</span>
             </button>
-            @if (_canSaveInPlace)
+            @if (_repoSource is not null)
+            {
+                @* The file came from a repository, so saving it back there is
+                   what "save" means here - the download stays available beside
+                   it, one step down, and there is still one primary button. *@
+                <button type="button" class="btn btn--sm btn--primary" @onclick="SaveToRepositoryAsync" disabled="@_busy"
+                        title="Commit your translation to @_repoSource.Repository.FullName and open a pull request for it">
+                    <Icon Name="git-branch" Width="14" Height="14" Css="btn__icon" />
+                    <span>@(_repoSaving ? "Saving..." : $"Save to repository{(_unsaved ? $" ({DirtyCount()})" : "")}")</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="ExportCopyAsync" disabled="@_busy">
+                    <Icon Name="download" Width="14" Height="14" Css="btn__icon" /><span>Export a copy</span>
+                </button>
+            }
+            else if (_canSaveInPlace)
             {
                 <button type="button" class="btn btn--sm btn--primary" @onclick="ExportAsync" disabled="@_busy"
                         title="Save your edits back into the file you opened (Ctrl+S)">
@@ -544,7 +657,16 @@ else
             {
                 <span class="tr-foot__unsaved">@DirtyCount() unsaved</span>
             }
-            @if (!string.IsNullOrEmpty(_original))
+            @* Both say where the file came from, so the repository replaces the
+               app name rather than crowding in beside it - this row runs out of
+               width before it runs out of things worth saying. *@
+            @if (_repoSource is not null)
+            {
+                <span class="tr-foot__repo" title="Saves to @_repoSource.Path on @_repoSource.Repository.FullName">
+                    <Icon Name="folder-git-2" Width="11" Height="11" />@_repoSource.Repository.Name
+                </span>
+            }
+            else if (!string.IsNullOrEmpty(_original))
             {
                 <span class="tr-foot__orig">from @_original</span>
             }
@@ -587,6 +709,14 @@ else
 
 @* Labels are passed per call - the count is in the title. *@
 <ConfirmDialog @ref="_preTranslateConfirm" />
+
+@* Both repository dialogs pass their words per call, because both have to name
+   the repository, the branch and the file they are about. *@
+<ConfirmDialog @ref="_repoSaveConfirm" />
+@* The way out of a conflict that keeps the translator's work is the one the
+   body sentence points at, so the button says what it does rather than
+   "Cancel". *@
+<ConfirmDialog @ref="_repoConflictConfirm" CancelLabel="Keep my edits" />
 
 <ConfirmDialog @ref="_leaveConfirm"
                Title="Leave with unsaved changes?"
@@ -729,6 +859,39 @@ else
     private bool _unsaved;
     private ConfirmDialog? _leaveConfirm;
     private IDisposable? _navRegistration;
+
+    // ── Open from / save to a repository (issue #625) ─────────────────────
+    // The repository chosen on the first-run panel, and the translation files
+    // found in it. Both are about picking a file; neither survives opening one.
+    private GitHubRepositorySummary? _repo;
+    private IReadOnlyList<RepositoryTranslationFile> _repoList = [];
+    private bool _repoListLoading;
+    private string? _repoListError;
+
+    // Where the open file came from and goes back to, when it came from a
+    // repository - carrying the blob sha the editor's content is based on. Null
+    // for an uploaded file, and that null is what decides which Save button the
+    // toolbar shows.
+    private RepositoryTranslationSource? _repoSource;
+
+    // The file exactly as the repository has it. Held for the life of the
+    // session because the byte-faithful merge runs against it: the download
+    // path keeps its copy in the browser, but a save to GitHub happens
+    // server-side and must start from what was actually opened. The Contents
+    // API only inlines files up to 1 MB, so this is bounded.
+    private string? _repoOriginalXml;
+
+    // The generated source file (.g.xlf) this translation was started from,
+    // when it was. Its translations belong in a language file beside it, never
+    // written back over the source - so the save path is derived from the
+    // target language, and re-derived from this whenever that language changes.
+    private string? _repoGeneratedPath;
+
+    private GitHubPullRequest? _pullRequest;
+    private bool _repoSaving;
+    private bool _repoSaveExplained;
+    private ConfirmDialog? _repoSaveConfirm;
+    private ConfirmDialog? _repoConflictConfirm;
 
     protected override void OnInitialized()
     {
@@ -999,8 +1162,11 @@ else
         _units = parsed.Units.Select(ToVm).ToList();
         _hasFile = true;
         // Default to download-only; the picker/drop/restore paths flip this on
-        // when they carry a writable handle.
+        // when they carry a writable handle, and the repository path sets its
+        // own source afterwards. Clearing here means an upload can never
+        // inherit the last file's repository and save into it.
         _canSaveInPlace = false;
+        ForgetRepositorySource();
         _restoreName = null;
         Coordinator.ClearCaches();
         _filter = "todo";
@@ -1104,7 +1270,302 @@ else
         _suggestions = new();
         Coordinator.ClearCaches();
         _parseError = null;
+        ForgetRepositorySource();
+        _repo = null;
+        _repoList = [];
+        _repoListError = null;
     }
+
+    /// <summary>
+    /// Drops everything that ties the open file to a repository. Called
+    /// wherever a file is replaced or closed, so the Save button can never
+    /// point at the repository a previous file came from.
+    /// </summary>
+    private void ForgetRepositorySource()
+    {
+        _repoSource = null;
+        _repoOriginalXml = null;
+        _repoGeneratedPath = null;
+        _pullRequest = null;
+        _repoSaveExplained = false;
+    }
+
+    // ── Open from / save to a repository (issue #625) ─────────────────────
+    // Both halves route through GitHubTranslationService, which is where the
+    // access gate and the never-the-default-branch rule live. This component
+    // only decides what to show.
+
+    private async Task OnRepositoryChangedAsync(GitHubRepositorySummary? repo)
+    {
+        _repo = repo;
+        _repoList = [];
+        _repoListError = null;
+        if (repo is null) return;
+        await ReloadRepositoryFilesAsync();
+    }
+
+    private async Task ReloadRepositoryFilesAsync()
+    {
+        if (_repo is null) return;
+        _repoListLoading = true;
+        _repoListError = null;
+        try
+        {
+            _repoList = await RepoFiles.ListFilesAsync(_repo.FullName);
+        }
+        catch (PlanValidationException ex)
+        {
+            _repoListError = FirstReason(ex);
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException
+            or HttpRequestException or TaskCanceledException)
+        {
+            Log.LogWarning(ex, "Could not list the translation files in {RepoFullName}.", _repo.FullName);
+            _repoListError = "The toolbox could not reach GitHub just now, so it cannot list the files in "
+                + $"{_repo.FullName}.";
+        }
+        finally
+        {
+            _repoListLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Loads a file out of the repository. Everything after the fetch is the
+    /// upload path: the same parse, the same verbatim original handed to the
+    /// browser's store, the same first selection - so a repository file behaves
+    /// exactly like one that was dragged in, with a place to save it back to.
+    /// </summary>
+    private async Task OpenFromRepositoryAsync(RepositoryTranslationFile file)
+    {
+        if (_repo is null) return;
+        var repo = _repo;
+        _busy = true;
+        _parseError = null;
+        try
+        {
+            var content = await RepoFiles.OpenAsync(repo.FullName, file.Path);
+            if (content is null)
+            {
+                _parseError = $"\"{file.FileName}\" is not in {repo.FullName} any more. "
+                    + "Choose the repository again to see what is there now.";
+                return;
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(content.Text);
+            XliffDocument parsed;
+            try
+            {
+                using var ps = new MemoryStream(bytes);
+                parsed = AlXliffParser.Parse(ps);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            {
+                _parseError = $"Could not read \"{file.FileName}\" as XLIFF v1.2: {ex.Message}";
+                return;
+            }
+
+            LoadParsed(file.FileName, parsed);
+
+            // A generated source file says its target language is its source
+            // language, which is its way of saying nothing is translated yet.
+            // Taking that as the language to translate into would offer to
+            // translate English into English.
+            if (file.IsSource && string.Equals(_targetLang, _sourceLang, StringComparison.OrdinalIgnoreCase))
+            {
+                _targetLang = Languages.First(l => !string.Equals(l.Code, _sourceLang, StringComparison.OrdinalIgnoreCase)).Code;
+            }
+
+            _repoOriginalXml = content.Text;
+            _repoGeneratedPath = file.IsSource ? file.Path : null;
+            _repoSource = file.IsSource
+                ? DerivedSource(repo, file.Path)
+                : new RepositoryTranslationSource(repo, file.Path, file.FileName, content.Sha);
+            if (file.IsSource) _fileName = _repoSource.FileName;
+
+            // The browser keeps the verbatim original too, so "Export a copy"
+            // and a refresh work on a repository file exactly as they do on an
+            // uploaded one.
+            if (_module is not null)
+            {
+                using var dotNetStream = new DotNetStreamReference(new MemoryStream(bytes), leaveOpen: false);
+                await _module.InvokeVoidAsync("putBaseStream", _fileName, _sourceLang, _targetLang, dotNetStream);
+            }
+            await SelectAsync(_filtered.FirstOrDefault()?.Id ?? _units.FirstOrDefault()?.Id);
+        }
+        catch (PlanValidationException ex)
+        {
+            _parseError = FirstReason(ex);
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException
+            or HttpRequestException or TaskCanceledException)
+        {
+            Log.LogWarning(ex, "Could not open {Path} from {RepoFullName}.", file.Path, repo.FullName);
+            _parseError = $"The toolbox could not reach GitHub just now, so it could not open \"{file.FileName}\".";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Where a translation started from the generated source file should land:
+    /// beside it, named for the language being translated into. The source file
+    /// itself is never written back to - it belongs to the compiler.
+    /// </summary>
+    private RepositoryTranslationSource DerivedSource(GitHubRepositorySummary repo, string sourcePath)
+    {
+        // "App/Translations/App.g.xlf" -> "App/Translations/App.da-DK.xlf"
+        var withoutSuffix = sourcePath[..^".g.xlf".Length];
+        var path = $"{withoutSuffix}.{_targetLang}.xlf";
+        return new RepositoryTranslationSource(repo, path, path[(path.LastIndexOf('/') + 1)..], BaseSha: null);
+    }
+
+    /// <summary>
+    /// Commits the translation back and makes sure a pull request is open for
+    /// it. The first save of a session says what it is about to do first: a
+    /// pull request on someone else's repository is not something to discover
+    /// after the fact.
+    /// </summary>
+    private async Task SaveToRepositoryAsync()
+    {
+        if (_repoSource is null || _repoOriginalXml is null || _module is null) return;
+
+        if (!_repoSaveExplained && _repoSaveConfirm is not null)
+        {
+            var branch = GitHubTranslationService.BranchPrefix + _targetLang;
+            var go = await _repoSaveConfirm.OpenAsync(
+                $"Open a pull request on {_repoSource.Repository.FullName}?",
+                $"Your translation is committed to a branch called {branch} and a pull request is opened "
+                + $"from it. Nothing on {_repoSource.Repository.DefaultBranch} changes until someone reviews "
+                + "and merges it. Later saves add to the same pull request.",
+                "Save and open a pull request", "btn--primary", "git-branch");
+            if (!go) return;
+            _repoSaveExplained = true;
+        }
+
+        _busy = true;
+        _repoSaving = true;
+        try
+        {
+            var xml = XliffTargetWriter.ApplyEdits(_repoOriginalXml, BuildEdits());
+            if (_repoGeneratedPath is not null)
+            {
+                // Started from the compiler's generated file, which says its
+                // target language is its source language. The file being
+                // written is the new language file, so it has to say so.
+                xml = XliffTargetWriter.SetTargetLanguage(xml, _targetLang);
+            }
+            var save = await RepoFiles.SaveAsync(_repoSource, _targetLang, xml, SaveSummary());
+
+            _repoSource = save.Source;
+            _pullRequest = save.PullRequest;
+            // The repository now holds what the editor holds, so the next save
+            // starts from this version rather than from the one first opened.
+            _repoOriginalXml = xml;
+            foreach (var u in _units) u.Dirty = false;
+            SetUnsaved(false);
+
+            // Rebase the browser's copy on what was just committed and drop the
+            // edit overlay with it. Without this an "Export a copy" after two
+            // saves would carry only the second batch of edits, because the
+            // overlay is what the export merges.
+            using (var saved = new DotNetStreamReference(new MemoryStream(Encoding.UTF8.GetBytes(xml)), leaveOpen: false))
+            {
+                await _module.InvokeVoidAsync("putBaseStream", _fileName, _sourceLang, _targetLang, saved);
+            }
+
+            _toast?.Show(
+                save.IsNewPullRequest
+                    ? $"Saved. Pull request #{save.PullRequest.Number} is open for review."
+                    : $"Saved to pull request #{save.PullRequest.Number}.",
+                $"{_repoSource.Path} on {_repoSource.Repository.FullName}");
+
+            // Best effort, and after the user already has what they asked for:
+            // the same learning an export does, so a translation saved to a
+            // repository still feeds the suggestions for the next file.
+            try
+            {
+                await Memory.LearnFromXliffAsync(xml, _repoSource.FileName);
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "Saving to {RepoFullName} succeeded; feeding the translation memory did not.",
+                    _repoSource.Repository.FullName);
+            }
+        }
+        catch (GitHubContentConflictException)
+        {
+            await ShowConflictAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _toast?.Show("The toolbox could not save to the repository", FirstReason(ex), ToastKind.Danger);
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException
+            or HttpRequestException or TaskCanceledException)
+        {
+            Log.LogWarning(ex, "Saving {Path} to {RepoFullName} failed.",
+                _repoSource.Path, _repoSource.Repository.FullName);
+            _toast?.Show(
+                "The toolbox could not reach GitHub just now",
+                "Nothing was saved. Try again in a moment, or export a copy and commit it yourself.",
+                ToastKind.Danger);
+        }
+        finally
+        {
+            _repoSaving = false;
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Somebody else changed the file after this session opened it. Nothing has
+    /// been written, and the only two ways forward are honest ones: keep
+    /// editing (and export a copy), or start again from what the repository
+    /// holds now.
+    /// </summary>
+    private async Task ShowConflictAsync()
+    {
+        if (_repoSource is null) return;
+        var source = _repoSource;
+        var take = _repoConflictConfirm is not null && await _repoConflictConfirm.OpenAsync(
+            $"{source.FileName} changed in the repository since you opened it",
+            $"Someone has committed to {source.Path} on {source.Repository.FullName}. Nothing has been "
+            + "saved, so their work is untouched. Opening the latest version replaces what is in the "
+            + "Translator now - if you want to keep your edits, choose Keep my edits and use Export a copy "
+            + "first.",
+            "Open the latest version", "btn--danger", "refresh-cw");
+        if (!take) return;
+
+        _repo = source.Repository;
+        await OpenFromRepositoryAsync(new RepositoryTranslationFile(
+            source.Path, source.FileName, string.Empty, null, IsSource: false));
+    }
+
+    /// <summary>The line the pull request body carries about how far the translation has got.</summary>
+    private string SaveSummary()
+    {
+        var c = Counts();
+        return c.Todo == 0
+            ? $"All {c.Total} strings are translated."
+            : $"{c.Total - c.Todo} of {c.Total} strings are translated; {c.Todo} still to do.";
+    }
+
+    /// <summary>The friendly name for a language tag, falling back to the tag itself.</summary>
+    private static string LanguageLabel(string code) =>
+        Languages.FirstOrDefault(l => string.Equals(l.Code, code, StringComparison.OrdinalIgnoreCase))
+            is { } known
+            ? $"{known.Name} ({known.Code})"
+            : code;
+
+    /// <summary>
+    /// The one sentence out of a refusal. Every refusal these services raise
+    /// carries a single field-keyed message written for the person reading it.
+    /// </summary>
+    private static string FirstReason(PlanValidationException ex) =>
+        ex.Errors.Values.FirstOrDefault() ?? "The toolbox could not use that repository.";
 
     // ── Selection + suggestions ───────────────────────────────────────────
     private async Task SelectAsync(string? id)
@@ -1523,6 +1984,17 @@ else
     {
         _targetLang = e.Value?.ToString() ?? _targetLang;
         Coordinator.ClearCaches(); // suggestions are language-specific
+
+        // A translation started from the generated source file is named for the
+        // language it is in, so changing the language changes where it saves -
+        // and it is then a file nothing has been written to yet.
+        if (_repoGeneratedPath is not null && _repoSource is not null)
+        {
+            _repoSource = DerivedSource(_repoSource.Repository, _repoGeneratedPath);
+            _fileName = _repoSource.FileName;
+            _pullRequest = null;
+        }
+
         if (_module is not null) await _module.InvokeVoidAsync("putMeta", _fileName, _targetLang);
         await LoadSuggestionsAsync();
     }
@@ -1830,6 +2302,21 @@ else
             map[u.Id] = new EditDto { T = u.Target, S = u.State };
         }
         return JsonSerializer.Serialize(map);
+    }
+
+    /// <summary>
+    /// The same edit overlay <see cref="SerializeEdits"/> posts to the export
+    /// endpoint, as the merge takes it. Saving to a repository merges
+    /// server-side rather than posting a form, so it needs the map itself.
+    /// </summary>
+    private Dictionary<string, TargetEdit> BuildEdits()
+    {
+        var map = new Dictionary<string, TargetEdit>(StringComparer.Ordinal);
+        foreach (var u in _units.Where(u => u.Dirty))
+        {
+            map[u.Id] = new TargetEdit(u.Target, u.State);
+        }
+        return map;
     }
 
     /// <summary>

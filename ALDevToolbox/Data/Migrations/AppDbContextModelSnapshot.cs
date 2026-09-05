@@ -3189,6 +3189,23 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("entra_enabled");
 
+                    b.Property<DateTime?>("GitHubConnectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("github_connected_at");
+
+                    b.Property<long?>("GitHubInstallationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("github_installation_id");
+
+                    b.Property<string>("GitHubInstallationPermissions")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("github_installation_permissions");
+
+                    b.Property<string>("GitHubOrgLogin")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("github_org_login");
+
                     b.Property<string>("LocalLoginPolicy")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -4076,6 +4093,28 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("entra_client_secret_encrypted");
 
+                    b.Property<long?>("GitHubAppId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("github_app_id");
+
+                    b.Property<string>("GitHubAppSlug")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("github_app_slug");
+
+                    b.Property<string>("GitHubClientId")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("github_client_id");
+
+                    b.Property<string>("GitHubClientSecretEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("github_client_secret_encrypted");
+
+                    b.Property<string>("GitHubPrivateKeyEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("github_private_key_encrypted");
+
                     b.Property<decimal>("IndexSizeMultiplier")
                         .HasColumnType("numeric(6,3)")
                         .HasColumnName("index_size_multiplier");
@@ -4500,6 +4539,14 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AccessTokenEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("access_token_encrypted");
+
+                    b.Property<DateTime?>("AccessTokenExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("access_token_expires_at");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -4509,6 +4556,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)")
                         .HasColumnName("display_identity");
+
+                    b.Property<bool?>("IsOrgMember")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_org_member");
 
                     b.Property<string>("Issuer")
                         .IsRequired()
@@ -4525,6 +4576,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("provider");
+
+                    b.Property<string>("RefreshTokenEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("refresh_token_encrypted");
 
                     b.Property<string>("Subject")
                         .IsRequired()

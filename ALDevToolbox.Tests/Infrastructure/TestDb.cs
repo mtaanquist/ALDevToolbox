@@ -237,6 +237,59 @@ public sealed class TestDb : IDisposable
             NullLogger<OrganizationAdminService>.Instance);
 
     /// <summary>
+    /// The per-organisation GitHub App connection. Shares this fixture's
+    /// config service (and therefore its cache) so a Connect made here is
+    /// visible to the next read, as it is in the app.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubConnectionService NewGitHubConnectionService(
+        AppDbContext ctx, ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(ctx, OrgContext, NewOrganizationConfigService(ctx), NewSystemSettingsService(ctx), access,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubConnectionService>.Instance, TimeProvider.System);
+
+    /// <summary>
+    /// The per-user GitHub account link. Takes the API client so a test can
+    /// decide what GitHub answers; <paramref name="clock"/> lets the token-expiry
+    /// tests move time without waiting eight hours.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubAccessService NewGitHubAccessService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        TimeProvider? clock = null) =>
+        new(ctx, client, OrgContext, NewOrganizationConfigService(ctx), DataProtectionProvider,
+            clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubAccessService>.Instance);
+
+    /// <summary>
+    /// A <see cref="ALDevToolbox.Services.GitHub.GitHubAppClient"/> whose HTTP
+    /// goes to <paramref name="handler"/> instead of api.github.com, wired with
+    /// the same base address and headers <c>GitHubRegistration</c> configures.
+    /// A stub handler never redirects, so the no-auto-redirect rule that makes
+    /// GitHub's 302 "you are not in this organisation" answer visible is the
+    /// registration's business, not this fixture's.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubAppClient NewGitHubAppClient(
+        AppDbContext ctx, HttpMessageHandler handler, TimeProvider? clock = null)
+    {
+        var http = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri(ALDevToolbox.Services.GitHub.GitHubAppClient.ApiBaseUrl),
+        };
+        http.DefaultRequestHeaders.Accept.Add(
+            new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("ALDevToolbox");
+        return new ALDevToolbox.Services.GitHub.GitHubAppClient(
+            http, NewSystemSettingsService(ctx), _memoryCache, clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubAppClient>.Instance);
+    }
+
+    /// <summary>
+    /// A <see cref="SystemSettingsService"/> on this fixture's context and
+    /// in-memory key ring. The singleton row is created on first write.
+    /// </summary>
+    public SystemSettingsService NewSystemSettingsService(AppDbContext ctx) =>
+        new(ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+
+    /// <summary>
     /// Per-fixture MCP availability state. Defaults to enabled so tests that
     /// don't care about the toggle behave as if the SiteAdmin has flipped it
     /// on. Tests that care (the org-level toggle tests) flip this directly.
@@ -276,6 +329,83 @@ public sealed class TestDb : IDisposable
     }
 
     /// <summary>
+    /// The repository picker's data source: the installation's list narrowed to
+    /// what one person can see. Takes the pieces so a test can decide what
+    /// GitHub answers and who is asking.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubRepositoryService NewGitHubRepositoryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(client, access, NewGitHubConnectionService(ctx, access), OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubRepositoryService>.Instance);
+
+    /// <summary>"Add to repository": generation, the access gate, and the commit.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService NewGitHubExtensionDeliveryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>.Instance);
+
+    /// <summary>"Create repository": generation, the membership gate, and the first commit.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService NewGitHubWorkspaceRepositoryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
+            NewGitHubConnectionService(ctx, access), access, client, ctx, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
+    /// <summary>The Translator's repository round trip: list, open, save back.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubTranslationService NewGitHubTranslationService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubTranslationService>.Instance);
+
+    /// <summary>The workspace / extension generator, wired to this fixture's database.</summary>
+    public GenerationService NewGenerationService(AppDbContext ctx)
+    {
+        var mustache = new ALDevToolbox.Services.Generation.MustacheRenderer(
+            NullLogger<ALDevToolbox.Services.Generation.MustacheRenderer>.Instance);
+        return new GenerationService(
+            ctx,
+            NewOrganizationConfigService(ctx),
+            new FolderTreeHydrator(ctx),
+            OrgContext,
+            mustache,
+            new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(ctx)),
+            NullLogger<GenerationService>.Instance);
+    }
+
+    /// <summary>
+    /// Registers the GitHub services a component under test injects, with
+    /// <paramref name="handler"/> standing in for api.github.com. Pass a
+    /// <c>FakeGitHubApi</c> to say what GitHub answers; pass nothing and every
+    /// call fails, which is the right default for a page that only has to
+    /// render its "GitHub is not set up" state.
+    /// </summary>
+    public void AddGitHubServices(IServiceCollection services, HttpMessageHandler? handler = null)
+    {
+        services.AddScoped(sp => NewGitHubAppClient(
+            sp.GetRequiredService<ALDevToolbox.Data.AppDbContext>(), handler ?? new UnreachableHandler()));
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubAccessService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubConnectionService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubTranslationService>();
+    }
+
+    /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>
+    private sealed class UnreachableHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new HttpRequestException("api.github.com is not reachable from tests.");
+    }
+
+    /// <summary>
     /// Returns a <see cref="StorageQuotaGuard"/> wired to the per-fixture
     /// context. With no system-settings row and no per-org quota override
     /// the guard treats every operation as unlimited, so tests that don't
@@ -304,8 +434,7 @@ public sealed class TestDb : IDisposable
     /// </summary>
     public DatabaseUsageService NewDatabaseUsageService(AppDbContext ctx)
     {
-        var systemSettings = new SystemSettingsService(
-            ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        var systemSettings = NewSystemSettingsService(ctx);
         return new DatabaseUsageService(
             ctx, systemSettings, OrgContext, NullLogger<DatabaseUsageService>.Instance, TimeProvider.System);
     }

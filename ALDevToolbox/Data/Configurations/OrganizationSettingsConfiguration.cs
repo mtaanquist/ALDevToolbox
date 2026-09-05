@@ -65,6 +65,16 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.LocalLoginPolicy)
             .HasColumnName("local_login_policy").HasConversion<string>().HasMaxLength(32)
             .IsRequired().HasDefaultValue(ALDevToolbox.Domain.ValueObjects.LocalLoginPolicy.AllowAll);
+        // GitHub App connection. A null installation id is "not connected" and
+        // is the master switch for every GitHub feature, so the other three
+        // columns are only meaningful alongside it.
+        entity.Property(e => e.GitHubInstallationId).HasColumnName("github_installation_id");
+        entity.Property(e => e.GitHubOrgLogin).HasColumnName("github_org_login").HasMaxLength(120);
+        // jsonb rather than text so Postgres rejects a malformed blob at write
+        // time; the shape is a flat permission -> read|write object.
+        entity.Property(e => e.GitHubInstallationPermissions)
+            .HasColumnName("github_installation_permissions").HasColumnType("jsonb");
+        entity.Property(e => e.GitHubConnectedAt).HasColumnName("github_connected_at");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

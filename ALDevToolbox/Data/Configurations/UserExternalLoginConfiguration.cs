@@ -6,6 +6,15 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class UserExternalLoginConfiguration : IEntityTypeConfiguration<UserExternalLogin>
 {
+    /// <summary>
+    /// The unique index on <c>(provider, issuer, subject)</c>, by name. It is
+    /// deployment-wide while this table has no <c>organization_id</c>, so a save
+    /// can lose to a row in another organisation that the tenant filter hides
+    /// from the pre-check - the linking services name the constraint when they
+    /// translate that violation into a message instead of a 500.
+    /// </summary>
+    internal const string IdentityIndexName = "IX_user_external_logins_provider_issuer_subject";
+
     public void Configure(EntityTypeBuilder<UserExternalLogin> entity)
     {
         entity.ToTable("user_external_logins");
@@ -19,7 +28,17 @@ internal sealed class UserExternalLoginConfiguration : IEntityTypeConfiguration<
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
 
+        // GitHub account links only (issue #621). Nullable throughout because the
+        // Entra rows that shared this table first hold no token of ours.
+        entity.Property(e => e.AccessTokenEncrypted).HasColumnName("access_token_encrypted");
+        entity.Property(e => e.RefreshTokenEncrypted).HasColumnName("refresh_token_encrypted");
+        entity.Property(e => e.AccessTokenExpiresAt).HasColumnName("access_token_expires_at");
+        entity.Property(e => e.IsOrgMember).HasColumnName("is_org_member");
+
         // An external identity maps to exactly one local user.
+        // Named by convention, and by the migration that created it, as
+        // IdentityIndexName above - which is the name the linking services
+        // match a violation against.
         entity.HasIndex(e => new { e.Provider, e.Issuer, e.Subject }).IsUnique();
         entity.HasIndex(e => e.UserId);
 

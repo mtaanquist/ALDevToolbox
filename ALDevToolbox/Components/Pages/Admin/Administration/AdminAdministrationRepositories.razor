@@ -2,15 +2,27 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
+@inject GitHubConnectionService GitHub
+@inject GitHubAppClient GitHubApi
+@inject GitHubAccessService GitHubAccess
 @inject ILogger<AdminAdministrationRepositories> Log
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Endpoints
 
 @*
     Per-organisation source-control settings. The admin picks which Git hosts the
     org's solutions may use; members store their own Personal Access Tokens under
-    Account → Repository tokens. The solution-build pipeline clones each repo as the
-    user who triggered the build, using that user's token. See .design/artifacts.md.
+    Account → Repository access. The solution-build pipeline clones each repo as the
+    user who triggered the build, using that user's token - which the GitHub App
+    connection below does NOT replace. See .design/artifacts.md and #621.
+
+    The GitHub organisation connection lives here rather than on a tab of its own
+    (a deliberate deviation from issue #620): this tab is already
+    "per-organisation source-control settings", and an admin looking for "where do
+    I connect our GitHub" looks under Repositories, not next to Teams and Export.
+    See the deviation note in .design/github-integration.md.
 *@
 
 <PageTitle>Repositories · Administration · AL Dev Toolbox</PageTitle>
@@ -59,42 +71,305 @@
                         </div>
                     </ChildContent>
                 </SettingRow>
+
+                @if (_github is { IsConnected: false })
+                {
+                    <SettingRow Name="Your GitHub organisation">
+                        <HintContent>
+                            Connect once, and your team can create repositories and save
+                            work straight from the toolbox - without anyone sharing a
+                            personal access token to do it. You will be sent to GitHub to
+                            pick the organisation and confirm what the AL Dev Toolbox app
+                            may do there. That app is what GitHub calls it, and what you
+                            will look for in your organisation's settings later.
+                        </HintContent>
+                        <ChildContent>
+                            @if (!_github.DeploymentConfigured)
+                            {
+                                @* Naming the destination matters even for someone who
+                                   cannot go there: an org Admin who knows the page can
+                                   forward a useful instruction instead of "it doesn't
+                                   work". A Site admin gets the door itself. *@
+                                <AuthorizeView Roles="@HttpOrganizationContext.SiteAdminRole" Context="siteAdmin">
+                                    <Authorized>
+                                        <div class="u-stack">
+                                            <p class="alert alert--info">
+                                                <Icon Name="info" Width="16" Height="16" />
+                                                <span>
+                                                    GitHub is not set up on this server yet. Set up the
+                                                    GitHub app once, and every organisation here can
+                                                    connect its own GitHub organisation.
+                                                </span>
+                                            </p>
+                                            <div class="u-row">
+                                                <a class="btn" href="/site-admin/settings/github">
+                                                    <Icon Name="settings" Width="16" Height="16" />
+                                                    <span>Set up GitHub for this site</span>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <p class="alert alert--info">
+                                            <Icon Name="info" Width="16" Height="16" />
+                                            <span>
+                                                GitHub is not set up on this server yet. Ask whoever runs
+                                                AL Dev Toolbox to set it up under Site administration
+                                                &#8594; Settings &#8594; GitHub, then come back here.
+                                            </span>
+                                        </p>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            }
+                            else if (_myGitHub is not { IsLinked: true, NeedsRelink: false })
+                            {
+                                @* Connecting checks with GitHub that this admin
+                                   really manages the organisation coming back, and
+                                   that check is made with their own GitHub account.
+                                   Saying so here - with the door - beats sending
+                                   them to GitHub and refusing them on the way back. *@
+                                <div class="u-stack">
+                                    <p class="alert alert--info">
+                                        <Icon Name="info" Width="16" Height="16" />
+                                        <span>
+                                            First, connect your own GitHub account. GitHub will only
+                                            tell us which organisations you manage if it knows who you
+                                            are, and that is what stops someone connecting the wrong
+                                            company's GitHub here. It takes a moment, you only do it
+                                            once, and we will bring you straight back here afterwards.
+                                        </span>
+                                    </p>
+                                    <div class="u-row">
+                                        @* The return marker is what turns the Account page's
+                                           "connected" full stop into a way back to this job. *@
+                                        @* Primary only once the tick is saved: while there is an
+                                           unsaved change, Save is the button to press, and this one
+                                           leaves the page. See GitHubNeedsConnecting. *@
+                                        <a class="btn @(GitHubNeedsConnecting ? "btn--primary" : null)"
+                                           href="/account?section=repos&return=@GitHubAppEndpoints.AdminRepositoriesReturn">
+                                            <Icon Name="link" Width="16" Height="16" />
+                                            <span>@(_myGitHub is { IsLinked: true }
+                                                ? "Connect your GitHub account again"
+                                                : "Connect your GitHub account")</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <form method="post" action="/admin/github/connect">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn @(GitHubNeedsConnecting ? "btn--primary" : null)">
+                                        <Icon Name="plug" Width="16" Height="16" />
+                                        <span>Connect a GitHub organisation</span>
+                                    </button>
+                                </form>
+                            }
+                        </ChildContent>
+                    </SettingRow>
+                }
+                else if (_github is { IsConnected: true })
+                {
+                    <SettingRow Name="Your GitHub organisation"
+                                Hint="The GitHub organisation this toolbox organisation works with.">
+                        <div class="u-stack">
+                            <span class="u-row">
+                                <Icon Name="folder-git-2" Width="16" Height="16" />
+                                <a href="https://github.com/@_github.OrgLogin" target="_blank" rel="noopener">@_github.OrgLogin</a>
+                                <span class="status-pill status-pill--success">Connected</span>
+                            </span>
+                            @if (_github.ConnectedAt is DateTime connectedAt)
+                            {
+                                <span class="u-muted">Connected @connectedAt.ToLocalTime().ToString("d MMMM yyyy")</span>
+                            }
+                        </div>
+                    </SettingRow>
+
+                    <SettingRow Name="What the toolbox may do there"
+                                Hint="Chosen on GitHub when you connected. To change it, an owner of your GitHub organisation edits what the AL Dev Toolbox app may do, there.">
+                        <div class="u-stack">
+                            @if (_github.Permissions.Count == 0)
+                            {
+                                <span class="u-muted">
+                                    GitHub has not told us what the toolbox may do here yet.
+                                    Choose Check connection below to ask again.
+                                </span>
+                            }
+                            else
+                            {
+                                @foreach (var permission in _github.Permissions)
+                                {
+                                    <span class="u-row">
+                                        <Icon Name="check" Width="14" Height="14" />
+                                        <span>@GitHubPermissionLabels.Describe(permission.Key, permission.Value)</span>
+                                    </span>
+                                }
+                            }
+                            @if (!_github.CanCreateRepositories)
+                            {
+                                <p class="alert alert--warn">
+                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                    <span>
+                                        Creating repositories from the toolbox will not work. An owner
+                                        of your GitHub organisation needs to let the AL Dev Toolbox app
+                                        create new repositories, and approve the change. Once they have,
+                                        choose Check connection below and this list updates.
+                                    </span>
+                                </p>
+                            }
+                            <span class="u-row">
+                                <a href="@AccessOnGitHubUrl" target="_blank" rel="noopener">
+                                    Change what the AL Dev Toolbox app may do, on GitHub
+                                </a>
+                                <Icon Name="external-link" Width="14" Height="14" />
+                            </span>
+                        </div>
+                    </SettingRow>
+
+                    <SettingRow Name="Check the connection"
+                                Hint="Asks GitHub whether the toolbox can still act for your organisation, and brings the list above up to date. Nothing on GitHub is changed.">
+                        <div class="u-stack">
+                            @* The button sits in a u-row so it keeps its own width:
+                               a bare button as a flex child of u-stack stretches to
+                               the full control column and reads as a text field. *@
+                            <div class="u-row">
+                                <button type="button" class="btn" @onclick="TestAsync" disabled="@_testing">
+                                    <Icon Name="refresh-cw" Width="16" Height="16" />
+                                    <span>@(_testing ? "Checking..." : "Check connection")</span>
+                                </button>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_testMessage))
+                            {
+                                <p class="alert @(_testOk ? "alert--success" : "alert--danger")" role="status">
+                                    <Icon Name="@(_testOk ? "circle-check" : "circle-alert")" Width="16" Height="16" />
+                                    <span>
+                                        @_testMessage
+                                        @if (!string.IsNullOrEmpty(_testDetail))
+                                        {
+                                            @* GitHub's own words, kept as a second line: useful to
+                                               forward, never the thing the reader has to decode. *@
+                                            <br />
+                                            <span class="u-muted">GitHub said: @_testDetail</span>
+                                        }
+                                    </span>
+                                </p>
+                            }
+                        </div>
+                    </SettingRow>
+
+                    <SettingRow Name="Disconnect from GitHub" Danger="true"
+                                Lock="Asks for confirmation and is written to the audit log"
+                                Hint="The toolbox stops using GitHub for this organisation. Nothing on GitHub is deleted - the AL Dev Toolbox app stays on your GitHub organisation until an owner removes it there.">
+                        <div class="u-row">
+                            <button type="button" class="btn btn--danger" @onclick="DisconnectAsync" disabled="@_disconnecting">
+                                <Icon Name="circle-minus" Width="16" Height="16" />
+                                <span>@(_disconnecting ? "Disconnecting..." : "Disconnect")</span>
+                            </button>
+                        </div>
+                    </SettingRow>
+                }
             </div>
         }
     </Body>
     <Foot>
         @if (!_loading)
         {
-            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+            @* Exactly one primary on the page, and while GitHub is ticked but
+               unconnected it belongs to Connect: saving the checkbox row is not
+               the thing this admin came to finish. *@
+            <button type="button" class="btn @(GitHubNeedsConnecting ? null : "btn--primary")"
+                    @onclick="SaveAsync" disabled="@_saving">
                 <Icon Name="save" Width="16" Height="16" />
                 <span>@(_saving ? "Saving..." : "Save changes")</span>
             </button>
         }
     </Foot>
     <Aside>
+        @* These two said the GitHub connection "replaces the per-person tokens".
+           It does not: builds still fetch their copy with the token the person
+           who started the build saved. Telling an admin otherwise would have
+           them stop their team adding tokens, and every build would fail. *@
         <p class="alert alert--info">
             <Icon Name="info" Width="16" Height="16" />
             <span>
-                Everyone signs in to the host themselves under
-                <a href="/account?section=repos">Account &#8594; Repository tokens</a>.
-                A build runs as whoever started it, so it only reaches what that
-                person can reach.
+                Connecting your organisation here covers <strong>working with
+                repositories</strong> from the toolbox: creating them, and saving
+                work into them.
+            </span>
+        </p>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>
+                <strong>Builds are separate, on both hosts.</strong> When a solution
+                builds, the toolbox fetches its copy of the repository as whoever
+                started the build, using a token that person saved under
+                <a href="/account?section=repos">Account &#8594; Repository access</a>.
+                So a build only ever reaches what that person can reach - and they
+                each need a token there, whether or not you connect GitHub here.
             </span>
         </p>
     </Aside>
 </AdministrationHeader>
 
+<ConfirmDialog @ref="_confirmDisconnect"
+               Title="Disconnect from GitHub?"
+               Message="Your team will not be able to create repositories or save work to GitHub from the toolbox until you connect again. Nothing on GitHub is deleted."
+               ConfirmLabel="Disconnect"
+               ConfirmButtonClass="btn--danger" ConfirmIcon="circle-minus" />
+
 @code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
+
     private bool _loading = true;
     private bool _saving;
+    private bool _testing;
+    private bool _disconnecting;
+    private bool _testOk;
     private string? _okMessage;
     private string? _errMessage;
+    private string? _testMessage;
+    private string? _testDetail;
 
     private bool _allowGitHub;
     private bool _allowAzureDevOps;
+    /// <summary>What is actually stored, as opposed to what the checkbox currently shows. See <see cref="GitHubNeedsConnecting"/>.</summary>
+    private bool _savedAllowGitHub;
+
+    private GitHubConnectionStatus? _github;
+    /// <summary>This admin's own GitHub account link - a precondition of connecting, not a detail of it.</summary>
+    private GitHubLinkStatus? _myGitHub;
+    private ConfirmDialog? _confirmDisconnect;
+
+    /// <summary>
+    /// True when the admin has said the org keeps code on GitHub <em>and saved
+    /// it</em>, but has not connected it yet - the one state where Connect, not
+    /// Save, is the thing they came to do.
+    ///
+    /// <para>Reads the <em>saved</em> value, not the live checkbox, and that is
+    /// the whole point. Reading the tick moved the emphasis onto Connect the
+    /// instant GitHub was ticked - and Connect leaves the page, so following
+    /// the emphasis threw the tick away and returned them to the same nag.
+    /// While there is an unsaved change, Save is what they should press.</para>
+    /// </summary>
+    private bool GitHubNeedsConnecting =>
+        _savedAllowGitHub && _github is { DeploymentConfigured: true, IsConnected: false };
+
+    /// <summary>The connected organisation's installed-apps page on GitHub, where its owners widen or narrow the app's access.</summary>
+    private string AccessOnGitHubUrl =>
+        $"https://github.com/organizations/{Uri.EscapeDataString(_github?.OrgLogin ?? string.Empty)}/settings/installations";
 
     protected override async Task OnInitializedAsync()
     {
+        // The install handshake leaves the app and comes back through
+        // /github/setup, so its outcome arrives as a query string rather than
+        // through this circuit.
+        if (Ok == "github-connected")
+        {
+            _okMessage = "Connected. Your team can now work with this GitHub organisation from the toolbox.";
+        }
+        _errMessage = string.IsNullOrWhiteSpace(Msg) ? null : Msg;
+
         await ReloadAsync();
         _loading = false;
     }
@@ -102,8 +377,10 @@
     private async Task ReloadAsync()
     {
         var allowed = await Config.GetAllowedProvidersAsync();
-        _allowGitHub = allowed.Contains(RepositoryProvider.GitHub);
+        _allowGitHub = _savedAllowGitHub = allowed.Contains(RepositoryProvider.GitHub);
         _allowAzureDevOps = allowed.Contains(RepositoryProvider.AzureDevOps);
+        _github = await GitHub.GetStatusAsync();
+        _myGitHub = await GitHubAccess.GetLinkStatusAsync();
     }
 
     private async Task SaveAsync()
@@ -119,7 +396,14 @@
 
             await Config.SaveAllowedProvidersAsync(providers);
             await ReloadAsync();
-            _okMessage = "Saved. Your team can now add repositories from the hosts you ticked.";
+            // Saying only "Saved" here reads as "you are done", which is wrong
+            // while GitHub is ticked and unconnected - the tick allows the host,
+            // the connection is what makes it work.
+            _okMessage = GitHubNeedsConnecting
+                ? (_myGitHub is { IsLinked: true, NeedsRelink: false }
+                    ? "Saved - but your GitHub organisation is not connected yet. Choose Connect a GitHub organisation above to finish setting it up."
+                    : "Saved - but your GitHub organisation is not connected yet. Connect your own GitHub account above first; we will bring you back here.")
+                : "Saved. Your team can now add repositories from the hosts you ticked.";
         }
         catch (PlanValidationException ex)
         {
@@ -133,6 +417,75 @@
         finally
         {
             _saving = false;
+        }
+    }
+
+    /// <summary>
+    /// Proves the connection end to end and brings the page up to date: it asks
+    /// GitHub for a fresh access token - the same credential every GitHub
+    /// feature uses, so a green result means those features will work - and
+    /// re-reads what the installation is allowed to do, so an admin who has just
+    /// widened the app's access on GitHub sees it here without disconnecting.
+    /// </summary>
+    private async Task TestAsync()
+    {
+        if (_testing || _github?.InstallationId is not long installationId) return;
+        _testing = true;
+        _testMessage = _testDetail = null;
+        try
+        {
+            await GitHubApi.GetInstallationTokenAsync(installationId);
+            var installation = await GitHubApi.GetInstallationAsync(installationId);
+            await GitHub.RefreshAsync(installation);
+            await ReloadAsync();
+            _testOk = true;
+            _testMessage = $"All good. The toolbox can act for {_github.OrgLogin} on GitHub, and the list above is up to date.";
+        }
+        catch (GitHubAppNotConfiguredException)
+        {
+            _testOk = false;
+            _testMessage = "GitHub is not set up on this server any more. Ask whoever runs AL Dev Toolbox to check it.";
+        }
+        catch (GitHubApiException ex)
+        {
+            Log.LogWarning(ex, "GitHub connection check failed for installation {InstallationId}.", installationId);
+            _testOk = false;
+            _testMessage = "The toolbox could not check the connection. Try again in a minute; if it keeps failing, ask whoever runs AL Dev Toolbox.";
+            _testDetail = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "GitHub connection check failed for installation {InstallationId}.", installationId);
+            _testOk = false;
+            _testMessage = "The toolbox could not reach GitHub. Try again in a minute; if it keeps failing, ask whoever runs AL Dev Toolbox.";
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        if (_disconnecting || _confirmDisconnect is null) return;
+        if (!await _confirmDisconnect.OpenAsync()) return;
+
+        _disconnecting = true;
+        _okMessage = _errMessage = _testMessage = _testDetail = null;
+        try
+        {
+            await GitHub.DisconnectAsync();
+            await ReloadAsync();
+            _okMessage = "Disconnected. The AL Dev Toolbox app is still on your GitHub organisation until an owner there removes it.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to disconnect the GitHub organisation.");
+            _errMessage = "An unexpected error occurred. Nothing was disconnected.";
+        }
+        finally
+        {
+            _disconnecting = false;
         }
     }
 }

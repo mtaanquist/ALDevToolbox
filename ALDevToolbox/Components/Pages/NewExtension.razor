@@ -8,8 +8,11 @@
 @inject OrganizationConfigService OrgConfig
 @inject ILogger<NewExtension> Logger
 @inject GenerationService Gen
+@inject GitHubRepositoryService GitHubRepos
+@inject GitHubExtensionDeliveryService GitHubDelivery
 @inject IJSRuntime JS
 @using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -67,7 +70,7 @@
                     <Icon Name="circle-alert" Width="16" Height="16" />
                     <span>
                         @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
-                        before this extension can be generated. Nothing you typed has been lost.
+                        before this extension can be @_errorAction. Nothing you typed has been lost.
                         @if (_unfieldedErrors.Count > 0)
                         {
                             <text> @string.Join(" ", _unfieldedErrors)</text>
@@ -106,7 +109,7 @@
                         <span class="section-label">Workspace template</span>
                         @if (_workspaceContext is not null)
                         {
-                            <span class="form-sec__note">Locked by the imported config</span>
+                            <span class="form-sec__note">Locked by @HydrationSourceLabel</span>
                         }
                     </div>
                     <div class="field">
@@ -134,9 +137,8 @@
                         {
                             <input type="hidden" name="TemplateKey" value="@_templateKey" />
                             <p class="form-sec__cap">
-                                Locked to <strong>@_selected!.Name</strong> from the imported
-                                workspace. Clear the imported config in the right column to switch
-                                templates.
+                                Locked to <strong>@_selected!.Name</strong>, the template
+                                @HydrationSourceLabel was built from. @UnlockHint
                             </p>
                         }
                         else
@@ -281,6 +283,106 @@
                 </div>
 
                 <aside class="gen__aside">
+                    @* The GitHub half of this page (issue #623). One picked
+                       repository does two things - fills this form in from the
+                       solution's saved settings, and becomes the place the new
+                       extension can be added - so it is one control, not two. *@
+                    <div class="card">
+                        <div class="card__head">
+                            <div>
+                                <h4 class="card__title">Start from your solution on GitHub</h4>
+                                <p class="card__sub">Optional</p>
+                            </div>
+                        </div>
+                        <div class="card__body ext-repo">
+                            <RepositoryPicker Label="Solution repository"
+                                              InputId="ext-repo"
+                                              Selected="_repository"
+                                              SelectedChanged="OnRepositoryChangedAsync"
+                                              Disabled="_repoBusy"
+                                              Hint="Picking one fills this form in from the solution's saved settings, replacing anything already typed here." />
+                            @if (_hydrating)
+                            {
+                                <div class="loading-block">
+                                    <span class="spinner"></span><span>Reading the solution's settings...</span>
+                                </div>
+                            }
+                            @* The one line that reports what just happened, told
+                               apart from the static caption above it - otherwise
+                               the only news on the card reads as more boilerplate. *@
+                            @if (!string.IsNullOrEmpty(_repoMessage))
+                            {
+                                <p class="ext-repo__outcome" role="status">
+                                    <Icon Name="info" Width="14" Height="14" />
+                                    <span>@_repoMessage</span>
+                                </p>
+                            }
+                            @if (_repoErrors.Count > 0)
+                            {
+                                <ul class="ext-import__errors" role="alert">
+                                    @foreach (var err in _repoErrors)
+                                    {
+                                        <li class="field-error">
+                                            <Icon Name="circle-alert" Width="13" Height="13" />
+                                            @err.Value
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+
+                        @* The action sits with the control that enables it. It is
+                           deliberately not a second primary - the ZIP is still the
+                           default - and it says what it will do before it is
+                           pressed: a branch and a pull request in the user's own
+                           name, and nothing moved on the customer's own branch. *@
+                        @if (_repository is not null)
+                        {
+                            <div class="card__foot ext-deliver">
+                                @if (_delivery is not null)
+                                {
+                                    <p class="alert alert--success" role="status">
+                                        <Icon Name="circle-check" Width="16" Height="16" />
+                                        <span class="u-stack">
+                                            <span>
+                                                Pull request #@_delivery.PullRequest.Number was opened on
+                                                <strong>@_delivery.Repository.FullName</strong>, adding
+                                                <code class="code">@_delivery.FolderName/</code>. Review and
+                                                merge it there to bring the extension in. Anything you change
+                                                on this page now is not in it.
+                                            </span>
+                                            <span>
+                                                <a class="btn" href="@_delivery.PullRequest.HtmlUrl"
+                                                   target="_blank" rel="noopener">
+                                                    <Icon Name="external-link" Width="15" Height="15" />
+                                                    <span>Open pull request #@_delivery.PullRequest.Number</span>
+                                                </a>
+                                            </span>
+                                        </span>
+                                    </p>
+                                }
+                                <p>
+                                    @(_delivery is null ? "Adds" : "Adding again puts")
+                                    <code class="code">@FolderName/</code>
+                                    @(_delivery is null ? "to" : "in")
+                                    <strong>@_repository.FullName</strong> on a new branch and opens a pull
+                                    request for it, in your name and with your name on the commit. Nothing on
+                                    <code class="code">@_repository.DefaultBranch</code> changes until
+                                    someone merges it.
+                                </p>
+                                <button type="button" class="btn" disabled="@_repoBusy"
+                                        @onclick="AddToRepositoryAsync">
+                                    <Icon Name="git-branch" Width="15" Height="15" />
+                                    <span>
+                                        @(_repoBusy
+                                            ? "Opening pull request..."
+                                            : _delivery is null ? "Add to repository" : "Open another pull request")
+                                    </span>
+                                </button>
+                            </div>
+                        }
+                    </div>
+
                     <div class="card">
                         <div class="card__head">
                             <div>
@@ -369,7 +471,10 @@
                             {
                                 <p>
                                     Drop the <code class="code">@FolderName/</code> folder and the regenerated
-                                    <code class="code">@($"{_workspaceContext.WorkspaceName}.code-workspace")</code>
+                                    @* Spaces come out of the file name, exactly as the generator
+                                       emits it - naming a file that is not in the ZIP sends the
+                                       user hunting. *@
+                                    <code class="code">@($"{StripWhitespace(_workspaceContext.WorkspaceName)}.code-workspace")</code>
                                     file into your existing workspace, replacing the old workspace
                                     file. The new <code class="code">folders</code> array already lists every
                                     extension plus the new one.
@@ -441,6 +546,44 @@
     private Dictionary<string, string> _importErrors = new();
     private const long MaxImportSize = 1 * 1024 * 1024;
 
+    // The GitHub half (#623). One picked repository both hydrates the form and
+    // becomes the place "Add to repository" opens its pull request on;
+    // _repoMessage / _repoErrors are that card's own feedback, kept apart from
+    // the upload card's so the two never explain each other's outcome.
+    private GitHubRepositorySummary? _repository;
+    private string _repoMessage = string.Empty;
+    private Dictionary<string, string> _repoErrors = new();
+    private bool _repoBusy;
+    private GitHubExtensionDelivery? _delivery;
+
+    /// <summary>
+    /// Where the form's settings came from, when they were not typed - the
+    /// repository's full name, or the uploaded file's name. Named in the copy so
+    /// "locked" points at something the user remembers doing.
+    /// </summary>
+    private string? _hydrationSource;
+
+    /// <summary>Whether <see cref="_hydrationSource"/> is a repository rather than an uploaded file.</summary>
+    private bool _hydratedFromRepository;
+
+    /// <summary>True only while the picked repository's settings are being read.</summary>
+    private bool _hydrating;
+
+    /// <summary>What the locked template says it is locked by, in the user's words.</summary>
+    private string HydrationSourceLabel => _hydrationSource ?? "the settings you loaded";
+
+    /// <summary>The control that undoes the lock, named rather than pointed at by position.</summary>
+    private string UnlockHint => _hydratedFromRepository
+        ? "Choose Change beside the repository to switch templates."
+        : "Choose Clear beside the loaded file to switch templates.";
+
+    /// <summary>
+    /// What the shared error banner says the user was trying to do. The same
+    /// rules refuse a download and a pull request, and the banner has to name
+    /// the button that was actually pressed.
+    /// </summary>
+    private string _errorAction = "generated";
+
     // The folder name strips spaces (the display name in app.json keeps them),
     // mirroring GenerationNaming.StripWhitespace in the generator. See issue #520.
     private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : StripWhitespace(_extensionName);
@@ -477,6 +620,21 @@
     /// </summary>
     private async Task SubmitAsync()
     {
+        _errorAction = "generated";
+        var plan = await BuildValidPlanAsync();
+        if (plan is null) return;
+
+        await JS.InvokeVoidAsync("aldtGenerate.submit", "gen-extension-form");
+    }
+
+    /// <summary>
+    /// The plan this form describes, resolved and checked - or null, with the
+    /// problems already on screen. Shared by the two ways of taking delivery
+    /// (the ZIP and the pull request) so neither can accept a plan the other
+    /// would refuse.
+    /// </summary>
+    private async Task<StandaloneExtensionPlan?> BuildValidPlanAsync()
+    {
         var application = _applicationVersion;
         var runtime = _runtimeVersion;
         if (string.Equals(application, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
@@ -490,7 +648,7 @@
                     ["ApplicationVersion"] = "\"Latest\" needs at least one application version to pick from, "
                         + "and none have been added yet. Choose a specific version, or ask an admin to add one.",
                 });
-                return;
+                return null;
             }
             application = latest.Application;
             runtime = latest.Runtime;
@@ -513,9 +671,197 @@
             Dependencies: _dependencies);
 
         SetErrors(await Gen.ValidateExtensionAsync(plan));
-        if (_errors.Count > 0) return;
+        return _errors.Count > 0 ? null : plan;
+    }
 
-        await JS.InvokeVoidAsync("aldtGenerate.submit", "gen-extension-form");
+    /// <summary>
+    /// The fields the aside's refusal can name, in the order they appear in the
+    /// form. Each entry is the error key the generator raises, the words the
+    /// field is labelled with, and the id to send the user to.
+    /// </summary>
+    private static readonly (string Key, string Label, string ElementId)[] FormFields =
+    [
+        ("TemplateKey", "Template", "ext-template"),
+        ("ExtensionName", "Extension name", "ext-name"),
+        ("IdRangeFrom", "First object ID", "ext-id-from"),
+        ("IdRangeTo", "Last object ID", "ext-id-to"),
+        ("ApplicationVersion", "Version", "ext-app-version"),
+    ];
+
+    /// <summary>
+    /// The refusal shown beside "Add to repository": the first field in form
+    /// order that has a problem, named as the user sees it. Falls back to the
+    /// problems that belong to no field at all - an organisation with no
+    /// publisher set, say - which are the ones a user cannot fix on this page.
+    /// </summary>
+    private string FirstThingToFix()
+    {
+        foreach (var (key, label, _) in FormFields)
+        {
+            if (_errors.TryGetValue(key, out var message))
+            {
+                return $"{label}: {message}";
+            }
+        }
+        return _unfieldedErrors.Count > 0
+            ? string.Join(" ", _unfieldedErrors)
+            : "Something on this form needs fixing before the extension can be added.";
+    }
+
+    /// <summary>The element to send the user to, or null when nothing on this page can be fixed.</summary>
+    private string? FirstErrorFieldId() =>
+        FormFields.FirstOrDefault(f => _errors.ContainsKey(f.Key)).ElementId;
+
+    /// <summary>The workspace this extension is joining, in the shape the generator takes it.</summary>
+    private SiblingWorkspaceContext? BuildSiblingContext() =>
+        _workspaceContext is null
+            ? null
+            : new SiblingWorkspaceContext(
+                _workspaceContext.WorkspaceName,
+                _workspaceContext.ModuleKeys,
+                _workspaceContext.Extensions.Select(e => e.Folder).ToList());
+
+    /// <summary>
+    /// Picking a repository fills the form in from the settings the toolbox
+    /// saved into it when the solution was generated - through exactly the same
+    /// path an uploaded file takes, so the two can never hydrate differently.
+    /// A repository without those settings is an ordinary outcome: the message
+    /// says so and the form stays manual.
+    /// </summary>
+    private async Task OnRepositoryChangedAsync(GitHubRepositorySummary? repository)
+    {
+        // Changing or clearing the repository undoes what it filled in. Leaving
+        // the workspace context behind would keep the template locked to a
+        // solution the page no longer claims to be working from.
+        ForgetRepositoryHydration();
+        _repository = repository;
+        _delivery = null;
+        _repoMessage = string.Empty;
+        _repoErrors = new();
+        if (repository is null) return;
+
+        _hydrating = true;
+        _repoBusy = true;
+        try
+        {
+            var config = await GitHubRepos.TryReadWorkspaceConfigAsync(repository);
+            if (config is null)
+            {
+                _repoMessage = $"{repository.Name} has no settings saved by the toolbox, so nothing was "
+                    + "filled in. Fill the form in yourself - you can still add the extension to it.";
+                return;
+            }
+
+            var (message, errors) = await ApplyConfigAsync(config.Text, repository.FullName);
+            if (errors.Count > 0)
+            {
+                // Whatever the parser found, it found it in a file the user
+                // never chose. Its wording is for someone who picked a file;
+                // this person picked a repository, so they get the outcome and
+                // the log gets the detail.
+                Logger.LogWarning(
+                    "The saved config in {RepoFullName} could not be applied: {Errors}",
+                    repository.FullName,
+                    string.Join("; ", errors.Select(e => $"{e.Key}: {e.Value}")));
+                _repoMessage = $"The settings saved in {repository.Name} could not be read, so nothing was "
+                    + "filled in. Fill the form in yourself - you can still add the extension to it.";
+                return;
+            }
+            _repoMessage = message;
+            _hydrationSource = repository.FullName;
+            _hydratedFromRepository = true;
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not read the saved config from {RepoFullName}.", repository.FullName);
+            _repoErrors = new Dictionary<string, string>
+            {
+                ["GitHubRepository"] = "The toolbox could not reach GitHub just now, so nothing was filled "
+                    + "in. Fill the form in yourself, or pick the repository again in a minute.",
+            };
+        }
+        finally
+        {
+            _hydrating = false;
+            _repoBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Drops what a repository filled in, leaving anything that came from an
+    /// uploaded file alone - that has its own Clear, in its own card.
+    /// </summary>
+    private void ForgetRepositoryHydration()
+    {
+        if (!_hydratedFromRepository) return;
+        _workspaceContext = null;
+        _hydrationSource = null;
+        _hydratedFromRepository = false;
+    }
+
+    /// <summary>
+    /// Generates the extension and opens a pull request adding it to the picked
+    /// repository. The commit goes out as the signed-in user, on a branch of its
+    /// own - never onto the repository's default branch. The service owns both
+    /// of those rules, so the MCP tool behaves the same way.
+    /// </summary>
+    private async Task AddToRepositoryAsync()
+    {
+        if (_repository is null) return;
+
+        _repoErrors = new();
+        _errorAction = "added to the repository";
+        var plan = await BuildValidPlanAsync();
+        if (plan is null)
+        {
+            // The button lives in the aside; the form's own error banner is a
+            // column away and often off-screen. Say what is wrong here, name the
+            // first thing to fix, and take the user to it - a button that looks
+            // like it did nothing is worse than one that refuses out loud.
+            _repoErrors = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["GitHubRepository"] = FirstThingToFix(),
+            };
+            if (FirstErrorFieldId() is { } fieldId)
+            {
+                await JS.InvokeVoidAsync("aldtGenerate.focusField", fieldId);
+            }
+            return;
+        }
+
+        _repoBusy = true;
+        try
+        {
+            _delivery = await GitHubDelivery.AddExtensionAsync(plan, BuildSiblingContext(), _repository.FullName);
+            _repoMessage = string.Empty;
+        }
+        catch (PlanValidationException ex)
+        {
+            // Problems with the repository belong beside the picker; anything
+            // about the plan itself belongs on the field that caused it.
+            _repoErrors = ex.Errors
+                .Where(e => e.Key == "GitHubRepository")
+                .ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
+            var fieldErrors = ex.Errors.Where(e => e.Key != "GitHubRepository").ToDictionary(e => e.Key, e => e.Value);
+            if (fieldErrors.Count > 0) SetErrors(fieldErrors);
+        }
+        catch (GitHubApiException ex)
+        {
+            Logger.LogWarning(ex, "GitHub refused the pull request on {RepoFullName}.", _repository.FullName);
+            _repoErrors = new Dictionary<string, string> { ["GitHubRepository"] = $"GitHub would not do that: {ex.Message}" };
+        }
+        catch (Exception ex) when (ex is GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not reach GitHub to add to {RepoFullName}.", _repository.FullName);
+            _repoErrors = new Dictionary<string, string>
+            {
+                ["GitHubRepository"] = "The toolbox could not reach GitHub just now, so nothing was added. Try again in a minute.",
+            };
+        }
+        finally
+        {
+            _repoBusy = false;
+        }
     }
 
     private void SetErrors(IReadOnlyDictionary<string, string> errors)
@@ -788,6 +1134,29 @@
             return;
         }
 
+        var (message, errors) = await ApplyConfigAsync(toml, file.Name);
+        _importMessage = message;
+        _importErrors = errors;
+        if (errors.Count == 0)
+        {
+            _hydrationSource = file.Name;
+            _hydratedFromRepository = false;
+        }
+    }
+
+    /// <summary>
+    /// Hydrates the form from one saved config, whichever way it arrived - the
+    /// upload button, or a repository the user picked (#623). Deliberately one
+    /// path: two would drift, and the whole point of picking a repository is
+    /// that it fills the form in exactly as the file does.
+    ///
+    /// <para>Returns the line to show the user and any field-keyed problems,
+    /// rather than writing them itself, because the two entry points show their
+    /// feedback in different cards.</para>
+    /// </summary>
+    private async Task<(string Message, Dictionary<string, string> Errors)> ApplyConfigAsync(
+        string toml, string source)
+    {
         WorkspaceConfigImport import;
         try
         {
@@ -795,27 +1164,36 @@
         }
         catch (PlanValidationException ex)
         {
-            _importErrors = ex.Errors.ToDictionary(p => p.Key, p => p.Value);
-            return;
+            return (string.Empty, ex.Errors.ToDictionary(p => p.Key, p => p.Value));
         }
 
         switch (import.Kind)
         {
             case WorkspaceConfigService.ExtensionKind when import.Extension is not null:
                 ApplyImportedExtension(import.Extension);
-                _importMessage = "Form restored from this extension config.";
-                break;
+                return ($"Filled in from {source}. Every field now matches that extension, "
+                    + "including its ID range and dependencies.", new());
+
             case WorkspaceConfigService.WorkspaceKind when import.Workspace is not null:
                 ApplyImportedWorkspace(import.Workspace, import.Extensions);
-                _importMessage = import.Extensions.Count > 0
-                    ? $"Loaded workspace with {import.Extensions.Count - 1} module(s). "
-                        + "Pick an extension name; dependencies and ID range are pre-filled."
-                    : "Loaded workspace settings. Pick an extension name and ID range "
-                        + "before generating (older config - no extension identities to pre-fill).";
-                break;
+                // Extensions include the workspace's own Core, so the modules
+                // are what is left after it.
+                var modules = Math.Max(0, import.Extensions.Count - 1);
+                var modulePhrase = modules == 0
+                    ? "no modules"
+                    : $"its {modules} {(modules == 1 ? "module" : "modules")}";
+                return (import.Extensions.Count > 0
+                    ? $"Filled in from {source}: its template, versions, dependencies on Core and "
+                        + $"{modulePhrase}, and an ID range starting after the last one it uses. "
+                        + "That replaced anything already typed here, the ID range included. "
+                        + "Give the extension a name."
+                    : $"Filled in from {source}: its template and versions only, because it was saved "
+                        + "by an older toolbox that recorded nothing else. That replaced anything "
+                        + "already typed here. Give the extension a name, and check the ID range and "
+                        + "dependencies yourself.", new());
+
             default:
-                _importErrors["Kind"] = $"Unsupported config kind '{import.Kind}'.";
-                break;
+                return (string.Empty, new() { ["Kind"] = $"Unsupported config kind '{import.Kind}'." });
         }
     }
 
@@ -920,5 +1298,9 @@
         _importFileName = string.Empty;
         _importMessage = string.Empty;
         _importErrors = new();
+        if (!_hydratedFromRepository)
+        {
+            _hydrationSource = null;
+        }
     }
 }

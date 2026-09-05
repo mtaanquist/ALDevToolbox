@@ -12,6 +12,50 @@
     text-align: center;
 }
 
+/* The GitHub cards (#623). A stack with one rhythm - the picker or the
+   sentence, then whatever the last action had to say. Deliberately margins
+   rather than a grid: a grid would stretch the "Add to repository" button to
+   the full column, and the only full-width button in this aside is Generate. */
+.ext-repo > * + *,
+/* The card foot is a right-aligned row by default, which in a column this
+   narrow squeezes the sentence into four words a line beside the button. Here
+   the sentence is the point - it says what pressing the button will do - so
+   these stack. */
+.ext-deliver {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+}
+
+.ext-deliver > .alert {
+    justify-self: stretch;
+}
+
+.ext-repo p,
+.ext-deliver p {
+    margin: 0;
+}
+
+/* The one line on the card that reports what just happened. The static caption
+   above it is .field__hint; if this looked the same, the only news on the card
+   would read as more boilerplate. */
+.ext-repo__outcome {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid var(--primary);
+    background: var(--surface-2);
+    font-size: var(--text-xs);
+    color: var(--ink-2);
+}
+
+.ext-repo__outcome svg {
+    flex: none;
+    margin-top: 2px;
+    color: var(--ink-3);
+}
+
 /* Import-a-config card. The file input is hidden behind its own .btn label, so
    the control reads as a button rather than the browser's native file widget. */
 .ext-import {

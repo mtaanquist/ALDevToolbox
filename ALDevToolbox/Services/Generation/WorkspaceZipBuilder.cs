@@ -140,6 +140,7 @@ public sealed class WorkspaceZipBuilder
         IReadOnlyList<FolderNode> scaffoldFolderRoots,
         SiblingWorkspaceContext? sibling,
         OrganizationConfig orgConfig,
+        bool includeWorkspaceRootFiles,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -208,7 +209,10 @@ public sealed class WorkspaceZipBuilder
             // Skipped in sibling mode: that extension is dropped into an
             // existing workspace which already carries these at its own root,
             // and a second copy nested one level down would be noise.
-            if (sibling is null)
+            // Suppressed too when the caller is putting this extension somewhere
+            // that already has a workspace root - a GitHub repository (#623) -
+            // for the same reason sibling mode suppresses them.
+            if (sibling is null && includeWorkspaceRootFiles)
             {
                 // The New Extension form's publisher is user-editable and is
                 // what this extension's app.json carries, so {{publisher}} in

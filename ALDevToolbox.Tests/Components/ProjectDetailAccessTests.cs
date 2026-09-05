@@ -64,6 +64,10 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
         _db.AddStorageServices(_ctx.Services);
+        // The Repositories tab offers a GitHub picker when one can be offered
+        // (issue #624), so the page's chain has to resolve. With no handler every
+        // call to GitHub throws, which is the "not set up" state these tests want.
+        _db.AddGitHubServices(_ctx.Services);
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
             new Microsoft.AspNetCore.Http.HttpContextAccessor());

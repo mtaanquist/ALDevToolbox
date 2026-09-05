@@ -191,5 +191,42 @@ public class SystemSettings
     /// </summary>
     public string? EntraClientSecretEncrypted { get; set; }
 
+    /// <summary>
+    /// Numeric id of the GitHub App registered for this deployment. Null until
+    /// a SiteAdmin fills the form; no organisation can connect a GitHub
+    /// organisation without it. Signed into the App JWT as <c>iss</c>.
+    /// See <c>.design/github-integration.md</c>.
+    /// </summary>
+    public long? GitHubAppId { get; set; }
+
+    /// <summary>
+    /// The GitHub App's URL slug, used to build the install link
+    /// (<c>https://github.com/apps/{slug}/installations/new</c>). Stored
+    /// separately from the id because GitHub exposes only the slug in that URL.
+    /// </summary>
+    public string? GitHubAppSlug { get; set; }
+
+    /// <summary>
+    /// OAuth client id of the same GitHub App, used by the per-user
+    /// account-link handshake (issue #621).
+    /// </summary>
+    public string? GitHubClientId { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted OAuth client secret paired with
+    /// <see cref="GitHubClientId"/>. Decryption is contained in
+    /// <see cref="Services.SystemSettingsService"/>; the audit interceptor
+    /// redacts the column.
+    /// </summary>
+    public string? GitHubClientSecretEncrypted { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted PEM private key of the GitHub App. Used only
+    /// to sign the short-lived App JWT that mints installation tokens; the
+    /// audit interceptor redacts the column, and losing the key ring means
+    /// re-entering the key.
+    /// </summary>
+    public string? GitHubPrivateKeyEncrypted { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

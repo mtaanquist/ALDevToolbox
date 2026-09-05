@@ -6,12 +6,16 @@
 @inject ApplicationVersionService Versions
 @inject OrganizationConfigService OrgConfig
 @inject GenerationService Gen
+@inject GitHubRepositoryService GitHubRepos
+@inject GitHubWorkspaceRepositoryService GitHubCreate
+@inject ILogger<NewWorkspace> Logger
 @inject IJSRuntime JS
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Generation
+@using ALDevToolbox.Services.GitHub
 
 <PageTitle>New workspace · AL Dev Toolbox</PageTitle>
 
@@ -131,7 +135,8 @@
                             <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS Customer"
                                    pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
                                    title="Letters, digits and spaces only; must start with a letter."
-                                   @bind="_workspaceName" @bind:event="oninput" />
+                                   @bind="_workspaceName" @bind:event="oninput"
+                                   @bind:after="OnPlanChanged" />
                             <span class="field__hint">Letters, digits and spaces only; must start with a letter.</span>
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
@@ -375,6 +380,149 @@
                         @CountExtensions() @(CountExtensions() == 1 ? "extension" : "extensions")@if (_selected is not null)
                         {<text> from @_selected.Name</text>}
                     </span>
+
+                    @* The second way to take delivery (issue #622). Deliberately
+                       not a second primary button: the ZIP is still the default,
+                       and this one says what it is about to do before it is
+                       pressed, because it creates something in the customer's
+                       GitHub organisation that cannot be un-created from here. *@
+                    <div class="card">
+                        <div class="card__head">
+                            <div>
+                                <h4 class="card__title">Create it on GitHub</h4>
+                                <p class="card__sub">Optional</p>
+                            </div>
+                        </div>
+                        <div class="card__body ws-repo">
+                            @if (_createdRepo is not null)
+                            {
+                                <p class="alert alert--success" role="status">
+                                    <Icon Name="circle-check" Width="16" Height="16" />
+                                    <span class="u-stack">
+                                        <span>
+                                            <strong>@_createdRepo.Repository.FullName</strong> is ready, with
+                                            @_createdRepo.FileCount @(_createdRepo.FileCount == 1 ? "file" : "files")
+                                            committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
+                                        </span>
+                                        <span>
+                                            <a class="btn" href="@_createdRepo.Repository.HtmlUrl"
+                                               target="_blank" rel="noopener">
+                                                <Icon Name="external-link" Width="15" Height="15" />
+                                                <span>Open it on GitHub</span>
+                                            </a>
+                                        </span>
+                                        <span>
+                                            Clone it with
+                                            <code class="code">git clone @_createdRepo.Repository.CloneUrl</code>
+                                        </span>
+                                    </span>
+                                </p>
+                            }
+                            else if (_gitHub is null)
+                            {
+                                <div class="loading-block">
+                                    <span class="spinner"></span><span>Loading...</span>
+                                </div>
+                            }
+                            else if (_gitHub.Readiness == GitHubRepositoryReadiness.NotConfigured)
+                            {
+                                <p>GitHub is not set up on this server yet, so the ZIP is the only way out of here.</p>
+                                <AuthorizeView Roles="SiteAdmin">
+                                    <Authorized>
+                                        <a class="btn" href="/site-admin/settings/github">
+                                            <Icon Name="folder-git-2" Width="15" Height="15" />
+                                            <span>Set up GitHub</span>
+                                        </a>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <p class="field__hint">
+                                            Ask whoever runs AL Dev Toolbox to set it up.
+                                        </p>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            }
+                            else if (_gitHub.Readiness == GitHubRepositoryReadiness.NotConnected)
+                            {
+                                <p>Your organisation has not connected a GitHub organisation yet, so there is nowhere to create this.</p>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <a class="btn" href="/admin/administration/repositories">
+                                            <Icon Name="folder-git-2" Width="15" Height="15" />
+                                            <span>Connect a GitHub organisation</span>
+                                        </a>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <p class="field__hint">
+                                            Ask one of your administrators to connect it, under
+                                            Administration &#8594; Repositories.
+                                        </p>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            }
+                            else if (_gitHub.Readiness == GitHubRepositoryReadiness.LinkNeedsRepair)
+                            {
+                                <p>
+                                    Your GitHub account is no longer connected to the toolbox, so it cannot
+                                    check that you are in @_gitHub.OrgLogin.
+                                </p>
+                                <a class="btn" href="/account?section=repos">
+                                    <Icon Name="refresh-cw" Width="15" Height="15" />
+                                    <span>Connect again</span>
+                                </a>
+                            }
+                            else if (_gitHub.Readiness == GitHubRepositoryReadiness.NotLinked)
+                            {
+                                <p>
+                                    Connect your GitHub account and this workspace can be created as a
+                                    repository in @_gitHub.OrgLogin instead of downloaded.
+                                </p>
+                                <a class="btn" href="/account?section=repos">
+                                    <Icon Name="link" Width="15" Height="15" />
+                                    <span>Connect your GitHub account</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <p>
+                                    Creates <strong>@_gitHub.OrgLogin/@RepositoryName</strong> on GitHub and
+                                    commits the generated files to it.
+                                </p>
+                                <div class="field">
+                                    <label class="field__label" for="ws-repo-name">Repository name</label>
+                                    @* No name= attribute: this field belongs to the
+                                       button below, not to the form's native POST. *@
+                                    <input class="input" id="ws-repo-name" type="text"
+                                           pattern="@GitHubWorkspaceRepositoryService.NamePattern" required
+                                           maxlength="100"
+                                           title="Letters, digits, hyphens, underscores and full stops."
+                                           placeholder="e.g. CRONUS-Customer"
+                                           value="@RepositoryName"
+                                           @oninput="OnRepositoryNameInput" />
+                                    <FieldError Field="GitHubRepositoryName" Errors="_repoErrors" />
+                                </div>
+                                <div class="field">
+                                    <label class="field__label" for="ws-repo-visibility">Who can see it</label>
+                                    <span class="select-wrap">
+                                        @* Bound as text, not as the bool it stands
+                                           for: Blazor formats a bool as "True",
+                                           which matches no option value and leaves
+                                           the control looking empty. *@
+                                        <select class="select" id="ws-repo-visibility" @bind="_repoVisibility">
+                                            <option value="private">Only people in @_gitHub.OrgLogin</option>
+                                            <option value="public">Anyone on GitHub</option>
+                                        </select>
+                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                    </span>
+                                </div>
+                                <FieldError Field="GitHubRepository" Errors="_repoErrors" />
+                                <button type="button" class="btn" disabled="@_repoBusy"
+                                        @onclick="CreateRepositoryAsync">
+                                    <Icon Name="folder-git-2" Width="15" Height="15" />
+                                    <span>@(_repoBusy ? "Creating repository..." : "Create repository")</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
                 </aside>
             </div>
         </form>
@@ -419,6 +567,37 @@
 
     private OrganizationConfig? _orgConfig;
 
+    // The GitHub half (issue #622). _gitHub is answered from the database, so
+    // the card renders its guidance even when GitHub itself is unreachable;
+    // _repoErrors is that card's own feedback, kept apart from the form's so
+    // neither explains the other's outcome.
+    private GitHubRepositoryAccess? _gitHub;
+    private string _repositoryName = string.Empty;
+    /// <summary>
+    /// True once the user has typed in the repository name themselves, after
+    /// which the workspace name stops steering it - renaming the workspace must
+    /// not quietly undo a name they chose.
+    /// </summary>
+    private bool _repositoryNameEdited;
+    /// <summary>
+    /// Who will be able to see the repository, as the select's own value.
+    /// Private by default: a customer's code is the norm, and the choice that
+    /// cannot be undone quietly is the one that should not be the default.
+    /// </summary>
+    private string _repoVisibility = "private";
+    private bool _repoBusy;
+    private Dictionary<string, string> _repoErrors = new();
+    private GitHubWorkspaceRepository? _createdRepo;
+
+    /// <summary>
+    /// The name in the field, or the one the workspace name suggests while the
+    /// user has not typed one. One rule, shared with the service, so the name
+    /// shown in "Creates org/name" is the name that gets created.
+    /// </summary>
+    private string RepositoryName => _repositoryNameEdited
+        ? _repositoryName
+        : GitHubWorkspaceRepositoryService.SuggestName(_workspaceName);
+
     /// <summary>
     /// Field-keyed problems from the last submit attempt, straight from
     /// <see cref="GenerationService.ValidateWorkspaceAsync"/>. Empty until the
@@ -451,6 +630,22 @@
     /// </summary>
     private async Task SubmitAsync()
     {
+        var plan = await BuildValidPlanAsync();
+        if (plan is null) return;
+
+        // Clean: hand off to generate.js, which starts the loading state and
+        // posts the form natively so the ZIP streams back as a download.
+        await JS.InvokeVoidAsync("aldtGenerate.submit", "gen-workspace-form");
+    }
+
+    /// <summary>
+    /// The plan this form describes, resolved and checked - or null, with the
+    /// problems already on screen. Shared by the two ways of taking delivery
+    /// (the ZIP and the repository) so neither can accept a plan the other
+    /// would refuse.
+    /// </summary>
+    private async Task<ProjectPlan?> BuildValidPlanAsync()
+    {
         // Resolve the "Latest" sentinel the way the endpoint does, so a plan
         // that cannot resolve is caught here rather than on the error page.
         var application = _applicationVersion;
@@ -466,7 +661,7 @@
                     ["ApplicationVersion"] = "\"Latest\" needs at least one application version to pick from, "
                         + "and none have been added yet. Choose a specific version, or ask an admin to add one.",
                 });
-                return;
+                return null;
             }
             application = latest.Application;
             runtime = latest.Runtime;
@@ -488,11 +683,84 @@
             TenantId: _tenantId.Trim());
 
         SetErrors(await Gen.ValidateWorkspaceAsync(plan));
-        if (_errors.Count > 0) return;
+        return _errors.Count > 0 ? null : plan;
+    }
 
-        // Clean: hand off to generate.js, which starts the loading state and
-        // posts the form natively so the ZIP streams back as a download.
-        await JS.InvokeVoidAsync("aldtGenerate.submit", "gen-workspace-form");
+    /// <summary>
+    /// Creates the repository and puts the generated workspace in it. The
+    /// service owns every rule - which organisation, who may create there, and
+    /// which credential acts - so the MCP tool behaves identically.
+    /// </summary>
+    private async Task CreateRepositoryAsync()
+    {
+        _repoErrors = new();
+        _createdRepo = null;
+
+        var plan = await BuildValidPlanAsync();
+        if (plan is null) return;
+
+        _repoBusy = true;
+        try
+        {
+            _createdRepo = await GitHubCreate.CreateAsync(
+                plan, RepositoryName, isPrivate: _repoVisibility != "public");
+        }
+        catch (PlanValidationException ex)
+        {
+            // Problems with the repository belong in this card; anything about
+            // the plan itself belongs on the field that caused it.
+            _repoErrors = ex.Errors
+                .Where(e => e.Key is "GitHubRepository" or "GitHubRepositoryName")
+                .ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
+            var fieldErrors = ex.Errors
+                .Where(e => e.Key is not ("GitHubRepository" or "GitHubRepositoryName"))
+                .ToDictionary(e => e.Key, e => e.Value);
+            if (fieldErrors.Count > 0) SetErrors(fieldErrors);
+        }
+        catch (GitHubApiException ex)
+        {
+            Logger.LogWarning(ex, "GitHub refused to create the repository {RepositoryName}.", RepositoryName);
+            _repoErrors = new Dictionary<string, string>
+            {
+                ["GitHubRepository"] = $"GitHub would not do that: {ex.Message}",
+            };
+        }
+        catch (Exception ex) when (ex is GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not reach GitHub to create the repository {RepositoryName}.", RepositoryName);
+            _repoErrors = new Dictionary<string, string>
+            {
+                ["GitHubRepository"] = "The toolbox could not reach GitHub just now, so nothing was created. "
+                    + "Try again in a minute.",
+            };
+        }
+        finally
+        {
+            _repoBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// The name the user typed. Once they have touched the field the workspace
+    /// name stops steering it, and a field they empty stays empty rather than
+    /// silently refilling itself.
+    /// </summary>
+    private void OnRepositoryNameInput(ChangeEventArgs e)
+    {
+        _repositoryNameEdited = true;
+        _repositoryName = e.Value?.ToString() ?? string.Empty;
+        _repoErrors = new();
+    }
+
+    /// <summary>
+    /// A repository created for "CRONUS Customer" is not evidence about "CRONUS
+    /// Reseller", so the success state goes as soon as the plan behind it does.
+    /// </summary>
+    private void OnPlanChanged()
+    {
+        if (_createdRepo is null) return;
+        _createdRepo = null;
+        _repoErrors = new();
     }
 
     private void SetErrors(IReadOnlyDictionary<string, string> errors)
@@ -528,6 +796,10 @@
         await FolderTree.HydrateModuleExtensionFolderTreeAsync(modules, pathsOnly: true);
         var applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         var orgConfig = await OrgConfig.GetCurrentAsync();
+        // Whether this workspace can be created as a repository, and why not
+        // when it cannot. Two cached reads, no call to GitHub - so the card
+        // below renders its guidance even while GitHub is unreachable.
+        var gitHub = await GitHubRepos.GetAccessAsync();
         // Honour the ?template=<key> hint from the Templates browser when present
         // and the key matches an active template; otherwise fall back to the
         // per-org default flagged in admin, then the first row in the list.
@@ -543,6 +815,7 @@
         _modules = modules;
         _applicationVersions = applicationVersions;
         _orgConfig = orgConfig;
+        _gitHub = gitHub;
         _selected = selected;
         // Pre-fill the brief / description from the org's defaults block
         // (Milestone P3.14). Users can still edit either field; the template's

@@ -127,6 +127,13 @@
         // "draft", which reads as "someone is editing this".
         "connected"     => ("published", "circle-check", "Connected", false),
         "not-connected" => ("queued", "plug", "Not connected", false),
+        // Wired up, and still not going to work - a GitHub account linked by
+        // someone who is not in the connected organisation, say. Neither
+        // "connected" (whose green tick claims the row is fine) nor "failed"
+        // (nothing broke) tells that truth, so it borrows the warn keyline the
+        // XLIFF family already defines. Callers pass Label to say what the
+        // attention is about; the bare word would tell a reader nothing.
+        "needs-attention" => ("fuzzy", "circle-alert", "Needs attention", false),
 
         // ---- object diffs ----
         // The handoff named this family new / modified / unchanged, which is

@@ -380,4 +380,74 @@ public sealed class TranslationMemoryServiceTests : IDisposable
             (await m.SearchAsync(new MemorySearchQuery(Text: "n%e"))).Items.Should().BeEmpty();
         }
     }
+
+    // ── Learning from a finished file ────────────────────────────────────
+    // Both ways out of the Translator - the export download and the save back
+    // to a repository (#625) - feed the memory through the same method, so a
+    // translation is remembered whichever way the translator takes delivery.
+
+    [Fact]
+    public async Task Learning_from_a_finished_file_remembers_its_translated_pairs()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var learned = await NewMemory(ctx).LearnFromXliffAsync(Xliff("Amount", "Beløb"));
+            learned.Should().Be(1);
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var hits = await NewMemory(ctx).SuggestAsync("Amount", "en-US", "da-DK");
+            hits.Should().ContainSingle();
+            hits[0].TargetText.Should().Be("Beløb");
+            hits[0].Origin.Should().Be("PaymentImport", "the file says which app it came from");
+        }
+    }
+
+    [Fact]
+    public async Task An_explicit_origin_wins_over_the_one_inside_the_file()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).LearnFromXliffAsync(Xliff("Amount", "Beløb"), "PaymentImport.da-DK.xlf");
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            (await NewMemory(ctx).SuggestAsync("Amount", "en-US", "da-DK"))[0]
+                .Origin.Should().Be("PaymentImport.da-DK.xlf");
+        }
+    }
+
+    [Fact]
+    public async Task A_file_that_does_not_parse_teaches_nothing_rather_than_failing()
+    {
+        // The caller has already given the user what they asked for - a
+        // download, or a pull request - by the time this runs.
+        await using var ctx = _db.NewContext();
+        (await NewMemory(ctx).LearnFromXliffAsync("not xliff at all")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Untranslated_units_are_not_remembered_as_translations()
+    {
+        await using var ctx = _db.NewContext();
+        (await NewMemory(ctx).LearnFromXliffAsync(Xliff("Amount", ""))).Should().Be(0);
+    }
+
+    private static string Xliff(string source, string target) => $"""
+        <?xml version="1.0" encoding="utf-8"?>
+        <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+          <file datatype="xml" source-language="en-US" target-language="da-DK" original="PaymentImport">
+            <body>
+              <group id="body">
+                <trans-unit id="Table 1 - Field 2 - Property Caption" size-unit="char">
+                  <source>{source}</source>
+                  <target state="translated">{target}</target>
+                </trans-unit>
+              </group>
+            </body>
+          </file>
+        </xliff>
+        """;
 }

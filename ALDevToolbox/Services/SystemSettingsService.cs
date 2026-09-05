@@ -137,6 +137,55 @@ public sealed record EntraAppInput(
     bool ClearClientSecret);
 
 /// <summary>
+/// SiteAdmin-facing view of the deployment-wide GitHub App registration.
+/// Carries flags for whether the two secrets are stored rather than the
+/// secrets themselves; plaintext only ever materialises inside
+/// <see cref="ResolvedGitHubApp"/>.
+/// </summary>
+public sealed record GitHubAppView(
+    long? AppId,
+    string? AppSlug,
+    string? ClientId,
+    bool HasClientSecret,
+    bool HasPrivateKey)
+{
+    /// <summary>
+    /// True when an organisation could actually start the install handshake:
+    /// the id and key are needed to mint tokens, the slug to build the install
+    /// URL. The OAuth client id/secret belong to the per-user link (#621) and
+    /// are deliberately not part of this test.
+    /// </summary>
+    public bool IsConfigured => AppId is not null && !string.IsNullOrEmpty(AppSlug) && HasPrivateKey;
+}
+
+/// <summary>
+/// Input for <see cref="SystemSettingsService.SaveGitHubAppAsync"/>. Empty
+/// <see cref="ClientSecret"/> / <see cref="PrivateKeyPem"/> leave the stored
+/// values untouched (same pattern as the SMTP password); the paired Clear flags
+/// wipe them. Clearing the app id clears everything GitHub with it — the rest
+/// is meaningless without the App it belongs to.
+/// </summary>
+public sealed record GitHubAppInput(
+    string? AppId,
+    string? AppSlug,
+    string? ClientId,
+    string? ClientSecret,
+    bool ClearClientSecret,
+    string? PrivateKeyPem,
+    bool ClearPrivateKey);
+
+/// <summary>
+/// Fully resolved GitHub App credentials with plaintext secrets. Held only
+/// inside <c>Services/GitHub/</c>; never persisted, never logged.
+/// </summary>
+public sealed record ResolvedGitHubApp(
+    long AppId,
+    string? AppSlug,
+    string? ClientId,
+    string? ClientSecret,
+    string PrivateKeyPem);
+
+/// <summary>
 /// Resolved SMTP configuration. Either fully populated (host + from set) or
 /// considered unconfigured. The plaintext password is only ever held in this
 /// record — never persisted, never logged.
@@ -191,6 +240,12 @@ public sealed class SystemSettingsService
     /// <summary>Data Protection purpose string for the deployment-wide Entra client secret.</summary>
     public const string EntraClientSecretProtectionPurpose = "ALDevToolbox.SystemSettings.EntraClientSecret";
 
+    /// <summary>Data Protection purpose string for the GitHub App's OAuth client secret.</summary>
+    public const string GitHubClientSecretProtectionPurpose = "ALDevToolbox.SystemSettings.GitHubClientSecret";
+
+    /// <summary>Data Protection purpose string for the GitHub App's PEM private key.</summary>
+    public const string GitHubPrivateKeyProtectionPurpose = "ALDevToolbox.SystemSettings.GitHubPrivateKey";
+
     /// <summary>Discriminator for the default S3-compatible off-site backend.</summary>
     public const string S3ProviderName = "s3";
 
@@ -203,6 +258,8 @@ public sealed class SystemSettingsService
     private readonly IDataProtector _offsiteAccessProtector;
     private readonly IDataProtector _offsiteSecretProtector;
     private readonly IDataProtector _entraSecretProtector;
+    private readonly IDataProtector _githubSecretProtector;
+    private readonly IDataProtector _githubKeyProtector;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
     private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
@@ -233,6 +290,8 @@ public sealed class SystemSettingsService
         _offsiteAccessProtector = protectionProvider.CreateProtector(OffsiteAccessKeyProtectionPurpose);
         _offsiteSecretProtector = protectionProvider.CreateProtector(OffsiteSecretKeyProtectionPurpose);
         _entraSecretProtector = protectionProvider.CreateProtector(EntraClientSecretProtectionPurpose);
+        _githubSecretProtector = protectionProvider.CreateProtector(GitHubClientSecretProtectionPurpose);
+        _githubKeyProtector = protectionProvider.CreateProtector(GitHubPrivateKeyProtectionPurpose);
         _logger = logger;
         _clock = clock;
         // Optional so existing tests that build the service by hand without
@@ -535,6 +594,193 @@ public sealed class SystemSettingsService
         _logger.LogInformation(
             "Deployment-wide Entra app registration updated (client_id={ClientId}, has_secret={HasSecret}).",
             row.EntraClientId ?? "<unset>", !string.IsNullOrEmpty(row.EntraClientSecretEncrypted));
+    }
+
+    // ── Deployment-wide GitHub App (see .design/github-integration.md) ──────
+
+    /// <summary>Loads the GitHub App registration for the SiteAdmin form (no plaintext secrets).</summary>
+    public async Task<GitHubAppView> GetGitHubAppViewAsync(CancellationToken ct = default)
+    {
+        var row = await LoadAsync(ct);
+        return new GitHubAppView(
+            AppId: row.GitHubAppId,
+            AppSlug: row.GitHubAppSlug,
+            ClientId: row.GitHubClientId,
+            HasClientSecret: !string.IsNullOrEmpty(row.GitHubClientSecretEncrypted),
+            HasPrivateKey: !string.IsNullOrEmpty(row.GitHubPrivateKeyEncrypted));
+    }
+
+    /// <summary>
+    /// HTML <c>pattern</c> for the GitHub App id: a positive whole number.
+    /// Mirrored onto the field on <c>/site-admin/settings/github</c> so the
+    /// browser catches the obvious cases before the post, exactly as CLAUDE.md
+    /// asks — keep the two in step.
+    /// </summary>
+    public const string GitHubAppIdPattern = "[1-9][0-9]{0,18}";
+
+    /// <summary>
+    /// HTML <c>pattern</c> for the GitHub App slug: letters, digits and inner
+    /// hyphens — the same shape GitHub puts in <c>github.com/apps/{slug}</c>.
+    /// Validated so a pasted full URL is rejected here rather than producing a
+    /// 404 install link the admin has to debug. <see cref="GitHubAppSlugRegex"/>
+    /// is built from this constant, so the browser rule and the server rule are
+    /// one string rather than two that can drift.
+    ///
+    /// <para>The hyphen is escaped for the browser's sake: <c>pattern</c> is
+    /// compiled with the RegExp <c>v</c> flag, under which a bare <c>-</c>
+    /// inside a character class is a syntax error - and a pattern that does not
+    /// compile is dropped silently rather than reported.</para>
+    /// </summary>
+    public const string GitHubAppSlugPattern = @"[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?";
+
+    private static readonly System.Text.RegularExpressions.Regex GitHubAppSlugRegex = new(
+        $"^{GitHubAppSlugPattern}$",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Persists the deployment-wide GitHub App registration. Validation: the
+    /// app id must be a positive whole number, the slug must look like a slug,
+    /// and the private key must be a PEM the runtime can actually import — a
+    /// key that fails here would otherwise fail on the first install, far from
+    /// the form that accepted it. Clearing the app id clears the slug, client
+    /// id and both secrets with it, since none of them mean anything without
+    /// the App. Throws <see cref="PlanValidationException"/> with field-keyed
+    /// errors so the form renders them inline.
+    /// </summary>
+    public async Task SaveGitHubAppAsync(GitHubAppInput input, CancellationToken ct = default)
+    {
+        var errors = new Dictionary<string, string>();
+
+        long? appId = null;
+        var rawAppId = NullIfBlank(input.AppId);
+        if (rawAppId is not null)
+        {
+            if (!long.TryParse(rawAppId, out var parsed) || parsed <= 0)
+            {
+                errors["GitHubAppId"] = "Enter the App ID from the app's settings page on GitHub - a whole number like 123456.";
+            }
+            else
+            {
+                appId = parsed;
+            }
+        }
+
+        var slug = NullIfBlank(input.AppSlug)?.ToLowerInvariant();
+        if (slug is not null && (slug.Length > 120 || !GitHubAppSlugRegex.IsMatch(slug)))
+        {
+            errors["GitHubAppSlug"] = "Enter just the app's name as it appears at the end of its GitHub URL, like al-dev-toolbox.";
+        }
+        else if (slug is null && rawAppId is not null)
+        {
+            // Without the slug there is no install URL, so an app id on its own
+            // leaves every organisation with a Connect button that goes nowhere.
+            errors["GitHubAppSlug"] = "Enter the app's name as it appears at the end of its GitHub URL - without it, nobody can install the app.";
+        }
+
+        var clientId = NullIfBlank(input.ClientId);
+        var privateKey = NullIfBlank(input.PrivateKeyPem);
+        if (privateKey is not null && !TryImportPrivateKey(privateKey))
+        {
+            errors["GitHubPrivateKey"] = "That does not look like the private key file GitHub gave you. Paste the whole file, including the BEGIN and END lines.";
+        }
+
+        if (rawAppId is null && (privateKey is not null || !string.IsNullOrEmpty(input.ClientSecret)))
+        {
+            errors["GitHubAppId"] = "Enter the App ID before saving the private key or the client secret.";
+        }
+        if (clientId is null && !string.IsNullOrEmpty(input.ClientSecret))
+        {
+            errors["GitHubClientSecret"] = "Enter the Client ID before saving a client secret.";
+        }
+
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var row = await LoadAsync(ct);
+        row.GitHubAppId = appId;
+        row.GitHubAppSlug = appId is null ? null : slug;
+        row.GitHubClientId = appId is null ? null : clientId;
+
+        if (appId is null || input.ClearClientSecret)
+        {
+            row.GitHubClientSecretEncrypted = null;
+        }
+        else if (!string.IsNullOrEmpty(input.ClientSecret))
+        {
+            row.GitHubClientSecretEncrypted = _githubSecretProtector.Protect(input.ClientSecret);
+        }
+
+        if (appId is null || input.ClearPrivateKey)
+        {
+            row.GitHubPrivateKeyEncrypted = null;
+        }
+        else if (privateKey is not null)
+        {
+            row.GitHubPrivateKeyEncrypted = _githubKeyProtector.Protect(privateKey);
+        }
+
+        row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Deployment-wide GitHub App registration updated (app_id={AppId}, slug={Slug}, has_key={HasKey}, has_secret={HasSecret}).",
+            row.GitHubAppId?.ToString() ?? "<unset>",
+            row.GitHubAppSlug ?? "<unset>",
+            !string.IsNullOrEmpty(row.GitHubPrivateKeyEncrypted),
+            !string.IsNullOrEmpty(row.GitHubClientSecretEncrypted));
+    }
+
+    /// <summary>
+    /// True when <paramref name="pem"/> is a PEM the runtime can load as an RSA
+    /// private key. GitHub hands out PKCS#1 (<c>BEGIN RSA PRIVATE KEY</c>);
+    /// <see cref="System.Security.Cryptography.RSA.ImportFromPem"/> also accepts
+    /// PKCS#8, so both paste cleanly.
+    /// </summary>
+    private static bool TryImportPrivateKey(string pem)
+    {
+        try
+        {
+            using var rsa = System.Security.Cryptography.RSA.Create();
+            rsa.ImportFromPem(pem);
+            return true;
+        }
+        catch (ArgumentException) { return false; }
+        catch (System.Security.Cryptography.CryptographicException) { return false; }
+    }
+
+    /// <summary>
+    /// Decrypts the stored GitHub App credentials. Returns <see langword="null"/>
+    /// when the deployment has no app id or no private key, or when the key can't
+    /// be decrypted (a lost key ring) — in every case the honest answer is "GitHub
+    /// isn't available here", and the caller renders that rather than a stack trace.
+    /// </summary>
+    public async Task<ResolvedGitHubApp?> ResolveGitHubAppAsync(CancellationToken ct = default)
+    {
+        var row = await _db.SystemSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == 1, ct);
+        if (row?.GitHubAppId is not long appId) return null;
+        if (string.IsNullOrEmpty(row.GitHubPrivateKeyEncrypted)) return null;
+
+        string privateKey;
+        string? clientSecret = null;
+        try
+        {
+            privateKey = _githubKeyProtector.Unprotect(row.GitHubPrivateKeyEncrypted);
+            if (!string.IsNullOrEmpty(row.GitHubClientSecretEncrypted))
+            {
+                clientSecret = _githubSecretProtector.Unprotect(row.GitHubClientSecretEncrypted);
+            }
+        }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            _logger.LogError(ex, "Failed to decrypt GitHub App credentials; GitHub features disabled until re-entered.");
+            return null;
+        }
+
+        return new ResolvedGitHubApp(
+            AppId: appId,
+            AppSlug: NullIfBlank(row.GitHubAppSlug),
+            ClientId: NullIfBlank(row.GitHubClientId),
+            ClientSecret: clientSecret,
+            PrivateKeyPem: privateKey);
     }
 
     /// <summary>

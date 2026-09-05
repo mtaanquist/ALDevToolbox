@@ -152,6 +152,30 @@ internal static class SiteAdminEndpoints
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
+        app.MapPost("/site-admin/settings/github/save", async (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var input = new GitHubAppInput(
+                AppId: form["GitHubAppId"].ToString(),
+                AppSlug: form["GitHubAppSlug"].ToString(),
+                ClientId: form["GitHubClientId"].ToString(),
+                ClientSecret: form["GitHubClientSecret"].ToString(),
+                ClearClientSecret: IsChecked(form, "ClearGitHubClientSecret"),
+                PrivateKeyPem: form["GitHubPrivateKey"].ToString(),
+                ClearPrivateKey: IsChecked(form, "ClearGitHubPrivateKey"));
+            try
+            {
+                await settings.SaveGitHubAppAsync(input, ct);
+                ctx.Response.Redirect($"/site-admin/settings/github?{RouteConstants.OkQuery}=saved");
+            }
+            catch (PlanValidationException ex)
+            {
+                RedirectFirstError(ctx, "/site-admin/settings/github", ex);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
         app.MapPost("/site-admin/settings/offsite/save", async (
             HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
         {

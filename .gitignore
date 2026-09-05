@@ -69,3 +69,7 @@ nunit-*.xml
 # Python bytecode from .design/progress.py
 __pycache__/
 *.pyc
+
+# Isolated git worktrees created for parallel agent sessions. These are nested
+# checkouts of this same repository - never commit one.
+/.claude/worktrees/

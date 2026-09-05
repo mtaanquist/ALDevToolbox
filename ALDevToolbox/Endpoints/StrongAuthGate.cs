@@ -107,8 +107,12 @@ internal static class StrongAuthGate
                 // the id on the request's own auth cookie.
                 || await db.UserPasskeys.IgnoreQueryFilters()
                     .AnyAsync(p => p.UserId == userId.Value, ctx.RequestAborted)
+                // Entra only: a GitHub account link (issue #621) shares this
+                // table but is authorisation, not a sign-in method.
                 || await db.UserExternalLogins
-                    .AnyAsync(l => l.UserId == userId.Value, ctx.RequestAborted);
+                    .AnyAsync(l => l.UserId == userId.Value
+                        && l.Provider == ALDevToolbox.Services.Account.EntraSignInService.ProviderName,
+                        ctx.RequestAborted);
             if (hasStrongAuth)
             {
                 await next();

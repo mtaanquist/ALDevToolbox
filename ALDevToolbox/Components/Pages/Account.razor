@@ -7,6 +7,7 @@
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Account
 @using ALDevToolbox.Services.OAuth
+@using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Components.Shared
 @using Microsoft.EntityFrameworkCore
 @inject AccountService Accounts
@@ -20,6 +21,8 @@
 @inject OAuthClientAdminService OAuthClients
 @inject OrganizationConfigService OrgConfig
 @inject UserRepositoryTokenService RepoTokens
+@inject GitHubAccessService GitHubAccess
+@inject SystemSettingsService Settings
 @inject ILogger<Account> Logger
 
 @*
@@ -79,7 +82,19 @@ else
                     <span><strong>@Error:</strong> @Message</span>
                 </p>
             }
-            @if (Ok is not null)
+            else if (!string.IsNullOrEmpty(Message))
+            {
+                @* A message with no field to blame: something went nowhere rather
+                   than went wrong. Prefixing it with a field name would invent a
+                   form the reader never filled in. *@
+                <p class="alert alert--warn" role="status">
+                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                    <span>@Message</span>
+                </p>
+            }
+            @* The return banner below says "connected" and what to do next, so the
+               generic flash would be the same news twice in two green boxes. *@
+            @if (Ok is not null && !(CameFromRepositoriesTab && _github is { IsLinked: true }))
             {
                 <p class="alert alert--success" role="status">
                     <Icon Name="circle-check" Width="16" Height="16" />
@@ -724,12 +739,6 @@ else
             }
             else
             {
-                <p class="u-muted">
-                    Your personal sign-ins to the Git providers you build solutions from. Every build
-                    clones your repositories as you, so a build will fail if one of these has expired
-                    or been removed.
-                </p>
-
                 @if (!string.IsNullOrEmpty(_repoOk))
                 {
                     <p class="alert alert--success" role="status">
@@ -742,12 +751,264 @@ else
                         <Icon Name="circle-alert" Width="16" Height="16" /><span>@_repoErr</span>
                     </p>
                 }
+                @if (!string.IsNullOrEmpty(_githubNote))
+                {
+                    <p class="alert alert--info" role="status">
+                        <Icon Name="info" Width="16" Height="16" /><span>@_githubNote</span>
+                    </p>
+                }
+
+                @* An admin sent here to link had, until now, to reconstruct
+                   Admin -> Administration -> Repositories from memory once they
+                   were done. Say why they are here on the way in, and hand them
+                   the door on the way out. *@
+                @if (CameFromRepositoriesTab && !_githubLoading)
+                {
+                    @if (_github is { IsLinked: true, NeedsRelink: false })
+                    {
+                        <div class="alert alert--success" role="status">
+                            <Icon Name="circle-check" Width="16" Height="16" />
+                            <span class="u-stack">
+                                <span>
+                                    That is your own GitHub account done. Now finish connecting your
+                                    organisation, back on the Repositories page.
+                                </span>
+                                <span class="u-row">
+                                    <a class="btn btn--primary" href="/admin/administration/repositories">
+                                        <Icon Name="arrow-left" Width="16" Height="16" />
+                                        <span>Back to Repositories</span>
+                                    </a>
+                                </span>
+                            </span>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="alert alert--info" role="status">
+                            <Icon Name="info" Width="16" Height="16" />
+                            <span>
+                                You came from Administration &#8594; Repositories. Connect your own GitHub
+                                account below, and you will be sent back there to finish connecting your
+                                organisation.
+                            </span>
+                        </p>
+                    }
+                }
+
+                @if (_githubLoading || ShowGitHubCard)
+                {
+                <section class="card">
+                    <div class="card__head">
+                        <div>
+                            <h2 class="card__title">Your GitHub account</h2>
+                            <p class="card__sub">
+                                Lets the toolbox work with GitHub <em>as you</em>: create repositories,
+                                save your work into them, and show you the ones you can already open.
+                                It is not what runs your builds - that is the token below.
+                            </p>
+                        </div>
+                    </div>
+
+                    @if (_githubLoading)
+                    {
+                        <div class="loading-block loading-block--under-table">
+                            <span class="spinner"></span><span>Loading...</span>
+                        </div>
+                    }
+                    else if (!_githubAvailable)
+                    {
+                        <div class="empty-state empty-state--quiet">
+                            <span class="empty-state__title">GitHub is not set up on this server yet</span>
+                            <span class="empty-state__text">
+                                Ask whoever runs AL Dev Toolbox to set it up. Once they have, you can
+                                connect your GitHub account here.
+                            </span>
+                        </div>
+                    }
+                    else if (_github is { IsLinked: true })
+                    {
+                        <table class="data-table data-table--edge">
+                            <thead>
+                                <tr>
+                                    <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                                    <th>GitHub account</th>
+                                    <th>Connected</th>
+                                    <th class="data-table__actions"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="@RowStateIcon.RowClass(GitHubRowState)">
+                                    <td class="data-table__col-state">
+                                        <RowStateIcon State="@GitHubRowState" Label="@GitHubMembershipLine" />
+                                    </td>
+                                    <td>
+                                        <a href="https://github.com/@_github.Login" target="_blank" rel="noopener">@_github.Login</a>
+                                        <div class="u-muted">@GitHubMembershipLine</div>
+                                    </td>
+                                    <td class="u-muted">
+                                        @(_github.LinkedAt is { } linkedAt ? linkedAt.ToLocalTime().ToString("d MMM yyyy") : "-")
+                                    </td>
+                                    <td class="data-table__actions">
+                                        <button type="button" class="btn btn--sm btn--danger"
+                                                @onclick="DisconnectGitHubAsync" disabled="@_githubBusy">Disconnect</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        @if (_github.NeedsRelink)
+                        {
+                            <div class="card__body">
+                                <p class="alert alert--warn" role="alert">
+                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                    <span>
+                                        This connection has stopped working - most often because it was
+                                        removed on GitHub. Connect again to carry on.
+                                    </span>
+                                </p>
+                            </div>
+                        }
+                        else if (_githubOrgLogin is not null && _github.IsOrgMember == false)
+                        {
+                            <div class="card__body">
+                                <p class="alert alert--info" role="status">
+                                    <Icon Name="info" Width="16" Height="16" />
+                                    <span>
+                                        Your account is connected, but GitHub does not list you in the
+                                        <strong>@_githubOrgLogin</strong> organisation - so none of its
+                                        repositories will appear in the toolbox. Ask an owner of
+                                        <a href="@GitHubOrgPeopleUrl" target="_blank" rel="noopener">@_githubOrgLogin</a>
+                                        to add you, then choose Check again below.
+                                    </span>
+                                </p>
+                            </div>
+                        }
+                        else if (_githubOrgLogin is null)
+                        {
+                            <div class="card__body">
+                                <p class="alert alert--info" role="status">
+                                    <Icon Name="info" Width="16" Height="16" />
+                                    <span>
+                                        Nobody has told the toolbox which GitHub organisation your company
+                                        works in yet, so there is nothing for it to show you. An
+                                        administrator picks one under Administration &#8594; Repositories.
+                                    </span>
+                                </p>
+                            </div>
+                        }
+
+                        @* The whole answer to "what is this doing to my repositories"
+                           used to disappear at the moment she agreed to it. Suspicion
+                           does not end at the click, and she may have to repeat this
+                           to a customer months later. *@
+                        <div class="card__body">
+                            <details>
+                                <summary>What the toolbox does with this</summary>
+                                <ul>
+                                    <li>It shows you the repositories you can already open on GitHub - and no others.</li>
+                                    <li>It saves work to a repository only where you could save it yourself, with
+                                        your name on the commit and the pull request.</li>
+                                </ul>
+                                <p class="u-muted">
+                                    It never changes who can see what on GitHub, and it never acts as anyone
+                                    else. Disconnect below whenever you like.
+                                </p>
+                            </details>
+                        </div>
+
+                        @if (_github.NeedsRelink)
+                        {
+                            <div class="card__foot">
+                                <span class="form-actions__note">Disconnecting only stops the toolbox using GitHub as you.</span>
+                                <form method="post" action="/account/github/link">
+                                    <AntiforgeryToken />
+                                    @if (CameFromRepositoriesTab)
+                                    {
+                                        <input type="hidden" name="Return" value="@ReturnTo" />
+                                    }
+                                    <button type="submit" class="btn">
+                                        <Icon Name="link" Width="16" Height="16" />
+                                        <span>Connect again</span>
+                                    </button>
+                                </form>
+                            </div>
+                        }
+                        else if (_githubOrgLogin is not null && _github.IsOrgMember != true)
+                        {
+                            @* The membership answer is stored, so someone who has just
+                               been added to the organisation would otherwise keep
+                               reading yesterday's answer. This asks GitHub again. *@
+                            <div class="card__foot">
+                                <span class="form-actions__note">Joined @_githubOrgLogin since you connected?</span>
+                                <button type="button" class="btn" @onclick="RecheckGitHubMembershipAsync" disabled="@_githubBusy">
+                                    <Icon Name="refresh-cw" Width="16" Height="16" />
+                                    <span>@(_githubBusy ? "Checking..." : "Check again")</span>
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="card__foot">
+                                <span class="form-actions__note">Disconnecting only stops the toolbox using GitHub as you.</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="card__body">
+                            <p>
+                                Connecting sends you to GitHub to sign in as yourself. After that the
+                                toolbox can:
+                            </p>
+                            <ul>
+                                <li>show you the repositories you can already open on GitHub - and no others;</li>
+                                <li>save work to a repository only where you could save it yourself, with
+                                    your name on the commit and the pull request.</li>
+                            </ul>
+                            <p class="u-muted">
+                                It never changes who can see what on GitHub, and it never acts as anyone
+                                else. You can disconnect here at any time.
+                            </p>
+                        </div>
+                        <div class="card__foot">
+                            <span class="form-actions__note">You will be sent to GitHub and straight back.</span>
+                            <form method="post" action="/account/github/link">
+                                <AntiforgeryToken />
+                                @if (CameFromRepositoriesTab)
+                                {
+                                    <input type="hidden" name="Return" value="@ReturnTo" />
+                                }
+                                <button type="submit" class="btn">
+                                    <Icon Name="link" Width="16" Height="16" />
+                                    <span>Connect GitHub</span>
+                                </button>
+                            </form>
+                        </div>
+                    }
+                </section>
+                }
 
                 <section class="card">
                     <div class="card__head">
                         <div>
-                            <h2 class="card__title">Repository access</h2>
-                            <p class="card__sub">Tokens are stored encrypted and only used to clone.</p>
+                            <h2 class="card__title">Tokens for building solutions</h2>
+                            <p class="card__sub">
+                                @* "A different job from the GitHub account above" is only true when
+                                   that card is on the page - an Azure DevOps org does not see it. *@
+                                @if (ShowGitHubCard)
+                                {
+                                    <text>A different job from the GitHub account above, and you may
+                                    well need both. When</text>
+                                }
+                                else
+                                {
+                                    <text>When</text>
+                                }
+                                one of your solutions builds, the toolbox fetches a copy of the
+                                repository as you, using a token you paste here. Tokens are stored
+                                encrypted, are only ever used to fetch a copy, and a build fails if one
+                                of them has expired or been removed.
+                            </p>
                         </div>
                     </div>
 
@@ -787,7 +1048,10 @@ else
                                     <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                                     <td>
                                         @p.DisplayName()
-                                        <div class="u-muted">@(f.HasToken ? "Token stored" : "Not connected")</div>
+                                        @* "Not connected" here read as "your GitHub is not connected"
+                                           to anyone who had just connected it in the card above. Name
+                                           the missing thing instead of the host. *@
+                                        <div class="u-muted">@(f.HasToken ? "Build token stored" : "No build token yet")</div>
                                     </td>
                                     <td class="u-muted">@(f.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "Never")</td>
                                     <td class="data-table__actions">
@@ -810,7 +1074,7 @@ else
                                     {
                                         var f = _repoFields[p];
                                         <label class="field">
-                                            <span class="field__label">@p.DisplayName() token</span>
+                                            <span class="field__label">@p.DisplayName() build token</span>
                                             <input class="input" type="password" autocomplete="off"
                                                    placeholder="@(f.HasToken ? "Leave blank to keep the stored token" : RepoPlaceholder(p))"
                                                    @bind="f.NewValue" disabled="@_repoSaving" />
@@ -830,10 +1094,10 @@ else
                         else
                         {
                             <div class="card__foot">
-                                <span class="form-actions__note">Works with Azure DevOps and GitHub.</span>
+                                <span class="form-actions__note">Only used when one of your solutions builds.</span>
                                 <button type="button" class="btn" @onclick="() => _showRepoForm = true">
                                     <Icon Name="plus" Width="16" Height="16" />
-                                    <span>@(_connectedRepoCount > 0 ? "Add or update a token" : "Connect a provider")</span>
+                                    <span>@(_connectedRepoCount > 0 ? "Add or update a token" : "Add a build token")</span>
                                 </button>
                             </div>
                         }
@@ -854,6 +1118,12 @@ else
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
     [SupplyParameterFromQuery(Name = "required")] public string? Required { get; set; }
+    /// <summary>
+    /// Set when an admin was sent here from Administration -> Repositories to
+    /// link before connecting their organisation. A closed marker, not a URL -
+    /// see <c>GitHubAppEndpoints.AdminRepositoriesReturn</c>.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "return")] public string? ReturnTo { get; set; }
 
     private Section _section = Section.Profile;
     private IReadOnlyList<HeaderTabs.HeaderTabItem> _tabs = Array.Empty<HeaderTabs.HeaderTabItem>();
@@ -885,6 +1155,17 @@ else
     private string? _repoErr;
     private List<RepositoryProvider> _repoProviders = new();
     private readonly Dictionary<RepositoryProvider, RepoField> _repoFields = new();
+
+    // The GitHub account link. Deliberately separate from the token rows above:
+    // a token is something you paste, this is something you authorise, and the
+    // two answer different questions.
+    private bool _githubLoading = true;
+    private bool _githubBusy;
+    private bool _githubAvailable;
+    /// <summary>A fact that is neither a success nor a failure - "GitHub still does not list you" is the case that forced it.</summary>
+    private string? _githubNote;
+    private string? _githubOrgLogin;
+    private GitHubLinkStatus? _github;
 
     private sealed class RepoField
     {
@@ -918,6 +1199,145 @@ else
 
         await ReloadReposAsync();
         _repoLoading = false;
+
+        await ReloadGitHubAsync();
+        _githubLoading = false;
+    }
+
+    /// <summary>
+    /// Reads the GitHub link and the organisation's connected GitHub
+    /// organisation. Never calls GitHub itself, so the section still renders
+    /// when GitHub is unreachable.
+    /// </summary>
+    private async Task ReloadGitHubAsync()
+    {
+        _githubAvailable = (await Settings.GetGitHubAppViewAsync()).IsConfigured;
+        _githubOrgLogin = (await OrgConfig.GetCurrentAsync()).Settings.GitHubOrgLogin;
+        _github = await GitHubAccess.GetLinkStatusAsync();
+    }
+
+    /// <summary>
+    /// Disconnects the GitHub link. Confirmed first, like the other two things
+    /// on this page you can take away from yourself - the same shape as
+    /// <see cref="DisconnectClientAsync"/>; the POST endpoint behind
+    /// <c>/account/github/unlink</c> is the non-interactive route to the same
+    /// service call, mirroring the Microsoft link.
+    /// </summary>
+    private async Task DisconnectGitHubAsync()
+    {
+        if (_confirmDelete is null || _githubBusy) return;
+        var confirmed = await _confirmDelete.OpenAsync(
+            title: "Disconnect GitHub?",
+            message: "The toolbox will stop working with GitHub as you. Nothing on GitHub changes, and you can connect again whenever you like.",
+            confirmLabel: "Disconnect",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+        _githubBusy = true;
+        _repoOk = _repoErr = _githubNote = null;
+        try
+        {
+            await GitHubAccess.UnlinkAsync();
+            await ReloadGitHubAsync();
+            _repoOk = "GitHub disconnected.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to disconnect the GitHub account link.");
+            _repoErr = "An unexpected error occurred. Your GitHub account is still connected.";
+        }
+        finally
+        {
+            _githubBusy = false;
+        }
+    }
+
+    /// <summary>Asks GitHub again whether this person is in the connected organisation, and stores the answer.</summary>
+    private async Task RecheckGitHubMembershipAsync()
+    {
+        if (_user is null || _githubBusy) return;
+        _githubBusy = true;
+        _repoOk = _repoErr = _githubNote = null;
+        try
+        {
+            var member = await GitHubAccess.TryGetOrgMembershipAsync(_user.Id);
+            await ReloadGitHubAsync();
+            if (member is null)
+            {
+                // GitHub did not answer, so neither of the sentences below is
+                // true. Saying "an owner has to add you" here would be advice
+                // she cannot act on, about a problem she does not have.
+                _repoErr = "We could not reach GitHub just now. Try again in a minute.";
+            }
+            else if (member.Value)
+            {
+                _repoOk = $"You are in the {_githubOrgLogin} organisation on GitHub. Its repositories will show up in the toolbox now.";
+            }
+            else
+            {
+                // Not a success and not a failure of ours: an owner of the GitHub
+                // organisation has to act. A green tick here told her the opposite
+                // of what the sentence said.
+                _githubNote = $"GitHub still does not list you in {_githubOrgLogin}. Only an owner of that organisation can add you - ask one of them, then choose Check again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to re-check GitHub organisation membership.");
+            _repoErr = "We could not reach GitHub just now. Try again in a minute.";
+        }
+        finally
+        {
+            _githubBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// The row's own summary of the link. A green tick claimed everything was
+    /// fine while the alert underneath said her repositories would not appear,
+    /// so a link that cannot do its job gets the attention keyline instead.
+    /// </summary>
+    private string GitHubRowState =>
+        _github is null || _github.NeedsRelink ? "failed"
+        : _githubOrgLogin is not null && _github.IsOrgMember != true ? "needs-attention"
+        : "connected";
+
+    /// <summary>True when the admin arrived from the Repositories tab and still has that job to finish.</summary>
+    private bool CameFromRepositoriesTab =>
+        ReturnTo == ALDevToolbox.Endpoints.GitHubAppEndpoints.AdminRepositoriesReturn;
+
+    /// <summary>The connected organisation's people page, so "ask an owner" has somewhere to go.</summary>
+    private string GitHubOrgPeopleUrl =>
+        $"https://github.com/orgs/{Uri.EscapeDataString(_githubOrgLogin ?? string.Empty)}/people";
+
+    /// <summary>
+    /// Whether to offer the GitHub account link at all. An organisation that
+    /// keeps its code on Azure DevOps should not be pitched a GitHub set-up it
+    /// will never use - but someone who linked before the admin narrowed the
+    /// list still needs the row, if only to disconnect.
+    /// </summary>
+    private bool ShowGitHubCard =>
+        _repoProviders.Contains(RepositoryProvider.GitHub) || _github is { IsLinked: true };
+
+    /// <summary>
+    /// The one line under the login that answers "why can't I see any
+    /// repositories". Three different facts, and saying nothing when we do not
+    /// know beats guessing.
+    /// </summary>
+    private string GitHubMembershipLine
+    {
+        get
+        {
+            // A link that has stopped working says so first: "Connected" under a
+            // red row was the row contradicting itself.
+            if (_github is null || _github.NeedsRelink) return "Not working - connect again";
+            if (_githubOrgLogin is null) return "Connected";
+            return _github.IsOrgMember switch
+            {
+                true => $"In the {_githubOrgLogin} organisation",
+                false => $"Not in the {_githubOrgLogin} organisation",
+                _ => $"We could not check whether you are in {_githubOrgLogin}",
+            };
+        }
     }
 
     /// <summary>
@@ -951,6 +1371,7 @@ else
             return explicitSection;
         }
         if (Required == "1") return Section.Security;
+        if (CameFromRepositoriesTab) return Section.Repos;
         var code = Ok ?? Error;
         return code switch
         {
@@ -960,6 +1381,7 @@ else
                 or "ms-linked" or "ms-unlinked"
                 or "Totp" or "Email" or "Code" or "Password" => Section.Security,
             "token-revoked" or "token-created" => Section.Ai,
+            "github-linked" or "github-unlinked" => Section.Repos,
             _ => Section.Profile,
         };
     }
@@ -977,6 +1399,8 @@ else
         "ms-linked" => "Microsoft account connected. You can now use \"Sign in with Microsoft\" on the login page.",
         "ms-unlinked" => "Microsoft account disconnected.",
         "token-revoked" => "Access token revoked.",
+        "github-linked" => "GitHub connected. The toolbox can now work with the repositories you have access to.",
+        "github-unlinked" => "GitHub disconnected. The toolbox no longer works with GitHub as you.",
         _ => "Saved.",
     };
 
@@ -1156,10 +1580,15 @@ else
         }
     }
 
+    /// <summary>
+    /// Where to make the token and what to let it do. Named after the controls
+    /// the person will actually see on the provider's own page - "repo (read)
+    /// scope" was our word for it, not theirs.
+    /// </summary>
     private static string RepoScopeHint(RepositoryProvider p) => p switch
     {
-        RepositoryProvider.GitHub => "Needs repo (read) scope. Used for repositories on github.com.",
-        RepositoryProvider.AzureDevOps => "Needs Code (Read) scope. Used for repositories on dev.azure.com.",
+        RepositoryProvider.GitHub => "Make one on github.com, under Settings then Developer settings. Let it read your repositories - it needs nothing else.",
+        RepositoryProvider.AzureDevOps => "Make one on dev.azure.com, under User settings then Personal access tokens. Tick Code (Read) - it needs nothing else.",
         _ => string.Empty,
     };
 
