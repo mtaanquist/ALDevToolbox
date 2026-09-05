@@ -152,21 +152,12 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      # TEMPORARY (#739): run the suite up to five times and stop at the first
-      # failure. AdminTemplateEditTests fails roughly one run in six on CI and
-      # never locally, so one sample per job is too slow to diagnose. Stopping
-      # at the failure also leaves it at the end of the log, where it can be
-      # read without paging through 3,485 passing lines.
-      # REVERT THIS STEP BEFORE MERGING.
       - name: Test
-        run: |
-          for attempt in 1 2 3 4 5; do
-            echo "=== suite attempt ${attempt} ==="
-            if ! dotnet test --configuration Release --no-build --output Detailed; then
-              echo "=== FAILED ON ATTEMPT ${attempt} ==="
-              exit 1
-            fi
-          done
+        # xUnit v3 runs on Microsoft.Testing.Platform (see global.json's `test`
+        # section). VSTest options like --logger are not recognised there: the
+        # run exits 5 with zero tests, so this has to stay MTP syntax.
+        # --output Detailed is the per-test console output --logger used to give.
+        run: dotnet test --configuration Release --no-build --output Detailed
 
   compose-smoke:
     # Boots the published image against a real `db` container to lock in the
