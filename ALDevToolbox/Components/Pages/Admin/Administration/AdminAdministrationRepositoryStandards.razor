@@ -1,0 +1,432 @@
+@page "/admin/administration/repositories/standards"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject GitHubRepositoryStandardsService Standards
+@inject NavigationManager Nav
+@inject ILogger<AdminAdministrationRepositoryStandards> Log
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.GitHub
+
+@*
+    Repository standards (issue #628): the files and the branch rules every
+    repository the toolbox creates gets. Reached from the "Repository standards"
+    row on Administration -> Repositories.
+
+    Named user: an org Admin who knows GitHub well and knows nothing about this
+    codebase. Every word here is about repositories, branches and reviews - the
+    things they already set by hand today.
+*@
+
+<PageTitle>Repository standards · Administration · AL Dev Toolbox</PageTitle>
+
+<div class="page">
+    <header class="page-head">
+        <div>
+            <h1 class="page-head__title">Repository standards</h1>
+            <p class="page-head__sub">
+                What every repository the toolbox creates starts with: the files your team
+                expects to find, and the rules on its default branch.
+            </p>
+        </div>
+        <div class="page-head__actions">
+            <a class="btn btn--sm" href="/admin/administration/repositories">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to Repositories</span>
+            </a>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
+            </p>
+        }
+
+        <div class="gen">
+            <div class="gen__form u-stack">
+                <section class="card">
+                    <div class="card__head">
+                        <div>
+                            <h2 class="card__title">Rules on the default branch</h2>
+                            <p class="card__sub">Applied to the default branch of each new repository.</p>
+                        </div>
+                    </div>
+                    <div class="card__body form-sec">
+                        <label class="check @(_requirePullRequest ? "is-checked" : "")">
+                            <input type="checkbox" @bind="_requirePullRequest" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>Changes have to go through a pull request</span>
+                        </label>
+                        @if (_requirePullRequest)
+                        {
+                            <div class="field">
+                                <label class="field__label" for="std-approvals">Approvals needed before merging</label>
+                                <input class="input input--sm" id="std-approvals" type="number"
+                                       min="0" max="@GitHubRepositoryStandardsService.MaxRequiredApprovals"
+                                       @bind="_requiredApprovals" @bind:event="oninput" />
+                                <span class="field__hint">Use 0 if a pull request is enough on its own.</span>
+                            </div>
+                        }
+                        <label class="check @(_requireLinearHistory ? "is-checked" : "")">
+                            <input type="checkbox" @bind="_requireLinearHistory" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>Keep the history straight - no merge commits</span>
+                        </label>
+                        <label class="check @(_blockForcePushes ? "is-checked" : "")">
+                            <input type="checkbox" @bind="_blockForcePushes" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>Nobody can force push over the branch</span>
+                        </label>
+                        <div class="field">
+                            <label class="field__label" for="std-checks">Checks that have to pass first</label>
+                            <input class="input" id="std-checks" type="text"
+                                   placeholder="e.g. build, test"
+                                   @bind="_statusChecks" @bind:event="oninput" />
+                            <span class="field__hint">
+                                Separate several with commas. Use the names as they appear on a
+                                commit on GitHub. Leave empty if no check is required.
+                            </span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_rulesetError))
+                        {
+                            <span class="field-error" role="alert">
+                                <Icon Name="circle-alert" Width="13" Height="13" />@_rulesetError
+                            </span>
+                        }
+                    </div>
+                </section>
+
+                <section class="card">
+                    <div class="card__head">
+                        <div>
+                            <h2 class="card__title">Files (@_files.Count)</h2>
+                            <p class="card__sub">Committed into every new repository, exactly as you type them.</p>
+                        </div>
+                    </div>
+                    <div class="card__body form-sec">
+                        @if (_files.Count == 0)
+                        {
+                            <div class="empty-state empty-state--quiet">
+                                <span class="empty-state__title">No files yet</span>
+                                <span class="empty-state__text">
+                                    Add a file, for example
+                                    <code class="code">.github/workflows/build.yml</code> or
+                                    <code class="code">CODEOWNERS</code>, and every repository the
+                                    toolbox creates will have it from the day it is made.
+                                </span>
+                                <a class="btn empty-state__action" href="#std-editor">
+                                    <Icon Name="plus" Width="14" Height="14" />
+                                    <span>Add a file</span>
+                                </a>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var file in _files)
+                            {
+                                <div class="code-block">
+                                    <div class="code-block__bar">
+                                        <span class="code-block__name">@file.Path</span>
+                                        <span class="u-row">
+                                            <button type="button" class="btn btn--sm" title="Move up"
+                                                    disabled="@(_files.IndexOf(file) == 0)"
+                                                    @onclick="() => Move(file, -1)">
+                                                <Icon Name="arrow-up" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm" title="Move down"
+                                                    disabled="@(_files.IndexOf(file) == _files.Count - 1)"
+                                                    @onclick="() => Move(file, 1)">
+                                                <Icon Name="arrow-down" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm" @onclick="() => StartEdit(file)">
+                                                <Icon Name="pencil" Width="12" Height="12" />
+                                                <span>Edit</span>
+                                            </button>
+                                            <button type="button" class="btn btn--sm" @onclick="() => Remove(file)">
+                                                <Icon Name="trash-2" Width="12" Height="12" />
+                                                <span>Remove</span>
+                                            </button>
+                                        </span>
+                                    </div>
+                                    <pre>@Preview(file.Content)</pre>
+                                </div>
+                            }
+                        }
+                    </div>
+                </section>
+
+                <section class="card" id="std-editor">
+                    <div class="card__head">
+                        <h2 class="card__title">@(_editing is null ? "Add a file" : $"Editing {_editing.Path}")</h2>
+                    </div>
+                    <div class="card__body form-sec">
+                        <div class="field">
+                            <label class="field__label" for="std-file-path">Where it goes in the repository</label>
+                            <input class="input" id="std-file-path" type="text"
+                                   placeholder=".github/workflows/build.yml"
+                                   @bind="_editPath" @bind:event="oninput" />
+                        </div>
+                        <div class="field">
+                            <label class="field__label" for="std-file-content">What is in it</label>
+                            <textarea class="textarea" id="std-file-content" rows="8"
+                                      @bind="_editContent" @bind:event="oninput"></textarea>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_editError))
+                        {
+                            <span class="field-error" role="alert">
+                                <Icon Name="circle-alert" Width="13" Height="13" />@_editError
+                            </span>
+                        }
+                    </div>
+                    <div class="card__foot">
+                        @if (_editing is not null)
+                        {
+                            <button type="button" class="btn btn--sm" @onclick="CancelEdit">Cancel</button>
+                        }
+                        <button type="button" class="btn btn--sm" @onclick="ApplyEdit">
+                            <Icon Name="check" Width="12" Height="12" />
+                            <span>@(_editing is null ? "Add to the list" : "Apply changes")</span>
+                        </button>
+                    </div>
+                </section>
+            </div>
+
+            <aside class="gen__aside">
+                <div class="card">
+                    <div class="card__head"><h2 class="card__title">How this is applied</h2></div>
+                    <div class="card__body form-sec">
+                        <p class="form-sec__cap">
+                            When somebody creates a repository from a new workspace, the toolbox
+                            commits the generated files first, then adds these files in a second
+                            commit called "Apply repository standards", then sets the branch rules.
+                        </p>
+                        <p class="form-sec__cap">
+                            A file here wins over one the workspace template produced at the same
+                            path.
+                        </p>
+                        <p class="form-sec__cap">
+                            Repositories that already exist are left alone - these are for the ones
+                            created from here on.
+                        </p>
+                        <p class="alert alert--info">
+                            <Icon Name="info" Width="16" Height="16" />
+                            <span>
+                                Setting branch rules needs AL Dev Toolbox to be allowed to change
+                                repository settings in your GitHub organisation. If it is not, the
+                                repository is still created with its files and whoever created it is
+                                told the rules were not set.
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <div class="form-actions form-actions--sticky">
+            <span class="form-actions__spacer"></span>
+            @if (IsDirty)
+            {
+                <span class="form-actions__note">Unsaved changes</span>
+            }
+            <button type="button" class="btn" @onclick="SaveAsync" disabled="@(_saving || !IsDirty)">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save standards")</span>
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+    private string? _rulesetError;
+    private string? _editError;
+
+    private bool _requirePullRequest;
+    private int _requiredApprovals = 1;
+    private bool _requireLinearHistory;
+    private bool _blockForcePushes;
+    private string _statusChecks = string.Empty;
+
+    private List<FileRow> _files = new();
+    private string _baseline = string.Empty;
+
+    private FileRow? _editing;
+    private string _editPath = string.Empty;
+    private string _editContent = string.Empty;
+
+    private sealed class FileRow
+    {
+        public int? Id { get; set; }
+        public string Path { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Everything on the page as one string, compared against what was loaded.
+    /// Cheaper to keep right than a field-by-field comparison, and this form is
+    /// small enough that the string never gets big.
+    /// </summary>
+    private string Snapshot() => string.Join("|", new[]
+    {
+        _requirePullRequest ? "1" : "0",
+        _requiredApprovals.ToString(),
+        _requireLinearHistory ? "1" : "0",
+        _blockForcePushes ? "1" : "0",
+        _statusChecks.Trim(),
+    }.Concat(_files.Select(f => $"{f.Id}~{f.Path}~{f.Content}")));
+
+    private bool IsDirty => Snapshot() != _baseline;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _okMessage = OkParam == "saved" ? "Saved. New repositories will be created with these standards." : null;
+    }
+
+    private async Task LoadAsync()
+    {
+        var standards = await Standards.GetAsync();
+        if (standards.Ruleset is { } ruleset)
+        {
+            _requirePullRequest = ruleset.RequirePullRequest;
+            _requiredApprovals = ruleset.RequiredApprovals;
+            _requireLinearHistory = ruleset.RequireLinearHistory;
+            _blockForcePushes = ruleset.BlockForcePushes;
+            _statusChecks = string.Join(", ", ruleset.RequiredStatusChecks);
+        }
+        _files = standards.Files
+            .Select(f => new FileRow { Id = f.Id, Path = f.Path, Content = f.Content })
+            .ToList();
+        _baseline = Snapshot();
+        _loading = false;
+    }
+
+    private void StartEdit(FileRow row)
+    {
+        _editing = row;
+        _editPath = row.Path;
+        _editContent = row.Content;
+        _editError = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+        _editPath = string.Empty;
+        _editContent = string.Empty;
+        _editError = null;
+    }
+
+    private void ApplyEdit()
+    {
+        var path = _editPath.Trim();
+        if (path.Length == 0)
+        {
+            _editError = "Give the file a path.";
+            return;
+        }
+        if (path.StartsWith('/') || path.Contains(".."))
+        {
+            _editError = "Use a path inside the repository, without a leading slash.";
+            return;
+        }
+        if (_files.Any(f => f != _editing && string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            _editError = $"Another file already goes to {path}.";
+            return;
+        }
+
+        if (_editing is null)
+        {
+            _files.Add(new FileRow { Path = path, Content = _editContent });
+        }
+        else
+        {
+            _editing.Path = path;
+            _editing.Content = _editContent;
+        }
+        CancelEdit();
+    }
+
+    private void Remove(FileRow row)
+    {
+        _files.Remove(row);
+        if (_editing == row) CancelEdit();
+    }
+
+    private void Move(FileRow row, int by)
+    {
+        var index = _files.IndexOf(row);
+        var target = index + by;
+        if (index < 0 || target < 0 || target >= _files.Count) return;
+        _files.RemoveAt(index);
+        _files.Insert(target, row);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || !IsDirty) return;
+        _saving = true;
+        _errMessage = _okMessage = _rulesetError = null;
+        try
+        {
+            var checks = _statusChecks
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+            var ruleset = new GitHubRepositoryRuleset
+            {
+                RequirePullRequest = _requirePullRequest,
+                RequiredApprovals = _requirePullRequest ? _requiredApprovals : 0,
+                RequireLinearHistory = _requireLinearHistory,
+                BlockForcePushes = _blockForcePushes,
+                RequiredStatusChecks = checks,
+            };
+            await Standards.SaveAsync(
+                ruleset.IsEmpty ? null : ruleset,
+                _files.Select(f => new GitHubStandardFileInput(f.Id, f.Path, f.Content)).ToList());
+            Nav.NavigateTo("/admin/administration/repositories/standards?ok=saved", forceLoad: true);
+        }
+        catch (PlanValidationException ex)
+        {
+            if (ex.Errors.TryGetValue(GitHubRepositoryStandardsService.RulesetField, out var rulesetError))
+            {
+                _rulesetError = rulesetError;
+            }
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the values and try again.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save the repository standards.");
+            _errMessage = "An unexpected error occurred. Nothing was saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string Preview(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return string.Empty;
+        const int max = 240;
+        return content.Length <= max ? content : content[..max] + "...";
+    }
+}

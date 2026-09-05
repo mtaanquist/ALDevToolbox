@@ -354,7 +354,8 @@ public sealed class TestDb : IDisposable
         ALDevToolbox.Services.GitHub.GitHubAppClient client,
         ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
-            NewGitHubConnectionService(ctx, access), access, client, ctx, OrgContext,
+            NewGitHubConnectionService(ctx, access), access, client,
+            NewGitHubRepositoryStandardsService(ctx), ctx, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
     /// <summary>
     /// GitHub Releases in both directions (#632): publishing a build's app files to a
@@ -396,6 +397,15 @@ public sealed class TestDb : IDisposable
             NullLogger<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>.Instance);
     }
 
+
+    /// <summary>
+    /// The per-organisation repository standards (#628): the files every
+    /// created repository gets, and the branch ruleset applied to it.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubRepositoryStandardsService NewGitHubRepositoryStandardsService(
+        AppDbContext ctx) =>
+        new(ctx, NewOrganizationConfigService(ctx), OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubRepositoryStandardsService>.Instance);
     /// <summary>The Translator's repository round trip: list, open, save back.</summary>
     public ALDevToolbox.Services.GitHub.GitHubTranslationService NewGitHubTranslationService(
         AppDbContext ctx,
@@ -447,6 +457,7 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryStandardsService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubTranslationService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubReleaseService>();

@@ -177,6 +177,7 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationSettings> OrganizationSettings => Set<OrganizationSettings>();
     public DbSet<OrganizationAsset> OrganizationAssets => Set<OrganizationAsset>();
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
+    public DbSet<GitHubRepositoryStandardFile> GitHubRepositoryStandardFiles => Set<GitHubRepositoryStandardFile>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<Backup> Backups => Set<Backup>();
     public DbSet<PerTenantBackup> PerTenantBackups => Set<PerTenantBackup>();
@@ -305,6 +306,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OrganizationSettings>(modelBuilder);
         ScopeToOrganization<OrganizationAsset>(modelBuilder);
         ScopeToOrganization<OrganizationFile>(modelBuilder);
+        ScopeToOrganization<GitHubRepositoryStandardFile>(modelBuilder);
         ScopeToOrganization<OrganizationEmailDomain>(modelBuilder);
         ScopeToOrganization<GitHubRepositoryCandidate>(modelBuilder);
         ScopeToOrganization<OeRelease>(modelBuilder);

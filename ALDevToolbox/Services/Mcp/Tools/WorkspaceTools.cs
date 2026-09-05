@@ -212,7 +212,9 @@ public sealed class WorkspaceTools
                 CloneUrl: created.Repository.CloneUrl,
                 DefaultBranch: created.Repository.DefaultBranch,
                 IsPrivate: created.Repository.IsPrivate,
-                FileCount: created.FileCount));
+                FileCount: created.FileCount,
+                StandardsFileCount: created.StandardsFileCount,
+                StandardsWarning: created.StandardsWarning));
     }
 
     private WorkspaceResult BuildResult(GeneratedArchive archive)

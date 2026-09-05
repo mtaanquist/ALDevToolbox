@@ -427,6 +427,192 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         GitHubWorkspaceRepositoryService.SuggestName(workspaceName).Should().Be(expected);
     }
 
+    // --- repository standards (#628) ----------------------------------------
+
+    [Fact]
+    public async Task With_no_standards_configured_the_flow_is_the_one_it_was_before()
+    {
+        await ReadyAsync();
+        var api = WritableApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        created.StandardsFileCount.Should().Be(0);
+        created.StandardsWarning.Should().BeNull();
+        // One commit, and nothing was asked about branch rules: an organisation
+        // that has set no standards must not pay for the feature.
+        api.Calls.Count(c => c.Contains("/git/commits")).Should().Be(1);
+        api.Calls.Should().NotContain(c => c.Contains("/rulesets"));
+        api.Calls.Should().NotContain(c => c.Contains("/git/ref/heads/"));
+    }
+
+    [Fact]
+    public async Task Standard_files_arrive_as_a_second_commit_on_top_of_the_workspace()
+    {
+        await ReadyAsync();
+        await ConfigureStandardsAsync(files:
+        [
+            new GitHubStandardFileInput(null, ".github/workflows/build.yml", "name: build"),
+            new GitHubStandardFileInput(null, "CODEOWNERS", "* @cronus-dk/al-team"),
+        ]);
+        var api = WritableApi()
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", HttpStatusCode.OK,
+                """{"object":{"sha":"new-commit-sha"}}""")
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/commits/", HttpStatusCode.OK,
+                """{"sha":"new-commit-sha","tree":{"sha":"workspace-tree-sha"}}""");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        created.StandardsFileCount.Should().Be(2);
+        created.StandardsWarning.Should().BeNull();
+
+        var commits = api.Bodies.Where(b => b.Call.Contains("/git/commits")).Select(b => b.Body).ToList();
+        commits.Should().HaveCount(2);
+        commits[1].Should().Contain("Apply repository standards");
+        // Credited to the same person as the workspace commit - the standards
+        // are the organisation's, but the act is theirs.
+        commits[1].Should().Contain("cronus-dev@users.noreply.github.com");
+
+        var trees = api.Bodies.Where(b => b.Call.Contains("/git/trees")).Select(b => b.Body).ToList();
+        trees.Should().HaveCount(2);
+        // Layered onto what is already on the branch, not built from nothing:
+        // the workspace stays in the repository.
+        trees[1].Should().Contain("\"base_tree\":\"workspace-tree-sha\"");
+        trees[1].Should().Contain(".github/workflows/build.yml");
+        trees[1].Should().Contain("CODEOWNERS");
+        trees[1].Should().NotContain("app.json", "only the standards go in the second commit");
+    }
+
+    [Fact]
+    public async Task The_standards_commit_is_parented_on_whatever_the_branch_points_at()
+    {
+        await ReadyAsync();
+        await ConfigureStandardsAsync(files:
+            [new GitHubStandardFileInput(null, "CODEOWNERS", "* @cronus-dk/al-team")]);
+        var api = WritableApi()
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", HttpStatusCode.OK,
+                """{"object":{"sha":"head-of-the-branch"}}""")
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/commits/", HttpStatusCode.OK,
+                """{"sha":"head-of-the-branch","tree":{"sha":"head-tree"}}""");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // Read back from GitHub rather than assumed, which is what makes this
+        // work whichever way the workspace was committed - including the
+        // one-file shortcut in CommitAsync, which never computes a second sha.
+        var commits = api.Bodies.Where(b => b.Call.Contains("/git/commits")).Select(b => b.Body).ToList();
+        commits[1].Should().Contain("\"parents\":[\"head-of-the-branch\"]");
+        // And the same credential throughout: the repository is seconds old, so
+        // the person who asked for it may still have no rights on it.
+        TokenFor(api, "POST", $"/repos/{Repo}/git/trees").Should().Be(InstallationToken);
+    }
+
+    [Fact]
+    public async Task A_branch_ruleset_is_created_on_the_default_branch_after_the_files()
+    {
+        await ReadyAsync();
+        await ConfigureStandardsAsync(ruleset: new GitHubRepositoryRuleset
+        {
+            RequirePullRequest = true,
+            RequiredApprovals = 2,
+            RequireLinearHistory = true,
+            BlockForcePushes = true,
+            RequiredStatusChecks = { "build" },
+        });
+        var api = RulesetApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        created.StandardsWarning.Should().BeNull();
+        var body = BodyOf(api, "POST", $"/repos/{Repo}/rulesets");
+        body.Should().Contain("\"target\":\"branch\"");
+        body.Should().Contain("\"enforcement\":\"active\"");
+        // The symbolic name, so the rules keep meaning the right branch whatever
+        // the repository renames it to.
+        body.Should().Contain("~DEFAULT_BRANCH");
+        body.Should().Contain("\"pull_request\"");
+        body.Should().Contain("\"required_approving_review_count\":2");
+        body.Should().Contain("\"required_linear_history\"");
+        body.Should().Contain("\"non_fast_forward\"");
+        body.Should().Contain("\"context\":\"build\"");
+        TokenFor(api, "POST", $"/repos/{Repo}/rulesets").Should().Be(InstallationToken);
+    }
+
+    [Fact]
+    public async Task A_ruleset_asking_for_nothing_is_never_sent()
+    {
+        await ReadyAsync();
+        // What an admin who unticked everything leaves behind. A ruleset named
+        // after us that enforces nothing is worse than no ruleset.
+        await ConfigureStandardsAsync(ruleset: new GitHubRepositoryRuleset { RequiredApprovals = 2 });
+        var api = RulesetApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        api.Calls.Should().NotContain(c => c.Contains("/rulesets"));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "{\"message\":\"Resource not accessible by integration\"}")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "{\"message\":\"Repository rule violations\"}")]
+    public async Task A_refused_ruleset_leaves_a_created_repository_and_a_warning(
+        HttpStatusCode status, string json)
+    {
+        await ReadyAsync();
+        await ConfigureStandardsAsync(
+            ruleset: new GitHubRepositoryRuleset { RequirePullRequest = true, RequiredApprovals = 1 },
+            files: [new GitHubStandardFileInput(null, "CODEOWNERS", "* @cronus-dk/al-team")]);
+        var api = RulesetApi().On(HttpMethod.Post, $"/repos/{Repo}/rulesets", status, json);
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // The repository exists and holds both commits by this point; failing
+        // here would leave it behind with a stack trace over it.
+        created.Repository.FullName.Should().Be(Repo);
+        created.StandardsFileCount.Should().Be(1);
+        created.StandardsWarning.Should().NotBeNullOrEmpty();
+        // CLAUDE.md bans quoting the machine name of the grant at a reader.
+        created.StandardsWarning!.Should().NotContain("administration");
+
+        await using var read = _db.NewContext();
+        var entry = await read.AuditLog.AsNoTracking()
+            .SingleAsync(e => e.EntityType == AuditEntityType.GitHubRepository);
+        entry.EntityName.Should().Be(Repo);
+    }
+
+    /// <summary>
+    /// A GitHub that also answers the two reads and the one write the standards
+    /// phase makes: where the branch is, what tree that commit points at, and
+    /// the ruleset.
+    /// </summary>
+    private static FakeGitHubApi RulesetApi() =>
+        WritableApi()
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", HttpStatusCode.OK,
+                """{"object":{"sha":"new-commit-sha"}}""")
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/commits/", HttpStatusCode.OK,
+                """{"sha":"new-commit-sha","tree":{"sha":"workspace-tree-sha"}}""")
+            .On(HttpMethod.Post, $"/repos/{Repo}/rulesets", HttpStatusCode.Created, """{"id":7}""");
+
+    /// <summary>The standards an Admin would have saved from Administration -> Repositories.</summary>
+    private async Task ConfigureStandardsAsync(
+        GitHubRepositoryRuleset? ruleset = null, IReadOnlyList<GitHubStandardFileInput>? files = null)
+    {
+        await using var ctx = _db.NewContext();
+        await _db.NewGitHubRepositoryStandardsService(ctx).SaveAsync(ruleset, files ?? []);
+    }
+
     // --- helpers ------------------------------------------------------------
 
     private (GitHubWorkspaceRepositoryService Service, AppDbContext Context) NewService(FakeGitHubApi api)

@@ -1,0 +1,193 @@
+using Microsoft.AspNetCore.DataProtection;
+using ALDevToolbox.Components.Pages.Admin.Administration;
+using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
+using ALDevToolbox.Services.GitHub;
+using ALDevToolbox.Tests.Infrastructure;
+using Bunit;
+using Bunit.TestDoubles;
+using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+
+namespace ALDevToolbox.Tests.Components;
+
+/// <summary>
+/// The repository-standards editor (issue #628). A screenshot is not possible
+/// here, so these renders are the evidence for the three states, for the empty
+/// state naming a file the admin would recognise, and for the page keeping the
+/// "one primary action" rule (it has none - Generate owns that).
+/// </summary>
+public sealed class AdminRepositoryStandardsTests : IDisposable
+{
+    private readonly TestDb _db = new();
+    private readonly BunitContext _ctx = new();
+
+    public AdminRepositoryStandardsTests()
+    {
+        var auth = _ctx.AddAuthorization();
+        auth.SetAuthorized("admin@cronus.example");
+        auth.SetRoles("Admin");
+
+        _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
+        _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
+        _db.AddStorageServices(_ctx.Services);
+        _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<GitHubRepositoryStandardsService>();
+        // The Repositories tab renders the row that links here, so its own
+        // services have to resolve too. Nothing reaches GitHub in these tests.
+        _db.AddGitHubServices(_ctx.Services);
+        _ctx.Services.AddDataProtection();
+        _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+        _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
+        _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
+            typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+    }
+
+    public void Dispose()
+    {
+        _db.WaitForQueriesToSettle();
+        _ctx.Dispose();
+        _db.Dispose();
+    }
+
+    [Fact]
+    public void With_nothing_set_up_the_empty_state_names_a_file_and_offers_the_way_to_add_one()
+    {
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".empty-state__title").TextContent.Trim().Should().Be("No files yet");
+            cut.Markup.Should().Contain(".github/workflows/build.yml");
+            cut.Markup.Should().Contain("CODEOWNERS");
+            cut.Find(".empty-state__action").TextContent.Should().Contain("Add a file");
+        });
+    }
+
+    [Fact]
+    public async Task Saved_standards_render_as_a_row_each_with_the_rules_ticked()
+    {
+        await SeedAsync(
+            new GitHubRepositoryRuleset
+            {
+                RequirePullRequest = true,
+                RequiredApprovals = 2,
+                BlockForcePushes = true,
+                RequiredStatusChecks = { "build" },
+            },
+            [
+                new GitHubStandardFileInput(null, ".github/workflows/build.yml", "name: build"),
+                new GitHubStandardFileInput(null, "CODEOWNERS", "* @cronus-dk/al-team"),
+            ]);
+
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".code-block").Should().HaveCount(2);
+            cut.Markup.Should().Contain("Files (2)");
+            cut.FindAll(".empty-state").Should().BeEmpty();
+            cut.Find("#std-approvals").GetAttribute("value").Should().Be("2");
+            cut.Find("#std-checks").GetAttribute("value").Should().Be("build");
+        });
+    }
+
+    [Fact]
+    public void The_page_has_no_primary_button_and_its_save_is_disabled_until_something_changes()
+    {
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("button.btn--primary").Should().BeEmpty(
+                "CLAUDE.md: Generate is the only primary action in this app");
+            cut.Find(".form-actions button").HasAttribute("disabled").Should().BeTrue(
+                "nothing has changed yet, so there is nothing to save");
+        });
+    }
+
+    [Fact]
+    public void A_path_that_would_escape_the_repository_is_refused_in_the_page_before_the_server_sees_it()
+    {
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+        cut.WaitForElement("#std-file-path");
+
+        cut.Find("#std-file-path").Input("../outside.yml");
+        cut.Find("#std-editor .card__foot button").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".field-error").TextContent.Should().Contain("inside the repository");
+            cut.FindAll(".code-block").Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public void Two_files_at_the_same_path_are_refused_in_the_page()
+    {
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+        cut.WaitForElement("#std-file-path");
+
+        cut.Find("#std-file-path").Input("CODEOWNERS");
+        cut.Find("#std-editor .card__foot button").Click();
+        cut.Find("#std-file-path").Input("codeowners");
+        cut.Find("#std-editor .card__foot button").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".field-error").TextContent.Should().Contain("already goes to");
+            cut.FindAll(".code-block").Should().HaveCount(1);
+        });
+    }
+
+    [Fact]
+    public async Task The_repositories_tab_offers_the_standards_and_says_what_is_configured()
+    {
+        await ConnectGitHubAsync();
+
+        var before = _ctx.Render<AdminAdministrationRepositories>();
+        before.WaitForAssertion(() =>
+        {
+            before.Markup.Should().Contain("Repository standards");
+            before.Markup.Should().Contain("Nothing set up yet");
+            before.Markup.Should().Contain("/admin/administration/repositories/standards");
+        });
+
+        await SeedAsync(
+            new GitHubRepositoryRuleset { BlockForcePushes = true },
+            [new GitHubStandardFileInput(null, "CODEOWNERS", "* @cronus-dk/al-team")]);
+
+        var after = _ctx.Render<AdminAdministrationRepositories>();
+        after.WaitForAssertion(() =>
+            after.Markup.Should().Contain("Every new repository gets 1 file and a branch ruleset."));
+    }
+
+    /// <summary>The connection the standards row only appears alongside.</summary>
+    private async Task ConnectGitHubAsync()
+    {
+        await using var ctx = _db.NewContext();
+        ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            GitHubInstallationId = 42,
+            GitHubOrgLogin = "cronus-dk",
+            GitHubConnectedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task SeedAsync(
+        GitHubRepositoryRuleset? ruleset, IReadOnlyList<GitHubStandardFileInput> files)
+    {
+        await using var ctx = _db.NewContext();
+        await _db.NewGitHubRepositoryStandardsService(ctx).SaveAsync(ruleset, files);
+    }
+}

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
@@ -11,6 +12,16 @@ namespace ALDevToolbox.Services.GitHub;
 /// <param name="Repository">The repository that now exists, including the link the user needs next.</param>
 /// <param name="FileCount">How many generated files the repository was filled with.</param>
 /// <param name="ArchiveFileName">The name the same workspace would download under.</param>
+/// <param name="StandardsFileCount">
+/// How many of the organisation's repository standard files were committed on
+/// top, in their own commit (issue #628). Zero when none are configured.
+/// </param>
+/// <param name="StandardsWarning">
+/// What GitHub refused while applying the standards, in words the person who
+/// pressed the button can act on - or null when nothing was refused. The
+/// repository exists and is committed by the time this can be set, so it is a
+/// warning on a success rather than a failure.
+/// </param>
 /// <param name="Archive">
 /// The very bytes that were committed, as the ZIP. Carried out rather than
 /// thrown away because the MCP tool hands the caller both the repository and
@@ -22,7 +33,9 @@ public sealed record GitHubWorkspaceRepository(
     GitHubRepositorySummary Repository,
     int FileCount,
     string ArchiveFileName,
-    byte[] Archive);
+    byte[] Archive,
+    int StandardsFileCount = 0,
+    string? StandardsWarning = null);
 
 /// <summary>
 /// Creates a repository in the connected GitHub organisation and puts a freshly
@@ -84,6 +97,7 @@ public sealed class GitHubWorkspaceRepositoryService
     private readonly GitHubConnectionService _connection;
     private readonly GitHubAccessService _access;
     private readonly GitHubAppClient _github;
+    private readonly GitHubRepositoryStandardsService _standards;
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<GitHubWorkspaceRepositoryService> _logger;
@@ -94,6 +108,7 @@ public sealed class GitHubWorkspaceRepositoryService
         GitHubConnectionService connection,
         GitHubAccessService access,
         GitHubAppClient github,
+        GitHubRepositoryStandardsService standards,
         AppDbContext db,
         IOrganizationContext orgContext,
         ILogger<GitHubWorkspaceRepositoryService> logger)
@@ -103,6 +118,7 @@ public sealed class GitHubWorkspaceRepositoryService
         _connection = connection;
         _access = access;
         _github = github;
+        _standards = standards;
         _db = db;
         _orgContext = orgContext;
         _logger = logger;
@@ -230,6 +246,10 @@ public sealed class GitHubWorkspaceRepositoryService
         };
 
         await CommitAsync(token, repository, plan, files, userId, ct);
+        // The organisation's own standards go on afterwards, as their own
+        // commit, so "the files we generated" stays an honest description of
+        // the first one.
+        var standards = await ApplyStandardsAsync(token, repository, userId, ct);
         await RecordAsync(repository, plan, files.Count, ct);
 
         _logger.LogInformation(
@@ -238,7 +258,9 @@ public sealed class GitHubWorkspaceRepositoryService
             userId, repository.FullName, plan.WorkspaceName, plan.TemplateKey, files.Count,
             isPrivate ? "private" : "public");
 
-        return new GitHubWorkspaceRepository(repository, files.Count, archiveName, archiveBytes);
+        return new GitHubWorkspaceRepository(
+            repository, files.Count, archiveName, archiveBytes,
+            standards.FileCount, standards.Warning);
     }
 
     /// <summary>
@@ -360,6 +382,107 @@ public sealed class GitHubWorkspaceRepositoryService
             // seconds since it was created, which is not a case to paper over.
             throw RaceRefusal(repository);
         }
+    }
+
+    /// <summary>
+    /// Puts the organisation's repository standards on the new repository
+    /// (issue #628): the standard files as one commit of their own, then the
+    /// branch ruleset.
+    ///
+    /// <para><strong>Files first, ruleset second.</strong> A ruleset that
+    /// requires a pull request would refuse a direct push to the default
+    /// branch, so creating it before the commit would block the very files it
+    /// is meant to sit alongside.</para>
+    ///
+    /// <para><strong>Its own commit</strong>, layered onto the branch head
+    /// rather than built from nothing: the workspace is already there and the
+    /// standards are added to it. A standard at a path the generator also
+    /// produced therefore replaces it - the organisation's standard wins over
+    /// the template. This is also why it is not caught by the one-file early
+    /// return in <see cref="CommitAsync"/>: a workspace of a single file still
+    /// gets its standards.</para>
+    ///
+    /// <para><strong>A ruleset refusal is a warning.</strong> By the time this
+    /// runs the repository exists and carries the generated workspace, so
+    /// failing here would leave a repository behind with a stack trace over it.
+    /// GitHub's refusal is logged and returned as a sentence for the success
+    /// card instead - typically the installation not being allowed to change
+    /// repository settings.</para>
+    /// </summary>
+    private async Task<(int FileCount, string? Warning)> ApplyStandardsAsync(
+        string token, GitHubRepositorySummary repository, int userId, CancellationToken ct)
+    {
+        var standards = await _standards.GetAsync(ct);
+        var ruleset = standards.Ruleset is { IsEmpty: false } configured ? configured : null;
+        if (standards.Files.Count == 0 && ruleset is null) return (0, null);
+
+        var fileCount = 0;
+        if (standards.Files.Count > 0)
+        {
+            var head = await _github.GetBranchHeadShaAsync(
+                token, repository.Owner, repository.Name, repository.DefaultBranch, ct);
+            if (head is null)
+            {
+                // Only reachable when the workspace commit never happened - a
+                // template that generated nothing. Saying so beats teaching this
+                // a second code path for a repository with no history.
+                _logger.LogWarning(
+                    "{RepoFullName} has no commit on {Branch}, so no repository standards were applied.",
+                    repository.FullName, repository.DefaultBranch);
+                return (0, "Your organisation's repository standards were not added, because the "
+                    + "workspace put no files in the repository.");
+            }
+            var baseTree = await _github.GetCommitTreeShaAsync(
+                token, repository.Owner, repository.Name, head, ct);
+
+            var blobs = new List<(string Path, string BlobSha)>(standards.Files.Count);
+            foreach (var file in standards.Files)
+            {
+                ct.ThrowIfCancellationRequested();
+                blobs.Add((file.Path, await _github.CreateBlobAsync(
+                    token, repository.Owner, repository.Name,
+                    Encoding.UTF8.GetBytes(file.Content), ct)));
+            }
+
+            var tree = await _github.CreateTreeAsync(
+                token, repository.Owner, repository.Name, baseTreeSha: baseTree, blobs, ct);
+            var commit = await _github.CreateCommitAsync(
+                token, repository.Owner, repository.Name,
+                "Apply repository standards", tree, parentSha: head,
+                author: await ResolveAuthorAsync(userId, ct), ct: ct);
+
+            if (!await _github.UpdateBranchAsync(
+                    token, repository.Owner, repository.Name, repository.DefaultBranch, commit, ct))
+            {
+                throw RaceRefusal(repository);
+            }
+            fileCount = standards.Files.Count;
+        }
+
+        string? warning = null;
+        if (ruleset is not null)
+        {
+            try
+            {
+                await _github.CreateRepositoryRulesetAsync(
+                    token, repository.Owner, repository.Name, ruleset, ct);
+            }
+            catch (GitHubApiException ex)
+            {
+                _logger.LogWarning(
+                    ex, "GitHub refused the branch rules on {RepoFullName}.", repository.FullName);
+                warning =
+                    "The repository is ready, but GitHub would not set your branch rules on it. "
+                    + "AL Dev Toolbox may not be allowed to change repository settings in this GitHub "
+                    + "organisation - an owner of it can allow that. Until then, set the rules on GitHub.";
+            }
+        }
+
+        _logger.LogInformation(
+            "Applied repository standards to {RepoFullName}: {FileCount} file(s), branch rules {RulesetState}.",
+            repository.FullName, fileCount,
+            ruleset is null ? "not configured" : warning is null ? "created" : "refused");
+        return (fileCount, warning);
     }
 
     /// <summary>

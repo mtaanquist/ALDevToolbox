@@ -196,7 +196,66 @@ ones their team already maintains by hand.
 
 **As built**
 
-_(appended by the implementer)_
+The standards phase is a third step in `GitHubWorkspaceRepositoryService.CreateAsync`,
+between the workspace commit and the audit record: `ApplyStandardsAsync` reads
+`GitHubRepositoryStandardsService.GetAsync`, and returns early when the organisation has
+configured nothing - so an organisation that never opens the page pays one query and no
+extra call to GitHub. The result record grew `StandardsFileCount` and `StandardsWarning`,
+and the MCP `RepositoryCreationResult` grew the same two, both defaulted so no existing
+caller had to change.
+
+The standards commit is parented on the branch head *read back from GitHub*
+(`GET /git/ref/heads/{branch}`, then the commit's tree), not on a sha the workspace commit
+happened to compute. That is what makes it independent of how the workspace got there,
+including `CommitAsync`'s one-file shortcut, which returns without ever minting a second
+commit. That shortcut turns out to be unreachable through the generator - the smallest
+workspace it can produce is two files (`{name}.code-workspace` and `workspace.aldt.toml`) -
+so the property is tested through the parent sha rather than by generating a one-file
+workspace.
+
+A ruleset is only posted when it asks GitHub for something. `GitHubRepositoryRuleset.IsEmpty`
+is the guard, and it is why "3 approvals" with "require a pull request" switched off counts
+as nothing configured everywhere: the summary sentence, the New Workspace caption and the
+call itself. A ruleset named after the toolbox that enforces nothing would be worse than
+no ruleset.
+
+`GitHubApiException` from the ruleset call is caught, logged at Warning and returned as a
+sentence; everything else on the path still throws. The failure that matters in practice is
+the missing `administration: write` grant, and the sentence says what to ask for without
+naming the permission, the way the create-repository refusal already does.
+
+`CreateRepositoryRulesetAsync` lives in `GitHubAppClient.Rulesets.cs` and sends the full
+`pull_request` parameter object (the four booleans as well as the approval count) and
+`strict_required_status_checks_policy` alongside the check contexts, because GitHub rejects
+a partial parameter object on those two rules. The ruleset carries a fixed name,
+`AL Dev Toolbox repository standards`, so somebody reading a repository's settings can see
+which rules were not written by hand. **These request shapes are from the documented API and
+have not been exercised against api.github.com from this environment** - the same caveat
+phase 1's tests carry.
+
+Storage split the way the decisions above set out: the ruleset as one nullable jsonb column
+with a value converter (null means "not configured", which stays distinguishable from an
+empty one), the files as `github_repository_standard_files` under the ordinary tenant query
+filter. No `IgnoreQueryFilters()` call was added; every read names the acting organisation
+id. Saving the ruleset invalidates `OrganizationConfigService`'s settings cache, since the
+column now rides on the row that cache holds.
+
+`github_repository_standard_files` is listed in `TenantTableCatalog.ContentTables`, which is
+what makes it part of a per-tenant backup and of an organisation's prorated disk usage.
+`TenantTableCatalogTests` catches a new tenanted table that is not - a standards file that
+survived a per-tenant restore only by accident would be a quiet data-loss bug.
+
+The editor page is Admin-only and its Save is an outline button: the page has no primary
+action, because Generate owns that everywhere in this app. Path validation is the same rule
+the always-included files use, which already admits `.github/workflows/build.yml` and
+`CODEOWNERS`. The list is reconciled by primary key, so renaming a file keeps its row rather
+than deleting and re-adding it.
+
+New Workspace says one line and offers no choice, as decided. It is rendered from the same
+summary the Repositories row uses, read in `OnInitializedAsync` alongside the GitHub
+readiness - one more database read, no call to GitHub, so the card still renders while
+GitHub is down. The success card names the second commit and shows the ruleset warning as a
+warning beside the success rather than instead of it.
 
 ## #626 Cookbook: apply a recipe to a repository, and update every repository that took it
 

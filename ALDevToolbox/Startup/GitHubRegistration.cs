@@ -20,6 +20,9 @@ public static class GitHubRegistration
         services.AddScoped<GitHubExtensionDeliveryService>();
         // Creating a repository and filling it with a generated workspace (#622).
         services.AddScoped<GitHubWorkspaceRepositoryService>();
+        // The per-organisation standards every created repository gets: the
+        // files, and the branch ruleset (#628).
+        services.AddScoped<GitHubRepositoryStandardsService>();
         // The Translator's round trip: list a repository's XLIFF files, open
         // one, save it back as a pull request (issue #625).
         services.AddScoped<GitHubTranslationService>();

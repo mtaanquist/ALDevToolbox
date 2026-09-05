@@ -97,13 +97,23 @@ public sealed record WorkspaceResult(
 /// The repository a <c>generate_*</c> tool created, when it was asked to put
 /// its result in a new one.
 /// </summary>
+/// <param name="StandardsFileCount">
+/// How many of the organisation's repository standard files were committed on
+/// top of the workspace, in a commit of their own (issue #628).
+/// </param>
+/// <param name="StandardsWarning">
+/// What GitHub refused while applying those standards, or null when nothing
+/// was. The repository exists either way.
+/// </param>
 public sealed record RepositoryCreationResult(
     string RepositoryFullName,
     string HtmlUrl,
     string CloneUrl,
     string DefaultBranch,
     bool IsPrivate,
-    int FileCount);
+    int FileCount,
+    int StandardsFileCount = 0,
+    string? StandardsWarning = null);
 
 /// <summary>
 /// The pull request a <c>generate_*</c> tool opened, when it was asked to add

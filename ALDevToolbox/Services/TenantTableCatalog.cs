@@ -50,6 +50,7 @@ internal static class TenantTableCatalog
         "organization_settings",
         "organization_assets",
         "organization_files",
+        "github_repository_standard_files",
         "organization_email_domains",
         "runtime_template_included_files",
         "teams",

@@ -215,5 +215,14 @@ public class OrganizationSettings
     /// <summary>When the connection was made (UTC). Null when not connected.</summary>
     public DateTime? GitHubConnectedAt { get; set; }
 
+    /// <summary>
+    /// The branch rules applied to every repository the toolbox creates for
+    /// this organisation (issue #628). Null means "no ruleset configured", which
+    /// is the default and is not the same as a ruleset with nothing ticked -
+    /// the second is a row an admin emptied and is treated as nothing to apply.
+    /// See <c>.design/github-integration-phase2.md</c>.
+    /// </summary>
+    public GitHubRepositoryRuleset? GitHubRepositoryRuleset { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

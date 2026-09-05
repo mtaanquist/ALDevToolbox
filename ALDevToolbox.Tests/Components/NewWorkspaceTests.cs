@@ -184,6 +184,58 @@ public sealed class NewWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_card_says_nothing_about_standards_when_the_organisation_has_none()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-15"));
+            await seed.SaveChangesAsync();
+        }
+        await ConnectGitHubAsync();
+        await LinkGitHubAccountAsync();
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("input#ws-repo-name").Should().NotBeNull();
+            cut.Markup.Should().NotContain("repository standards",
+                "an organisation that has set none should not be told there are none");
+        });
+    }
+
+    /// <summary>
+    /// The one line #628 adds to this card: said before the button is pressed,
+    /// because the repository is created with the organisation's standards
+    /// whether or not the person creating it knows they exist.
+    /// </summary>
+    [Fact]
+    public async Task Configured_standards_are_named_in_the_card_before_the_button_is_pressed()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-15"));
+            await seed.SaveChangesAsync();
+        }
+        await ConnectGitHubAsync();
+        await LinkGitHubAccountAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await _db.NewGitHubRepositoryStandardsService(ctx).SaveAsync(
+                ruleset: null,
+                files: [new ALDevToolbox.Services.GitHub.GitHubStandardFileInput(
+                    null, "CODEOWNERS", "* @cronus-dk/al-team")]);
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("It will be created with your organisation's repository standards.");
+        });
+    }
+
+    [Fact]
     public async Task Without_a_github_organisation_the_card_says_what_to_set_up_rather_than_offering_a_field()
     {
         await using (var seed = _db.NewContext())
