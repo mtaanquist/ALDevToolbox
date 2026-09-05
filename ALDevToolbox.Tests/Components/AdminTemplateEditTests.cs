@@ -8,6 +8,7 @@ using Bunit.TestDoubles;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Components;
@@ -25,6 +26,13 @@ public sealed class AdminTemplateEditTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
+
+    /// <summary>
+    /// Keeps what the page logged. AdminTemplateEdit catches its own save
+    /// exceptions and renders a banner, so without this a failed save is
+    /// indistinguishable from a slow one (#739).
+    /// </summary>
+    private readonly CapturingLoggerProvider _logs = new();
 
     public AdminTemplateEditTests()
     {
@@ -57,9 +65,10 @@ public sealed class AdminTemplateEditTests : IDisposable
         // edit-mode hydration.
         _ctx.Services.AddScoped<AuditService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
-        _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
+        var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(b => b.AddProvider(_logs));
+        _ctx.Services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(loggerFactory);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
-            typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+            typeof(Microsoft.Extensions.Logging.Logger<>));
     }
 
     public void Dispose()
@@ -140,13 +149,20 @@ public sealed class AdminTemplateEditTests : IDisposable
         cut.Find("#tpl-name").Input("Renamed");
         cut.Find("form").Submit();
 
-        // Wait for SaveAsync to complete: the success banner is the
-        // signal the page uses, and matches the user-visible feedback.
+        // Wait for SaveAsync to reach *either* outcome, then assert it was the
+        // success one. Waiting only for "Saved." meant a failed save burned the
+        // full 30-second bUnit timeout and reported "the assertion did not pass",
+        // hiding the exception the page had already caught and rendered (#739).
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Saved.",
-                "the page renders a success banner once UpdateAsync returns");
+            cut.Markup.Should().Match(
+                m => m.Contains("Saved.") || m.Contains("The change was not saved."),
+                "SaveAsync renders one banner or the other when it finishes");
         });
+
+        cut.Markup.Should().Contain("Saved.",
+            "the save must succeed; the page reported a failure instead. What it logged:\n"
+            + _logs.ErrorsForFailureMessage());
 
         await using var read = _db.NewContext();
         var refetched = await read.RuntimeTemplates
