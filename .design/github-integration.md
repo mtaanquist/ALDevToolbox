@@ -509,8 +509,13 @@ one that matches how the file arrived.
 - Both resolve the repository through the same service the pages use, so the access
   gate is inherited rather than re-implemented in the tool class - see the resolver
   rule in PROJECT.md.
-- The Translator and pipeline-editor changes are UI assistance over data agents
-  already reach; no new tool.
+- The Translator and pipeline-editor changes of *this* milestone are UI assistance
+  over data agents already reach. Phase 2 goes further: issue #633 adds a tool class
+  of its own (`list_repositories`, `create_repository`,
+  `add_extension_to_repository`, `list_translation_files`, `open_translation_pr`), so
+  an agent can reach these workflows by name rather than only as options on the
+  `generate_*` tools. See the "#633" section of
+  `.design/github-integration-phase2.md`.
 
 ## Fences
 

@@ -796,7 +796,52 @@ year's Business Central after a new release lands in the Object Explorer.
 
 **As built**
 
-_(appended by the implementer)_
+- **One new tool class, `Services/Mcp/Tools/GitHubTools.cs`**, holding all five tools and
+  no `AppDbContext` of its own. It depends on exactly the four services the pages use -
+  `GitHubRepositoryService`, `GitHubWorkspaceRepositoryService`,
+  `GitHubExtensionDeliveryService`, `GitHubTranslationService` - so every repository name
+  an agent supplies is resolved by `ResolveAsync` and nothing can be reached that the
+  picker would not have offered. Registered in `Startup/McpRegistration.cs`; the tools sit
+  in a new **GitHub repositories** group in `McpToolCatalog`, because five tools about
+  repositories read badly split between "generation" and "Translator".
+- **`list_repositories` answers even when there is nothing to list.** It returns the
+  readiness state by name (`NotConfigured`, `NotConnected`, `NotLinked`,
+  `LinkNeedsRepair`, `Ready`) so an agent can branch on it, plus one plain sentence of
+  guidance - the same four sentences the pages give - and `null` guidance when everything
+  is in place. Answering "why not" costs no GitHub call, so this is still useful while
+  GitHub is down.
+- **`create_repository` takes a name, never an owner**, exactly like the option on
+  `generate_workspace`: the organisation is the connected one and there is nothing for an
+  agent to re-aim. Both routes now project their result through
+  `RepositoryCreationResult.From` / `RepositoryDeliveryResult.From` in the DTO file, so
+  the shapes cannot drift apart. Neither standalone tool carries the ZIP - an agent that
+  wants the bytes too calls `generate_workspace` / `generate_extension` with the option,
+  and the descriptions say so.
+- **`open_translation_pr` reads before it writes, and validates against what it read.**
+  The file is opened through `GitHubTranslationService.OpenAsync`, parsed with
+  `AlXliffParser`, and any edit naming a trans-unit id the file does not carry is refused
+  with the ids listed and nothing committed - an edit that silently does nothing is worse
+  than a refusal. An empty `edits` list is refused before GitHub is asked anything.
+  `XliffTargetWriter.ApplyEdits` then writes only those targets, and the sha quoted on the
+  write is the one that came back from the read.
+- **The `.g.xlf` rule mirrors the Translator page.** Reading the compiler's generated file
+  writes a new language file beside it (`App.g.xlf` -> `App.da-DK.xlf`) with no base sha,
+  which is what makes the save refuse to flatten a translation that is already there;
+  reading an ordinary translation file writes that file back, quoting its sha.
+  `SetTargetLanguage` is applied when the file came from the generated source or when the
+  file's declared target language is not the one being translated into - never on an
+  ordinary save of a file that already names its language, so the byte-fidelity contract
+  holds.
+- **A conflict is reported as itself.** `GitHubContentConflictException` becomes an
+  `McpException` saying the file changed since it was read and telling the agent to read
+  it again and re-apply, rather than a generic GitHub failure. The other three refusals
+  keep the wording the other tools use: `PlanValidationException` as
+  "Validation failed: ...", `GitHubApiException` as "GitHub refused the request: ...", and
+  the not-configured one passed through.
+- **The pull request body's summary is optional.** Left out, the tool writes a count of
+  what it changed, so a pull request opened by an assistant still says what happened.
+- No migration, no new service, no new GitHub REST call: every route these tools use was
+  already there for the pages.
 
 ## Fences
 

@@ -27,6 +27,7 @@ public static class McpRegistration
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ArtifactsTools>();
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.DeliveryTools>();
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
+        services.AddScoped<ALDevToolbox.Services.Mcp.Tools.GitHubTools>();
         services
             .AddMcpServer()
             // Stateless Streamable-HTTP: each POST is self-contained, with no
