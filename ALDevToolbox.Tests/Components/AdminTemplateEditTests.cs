@@ -146,6 +146,15 @@ public sealed class AdminTemplateEditTests : IDisposable
 
         cut.WaitForState(() => cut.FindAll("#tpl-name").Count > 0);
 
+        // The page's own hydration must finish before the form is submitted.
+        // AuditHistoryPanel loads on the same scoped DbContext the save uses,
+        // so submitting while "Loading history..." is still up starts a second
+        // operation on that context and the save throws (#739). A real user
+        // cannot outrace the panel; a test on a loaded CI runner can, and did,
+        // about one run in six.
+        cut.WaitForAssertion(() => cut.Markup.Should().NotContain("Loading history...",
+            "the page is not idle until its history panel has loaded"));
+
         cut.Find("#tpl-name").Input("Renamed");
         cut.Find("form").Submit();
 
