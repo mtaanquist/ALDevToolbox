@@ -231,7 +231,7 @@ public sealed class NewWorkspaceTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("It will be created with your organisation's repository standards.");
+            cut.Markup.Should().Contain("Your administrators have set files and branch rules");
         });
     }
 

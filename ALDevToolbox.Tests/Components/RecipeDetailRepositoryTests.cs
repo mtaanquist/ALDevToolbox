@@ -117,7 +117,7 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
         cut.WaitForAssertion(timeout: TimeSpan.FromSeconds(5), assertion: () =>
         {
             var section = cut.Find(".rd-repo").TextContent;
-            section.Should().Contain("Put it in a repository instead");
+            section.Should().Contain("Add this recipe's files to a repository instead");
             // The download stays the one primary action in the dialog.
             cut.FindAll(".confirm-dialog .btn--primary").Count.Should().Be(1);
         });

@@ -505,12 +505,16 @@ else
                                                                    target="_blank" rel="noopener noreferrer"
                                                                    title="@($"{s.SourceRepository} - {s.SourcePath}")"
                                                                    @onclick:stopPropagation="true">
-                                                                    <Icon Name="external-link" Width="12" Height="12" />from @(s.Origin ?? s.SourceRepository)
+                                                                    @* Both halves: the origin says what kind of file it
+                                                                       came from, the repository says which one. *@
+                                                                    <Icon Name="external-link" Width="12" Height="12" />@(s.Origin is { Length: > 0 } origin
+                                                                        ? $"from {origin} · {s.SourceRepository}"
+                                                                        : $"from {s.SourceRepository}")
                                                                 </a>
                                                             }
                                                             else
                                                             {
-                                                                <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "Your organisation")</span>
+                                                                <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "from your organisation")</span>
                                                             }
                                                         </div>
                                                     </div>

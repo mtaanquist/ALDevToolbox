@@ -29,6 +29,21 @@ public sealed record GitHubReleasePublishResult(bool Published, string? Tag, str
 /// </summary>
 public sealed record GitHubReleaseRepositoryOption(int Id, string DisplayName, string FullName);
 
+/// <summary>
+/// What the release-repository picker should show, and why it has nothing to offer
+/// when it hasn't: a deployment with no GitHub App at all hides the field, while an
+/// organisation that simply has not connected GitHub yet is told so.
+/// </summary>
+/// <param name="Options">The repositories that can be picked, possibly empty.</param>
+/// <param name="DeploymentConfigured">True when this deployment has a GitHub App at all.</param>
+/// <param name="IsConnected">True once an admin has connected a GitHub organisation.</param>
+/// <param name="HasGitHubRepositories">True when the solution names at least one GitHub repository.</param>
+public sealed record GitHubReleaseRepositoryChoices(
+    IReadOnlyList<GitHubReleaseRepositoryOption> Options,
+    bool DeploymentConfigured,
+    bool IsConnected,
+    bool HasGitHubRepositories);
+
 /// <summary>One Release offered as something to deploy, with the app files hanging off it.</summary>
 public sealed record GitHubReleaseOption(
     string Tag,
@@ -98,12 +113,21 @@ public sealed class GitHubReleaseService
     /// refuse. Reads the database only, so it renders while GitHub is down.</para>
     /// </summary>
     public async Task<IReadOnlyList<GitHubReleaseRepositoryOption>> ListRepositoryOptionsAsync(
+        int projectId, CancellationToken ct = default) =>
+        (await DescribeRepositoryOptionsAsync(projectId, ct)).Options;
+
+    /// <summary>
+    /// The same repositories, plus what the editors need to explain an empty list. A
+    /// solution that names GitHub repositories on a deployment that has a GitHub App
+    /// but no connected organisation is somebody an admin can help, so the editors say
+    /// so rather than silently dropping the field.
+    /// </summary>
+    public async Task<GitHubReleaseRepositoryChoices> DescribeRepositoryOptionsAsync(
         int projectId, CancellationToken ct = default)
     {
         await _access.EnsureCanViewAsync(projectId, ct);
 
         var connection = await _connection.GetStatusAsync(ct);
-        if (!connection.IsConnected || connection.OrgLogin is not { Length: > 0 } orgLogin) return [];
 
         var repositories = await _db.OeProjectRepositories.AsNoTracking()
             .Where(r => r.ProjectId == projectId && r.Provider == RepositoryProvider.GitHub)
@@ -112,13 +136,18 @@ public sealed class GitHubReleaseService
             .ToListAsync(ct);
 
         var options = new List<GitHubReleaseRepositoryOption>();
-        foreach (var repository in repositories)
+        if (connection.IsConnected && connection.OrgLogin is { Length: > 0 } orgLogin)
         {
-            if (!TryParseRepository(repository.Url, out var owner, out var name)) continue;
-            if (!string.Equals(owner, orgLogin, StringComparison.OrdinalIgnoreCase)) continue;
-            options.Add(new GitHubReleaseRepositoryOption(repository.Id, repository.DisplayName, $"{owner}/{name}"));
+            foreach (var repository in repositories)
+            {
+                if (!TryParseRepository(repository.Url, out var owner, out var name)) continue;
+                if (!string.Equals(owner, orgLogin, StringComparison.OrdinalIgnoreCase)) continue;
+                options.Add(new GitHubReleaseRepositoryOption(repository.Id, repository.DisplayName, $"{owner}/{name}"));
+            }
         }
-        return options;
+
+        return new GitHubReleaseRepositoryChoices(
+            options, connection.DeploymentConfigured, connection.IsConnected, repositories.Count > 0);
     }
 
     // ── Publishing a build ──────────────────────────────────────────────────

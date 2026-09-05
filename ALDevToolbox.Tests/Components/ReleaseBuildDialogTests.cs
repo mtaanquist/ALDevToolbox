@@ -186,6 +186,32 @@ public sealed class ReleaseBuildDialogTests : IDisposable
         cut.Markup.Should().Contain("cronus-customer");
     }
 
+    [Fact]
+    public async Task A_repository_with_no_installable_release_says_what_to_publish_instead_of_an_empty_picker()
+    {
+        var cut = _ctx.Render<ReleaseBuildDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenAsync(
+            releasePipelineId: 1,
+            customerName: "CRONUS A/S",
+            envName: "Production",
+            envType: "Sandbox",
+            deploymentSchedule: "Immediate",
+            schemaSyncMode: "Add",
+            builds: [],
+            timeZone: "Europe/Copenhagen",
+            windowStart: null,
+            windowEnd: null,
+            secretExpiresAt: null,
+            // One release, nothing installable attached to it.
+            releases: [new ALDevToolbox.Services.GitHub.GitHubReleaseOption("v1.4.1.0", null, null, [])],
+            repositoryName: "cronus-customer"));
+
+        cut.FindAll("#rb-release").Should().BeEmpty();
+        cut.Markup.Should().Contain("No release on cronus-customer has an .app file attached yet.");
+        cut.Markup.Should().Contain("Publish a release with the compiled apps attached");
+        cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
+    }
+
     // ── Unused seams: the dialog never releases in these tests ────────────────
 
     /// <summary>No signed-in user: nothing here queries, so the filter sentinel is enough.</summary>

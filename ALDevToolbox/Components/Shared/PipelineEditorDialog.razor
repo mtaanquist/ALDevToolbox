@@ -146,7 +146,7 @@
                 @if (_releaseRepositories is { Count: > 0 } && (!_pickProject || _projectId != 0))
                 {
                     <div class="field">
-                        <label class="field__label" for="pe-release-repo">Publish each successful build as a GitHub Release on</label>
+                        <label class="field__label" for="pe-release-repo">Publish successful builds to GitHub</label>
                         <span class="select-wrap">
                             <select id="pe-release-repo" class="select" @bind="_releaseRepositoryId" disabled="@_saving">
                                 <option value="0">Don't publish releases</option>
@@ -157,7 +157,24 @@
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <small class="field__hint">The compiled files are attached to a release tagged with the app version, so the customer can download exactly what was shipped. Builds whose apps carry different versions are not published.</small>
+                        <small class="field__hint">All apps in a build have to share one version number, because the release is tagged with it. If they don't match, the build still succeeds and its files can still be downloaded here; only the release is skipped.</small>
+                    </div>
+                }
+                else if (ShowUnavailableReleaseField)
+                {
+                    <div class="field">
+                        <label class="field__label" for="pe-release-repo">Publish successful builds to GitHub</label>
+                        <span class="select-wrap">
+                            <select id="pe-release-repo" class="select" disabled>
+                                <option value="0">Don't publish releases</option>
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <small class="field__hint">
+                            @(_releaseRepositoriesFailed
+                                ? "Couldn't reach GitHub just now; try again."
+                                : "GitHub isn't connected for this organisation yet. An admin can connect it under Administration → Repositories.")
+                        </small>
                     </div>
                 }
 
@@ -221,6 +238,13 @@
     // organisation on Azure DevOps is shown no GitHub machinery at all.
     private IReadOnlyList<GitHubReleaseRepositoryOption>? _releaseRepositories;
     private int _releaseRepositoryId;
+    // True when there is nothing to pick but the person can still be told why.
+    private bool _releaseRepositoriesExplainable;
+    private bool _releaseRepositoriesFailed;
+
+    /// <summary>Show the field disabled with a reason rather than hiding it entirely.</summary>
+    private bool ShowUnavailableReleaseField =>
+        _releaseRepositoriesExplainable && (!_pickProject || _projectId != 0);
 
     private bool _loadingDiscovery;
     private bool _saving;
@@ -304,6 +328,8 @@
         _selected = new(StringComparer.Ordinal);
         _releaseRepositories = null;
         _releaseRepositoryId = 0;
+        _releaseRepositoriesExplainable = false;
+        _releaseRepositoriesFailed = false;
     }
 
     /// <summary>
@@ -313,15 +339,25 @@
     /// </summary>
     private async Task LoadReleaseRepositoriesAsync()
     {
+        _releaseRepositoriesFailed = false;
+        _releaseRepositoriesExplainable = false;
         if (_projectId == 0) { _releaseRepositories = null; return; }
         try
         {
-            _releaseRepositories = await GitHubReleases.ListRepositoryOptionsAsync(_projectId);
+            var choices = await GitHubReleases.DescribeRepositoryOptionsAsync(_projectId);
+            _releaseRepositories = choices.Options;
+            // Somebody whose solution is on GitHub but whose organisation has not
+            // connected it can be helped by an admin - say so instead of hiding the
+            // field, which would look like the feature does not exist.
+            _releaseRepositoriesExplainable =
+                choices.DeploymentConfigured && choices.HasGitHubRepositories && choices.Options.Count == 0;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Reading the solution's GitHub repositories failed for solution {ProjectId}.", _projectId);
             _releaseRepositories = null;
+            _releaseRepositoriesFailed = true;
+            _releaseRepositoriesExplainable = true;
         }
     }
 

@@ -19,7 +19,7 @@ namespace ALDevToolbox.Tests.Components;
 /// The repository-standards editor (issue #628). A screenshot is not possible
 /// here, so these renders are the evidence for the three states, for the empty
 /// state naming a file the admin would recognise, and for the page keeping the
-/// "one primary action" rule (it has none - Generate owns that).
+/// "one primary action" rule (Save standards, as on the other admin forms).
 /// </summary>
 public sealed class AdminRepositoryStandardsTests : IDisposable
 {
@@ -100,17 +100,60 @@ public sealed class AdminRepositoryStandardsTests : IDisposable
     }
 
     [Fact]
-    public void The_page_has_no_primary_button_and_its_save_is_disabled_until_something_changes()
+    public void Save_is_the_pages_one_primary_action_and_is_disabled_until_something_changes()
     {
         var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("button.btn--primary").Should().BeEmpty(
-                "CLAUDE.md: Generate is the only primary action in this app");
+            cut.FindAll("button.btn--primary").Should().ContainSingle(
+                "an admin form's Save is its primary action, and there is only one");
             cut.Find(".form-actions button").HasAttribute("disabled").Should().BeTrue(
                 "nothing has changed yet, so there is nothing to save");
         });
+    }
+
+    [Fact]
+    public void Saving_waits_while_the_editor_still_holds_a_file_that_is_not_on_the_list()
+    {
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+        cut.WaitForElement("#std-file-path");
+
+        cut.Find("#std-file-path").Input("CODEOWNERS");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".form-actions button.btn--primary").HasAttribute("disabled").Should().BeTrue();
+            cut.Find(".form-actions__note").TextContent.Should()
+                .Contain("Add the file you are editing to the list first");
+        });
+
+        // Putting it on the list is what unblocks saving.
+        cut.Find("#std-editor .card__foot button").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".form-actions button.btn--primary").HasAttribute("disabled").Should().BeFalse();
+            cut.Find(".form-actions__note").TextContent.Should().Contain("Unsaved changes");
+        });
+    }
+
+    [Fact]
+    public async Task Editing_a_file_marks_its_row_and_a_long_file_says_the_preview_is_cut_short()
+    {
+        var longBody = new string('x', 400);
+        await SeedAsync(null, [new GitHubStandardFileInput(null, "CODEOWNERS", longBody)]);
+
+        var cut = _ctx.Render<AdminAdministrationRepositoryStandards>();
+        cut.WaitForElement(".code-block");
+
+        cut.Markup.Should().Contain("Showing the first 240 characters");
+        cut.FindAll(".code-block .badge").Should().BeEmpty();
+
+        cut.Find(".code-block__bar button").Click();
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".code-block .badge").TextContent.Trim().Should().Be("Editing"));
     }
 
     [Fact]
@@ -166,7 +209,7 @@ public sealed class AdminRepositoryStandardsTests : IDisposable
 
         var after = _ctx.Render<AdminAdministrationRepositories>();
         after.WaitForAssertion(() =>
-            after.Markup.Should().Contain("Every new repository gets 1 file and a branch ruleset."));
+            after.Markup.Should().Contain("Every new repository gets 1 file and your branch rules."));
     }
 
     /// <summary>The connection the standards row only appears alongside.</summary>

@@ -104,7 +104,9 @@ public sealed class GitHubRepositoryStandardsService
         }
         if (standards.Ruleset is { IsEmpty: false })
         {
-            parts.Add("a branch ruleset");
+            // Reads inside "Every new repository gets ..." on both callers, which
+            // is why it is a plain noun phrase and not "a branch ruleset".
+            parts.Add("your branch rules");
         }
         return parts.Count switch
         {

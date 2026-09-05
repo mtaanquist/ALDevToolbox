@@ -271,7 +271,10 @@
                             }
                             else if (_latest.GitHubReleaseError is { Length: > 0 } releaseError)
                             {
-                                <p class="pb-note">Not published to GitHub: @releaseError</p>
+                                <p class="alert alert--warn" role="status">
+                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                    <span>Not published to GitHub: @(releaseError.TrimEnd('.')). The .app files above are unaffected; fix this and run the pipeline again to publish.</span>
+                                </p>
                             }
 
                             @if (_latestDetail?.ReleaseId is { } relId)

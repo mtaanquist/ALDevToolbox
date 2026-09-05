@@ -38,7 +38,19 @@
                     <b>@DeliveryModeDisplay.Schedule(_deploymentSchedule).ToLowerInvariant()</b>@(_schemaSyncMode == BcSyncMode.ForceSync ? ", using Force sync (which can drop columns)" : "").
                 </p>
 
-                @if (_fromReleases)
+                @if (_fromReleases && _releases.Count == 0)
+                {
+                    <p class="alert alert--info" role="status">
+                        <Icon Name="info" Width="16" Height="16" />
+                        <span>
+                            @(_repositoryName.Length > 0
+                                ? $"No release on {_repositoryName} has an .app file attached yet."
+                                : "No release has an .app file attached yet.")
+                            Publish a release with the compiled apps attached, then come back.
+                        </span>
+                    </p>
+                }
+                else if (_fromReleases)
                 {
                     <div class="field">
                         <label class="field__label" for="rb-release">Release to install</label>
@@ -51,7 +63,11 @@
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <small class="field__hint">The newest release is selected. Its app files are downloaded from @_repositoryName when you release.</small>
+                        <small class="field__hint">
+                            The newest release is selected.@(_repositoryName.Length > 0
+                                ? $" Its app files are downloaded from {_repositoryName} when you release."
+                                : " Its app files are downloaded when you release.")
+                        </small>
                     </div>
                 }
                 else
@@ -273,7 +289,7 @@
         _fromReleases = releases is not null;
         _releases = releases?.Where(r => r.AppFileNames.Count > 0).ToList() ?? new();
         _tag = _releases.Count > 0 ? _releases[0].Tag : string.Empty;
-        _repositoryName = repositoryName ?? "the repository";
+        _repositoryName = repositoryName ?? string.Empty;
         _staging = false;
         _secretExpiresAt = secretExpiresAt;
         // The customer's project name is what tells a consultant with several projects
@@ -355,7 +371,9 @@
         }
         catch (GitHubApiException ex)
         {
-            _error = $"GitHub refused: {ex.Message}";
+            _error = _repositoryName.Length > 0
+                ? $"GitHub would not hand over the release: {ex.Message}. Check the app is still installed for {_repositoryName}, then try again."
+                : $"GitHub would not hand over the release: {ex.Message}. Check the app is still installed for the repository, then try again.";
         }
         catch (Exception ex)
         {

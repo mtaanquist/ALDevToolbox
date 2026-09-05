@@ -409,8 +409,8 @@
                                                 <text>
                                                     Your organisation's
                                                     @_createdRepo.StandardsFileCount
-                                                    @(_createdRepo.StandardsFileCount == 1 ? "standard file" : "standard files")
-                                                    followed in a second commit.
+                                                    @(_createdRepo.StandardsFileCount == 1 ? "standard file was" : "standard files were")
+                                                    added too.
                                                 </text>
                                             }
                                         </span>
@@ -512,7 +512,10 @@
                                            organisation's, and this person does not
                                            choose per repository whether to follow
                                            them (#628). *@
-                                        <text>It will be created with your organisation's repository standards.</text>
+                                        <text>
+                                            Your administrators have set files and branch rules that every new
+                                            repository here starts with; they will be added for you.
+                                        </text>
                                     }
                                 </p>
                                 <div class="field">
@@ -522,11 +525,13 @@
                                     <input class="input" id="ws-repo-name" type="text"
                                            pattern="@GitHubWorkspaceRepositoryService.NamePattern" required
                                            maxlength="100"
-                                           title="Letters, digits, hyphens, underscores and full stops."
                                            placeholder="e.g. CRONUS-Customer"
                                            value="@RepositoryName"
                                            @oninput="OnRepositoryNameInput" />
                                     <FieldError Field="GitHubRepositoryName" Errors="_repoErrors" />
+                                    <small class="field__hint">
+                                        Letters, digits, hyphens, underscores and full stops.
+                                    </small>
                                 </div>
                                 <div class="field">
                                     <label class="field__label" for="ws-repo-visibility">Who can see it</label>

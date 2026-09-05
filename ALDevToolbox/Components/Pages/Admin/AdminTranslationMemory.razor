@@ -40,7 +40,7 @@
                     else
                     {
                         <Icon Name="refresh-cw" Width="14" Height="14" />
-                        <span>Refresh from repositories</span>
+                        <span>Read from repositories</span>
                     }
                 </button>
             }
@@ -60,6 +60,10 @@
         <p class="alert @(_refreshFailed ? "alert--warn" : "alert--success") tr-mem-refresh" role="status">
             <Icon Name="@(_refreshFailed ? "circle-alert" : "check")" Width="16" Height="16" />
             <span>@_refreshMessage</span>
+            <button type="button" class="btn btn--sm btn--ghost tr-mem-refresh__dismiss"
+                    aria-label="Dismiss" @onclick="() => _refreshMessage = null">
+                <Icon Name="x" Width="14" Height="14" />
+            </button>
         </p>
     }
 
@@ -95,23 +99,46 @@
     }
     else if (_result.Items.Count == 0)
     {
+        @* Two different situations, and only one of them is about the filters:
+           a memory that has never been filled needs the ways to fill it, a
+           search that found nothing needs a way back to everything. *@
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
-                <span class="empty-state__title">Nothing matches</span>
-                <span class="empty-state__text">
-                    Memory builds up as you import XLIFF files and translate in the
-                    Translator. Widen the search, or import a language file to seed it.
-                    @if (_canRefreshFromRepositories)
-                    {
-                        @("You can also pick up the translations already in your repositories with Refresh from repositories, above.")
-                    }
-                </span>
-                <a class="btn empty-state__action" href="/admin/translation-memory/import">
-                    <Icon Name="upload" Width="14" Height="14" />
-                    <span>Import XLIFF</span>
-                </a>
-            </div>
+            @if (HasFilters)
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">Nothing matches</span>
+                    <span class="empty-state__text">No entry matches what you searched for.</span>
+                    <button type="button" class="btn empty-state__action" @onclick="ClearFiltersAsync">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear filters</span>
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No translations learned yet</span>
+                    <span class="empty-state__text">
+                        Memory fills up as you translate and import language files.
+                    </span>
+                    <span class="empty-state__action u-row">
+                        <a class="btn" href="/admin/translation-memory/import">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Import XLIFF</span>
+                        </a>
+                        @if (_canRefreshFromRepositories)
+                        {
+                            <button type="button" class="btn" disabled="@_refreshing"
+                                    @onclick="RefreshFromRepositoriesAsync">
+                                <Icon Name="refresh-cw" Width="14" Height="14" />
+                                <span>Read translations from repositories</span>
+                            </button>
+                        }
+                    </span>
+                </div>
+            }
         </div>
     }
     else
@@ -124,7 +151,7 @@
                     <th>Target</th>
                     <th>Kind</th>
                     <th>Origin</th>
-                    <th>From</th>
+                    <th>Repository</th>
                     <th class="tr-mem-num">Score</th>
                     <th class="tr-mem-num">Hits</th>
                     <th></th>
@@ -307,8 +334,19 @@
     private static string FileUrl(string repository, string path) =>
         $"https://github.com/{repository}/blob/HEAD/{path}";
 
+    /// <summary>True when the list is narrowed, so an empty result is the search's doing.</summary>
+    private bool HasFilters =>
+        _text.Length > 0 || _targetLang.Length > 0 || _kind.Length > 0 || _origin.Length > 0;
+
     private async Task SearchAsync()
     {
+        _skip = 0;
+        await LoadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _text = _targetLang = _kind = _origin = string.Empty;
         _skip = 0;
         await LoadAsync();
     }

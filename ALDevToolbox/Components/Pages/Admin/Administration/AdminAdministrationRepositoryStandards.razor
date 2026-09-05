@@ -24,8 +24,9 @@
         <div>
             <h1 class="page-head__title">Repository standards</h1>
             <p class="page-head__sub">
-                What every repository the toolbox creates starts with: the files your team
-                expects to find, and the rules on its default branch.
+                What every GitHub repository the toolbox creates starts with: the files your
+                team expects to find, and the rules on its default branch. Repositories on
+                Azure DevOps are not affected.
             </p>
         </div>
         <div class="page-head__actions">
@@ -127,10 +128,10 @@
                                     <code class="code">CODEOWNERS</code>, and every repository the
                                     toolbox creates will have it from the day it is made.
                                 </span>
-                                <a class="btn empty-state__action" href="#std-editor">
+                                <button type="button" class="btn empty-state__action" @onclick="StartAdd">
                                     <Icon Name="plus" Width="14" Height="14" />
                                     <span>Add a file</span>
-                                </a>
+                                </button>
                             </div>
                         }
                         else
@@ -139,18 +140,14 @@
                             {
                                 <div class="code-block">
                                     <div class="code-block__bar">
-                                        <span class="code-block__name">@file.Path</span>
+                                        <span class="code-block__name">
+                                            @file.Path
+                                            @if (_editing == file)
+                                            {
+                                                <span class="badge">Editing</span>
+                                            }
+                                        </span>
                                         <span class="u-row">
-                                            <button type="button" class="btn btn--sm" title="Move up"
-                                                    disabled="@(_files.IndexOf(file) == 0)"
-                                                    @onclick="() => Move(file, -1)">
-                                                <Icon Name="arrow-up" Width="12" Height="12" />
-                                            </button>
-                                            <button type="button" class="btn btn--sm" title="Move down"
-                                                    disabled="@(_files.IndexOf(file) == _files.Count - 1)"
-                                                    @onclick="() => Move(file, 1)">
-                                                <Icon Name="arrow-down" Width="12" Height="12" />
-                                            </button>
                                             <button type="button" class="btn btn--sm" @onclick="() => StartEdit(file)">
                                                 <Icon Name="pencil" Width="12" Height="12" />
                                                 <span>Edit</span>
@@ -162,6 +159,10 @@
                                         </span>
                                     </div>
                                     <pre>@Preview(file.Content)</pre>
+                                    @if (IsTruncated(file.Content))
+                                    {
+                                        <span class="field__hint">Showing the first 240 characters. Choose Edit to see it all.</span>
+                                    }
                                 </div>
                             }
                         }
@@ -175,7 +176,7 @@
                     <div class="card__body form-sec">
                         <div class="field">
                             <label class="field__label" for="std-file-path">Where it goes in the repository</label>
-                            <input class="input" id="std-file-path" type="text"
+                            <input class="input" id="std-file-path" type="text" @ref="_pathInput"
                                    placeholder=".github/workflows/build.yml"
                                    @bind="_editPath" @bind:event="oninput" />
                         </div>
@@ -209,13 +210,9 @@
                     <div class="card__head"><h2 class="card__title">How this is applied</h2></div>
                     <div class="card__body form-sec">
                         <p class="form-sec__cap">
-                            When somebody creates a repository from a new workspace, the toolbox
-                            commits the generated files first, then adds these files in a second
-                            commit called "Apply repository standards", then sets the branch rules.
-                        </p>
-                        <p class="form-sec__cap">
-                            A file here wins over one the workspace template produced at the same
-                            path.
+                            Your files are added on top of the files the workspace generates, then
+                            the branch rules are applied. A file here replaces one the workspace
+                            template produced at the same path.
                         </p>
                         <p class="form-sec__cap">
                             Repositories that already exist are left alone - these are for the ones
@@ -237,11 +234,16 @@
 
         <div class="form-actions form-actions--sticky">
             <span class="form-actions__spacer"></span>
-            @if (IsDirty)
+            @if (HasUnappliedEdit)
+            {
+                <span class="form-actions__note">Add the file you are editing to the list first, or cancel it.</span>
+            }
+            else if (IsDirty)
             {
                 <span class="form-actions__note">Unsaved changes</span>
             }
-            <button type="button" class="btn" @onclick="SaveAsync" disabled="@(_saving || !IsDirty)">
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty || HasUnappliedEdit)">
                 <Icon Name="save" Width="16" Height="16" />
                 <span>@(_saving ? "Saving..." : "Save standards")</span>
             </button>
@@ -271,6 +273,8 @@
     private FileRow? _editing;
     private string _editPath = string.Empty;
     private string _editContent = string.Empty;
+    private ElementReference _pathInput;
+    private bool _focusPath;
 
     private sealed class FileRow
     {
@@ -294,6 +298,14 @@
     }.Concat(_files.Select(f => $"{f.Id}~{f.Path}~{f.Content}")));
 
     private bool IsDirty => Snapshot() != _baseline;
+
+    /// <summary>
+    /// True while the editor below holds a file that has not been put on the
+    /// list. Saving then would drop it silently, so saving waits - deliberately
+    /// outside <see cref="Snapshot"/>, which is only about what would be saved.
+    /// </summary>
+    private bool HasUnappliedEdit =>
+        _editPath.Length > 0 || _editContent.Length > 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -319,12 +331,29 @@
         _loading = false;
     }
 
+    /// <summary>Puts the cursor where the next thing to type goes.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPath) return;
+        _focusPath = false;
+        try { await _pathInput.FocusAsync(); }
+        catch { /* the editor is not on screen */ }
+    }
+
     private void StartEdit(FileRow row)
     {
         _editing = row;
         _editPath = row.Path;
         _editContent = row.Content;
         _editError = null;
+        _focusPath = true;
+    }
+
+    /// <summary>The empty state's own button: an empty editor, with the cursor in it.</summary>
+    private void StartAdd()
+    {
+        CancelEdit();
+        _focusPath = true;
     }
 
     private void CancelEdit()
@@ -372,15 +401,6 @@
         if (_editing == row) CancelEdit();
     }
 
-    private void Move(FileRow row, int by)
-    {
-        var index = _files.IndexOf(row);
-        var target = index + by;
-        if (index < 0 || target < 0 || target >= _files.Count) return;
-        _files.RemoveAt(index);
-        _files.Insert(target, row);
-    }
-
     private async Task SaveAsync()
     {
         if (_saving || !IsDirty) return;
@@ -423,10 +443,13 @@
         }
     }
 
+    private const int PreviewLength = 240;
+
     private static string Preview(string content)
     {
         if (string.IsNullOrEmpty(content)) return string.Empty;
-        const int max = 240;
-        return content.Length <= max ? content : content[..max] + "...";
+        return content.Length <= PreviewLength ? content : content[..PreviewLength] + "...";
     }
+
+    private static bool IsTruncated(string content) => content.Length > PreviewLength;
 }

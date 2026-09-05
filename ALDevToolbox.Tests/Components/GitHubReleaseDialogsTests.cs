@@ -102,7 +102,7 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
         var cut = _ctx.Render<PipelineEditorDialog>();
         await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
 
-        cut.Markup.Should().Contain("Publish each successful build as a GitHub Release on");
+        cut.Markup.Should().Contain("Publish successful builds to GitHub");
         var options = cut.FindAll("#pe-release-repo option").Select(o => o.TextContent.Trim()).ToList();
         // Not publishing is the default, and it is a choice you can see, not an absence.
         options.Should().Equal("Don't publish releases", Repo);
@@ -119,6 +119,21 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
 
         cut.FindAll("#pe-release-repo").Should().BeEmpty();
         cut.Markup.Should().NotContain("GitHub Release");
+    }
+
+    [Fact]
+    public async Task A_solution_on_github_with_nothing_connected_is_told_who_can_connect_it()
+    {
+        var seed = await SeedAsync();
+        await ConfigureDeploymentAppAsync(); // the app exists; this organisation has not connected
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+
+        var cut = _ctx.Render<PipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
+
+        cut.Markup.Should().Contain("Publish successful builds to GitHub");
+        cut.Find("#pe-release-repo").HasAttribute("disabled").Should().BeTrue();
+        cut.Markup.Should().Contain("GitHub isn't connected for this organisation yet");
     }
 
     // ── The release pipeline's artifact source ──────────────────────────────
@@ -194,13 +209,19 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
         return new Seed(project.Id, pipeline.Id);
     }
 
-    private async Task ConnectOrganisationAsync()
+    /// <summary>The deployment-wide app, with no organisation connected to it.</summary>
+    private async Task ConfigureDeploymentAppAsync()
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
             AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
+    }
+
+    private async Task ConnectOrganisationAsync()
+    {
+        await ConfigureDeploymentAppAsync();
 
         await using var ctx = _db.NewContext();
         ctx.OrganizationSettings.Add(new OrganizationSettings

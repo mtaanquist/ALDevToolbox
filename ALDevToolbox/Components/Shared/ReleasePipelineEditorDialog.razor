@@ -109,7 +109,7 @@
                                 </select>
                                 <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                             </span>
-                            <small class="field__hint">Choose GitHub releases to install a version this toolbox didn't build - the apps come from the release you pick when you publish.</small>
+                            <small class="field__hint">Choose GitHub releases when the apps were built somewhere else. AL Dev Toolbox installs whatever is attached to the release you pick.</small>
                         </div>
                     }
 
@@ -127,7 +127,7 @@
                                 </select>
                                 <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                             </span>
-                            <small class="field__hint">Its releases are what this pipeline installs. Only the app files attached to a release are used.</small>
+                            <small class="field__hint">Its releases are what this pipeline installs. Only the .app files attached to the release are installed; other attachments are ignored.</small>
                         </div>
                     }
                     else if (_buildPipelines is { Count: > 0 })
@@ -149,9 +149,13 @@
                     }
                     else
                     {
-                        <p class="field__hint">
-                            This solution has no build pipeline yet. Choose a GitHub repository above, or create a
-                            build pipeline on the <a href="@($"/solutions/{_projectId}")">solution's Pipelines tab</a>.
+                        <p class="alert alert--info" role="status">
+                            <Icon Name="info" Width="16" Height="16" />
+                            <span>
+                                Pick a GitHub repository above, or create a build pipeline first on the
+                                <a href="@($"/solutions/{_projectId}")">solution's Pipelines tab</a>.
+                                You can't save until one of the two is chosen.
+                            </span>
                         </p>
                     }
 

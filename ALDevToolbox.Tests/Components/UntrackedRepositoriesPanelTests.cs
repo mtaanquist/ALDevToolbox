@@ -104,7 +104,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
         // The panel appears once readiness is known and fills in once GitHub has
         // answered, so the assertion is the wait.
         cut.WaitForAssertion(
-            () => cut.Markup.Should().Contain($"Every AL repository in {OrgLogin} that you can see is already tracked"),
+            () => cut.Markup.Should().Contain($"Every AL repository in {OrgLogin} that you can see already has a solution"),
             WaitTimeout);
     }
 
@@ -118,11 +118,11 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
         var cut = _ctx.Render<UntrackedRepositoriesPanel>();
         WaitForListed(cut, RepoA);
 
-        cut.Markup.Should().Contain("1 AL repository is not tracked yet");
+        cut.Markup.Should().Contain("1 AL repository has no solution yet");
         cut.Markup.Should().Contain("Payment Import");
         cut.Find($"a[href='https://github.com/{RepoA}']").Should().NotBeNull();
         var buttons = cut.FindAll("button").Select(b => b.TextContent.Trim()).ToList();
-        buttons.Should().Contain("Track as solution").And.Contain("Ignore").And.Contain("Check GitHub now");
+        buttons.Should().Contain("Create a solution").And.Contain("Hide").And.Contain("Check GitHub again");
         // The Solutions page's one primary action is New solution; nothing here
         // competes with it.
         cut.FindAll(".btn--primary").Should().BeEmpty();
@@ -137,7 +137,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
 
         var cut = _ctx.Render<UntrackedRepositoriesPanel>();
         WaitForListed(cut, RepoA);
-        await cut.Find("button:contains('Track as solution')").ClickAsync(new());
+        await cut.Find("button:contains('Create a solution')").ClickAsync(new());
 
         // Both fields arrive filled in from what the toolbox already knows.
         cut.Find("#track-name").GetAttribute("value").Should().Be("Payment Import");
@@ -163,7 +163,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
 
         var cut = _ctx.Render<UntrackedRepositoriesPanel>();
         WaitForListed(cut, RepoA);
-        await cut.Find("button:contains('Track as solution')").ClickAsync(new());
+        await cut.Find("button:contains('Create a solution')").ClickAsync(new());
         await cut.Find("button:contains('Create solution')").ClickAsync(new());
 
         cut.Markup.Should().Contain("Another project already uses this name");
@@ -172,7 +172,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
     }
 
     [Fact]
-    public async Task Ignoring_a_repository_takes_it_off_the_list()
+    public async Task Hiding_a_repository_takes_it_off_the_list_and_says_so()
     {
         await ReadyAsync();
         await SeedCandidateAsync();
@@ -180,11 +180,42 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
 
         var cut = _ctx.Render<UntrackedRepositoriesPanel>();
         WaitForListed(cut, RepoA);
-        await cut.Find("button:contains('Ignore')").ClickAsync(new());
+        await cut.Find("button:contains('Hide')").ClickAsync(new());
 
-        cut.WaitForAssertion(() => cut.Markup.Should().NotContain(RepoA), WaitTimeout);
+        cut.WaitForAssertion(
+            () =>
+            {
+                cut.FindAll(".untracked-repos__row").Should().BeEmpty();
+                cut.Find(".untracked-repos__hidden").TextContent.Should().Contain($"{RepoA} hidden");
+            },
+            WaitTimeout);
         await using var read = _db.NewContext();
         (await read.GitHubRepositoryCandidates.SingleAsync()).IgnoredAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Undo_puts_a_hidden_repository_back_on_the_list()
+    {
+        await ReadyAsync();
+        await SeedCandidateAsync();
+        _db.AddGitHubServices(_ctx.Services, VisibleApi(RepoA));
+
+        var cut = _ctx.Render<UntrackedRepositoriesPanel>();
+        WaitForListed(cut, RepoA);
+        await cut.Find("button:contains('Hide')").ClickAsync(new());
+        cut.WaitForAssertion(() => cut.Find(".untracked-repos__hidden"), WaitTimeout);
+
+        await cut.Find(".untracked-repos__hidden button").ClickAsync(new());
+
+        cut.WaitForAssertion(
+            () =>
+            {
+                cut.FindAll(".untracked-repos__row").Should().ContainSingle();
+                cut.FindAll(".untracked-repos__hidden").Should().BeEmpty();
+            },
+            WaitTimeout);
+        await using var read = _db.NewContext();
+        (await read.GitHubRepositoryCandidates.SingleAsync()).IgnoredAt.Should().BeNull();
     }
 
     // ── Fixtures ─────────────────────────────────────────────────────────

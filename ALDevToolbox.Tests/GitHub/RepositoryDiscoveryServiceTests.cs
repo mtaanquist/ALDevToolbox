@@ -232,6 +232,40 @@ public sealed class RepositoryDiscoveryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Undoing_a_hide_offers_the_repository_again()
+    {
+        await ReadyAsync();
+        await SeedCandidatesAsync();
+        var (ignoring, ctx1) = NewService(SweepableApi());
+        await using (ctx1) await ignoring.IgnoreAsync(await CandidateIdAsync(RepoA));
+
+        var (undoing, ctx2) = NewService(SweepableApi());
+        await using (ctx2) await undoing.UnignoreAsync(RepoA);
+
+        var (service, ctx3) = NewService(VisibleToUserApi(RepoA, RepoB));
+        await using var _ = ctx3;
+        (await service.ListUntrackedAsync()).Rows.Select(r => r.FullName).Should().Contain(RepoA);
+
+        await using var read = _db.NewContext();
+        var row = await read.GitHubRepositoryCandidates.SingleAsync(c => c.FullName == RepoA);
+        row.IgnoredAt.Should().BeNull();
+        row.IgnoredByUserId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Undoing_a_hide_on_a_repository_that_is_already_offered_changes_nothing()
+    {
+        await ReadyAsync();
+        await SeedCandidatesAsync();
+
+        var (undoing, ctx1) = NewService(SweepableApi());
+        await using (ctx1) await undoing.UnignoreAsync(RepoA);
+
+        await using var read = _db.NewContext();
+        (await read.GitHubRepositoryCandidates.CountAsync(c => c.IgnoredAt != null)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task The_country_a_new_solution_is_offered_comes_from_the_organisations_own_default()
     {
         await ReadyAsync(autoImportCountry: "dk,w1");

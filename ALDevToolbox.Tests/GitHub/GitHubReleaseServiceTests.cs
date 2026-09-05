@@ -375,6 +375,21 @@ public sealed class GitHubReleaseServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Without_a_connection_the_editors_still_learn_the_solution_is_on_github()
+    {
+        var seed = await SeedAsync(publishTo: false, apps: [("CRONUS Core", "1.0.0.0")]);
+
+        await using var ctx = _db.NewContext();
+        var choices = await NewService(ctx, StageableApi()).DescribeRepositoryOptionsAsync(seed.ProjectId);
+
+        choices.Options.Should().BeEmpty();
+        choices.IsConnected.Should().BeFalse();
+        // The solution's own repository is on GitHub, so the editor can say who
+        // to ask rather than hiding the field.
+        choices.HasGitHubRepositories.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Without_a_github_connection_no_repository_is_offered()
     {
         var seed = await SeedAsync(publishTo: false, apps: [("CRONUS Core", "1.0.0.0")]);

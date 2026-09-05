@@ -123,7 +123,7 @@ public sealed class GitHubRepositoryStandardsTests : IDisposable
 
         await using var read = _db.NewContext();
         (await _db.NewGitHubRepositoryStandardsService(read).GetSummaryAsync())
-            .Should().Be("1 file and a branch ruleset");
+            .Should().Be("1 file and your branch rules");
     }
 
     [Fact]

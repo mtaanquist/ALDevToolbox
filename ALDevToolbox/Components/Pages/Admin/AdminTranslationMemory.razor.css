@@ -45,6 +45,8 @@
 /* What the last "Refresh from repositories" run did, and where a learned pair
    came from - the repository, linked to the file itself on GitHub. */
 .tr-mem-refresh { margin-bottom: 14px; }
+/* The dismiss sits at the end of the banner, not in its flow of words. */
+.tr-mem-refresh__dismiss { margin-left: auto; }
 .tr-mem-from { max-width: 220px; }
 .tr-mem-from a { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-3); text-decoration: none; }
 .tr-mem-from a:hover { color: var(--primary-ink); text-decoration: underline; }

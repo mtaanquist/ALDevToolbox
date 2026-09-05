@@ -16,8 +16,8 @@ namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
 /// The Translation memory page as an editor meets it (issue #631): its loading,
-/// empty and populated states, the "From" column that links a learned pair back
-/// to the file it came from, and the rule that "Refresh from repositories" is
+/// empty and populated states, the Repository column that links a learned pair back
+/// to the file it came from, and the rule that "Read from repositories" is
 /// offered only once the organisation has connected a GitHub organisation.
 ///
 /// <para>A screenshot is not possible in this environment, so these renders are
@@ -65,9 +65,34 @@ public sealed class AdminTranslationMemoryTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Nothing matches");
+            // Nothing has been learned yet, which is a different situation from a
+            // search that matched nothing - and it does not mention filters.
+            cut.Markup.Should().Contain("No translations learned yet");
+            cut.Markup.Should().NotContain("Nothing matches");
             cut.FindAll("a").Any(a => a.TextContent.Contains("Import XLIFF")).Should().BeTrue();
         });
+    }
+
+    [Fact]
+    public async Task A_search_that_matches_nothing_offers_a_way_back_to_everything()
+    {
+        await SeedEntryAsync();
+
+        var cut = _ctx.Render<AdminTranslationMemory>();
+        cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().ContainSingle());
+
+        cut.Find(".filter-bar__search").Input("nothing-like-this-exists");
+        cut.Find(".filter-bar button[type=submit]").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Nothing matches");
+            cut.Find(".empty-state__action").TextContent.Should().Contain("Clear filters");
+        });
+
+        cut.Find(".empty-state__action").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().ContainSingle());
     }
 
     [Fact]
@@ -111,7 +136,7 @@ public sealed class AdminTranslationMemoryTests : IDisposable
         var cut = _ctx.Render<AdminTranslationMemory>();
 
         cut.WaitForAssertion(() =>
-            cut.FindAll("button").Any(b => b.TextContent.Contains("Refresh from repositories"))
+            cut.FindAll("button").Any(b => b.TextContent.Contains("Read from repositories"))
                 .Should().BeTrue());
     }
 
@@ -121,7 +146,7 @@ public sealed class AdminTranslationMemoryTests : IDisposable
         var cut = _ctx.Render<AdminTranslationMemory>();
 
         cut.WaitForAssertion(() =>
-            cut.FindAll("button").Any(b => b.TextContent.Contains("Refresh from repositories"))
+            cut.FindAll("button").Any(b => b.TextContent.Contains("Read from repositories"))
                 .Should().BeFalse("a button whose only answer would be 'nothing is connected' is worse than none"));
     }
 

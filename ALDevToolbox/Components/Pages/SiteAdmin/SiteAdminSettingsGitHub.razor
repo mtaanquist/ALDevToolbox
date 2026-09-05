@@ -89,8 +89,9 @@
                             install the app, the second is where it sends anyone who connects
                             their own GitHub account, and the third is where it tells the
                             toolbox that a pull request has changed. Make up a webhook secret
-                            of your own, put the same one in both places, and tick "Active"
-                            beside the webhook.
+                            of your own, paste the same text into GitHub's Webhook secret box
+                            and into the Webhook secret field below. Tick "Active" beside the
+                            webhook on GitHub.
                         </span>
                     </div>
 
@@ -109,11 +110,13 @@
                         <span class="step__head"><span class="step__title">Tick the access it needs</span></span>
                         <span class="step__text">
                             Under Repository permissions and Organization permissions, allow the
-                            app to: create new repositories, read and write files in
-                            repositories, see repository names and descriptions, open and update
-                            pull requests, report build results on pull requests, and see who is
-                            in the organisation. Anything you leave out simply turns off the
-                            part of the toolbox that needs it.
+                            app to: create new repositories (Administration), read and write
+                            files in repositories (Contents), see repository names and
+                            descriptions (Metadata), open and update pull requests (Pull
+                            requests), report build results on pull requests (Checks), and see
+                            who is in the organisation (Members). The name in brackets is what
+                            GitHub calls the permission on its own page. Anything you leave out
+                            simply turns off the part of the toolbox that needs it.
                         </span>
                     </div>
 
@@ -136,7 +139,8 @@
                             At the bottom of the app's settings, generate a private key. GitHub
                             downloads the file there and then and will never show it again - if
                             you lose it, you generate a new one. Then copy the App ID, the app's
-                            name, the Client ID and a new client secret into the fields below.
+                            name, the Client ID and a new client secret into the fields below,
+                            and the webhook secret you made up in step 2.
                             While you are there, tick "Expire user authorization tokens" - it is
                             on by default, and the toolbox renews them for people quietly.
                         </span>
@@ -163,6 +167,14 @@
                                 Hint="On GitHub, put this in the app's Webhook URL box and tick Active. It is how GitHub tells the toolbox a pull request has changed, so it can build the branch and report back.">
                         <input class="input input--ro" type="text" value="@WebhookUrl" readonly
                                aria-label="Webhook URL to copy into GitHub" />
+                        @if (!Origin.IsConfigured)
+                        {
+                            <small class="field__hint">
+                                This is a guess from the address you're using right now. GitHub reaches it
+                                from the internet, so if the toolbox sits behind a reverse proxy, set the
+                                public https address instead.
+                            </small>
+                        }
                     </SettingRow>
 
                     @* required + pattern mirror SaveGitHubAppAsync's own rules, from
@@ -276,7 +288,7 @@
                     <span>
                         @(IsConfigured
                             ? "Set up. Organisations can now connect their own GitHub organisation."
-                            : "Not set up yet. Follow the six steps, then fill in the form - organisations can connect once the App ID, the app's name and the private key are saved.")
+                            : "Not set up yet. Follow the steps above, then fill in the form - organisations can connect once the App ID, the app's name and the private key are saved.")
                     </span>
                 </p>
             }

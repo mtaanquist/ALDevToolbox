@@ -843,6 +843,43 @@ year's Business Central after a new release lands in the Object Explorer.
 - No migration, no new service, no new GitHub REST call: every route these tools use was
   already there for the pages.
 
+## UX pass over the phase 2 pages
+
+A fresh-eyes review of the pages phase 2 added or changed, applied as one pass. It
+changed wording and affordances only - no new tables, columns, endpoints or agent
+surfaces.
+
+**As built**
+
+- **Release dialog.** A release-sourced pipeline whose repository has no release with an
+  `.app` attached now says so and names the repository, instead of an empty picker with a
+  disabled button. The repository name is optional throughout: with none, the "downloaded
+  from ..." clause is dropped rather than saying "the repository". GitHub's refusals are
+  worded as something to check ("the app is still installed for {repo}").
+- **Publishing field.** `GitHubReleaseService.DescribeRepositoryOptionsAsync` is the
+  richer read behind `ListRepositoryOptionsAsync` (which now delegates to it): it also
+  reports whether the deployment has a GitHub App and whether the solution names any
+  GitHub repository. That is what lets the pipeline editor tell a solution on GitHub whose
+  organisation has not connected ("an admin can connect it under Administration →
+  Repositories") apart from an organisation with no GitHub at all, which still sees
+  nothing. A load failure is its own message.
+- **Repository standards.** Save is the page's one primary action, as on the other admin
+  forms; it is blocked, with a note, while the editor still holds a file nobody has put on
+  the list. Edit focuses the path box and marks the row. File order controls nothing - the
+  files go into one tree at unique paths - so Move up/down went away rather than acquiring
+  a caption. The summary reads "your branch rules" so it fits "Every new repository gets
+  ...".
+- **Untracked repositories.** The vocabulary is solutions, not tracking: "N AL
+  repositories have no solution yet", "Create a solution", "Hide". Hiding is undoable for
+  the session through the new `RepositoryDiscoveryService.UnignoreAsync(fullName)`, named
+  by repository because that is what the panel still holds once the row has gone.
+- **Recipes.** The dialog is "Use this recipe" and both ways out sit in one footer row,
+  with Download still the only primary; Enter follows whichever one is set up. The admin
+  page asks before opening a pull request in every repository at once, and disables the
+  buttons (rather than captioning them) while the form is dirty.
+- **Translation memory.** The empty state is split: a memory nobody has filled offers the
+  ways to fill it, a search that matched nothing offers Clear filters.
+
 ## Fences
 
 - **Tenant isolation.** Every new table and column is per-org or per-user. No new

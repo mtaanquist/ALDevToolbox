@@ -119,7 +119,7 @@ public sealed class AdminRecipeUpdateRepositoriesTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Sent to a repository");
+            cut.Markup.Should().Contain("Pull request");
             cut.Find($"a[href='https://github.com/{FirstRepo}']").Should().NotBeNull();
         });
     }
@@ -132,7 +132,7 @@ public sealed class AdminRecipeUpdateRepositoriesTests : IDisposable
         await ReadyAsync();
 
         var cut = _ctx.Render<AdminRecipeEdit>(p => p.Add(c => c.Id, recipeId));
-        cut.WaitForElement("button:contains('Open update pull request')").Click();
+        cut.WaitForElement("button:contains('Open pull request')").Click();
 
         cut.WaitForAssertion(() =>
             cut.Find("a[href='https://github.com/cronus-dk/solution-a/pull/11']").TextContent
@@ -152,7 +152,9 @@ public sealed class AdminRecipeUpdateRepositoriesTests : IDisposable
             "{\"message\":\"Repository was archived so is read-only\"}");
 
         var cut = _ctx.Render<AdminRecipeEdit>(p => p.Add(c => c.Id, recipeId));
-        cut.WaitForElement("button:contains('Open all')").Click();
+        cut.WaitForElement("button:contains('Open a pull request in each')").Click();
+        // Reaching every repository at once asks first.
+        cut.WaitForElement(".confirm-dialog__actions .btn--primary").Click();
 
         cut.WaitForAssertion(() =>
         {

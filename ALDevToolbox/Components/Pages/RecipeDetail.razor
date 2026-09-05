@@ -124,7 +124,7 @@
                             : $"The files were added to pull request #{delivery.PullRequest.Number}, already open on ")
                         <strong>@delivery.Repository.FullName</strong>
                         from branch <code class="code">@delivery.PullRequest.HeadBranch</code>.
-                        Review and merge it there to bring the recipe in.
+                        Merge it on GitHub to add these files to the repository.
                     </span>
                     <span>
                         <a class="btn" href="@delivery.PullRequest.HtmlUrl" target="_blank" rel="noopener">
@@ -317,7 +317,7 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="download" Width="17" Height="17" />
                 </span>
-                <h2 id="dl-modal-title" class="confirm-dialog__title">Download recipe</h2>
+                <h2 id="dl-modal-title" class="confirm-dialog__title">Use this recipe</h2>
             </div>
             <div class="confirm-dialog__body">
                 @* The name is asked for, and the reason given, but the download is
@@ -370,21 +370,22 @@
                     </p>
                 </div>
 
-                @* The second way out of the app (issue #626). It sits under the
-                   download rather than beside it because the two share the
-                   customer name above, and it renders at all only when this
-                   person could actually use it - a consultant with no GitHub
-                   account connected is better off not being told about a door
-                   they cannot open. *@
+                @* The second way out of the app (issue #626). The picker sits
+                   here because it shares the customer name above; its button is
+                   in the footer beside Download, so neither reads as the small
+                   print of the other. It renders at all only when this person
+                   could actually use it - a consultant with no GitHub account
+                   connected is better off not being told about a door they
+                   cannot open. *@
                 @if (_repoReady)
                 {
                     <div class="rd-repo">
                         <span class="section-label">or</span>
-                        <RepositoryPicker Label="Put it in a repository instead"
+                        <RepositoryPicker Label="Add this recipe's files to a repository instead"
                                           InputId="dl-repo"
                                           @bind-Selected="_repository"
                                           Disabled="_repoBusy"
-                                          Hint="The recipe's files are committed on a branch of their own and a pull request is opened for them, in your name. Nothing in the repository changes until somebody merges it." />
+                                          Hint="The files are committed to a new branch, in their own folders, and opened as a pull request from your GitHub account. Nothing on the default branch changes until someone merges it." />
                         @if (!string.IsNullOrEmpty(_repoError))
                         {
                             <p class="field-error" role="alert">
@@ -392,20 +393,22 @@
                                 <span>@_repoError</span>
                             </p>
                         }
-                        @if (_repository is not null)
-                        {
-                            <button type="button" class="btn" disabled="@_repoBusy"
-                                    @onclick="ApplyToRepositoryAsync">
-                                <Icon Name="git-branch" Width="14" Height="14" />
-                                <span>@(_repoBusy ? "Opening pull request..." : "Open pull request")</span>
-                            </button>
-                        }
                     </div>
                 }
             </div>
+            @* Both ways out of the dialog sit in the same row, so neither looks
+               like the small print of the other. Download stays the primary. *@
             <div class="confirm-dialog__actions">
-                <button type="button" class="btn" @onclick="CloseDownloadModal">Cancel</button>
-                <button type="button" class="btn btn--primary" @onclick="ConfirmDownloadAsync">
+                <button type="button" class="btn" disabled="@_repoBusy" @onclick="CloseDownloadModal">Cancel</button>
+                @if (_repoReady && _repository is not null)
+                {
+                    <button type="button" class="btn" disabled="@_repoBusy"
+                            @onclick="ApplyToRepositoryAsync">
+                        <Icon Name="git-branch" Width="14" Height="14" />
+                        <span>@(_repoBusy ? "Opening pull request..." : "Open pull request")</span>
+                    </button>
+                }
+                <button type="button" class="btn btn--primary" disabled="@_repoBusy" @onclick="ConfirmDownloadAsync">
                     <Icon Name="download" Width="14" Height="14" />
                     <span>Download</span>
                 </button>
@@ -475,16 +478,25 @@
     }
 
     /// <summary>
-    /// Enter in the customer box downloads. It matters in a one-field dialog -
-    /// without it a consultant who types a name and presses Enter gets nothing,
-    /// and an interstitial in front of an optional field is only tolerable if
-    /// it costs one keystroke to clear. Bound to the input, not the modal: on
-    /// the modal, Enter on a focused Cancel button would download and then
-    /// cancel, and on the Download button it would download twice.
+    /// Enter in the customer box does whatever the dialog is set up to do -
+    /// downloads, or opens the pull request once a repository has been picked,
+    /// so Enter never quietly does the other one. It matters in a one-field
+    /// dialog: without it a consultant who types a name and presses Enter gets
+    /// nothing, and an interstitial in front of an optional field is only
+    /// tolerable if it costs one keystroke to clear. Bound to the input, not
+    /// the modal: on the modal, Enter on a focused Cancel button would act and
+    /// then cancel, and on the Download button it would download twice.
     /// </summary>
     private async Task OnCustomerKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key is "Enter" or "NumpadEnter") await ConfirmDownloadAsync();
+        if (e.Key is not ("Enter" or "NumpadEnter")) return;
+        if (_repoBusy) return;
+        if (_repoReady && _repository is not null)
+        {
+            await ApplyToRepositoryAsync();
+            return;
+        }
+        await ConfirmDownloadAsync();
     }
 
     /// <summary>
@@ -526,6 +538,11 @@
             _delivery = await RecipeDelivery.ApplyAsync(
                 _recipe.Id, _repository.FullName, customer.Length > 0 ? customer : null);
             _showDownloadModal = false;
+            // The alert lands at the top of the page, which somebody who opened
+            // the dialog from further down will not be looking at.
+            _toast?.Show(
+                $"Pull request #{_delivery.PullRequest.Number} opened",
+                _delivery.Repository.FullName);
         }
         catch (PlanValidationException ex)
         {
@@ -537,7 +554,8 @@
         catch (GitHubApiException ex)
         {
             Logger.LogWarning(ex, "GitHub refused the pull request on {RepoFullName}.", _repository.FullName);
-            _repoError = $"GitHub would not do that: {ex.Message}";
+            _repoError = $"GitHub refused this: {ex.Message}. Check you still have write access to "
+                + $"{_repository.FullName}, then try again.";
         }
         catch (Exception ex) when (ex is GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
         {

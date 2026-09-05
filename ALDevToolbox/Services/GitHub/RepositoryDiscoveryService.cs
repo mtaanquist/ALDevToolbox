@@ -404,6 +404,28 @@ public sealed class RepositoryDiscoveryService
         _logger.LogInformation("User {UserId} set aside the repository {RepoFullName}.", userId, candidate.FullName);
     }
 
+    /// <summary>
+    /// Puts a repository somebody has just hidden back on the list - the undo
+    /// offered beside "hidden" while the page is still open. Named by the
+    /// repository rather than by candidate id because that is what the panel
+    /// still holds once the row has left the list, and it is the same thing a
+    /// later sweep would re-find. Hiding something already offered is a no-op.
+    /// </summary>
+    public async Task UnignoreAsync(string fullName, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var userId = RequireUserId();
+        var candidate = await _db.GitHubRepositoryCandidates
+            .FirstOrDefaultAsync(c => c.FullName == fullName, ct);
+        if (candidate is null || candidate.IgnoredAt is null) return;
+
+        candidate.IgnoredAt = null;
+        candidate.IgnoredByUserId = null;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "User {UserId} put the repository {RepoFullName} back on the list.", userId, candidate.FullName);
+    }
+
     /// <summary>The repository's own name, without the owner.</summary>
     private static string RepositoryName(string fullName)
     {
