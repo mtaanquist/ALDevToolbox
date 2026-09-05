@@ -441,8 +441,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _recipe = await Recipes.GetAsync(Id);
+        // Readiness first: the page renders as soon as _recipe is set, and a
+        // click on Download ZIP then queries this same DbContext - so nothing
+        // may still be in flight on it once the recipe is there.
         _repoReady = (await Repositories.GetAccessAsync()).IsReady;
+        _recipe = await Recipes.GetAsync(Id);
         _loaded = true;
         // Deliberately no initial _active: the rail's highlight is the universal
         // "you are here" signal, and it only tracks clicks - it does not follow
