@@ -228,5 +228,15 @@ public class SystemSettings
     /// </summary>
     public string? GitHubPrivateKeyEncrypted { get; set; }
 
+    /// <summary>
+    /// Data-Protection-encrypted secret GitHub signs webhook deliveries with
+    /// (<c>X-Hub-Signature-256</c>). Deployment-wide, like the rest of the App
+    /// registration, because one App has one webhook. Null means the toolbox
+    /// accepts no deliveries at all - an unverifiable delivery is refused, never
+    /// trusted. The audit interceptor redacts the column. See
+    /// <c>.design/github-integration-phase2.md</c> (#627).
+    /// </summary>
+    public string? GitHubWebhookSecretEncrypted { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

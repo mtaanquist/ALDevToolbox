@@ -197,6 +197,18 @@
                                 <span class="pb-topline__meta pb-topline__when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
                             </div>
 
+                            @* What the compiler said, as a count rather than as a log to
+                               read. Only shown once the build has something to count -
+                               a queued build has said nothing yet, and "0 errors" before
+                               anything compiled would be a claim, not a fact. *@
+                            @if (_latestDetail is { } counted && (counted.ErrorCount > 0 || counted.WarningCount > 0))
+                            {
+                                <p class="pb-note">
+                                    The compiler reported @counted.ErrorCount error@(counted.ErrorCount == 1 ? "" : "s")
+                                    and @counted.WarningCount warning@(counted.WarningCount == 1 ? "" : "s"). The build log below has each one.
+                                </p>
+                            }
+
                             @* The live-update note is about *this* build, so it asks
                                about this build's status. _inFlight is pipeline-scoped
                                (any queued/building build keeps the poll alive, including

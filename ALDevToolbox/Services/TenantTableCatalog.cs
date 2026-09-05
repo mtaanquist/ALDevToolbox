@@ -79,6 +79,7 @@ internal static class TenantTableCatalog
         "oe_project_build_commits",
         "oe_project_build_artifacts",
         "oe_project_build_logs",
+        "oe_project_build_diagnostics",
         "oe_project_deliveries",
         "oe_project_delivery_results",
         "recipes",

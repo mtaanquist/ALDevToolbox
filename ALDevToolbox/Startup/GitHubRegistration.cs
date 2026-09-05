@@ -33,6 +33,13 @@ public static class GitHubRegistration
         // (#629). Scoped like the rest: the nightly scheduler opens its own scope
         // per organisation, and the Solutions panel opens one per read.
         services.AddScoped<RepositoryDiscoveryService>();
+        // The pull-request compile gate (#627): the check-run half is scoped
+        // because it reads the build rows, the queue is a singleton because the
+        // anonymous webhook endpoint and the worker both hold it, and the worker
+        // is the hosted service that drains it.
+        services.AddScoped<GitHubCheckRunService>();
+        services.AddSingleton<GitHubWebhookQueue>();
+        services.AddHostedService<GitHubPullRequestBuildWorker>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

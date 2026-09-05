@@ -442,11 +442,25 @@ public sealed class ArtifactService
             .Select(l => new LogSectionRow(l.Section, l.Content))
             .ToListAsync(ct);
 
+        // Compiler diagnostics are parsed into rows for every build (#627), so the
+        // card can say "3 errors, 12 warnings" instead of leaving the reader to
+        // scan the raw log for them.
+        var diagnosticCounts = await _db.OeProjectBuildDiagnostics.AsNoTracking()
+            .Where(d => d.ProjectBuildId == buildId)
+            .GroupBy(d => d.Severity)
+            .Select(g => new { Severity = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var errorCount = diagnosticCounts
+            .Where(c => c.Severity == ProjectBuildDiagnosticSeverity.Error).Sum(c => c.Count);
+        var warningCount = diagnosticCounts
+            .Where(c => c.Severity == ProjectBuildDiagnosticSeverity.Warning).Sum(c => c.Count);
+
         return new BuildDetail(
             build.Id, build.ProjectId, build.ProjectName, build.PipelineId, build.PipelineName,
             build.ReleaseId, build.Status,
             build.BcVersion, build.Branch, build.StartedAt, build.FinishedAt, build.FailureMessage,
-            build.StartedBy, repoCommits, changelogGroups, artifacts, logSections);
+            build.StartedBy, repoCommits, changelogGroups, artifacts, logSections,
+            errorCount, warningCount);
     }
 
     /// <summary>The deliverables of a build (metadata only), ordered by file name.</summary>
@@ -630,7 +644,9 @@ public sealed record BuildDetail(
     IReadOnlyList<RepoCommitRow> RepoCommits,
     IReadOnlyList<ChangelogGroup> Changelog,
     IReadOnlyList<ArtifactRow> Artifacts,
-    IReadOnlyList<LogSectionRow> Logs);
+    IReadOnlyList<LogSectionRow> Logs,
+    int ErrorCount = 0,
+    int WarningCount = 0);
 
 /// <summary>One repository's pinned commit for a build.</summary>
 public sealed record RepoCommitRow(string RepoName, string RepoUrl, string CommitHash, DateTime? CommittedAt);

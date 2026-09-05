@@ -20,6 +20,10 @@ public static class GitHubPermissionLabels
             ["metadata"] = ("See repository names and descriptions", "See repository names and descriptions"),
             ["members"] = ("See who is in the organisation", "Manage who is in the organisation"),
             ["pull_requests"] = ("Read pull requests", "Open and update pull requests"),
+            // The compile gate (#627) posts its result as a check run, which only
+            // an app may write - so this grant is what turns the pull-request
+            // build on for an organisation.
+            ["checks"] = ("See build results on pull requests", "Report build results on pull requests"),
             ["issues"] = ("Read issues", "Open and update issues"),
             ["workflows"] = ("Read workflow files", "Write workflow files"),
         };

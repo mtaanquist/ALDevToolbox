@@ -531,7 +531,9 @@ one that matches how the file arrived.
 
 ## Out of scope
 
-Webhooks (nothing here needs GitHub to call us), branch protection, CODEOWNERS, CI
+Webhooks were out of scope here because nothing in *this* milestone needed GitHub to
+call us; #627 in phase 2 is the first thing that does, and adds the one inbound route -
+see `github-integration-phase2.md`. Also out of scope: branch protection, CODEOWNERS, CI
 workflow files, editing an existing extension in a repository, multi-file translation
 batches, and auto-creating a pipeline per repository. Phase 2 (#626-#633) covers the
 next layer.

@@ -438,7 +438,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                          or nameof(SystemSettings.OffsiteSecretKeyEncrypted)
                          or nameof(SystemSettings.EntraClientSecretEncrypted)
                          or nameof(SystemSettings.GitHubClientSecretEncrypted)
-                         or nameof(SystemSettings.GitHubPrivateKeyEncrypted))
+                         or nameof(SystemSettings.GitHubPrivateKeyEncrypted)
+                         or nameof(SystemSettings.GitHubWebhookSecretEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }

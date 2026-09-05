@@ -97,8 +97,10 @@ public sealed class ProjectBuildService
     /// (project gone, compiler unavailable, no apps found, symbols unresolvable) —
     /// per-app problems come back as <c>failed</c> results, not exceptions.
     /// </summary>
-    public async Task<ProjectBuildOutcome> BuildAsync(int projectId, int releaseId, CancellationToken ct = default)
+    public async Task<ProjectBuildOutcome> BuildAsync(
+        int projectId, int releaseId, ProjectBuildOptions? options = null, CancellationToken ct = default)
     {
+        options ??= ProjectBuildOptions.Manual;
         RequireOrganizationId();
         var project = await _db.OeProjects.AsNoTracking()
             .Where(c => c.Id == projectId && c.DeletedAt == null)
@@ -126,10 +128,14 @@ public sealed class ProjectBuildService
         Directory.CreateDirectory(buildRoot);
         var results = new List<BuildAppResult>();
         var logs = new List<PendingLog>();
+        // Compiler diagnostics as rows, not only as log text - the build page
+        // counts them and the pull-request check run draws each one against its
+        // own line (#627).
+        var diagnostics = new List<PendingDiagnostic>();
         try
         {
             // 1. Clone every repo. A clone failure fails only that repo.
-            var clones = await CloneRepositoriesAsync(project, buildRoot, results, logs, ct).ConfigureAwait(false);
+            var clones = await CloneRepositoriesAsync(project, buildRoot, results, logs, options, ct).ConfigureAwait(false);
 
             // Record the per-repo commit set + changelog while the clones are still
             // on disk (the changelog runs `git log` against them). Best-effort: a
@@ -230,6 +236,16 @@ public sealed class ProjectBuildService
                 if (!string.IsNullOrWhiteSpace(compileLog))
                 {
                     logs.Add(new PendingLog(app.Repo.RepositoryId, $"Compile: {app.Manifest.Name}", compileLog));
+                    foreach (var diagnostic in AlcOutputParser.Parse(compileLog))
+                    {
+                        // The compiler names the file by its absolute path inside
+                        // this build's temp root; a check-run annotation needs the
+                        // path the repository knows it by.
+                        diagnostics.Add(new PendingDiagnostic(
+                            app.Repo.RepositoryId,
+                            AlcOutputParser.MakeRelative(diagnostic.Path, app.Repo.Dir),
+                            diagnostic));
+                    }
                 }
                 if (compiled is null)
                 {
@@ -284,6 +300,11 @@ public sealed class ProjectBuildService
             {
                 try { await PersistLogsAsync(build, logs, ct).ConfigureAwait(false); }
                 catch (Exception ex) { _logger.LogWarning(ex, "Failed to persist build logs for release {ReleaseId}.", releaseId); }
+            }
+            if (build is not null)
+            {
+                try { await PersistDiagnosticsAsync(build, diagnostics, ct).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to persist build diagnostics for release {ReleaseId}.", releaseId); }
             }
             TryDeleteDirectory(buildRoot);
         }
@@ -747,10 +768,43 @@ public sealed class ProjectBuildService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Replaces the build's compiler diagnostics with <paramref name="diagnostics"/>.
+    /// Clears stale rows first, like the logs, so a rebuild reports the latest
+    /// attempt rather than accumulating both.
+    /// </summary>
+    private async Task PersistDiagnosticsAsync(ProjectBuild build, List<PendingDiagnostic> diagnostics, CancellationToken ct)
+    {
+        var stale = await _db.OeProjectBuildDiagnostics
+            .Where(d => d.ProjectBuildId == build.Id).ToListAsync(ct).ConfigureAwait(false);
+        if (stale.Count == 0 && diagnostics.Count == 0) return;
+        if (stale.Count > 0) _db.OeProjectBuildDiagnostics.RemoveRange(stale);
+
+        var ordering = 0;
+        foreach (var d in diagnostics)
+        {
+            _db.OeProjectBuildDiagnostics.Add(new ProjectBuildDiagnostic
+            {
+                OrganizationId = build.OrganizationId,
+                ProjectBuildId = build.Id,
+                ProjectRepositoryId = d.RepoId,
+                Path = Truncate(d.RelativePath, 1000),
+                Line = d.Diagnostic.Line,
+                Column = d.Diagnostic.Column,
+                Severity = d.Diagnostic.Severity,
+                Code = Truncate(d.Diagnostic.Code, 50),
+                Message = d.Diagnostic.Message,
+                Ordering = ordering++,
+            });
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
     // ── Clone ───────────────────────────────────────────────────────────
 
     private async Task<List<ClonedRepo>> CloneRepositoriesAsync(
-        Project project, string buildRoot, List<BuildAppResult> results, List<PendingLog> logs, CancellationToken ct)
+        Project project, string buildRoot, List<BuildAppResult> results, List<PendingLog> logs,
+        ProjectBuildOptions options, CancellationToken ct)
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var clones = new List<ClonedRepo>();
@@ -758,14 +812,27 @@ public sealed class ProjectBuildService
         foreach (var repo in project.Repositories)
         {
             var dest = Path.Combine(buildRoot, $"repo-{index++}");
-            var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
+            // A pull-request build has no user, so there is no personal token to
+            // resolve: it clones as the app's installation instead, in the same
+            // http.extraHeader shape a PAT travels in (#627). A manual build is
+            // unchanged - it is the user's own token or nothing.
+            var usesInstallation = options.InstallationToken is not null && repo.Provider == RepositoryProvider.GitHub;
+            var pat = usesInstallation
+                ? options.InstallationToken
+                : options.InstallationToken is not null
+                    ? null
+                    : await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
             if (string.IsNullOrEmpty(pat))
             {
+                var reason = options.InstallationToken is not null
+                    ? $"This build was started from a pull request, and the toolbox can only reach {RepositoryProvider.GitHub.DisplayName()} repositories that way. Build this solution by hand to include the {repo.Provider.DisplayName()} repository."
+                    : $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository access, then rebuild.";
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
-                    $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository access, then rebuild.",
-                    RepoUrl: repo.Url));
+                    reason, RepoUrl: repo.Url));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
-                    $"Skipped: no {repo.Provider.DisplayName()} token for the user who started this build."));
+                    options.InstallationToken is not null
+                        ? $"Skipped: a pull-request build has no credential for a {repo.Provider.DisplayName()} repository."
+                        : $"Skipped: no {repo.Provider.DisplayName()} token for the user who started this build."));
                 continue;
             }
 
@@ -782,6 +849,19 @@ public sealed class ProjectBuildService
             var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
             if (result.Succeeded && Directory.Exists(dest))
             {
+                // The pull request's own repository is moved onto the head commit
+                // the delivery named. The clone above is of the default branch, so
+                // the commit under review usually is not in it yet - fetch exactly
+                // that object and detach onto it. Everything else about the build
+                // (symbols, dependency order, ingest) is then identical to a manual
+                // one, which is the point.
+                if (options.HeadSha is { Length: > 0 } headSha && options.RepositoryId == repo.Id)
+                {
+                    var checkedOut = await CheckoutCommitAsync(gitPath, dest, headSha, env, pat, repo, logs, results, ct)
+                        .ConfigureAwait(false);
+                    if (!checkedOut) continue;
+                }
+
                 var (sha, date) = await CaptureCommitAsync(gitPath, dest, ct).ConfigureAwait(false);
                 clones.Add(new ClonedRepo(dest, repo.Url, sha, date, repo.Id, repo.DisplayName));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
@@ -796,6 +876,46 @@ public sealed class ProjectBuildService
             }
         }
         return clones;
+    }
+
+    /// <summary>
+    /// Fetches one commit into an already-cloned repository and detaches onto it,
+    /// returning whether it worked.
+    ///
+    /// <para>A shallow single-commit fetch is what a pull-request build needs and
+    /// all it needs: the head commit is on a branch the blobless single-branch
+    /// clone did not follow, and nothing downstream reads history from this
+    /// repository - the changelog is a manual build's concern. A failure is that
+    /// repository's failure, not the whole build's, so it is recorded the way a
+    /// clone failure is: the head may have been force-pushed away between GitHub
+    /// telling us and us asking, which is an ordinary race rather than a fault.</para>
+    /// </summary>
+    private async Task<bool> CheckoutCommitAsync(
+        string gitPath, string cloneDir, string commitSha, Dictionary<string, string> env, string pat,
+        ProjectRepository repo, List<PendingLog> logs, List<BuildAppResult> results, CancellationToken ct)
+    {
+        var outcome = await _processRunner.RunAsync(new ProcessRunRequest(
+            gitPath, new[] { "-C", cloneDir, "fetch", "--depth", "1", "origin", commitSha }, cloneDir, env, BuildCloneTimeout()), ct)
+            .ConfigureAwait(false);
+        if (outcome.Succeeded)
+        {
+            outcome = await _processRunner.RunAsync(new ProcessRunRequest(
+                gitPath, new[] { "-C", cloneDir, "checkout", "--detach", commitSha }, cloneDir, env), ct)
+                .ConfigureAwait(false);
+            if (outcome.Succeeded)
+            {
+                logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"Checked out {commitSha} for the pull request."));
+                return true;
+            }
+        }
+
+        var detail = Sanitize(string.IsNullOrWhiteSpace(outcome.StdErr) ? outcome.StdOut : outcome.StdErr, pat).Trim();
+        results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
+            $"Could not check out the commit the pull request points at ({Short(commitSha)}). It may have been replaced since.",
+            RepoUrl: repo.Url));
+        logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"Could not check out {commitSha}: {detail}".Trim()));
+        _logger.LogWarning("Pull-request build: could not check out {CommitSha} in {Repo}.", commitSha, repo.DisplayName);
+        return false;
     }
 
     /// <summary>
@@ -1264,6 +1384,32 @@ public sealed class ProjectBuildService
 
     /// <summary>A compiled deliverable held in memory, before it's persisted as a <see cref="ProjectBuildArtifact"/>.</summary>
     private sealed record PendingArtifact(string FileName, string AppName, string AppVersion, string? Runtime, byte[] Content);
+
+    /// <summary>One parsed compiler diagnostic with its path already made repository-relative, before it becomes a row.</summary>
+    private sealed record PendingDiagnostic(int? RepoId, string RelativePath, AlcDiagnostic Diagnostic);
+}
+
+/// <summary>
+/// What makes a build something other than "clone every repository's default
+/// branch as the person who pressed the button".
+///
+/// <para>Only the pull-request gate (#627) passes anything but
+/// <see cref="Manual"/>: it names the repository under review, the commit to
+/// check out, and the installation token to clone with, because a webhook build
+/// has no user whose token could be used. Keeping it one record rather than
+/// three more parameters means a future caller that needs one of them does not
+/// widen the signature for everyone.</para>
+/// </summary>
+/// <param name="RepositoryId">The project repository the head commit belongs to; every other repository keeps its default branch.</param>
+/// <param name="HeadSha">The commit to check that repository out at.</param>
+/// <param name="InstallationToken">The GitHub installation token to clone with, in place of a per-user token.</param>
+public sealed record ProjectBuildOptions(
+    int? RepositoryId = null,
+    string? HeadSha = null,
+    string? InstallationToken = null)
+{
+    /// <summary>The ordinary build: default branches, the acting user's own repository tokens.</summary>
+    public static readonly ProjectBuildOptions Manual = new();
 }
 
 /// <summary>A discovered extension: the folder holding its app.json, the parsed manifest, and the repo it came from.</summary>

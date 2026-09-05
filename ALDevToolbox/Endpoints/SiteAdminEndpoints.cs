@@ -164,7 +164,9 @@ internal static class SiteAdminEndpoints
                 ClientSecret: form["GitHubClientSecret"].ToString(),
                 ClearClientSecret: IsChecked(form, "ClearGitHubClientSecret"),
                 PrivateKeyPem: form["GitHubPrivateKey"].ToString(),
-                ClearPrivateKey: IsChecked(form, "ClearGitHubPrivateKey"));
+                ClearPrivateKey: IsChecked(form, "ClearGitHubPrivateKey"),
+                WebhookSecret: form["GitHubWebhookSecret"].ToString(),
+                ClearWebhookSecret: IsChecked(form, "ClearGitHubWebhookSecret"));
             try
             {
                 await settings.SaveGitHubAppAsync(input, ct);

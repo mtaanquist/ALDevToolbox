@@ -17,6 +17,11 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
         entity.Property(e => e.StartedByUserId).HasColumnName("started_by_user_id");
         entity.Property(e => e.ReleaseId).HasColumnName("release_id");
         entity.Property(e => e.Branch).HasColumnName("branch").HasMaxLength(250);
+        entity.Property(e => e.Trigger).HasColumnName("trigger").HasMaxLength(20)
+            .HasDefaultValue(ProjectBuildTrigger.Manual).IsRequired();
+        entity.Property(e => e.PullRequestNumber).HasColumnName("pull_request_number");
+        entity.Property(e => e.HeadSha).HasColumnName("head_sha").HasMaxLength(64);
+        entity.Property(e => e.CheckRunId).HasColumnName("check_run_id");
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
         entity.Property(e => e.BcVersion).HasColumnName("bc_version").HasMaxLength(50);
         entity.Property(e => e.FailureMessage).HasColumnName("failure_message");
@@ -71,6 +76,10 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
         entity.HasMany(e => e.Logs)
             .WithOne(l => l.ProjectBuild!)
             .HasForeignKey(l => l.ProjectBuildId)
+            .OnDelete(DeleteBehavior.Cascade);
+        entity.HasMany(e => e.Diagnostics)
+            .WithOne(d => d.ProjectBuild!)
+            .HasForeignKey(d => d.ProjectBuildId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // The Artifacts UI lists a project's builds newest-first, and the

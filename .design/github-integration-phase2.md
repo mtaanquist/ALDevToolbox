@@ -440,7 +440,99 @@ on every pull request, inline in the Files tab.
 
 **As built**
 
-_(appended by the implementer)_
+- **The webhook secret is its own resolver, not part of the App.**
+  `SystemSettingsService.ResolveGitHubWebhookSecretAsync` reads and decrypts only
+  `github_webhook_secret_encrypted`, deliberately without requiring the App id or
+  private key the way `ResolveGitHubAppAsync` does. The signature check is the first
+  thing an anonymous request meets and has nothing to do with whether tokens can be
+  minted; null there means every delivery is refused, which is the safe direction.
+  Its own Data Protection purpose, redacted by `AuditInterceptor`, cleared by the
+  same three-branch clear/set/keep the client secret uses, and wiped with the App id
+  like everything else on that row.
+- **The Webhook URL is read from `PublicOrigin`, unlike the Setup and Callback
+  URLs.** Those two are copied by an operator whose browser is already on the right
+  host; GitHub reaches the webhook from the internet, so behind a reverse proxy the
+  page's own host can be the wrong answer. With `PUBLIC_BASE_URL` unset it falls
+  back to the request host, which is what the sibling addresses have always used.
+  The walkthrough grew a step for the `pull_request` event subscription and a clause
+  for the `checks` grant: both are ticked on GitHub, and leaving either out makes the
+  gate silently never fire.
+- **The endpoint touches nothing.** `POST /github/webhook` resolves the secret,
+  verifies the HMAC, parses the payload and writes to a channel - no organisation is
+  resolved and no row is read or written on the request thread. Every response
+  carries a body, including the 401s, because `UseStatusCodePagesWithReExecute` would
+  otherwise rewrite them to 400 in GitHub's delivery log. A payload we cannot read
+  (no installation, missing fields, not JSON) answers 204 rather than 4xx: GitHub
+  would retry a 4xx forever and there is nothing on our side to fix. The rate limit
+  is a fixed 300 per minute per source address.
+- **The queue does supersession itself rather than using the dedupe gate.**
+  `JobQueue<TJob, TKey>`'s gate would coalesce a *new* head into the *old* build,
+  which is the opposite of what a reviewer wants. So `GitHubWebhookQueue` records the
+  latest head SHA per `(installation, repository, pull request)` and holds the
+  `CancellationTokenSource` of the build in flight for that key: announcing a newer
+  SHA cancels the running build, and a job dequeued for an older SHA is skipped. A
+  key it has never heard of counts as current, so a restart's lost bookkeeping
+  builds rather than refuses. The superseded build is recorded as failed with
+  "Superseded by a newer commit on the same pull request" - the newer job carries
+  its own check run.
+- **No durable job row for a pull-request build.** `StartPullRequestBuildAsync`
+  enqueues with `JobRowId: 0` and writes no `oe_import_jobs` row, so the startup
+  reconciler never resumes one. By the time a restarted process got to it the head
+  may have moved, and re-running would complete a check run about a commit nobody is
+  reviewing. The next push, or GitHub's own redelivery, is the recovery.
+- **The organisation is found by walking, not by querying across tenants.**
+  `GitHubPullRequestBuildWorker.ResolveOrganizationAsync` reads `organizations` (no
+  tenant filter, so no bypass), then enters an `AmbientOrganizationScope` and a fresh
+  DI scope per organisation and asks `GitHubConnectionService.GetStatusAsync()` under
+  that organisation's own filter, stopping at the first installation id that matches.
+  Pending organisations are skipped, as the sweeps skip them. **No
+  `IgnoreQueryFilters()` was added anywhere in this issue**; the baseline test is
+  unchanged.
+- **Repository matching is on a normalised clone URL** - host and path, lower-cased,
+  no scheme, no `.git`, no trailing slash, and scp-style remotes folded in - because
+  the same repository is entered by hand in several spellings. Every distinct
+  solution that tracks it gets its own check run and its own build; one solution
+  failing to start does not stop the others.
+- **`ProjectBuildOptions` carries what makes a build not-manual** (the repository
+  under review, the head SHA, the installation token) rather than three more
+  parameters on `BuildAsync`. The pull-request repository is cloned as usual and then
+  `git fetch --depth 1 origin <sha>` + `git checkout --detach <sha>`; the head is
+  normally on a branch the blobless single-branch clone did not follow. A commit that
+  has been force-pushed away between the delivery and the fetch fails that repository
+  the way a clone failure does, not the whole build.
+- **The installation token travels in the same `http.extraHeader` shape a PAT
+  does**, reusing `BasicAuthHeaderValue`'s `x-access-token:<token>` form, so nothing
+  about how git is invoked changes. Every GitHub repository of the solution uses it,
+  not only the one under review - a webhook build has no user, so there is no
+  personal token for the others either. A non-GitHub repository in the same solution
+  is skipped with a plain reason rather than a token error.
+- **Diagnostics are parsed for every build, manual included.** `AlcOutputParser` is
+  static and I/O-free; it reads the `path(line,col): severity CODE: message` shape,
+  drops the trailing `[project]` the compiler sometimes appends, and keeps a Windows
+  drive letter's colon out of the split. Paths are made repository-relative against
+  the clone root, because an absolute build-machine path matches no file GitHub knows
+  and the annotation is silently dropped. Rows land in
+  `oe_project_build_diagnostics` beside the logs, on the success path and the failure
+  `finally` alike, and the pipeline build card shows the counts. The new table is
+  listed in `TenantTableCatalog.ContentTables` right after its parent, so a
+  per-tenant restore puts the rows back instead of leaving them cascade-deleted -
+  the schema tests catch exactly that omission.
+- **Three conclusions, and the third is the interesting one.** `success` when the
+  build is ready with no error diagnostics; `failure` when the compiler reported an
+  error; `neutral` when the build could not run at all (no symbols for the declared
+  application version, no compiler, the commit gone) - nothing was learned about the
+  code, so a red X would be a claim we cannot support, and the summary says what
+  stopped it. Annotations go up in batches of fifty, GitHub's cap, and only the first
+  batch carries the conclusion so `completed_at` is stamped once.
+- **Reporting is best-effort throughout.** A check run GitHub refuses (the missing
+  `checks: write` grant, most often) is logged and the build carries on with
+  `check_run_id` null; a build with no check run is still a build, still ingests, and
+  is still visible in the toolbox. The reverse is not true: a build that fell over
+  because GitHub was unreachable would be a missing answer, which is worse.
+- **`details_url` points at the Solution** (`/solutions/{id}`), not at a per-build
+  page - there is no route for one, and a pull-request build has no pipeline whose
+  page it could use. It is omitted entirely when `PUBLIC_BASE_URL` is unset, since a
+  link to `localhost` is worse than none.
 
 ## #631 Translation memory from every .xlf in the organisation's repositories
 

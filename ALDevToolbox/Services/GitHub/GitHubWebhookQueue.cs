@@ -1,0 +1,117 @@
+using System.Collections.Concurrent;
+using ALDevToolbox.Services.Workers;
+
+namespace ALDevToolbox.Services.GitHub;
+
+/// <summary>
+/// One pull-request head the toolbox has been asked to compile, as
+/// <c>POST /github/webhook</c> read it off GitHub's <c>pull_request</c> delivery.
+///
+/// <para>Everything here is what GitHub said, not what the toolbox believes: the
+/// endpoint never touches the database, so a delivery whose signature checked out
+/// costs one channel write and nothing else. The worker is where the installation
+/// is resolved back to an organisation and where anything is trusted.</para>
+/// </summary>
+public sealed record GitHubPullRequestJob(
+    long InstallationId,
+    string RepositoryFullName,
+    string CloneUrl,
+    int PullRequestNumber,
+    string HeadSha,
+    string HeadRef,
+    string BaseRef,
+    string DeliveryId)
+{
+    /// <summary>
+    /// The pull request this job is about, as a key: one build at a time per
+    /// <c>(installation, repository, pull request)</c>. Lower-cased because GitHub
+    /// repository names are case-insensitive and two deliveries for the same pull
+    /// request must not look like two subjects.
+    /// </summary>
+    public string Key => $"{InstallationId}:{RepositoryFullName}:{PullRequestNumber}".ToLowerInvariant();
+}
+
+/// <summary>
+/// The hand-off from the webhook endpoint to
+/// <see cref="GitHubPullRequestBuildWorker"/>, plus the supersession bookkeeping
+/// that keeps a pull request to one build at a time.
+///
+/// <para>A push to an open pull request produces a <c>synchronize</c> delivery per
+/// push, and a person who pushes three fixes in a minute would otherwise get three
+/// builds of which only the last is about code that still exists. So each key
+/// records the newest head SHA it has been told about: a job dequeued for an older
+/// SHA is skipped, and a build already running for that key is cancelled through
+/// the token this queue hands out. The dedupe gate the base class offers is the
+/// wrong shape for that - it would coalesce the <em>new</em> head into the
+/// <em>old</em> build, which is the opposite of what the reviewer wants to
+/// see.</para>
+///
+/// <para>All of it is in memory. A restart drops queued deliveries; GitHub's own
+/// redelivery, or the next push, is the recovery, and a check run left
+/// <c>in_progress</c> is visible as such. See
+/// <c>.design/github-integration-phase2.md</c> (#627).</para>
+/// </summary>
+public sealed class GitHubWebhookQueue : JobQueue<GitHubPullRequestJob>
+{
+    private readonly ConcurrentDictionary<string, string> _latestSha = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
+
+    // Deliveries are tiny (one record of strings) and the worker is single-reader,
+    // so the bound is about how deep a backlog is worth holding rather than memory.
+    // A busy organisation pushing to a hundred pull requests at once still queues;
+    // beyond that GitHub retries.
+    public GitHubWebhookQueue() : base(capacity: 128) { }
+
+    /// <summary>
+    /// Records <paramref name="headSha"/> as the newest head for
+    /// <paramref name="key"/> and cancels any build still running for an older
+    /// one. Called at enqueue time, before the job reaches the worker, so the
+    /// in-flight build learns it has been superseded as early as GitHub told us.
+    /// </summary>
+    public void Announce(string key, string headSha)
+    {
+        // AddOrUpdate answers the value it left behind, not the one it replaced,
+        // so read the previous head first - "did this change?" is the whole
+        // question here.
+        _latestSha.TryGetValue(key, out var previous);
+        _latestSha[key] = headSha;
+        if (previous is not null && string.Equals(previous, headSha, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (_running.TryGetValue(key, out var cts))
+        {
+            // Cancel, don't remove: the worker owns the registration and clears it
+            // in its own finally, so removing here would strand a live token.
+            try { cts.Cancel(); }
+            catch (ObjectDisposedException) { /* the build finished as we asked. */ }
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="headSha"/> is still the newest head this queue
+    /// was told about for <paramref name="key"/>. A key it has never heard of is
+    /// current by definition - that is a job whose bookkeeping a restart dropped,
+    /// and refusing to build it would be worse than building it.
+    /// </summary>
+    public bool IsLatest(string key, string headSha) =>
+        !_latestSha.TryGetValue(key, out var latest)
+        || string.Equals(latest, headSha, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Registers <paramref name="cts"/> as the build in flight for
+    /// <paramref name="key"/>, so a newer head can cancel it. The caller disposes
+    /// the source and calls <see cref="EndBuild"/> when the build ends.
+    /// </summary>
+    public void BeginBuild(string key, CancellationTokenSource cts) => _running[key] = cts;
+
+    /// <summary>Clears the in-flight registration for <paramref name="key"/> if <paramref name="cts"/> is still the one held.</summary>
+    public void EndBuild(string key, CancellationTokenSource cts) =>
+        ((ICollection<KeyValuePair<string, CancellationTokenSource>>)_running)
+            .Remove(new KeyValuePair<string, CancellationTokenSource>(key, cts));
+
+    /// <summary>Forgets the newest-head record for <paramref name="key"/>. Test seam.</summary>
+    internal void Forget(string key)
+    {
+        _latestSha.TryRemove(key, out _);
+        _running.TryRemove(key, out _);
+    }
+}

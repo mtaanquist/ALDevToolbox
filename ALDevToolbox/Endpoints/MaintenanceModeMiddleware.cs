@@ -26,7 +26,13 @@ internal static class MaintenanceModeMiddleware
             var path = ctx.Request.Path;
             if (path.StartsWithSegments("/healthz")
                 || path.StartsWithSegments("/readyz")
-                || path.StartsWithSegments("/site-admin"))
+                || path.StartsWithSegments("/site-admin")
+                // Accepting a delivery is enqueueing, not work: it costs one HMAC
+                // and one channel write, and the worker that does the building is
+                // already stopped while a restore is in flight. GitHub disables a
+                // webhook whose deliveries keep failing, so a 503 here would cost
+                // the organisation its compile gate for reasons it cannot see.
+                || path.StartsWithSegments(GitHubWebhookEndpoints.WebhookPath))
             {
                 await next();
                 return;

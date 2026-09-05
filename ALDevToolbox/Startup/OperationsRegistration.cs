@@ -79,6 +79,25 @@ public static class OperationsRegistration
                         AutoReplenishment = true,
                         QueueLimit = 0,
                     }));
+
+            // POST /github/webhook is the toolbox's one inbound route (#627). It is
+            // anonymous by necessity - GitHub carries no cookie - so the limiter is
+            // the backstop against somebody pointing a load generator at it. The
+            // window is generous on purpose: a busy organisation legitimately
+            // produces a burst of pull_request deliveries when a branch with many
+            // open pull requests is rebased, and a delivery we reject is one GitHub
+            // shows the operator as a failure. Verification is a single HMAC over at
+            // most a megabyte, so the real cost per request is small; the limit is
+            // there to bound it, not to shape traffic.
+            options.AddPolicy(GitHubWebhookEndpoints.WebhookRateLimitPolicy, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 300,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    }));
         });
         return services;
     }

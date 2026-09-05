@@ -84,6 +84,126 @@ public sealed class ProjectBuildImporterTests : IDisposable
         await act.Should().ThrowAsync<PlanValidationException>();
     }
 
+    // --- Pull-request builds (#627) ----------------------------------------
+
+    [Fact]
+    public async Task StartPullRequestBuildAsync_records_the_pull_request_on_the_build()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectWithRepoAsync(ctx);
+        var repositoryId = await ctx.OeProjectRepositories.Where(r => r.ProjectId == projectId)
+            .Select(r => r.Id).SingleAsync();
+        var queue = new ReleaseImportQueue();
+
+        var (releaseId, buildId) = await NewImporter(ctx, queue).StartPullRequestBuildAsync(
+            projectId: projectId,
+            repositoryId: repositoryId,
+            repositoryFullName: "cronus-dk/customer-app",
+            installationId: 42,
+            headSha: "abc123",
+            headRef: "feature/vat",
+            pullRequestNumber: 7,
+            checkRunId: 555);
+
+        await using var read = _db.NewContext();
+        var build = await read.OeProjectBuilds.SingleAsync(b => b.Id == buildId);
+        build.ReleaseId.Should().Be(releaseId);
+        build.Trigger.Should().Be(ProjectBuildTrigger.PullRequest);
+        build.PullRequestNumber.Should().Be(7);
+        build.HeadSha.Should().Be("abc123");
+        build.Branch.Should().Be("feature/vat");
+        build.CheckRunId.Should().Be(555);
+        build.PipelineId.Should().BeNull("a pull-request build is not a run of a pipeline");
+        build.StartedByUserId.Should().BeNull("nobody pressed a button - GitHub asked");
+        build.RequestedAppIdsJson.Should().BeNull("with no selection to honour, every extension is compiled");
+        build.Status.Should().Be(ProjectBuildStatus.Queued);
+    }
+
+    [Fact]
+    public async Task StartPullRequestBuildAsync_queues_a_job_carrying_the_head_and_the_installation()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectWithRepoAsync(ctx);
+        var repositoryId = await ctx.OeProjectRepositories.Where(r => r.ProjectId == projectId)
+            .Select(r => r.Id).SingleAsync();
+        var queue = new ReleaseImportQueue();
+
+        var (releaseId, _) = await NewImporter(ctx, queue).StartPullRequestBuildAsync(
+            projectId, repositoryId, "cronus-dk/customer-app", 42, "abc123", "feature/vat", 7, 555);
+
+        queue.Reader.TryRead(out var job).Should().BeTrue();
+        job!.ReleaseId.Should().Be(releaseId);
+        var source = job.Source.Should().BeOfType<ReleaseImportSource.PullRequestBuild>().Subject;
+        source.ProjectId.Should().Be(projectId);
+        source.RepositoryId.Should().Be(repositoryId);
+        source.HeadSha.Should().Be("abc123");
+        source.InstallationId.Should().Be(42);
+        source.RepositoryFullName.Should().Be("cronus-dk/customer-app");
+        source.PullRequestNumber.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task StartPullRequestBuildAsync_writes_no_durable_job_row()
+    {
+        // A pull-request build is deliberately not resumed across a restart: by
+        // then the head may have moved, and re-running would complete a check run
+        // about a commit nobody is looking at any more.
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectWithRepoAsync(ctx);
+        var repositoryId = await ctx.OeProjectRepositories.Where(r => r.ProjectId == projectId)
+            .Select(r => r.Id).SingleAsync();
+
+        var (releaseId, _) = await NewImporter(ctx, new ReleaseImportQueue()).StartPullRequestBuildAsync(
+            projectId, repositoryId, "cronus-dk/customer-app", 42, "abc123", "feature/vat", 7, null);
+
+        await using var read = _db.NewContext();
+        (await read.OeImportJobs.AnyAsync(j => j.ReleaseId == releaseId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StartPullRequestBuildAsync_accepts_a_build_with_no_check_run()
+    {
+        // GitHub can refuse the check run (a missing grant, most often). The build
+        // still runs and is still visible in the toolbox; it simply reports nowhere.
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectWithRepoAsync(ctx);
+        var repositoryId = await ctx.OeProjectRepositories.Where(r => r.ProjectId == projectId)
+            .Select(r => r.Id).SingleAsync();
+
+        var (_, buildId) = await NewImporter(ctx, new ReleaseImportQueue()).StartPullRequestBuildAsync(
+            projectId, repositoryId, "cronus-dk/customer-app", 42, "abc123", "feature/vat", 7, checkRunId: null);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectBuilds.SingleAsync(b => b.Id == buildId)).CheckRunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StartPullRequestBuildAsync_refuses_a_solution_that_is_gone()
+    {
+        await using var ctx = _db.NewContext();
+
+        var act = () => NewImporter(ctx, new ReleaseImportQueue()).StartPullRequestBuildAsync(
+            424242, 1, "cronus-dk/customer-app", 42, "abc123", "feature/vat", 7, null);
+
+        await act.Should().ThrowAsync<PlanValidationException>();
+    }
+
+    [Fact]
+    public async Task A_manual_build_is_still_stamped_manual()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectWithRepoAsync(ctx);
+        var pipelineId = await SeedPipelineAsync(ctx, projectId, "Production", requestedAppIdsJson: null);
+
+        var releaseId = await NewImporter(ctx, new ReleaseImportQueue()).StartBuildAsync(pipelineId);
+
+        await using var read = _db.NewContext();
+        var build = await read.OeProjectBuilds.SingleAsync(b => b.ReleaseId == releaseId);
+        build.Trigger.Should().Be(ProjectBuildTrigger.Manual);
+        build.PullRequestNumber.Should().BeNull();
+        build.CheckRunId.Should().BeNull();
+    }
+
     private ProjectBuildImporter NewImporter(Data.AppDbContext ctx, ReleaseImportQueue queue)
     {
         var translations = new TranslationImportService(
