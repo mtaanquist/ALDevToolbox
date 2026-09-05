@@ -1259,9 +1259,16 @@ else
         _repoOk = _repoErr = _githubNote = null;
         try
         {
-            var member = await GitHubAccess.IsOrgMemberAsync(_user.Id);
+            var member = await GitHubAccess.TryGetOrgMembershipAsync(_user.Id);
             await ReloadGitHubAsync();
-            if (member)
+            if (member is null)
+            {
+                // GitHub did not answer, so neither of the sentences below is
+                // true. Saying "an owner has to add you" here would be advice
+                // she cannot act on, about a problem she does not have.
+                _repoErr = "We could not reach GitHub just now. Try again in a minute.";
+            }
+            else if (member.Value)
             {
                 _repoOk = $"You are in the {_githubOrgLogin} organisation on GitHub. Its repositories will show up in the toolbox now.";
             }

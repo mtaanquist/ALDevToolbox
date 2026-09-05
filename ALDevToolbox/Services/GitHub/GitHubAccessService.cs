@@ -353,14 +353,34 @@ public sealed class GitHubAccessService
     /// <summary>
     /// Whether <paramref name="userId"/> is a member of the organisation's
     /// connected GitHub organisation. <see langword="false"/> when the
-    /// organisation has not connected one, when the user has no usable link, or
-    /// when GitHub says no. Refreshes the stored answer on the link row so the
-    /// Account page stays honest without a call of its own.
+    /// organisation has not connected one, when the user has no usable link,
+    /// when GitHub says no, and when GitHub could not be asked - "we could not
+    /// confirm" is never promoted to "yes". A caller that has something better
+    /// to say about the last of those asks
+    /// <see cref="TryGetOrgMembershipAsync"/> instead.
     /// </summary>
-    public async Task<bool> IsOrgMemberAsync(int userId, CancellationToken ct = default)
+    public async Task<bool> IsOrgMemberAsync(int userId, CancellationToken ct = default) =>
+        await TryGetOrgMembershipAsync(userId, ct) ?? false;
+
+    /// <summary>
+    /// The same question as <see cref="IsOrgMemberAsync"/>, with the third
+    /// answer kept: <see langword="null"/> means GitHub could not be asked -
+    /// no organisation is connected, the link is unusable, or the call did not
+    /// come back - which is deliberately not the same as a definite no. The
+    /// Account page words those two differently, and telling somebody an owner
+    /// has to add them when GitHub simply timed out is advice they cannot act
+    /// on.
+    ///
+    /// <para>Refreshes the stored answer on the link row so the Account page
+    /// stays honest without a call of its own, and remembers only the answers
+    /// GitHub actually gave: caching "could not ask" as a no would keep a
+    /// single timeout in front of the user for the rest of the circuit, which
+    /// is exactly what <see cref="CanAccessRepoAsync"/> avoids.</para>
+    /// </summary>
+    public async Task<bool?> TryGetOrgMembershipAsync(int userId, CancellationToken ct = default)
     {
         var orgLogin = (await _orgConfig.GetCurrentAsync(ct)).Settings.GitHubOrgLogin;
-        if (string.IsNullOrWhiteSpace(orgLogin)) return false;
+        if (string.IsNullOrWhiteSpace(orgLogin)) return null;
 
         var key = $"member:{userId}:{orgLogin}";
         if (TryRecall(key, out var remembered)) return remembered;
@@ -369,16 +389,21 @@ public sealed class GitHubAccessService
             .FirstOrDefaultAsync(l => l.UserId == userId && l.Provider == ProviderName, ct);
         if (row is null) return Remember(key, false);
 
+        // A link we cannot use is a settled no rather than an open question: the
+        // Account row already tells that person to connect again, and nothing
+        // about this organisation can be asked on their behalf until they do.
         var token = await ResolveTokenForAsync(row, ct);
         if (token is null) return Remember(key, false);
 
         var member = await AskOrgMembershipAsync(token, row.DisplayIdentity, ct);
-        if (member is not null && row.IsOrgMember != member)
+        if (member is null) return null;
+
+        if (row.IsOrgMember != member)
         {
             row.IsOrgMember = member;
             await _db.SaveChangesAsync(ct);
         }
-        return Remember(key, member ?? false);
+        return Remember(key, member.Value);
     }
 
     /// <summary>

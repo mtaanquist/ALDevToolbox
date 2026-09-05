@@ -633,6 +633,82 @@ public sealed class GitHubAccessServiceTests : IDisposable
             .Should().BeTrue("the Account row must not keep saying 'not a member' after they join");
     }
 
+    [Fact]
+    public async Task A_membership_github_would_not_answer_is_not_remembered_as_a_no()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectOrganisationAsync();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-04T09:00:00Z"));
+        var api = LinkableApi()
+            .OnSequence(HttpMethod.Get, "orgs/cronus-dk/members/",
+                // One at link time, one for each question below.
+                (FakeGitHubApi.Unreachable, null),
+                (FakeGitHubApi.Unreachable, null),
+                (HttpStatusCode.NoContent, null));
+        var (service, ctx) = NewService(api, clock);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.IsOrgMemberAsync(UserId))
+            .Should().BeFalse("an answer we could not get is never promoted to permission");
+
+        // No clock advance: a scope here is a whole Blazor circuit, so a single
+        // timeout remembered as a definite "not a member" would keep telling
+        // this person to ask a GitHub owner to add them for the rest of the day.
+        (await service.IsOrgMemberAsync(UserId)).Should().BeTrue();
+        api.Calls.Count(c => c.Contains("orgs/cronus-dk/members/")).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task A_membership_github_would_not_answer_is_unknown_rather_than_no()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectOrganisationAsync();
+        var api = LinkableApi()
+            .On(HttpMethod.Get, "orgs/cronus-dk/members/", FakeGitHubApi.Unreachable);
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        // What the Account page needs to say "we could not reach GitHub just
+        // now" instead of "GitHub still does not list you".
+        (await service.TryGetOrgMembershipAsync(UserId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_definite_membership_answer_is_reused_within_the_window()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectOrganisationAsync();
+        var api = LinkableApi().On(HttpMethod.Get, "orgs/cronus-dk/members/", HttpStatusCode.NoContent);
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.IsOrgMemberAsync(UserId)).Should().BeTrue();
+        (await service.IsOrgMemberAsync(UserId)).Should().BeTrue();
+
+        // One at link time and one for the first question: the second question
+        // is what the window is for.
+        api.Calls.Count(c => c.Contains("orgs/cronus-dk/members/")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_repository_check_github_would_not_answer_is_not_remembered_as_a_no()
+    {
+        await ConfigureDeploymentAsync();
+        var api = LinkableApi()
+            .OnSequence(HttpMethod.Get, "repos/cronus-dk/app",
+                (FakeGitHubApi.Unreachable, null),
+                (HttpStatusCode.OK, "{}"));
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.CanAccessRepoAsync(UserId, "cronus-dk/app")).Should().BeFalse();
+        (await service.CanAccessRepoAsync(UserId, "cronus-dk/app")).Should().BeTrue();
+    }
+
     // --- The installation-claim gate ---------------------------------------
 
     [Fact]
