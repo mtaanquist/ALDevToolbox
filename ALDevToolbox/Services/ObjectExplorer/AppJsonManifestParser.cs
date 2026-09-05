@@ -13,8 +13,17 @@ public sealed record AppJsonManifest(
     string? Runtime,
     IReadOnlyList<AppJsonDependency> Dependencies);
 
-/// <summary>One inter-app dependency declared in <c>app.json</c> (id + name).</summary>
-public sealed record AppJsonDependency(string Id, string Name);
+/// <summary>
+/// One inter-app dependency declared in <c>app.json</c>.
+///
+/// <para><c>Version</c> is the minimum version the manifest asks
+/// for. The build ignores it - it compiles against whatever symbols it was
+/// given - but dependency drift (issue #630) compares it with the catalogue's
+/// default to decide whether a repository is a version behind, so the parser
+/// keeps it. Null when the entry does not state one, which is a manifest the
+/// drift scan leaves alone rather than guesses at.</para>
+/// </summary>
+public sealed record AppJsonDependency(string Id, string Name, string? Version = null);
 
 /// <summary>
 /// Reading an <c>app.json</c>, and deciding which folders holding one are a test
@@ -91,7 +100,8 @@ public static class AppJsonManifestParser
                     var depId = (d.TryGetProperty("id", out var idv) && idv.ValueKind == JsonValueKind.String ? idv.GetString()
                               : d.TryGetProperty("appId", out var aidv) && aidv.ValueKind == JsonValueKind.String ? aidv.GetString() : null) ?? string.Empty;
                     var depName = d.TryGetProperty("name", out var nv) && nv.ValueKind == JsonValueKind.String ? nv.GetString()! : string.Empty;
-                    if (depId.Length > 0) deps.Add(new AppJsonDependency(depId, depName));
+                    var depVersion = d.TryGetProperty("version", out var vv) && vv.ValueKind == JsonValueKind.String ? vv.GetString() : null;
+                    if (depId.Length > 0) deps.Add(new AppJsonDependency(depId, depName, depVersion));
                 }
             }
 

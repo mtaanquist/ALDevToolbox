@@ -36,6 +36,11 @@ public static class GitHubRegistration
         // (#629). Scoped like the rest: the nightly scheduler opens its own scope
         // per organisation, and the Solutions panel opens one per read.
         services.AddScoped<RepositoryDiscoveryService>();
+        // Which tracked repositories still target an older Business Central than
+        // the newest imported release, and the pull requests that move them on
+        // (#630). Scoped: the release import enters an organisation scope and
+        // calls the scan; the Solutions panel opens one per read.
+        services.AddScoped<DependencyDriftService>();
         // The pull-request compile gate (#627): the check-run half is scoped
         // because it reads the build rows, the queue is a singleton because the
         // anonymous webhook endpoint and the worker both hold it, and the worker

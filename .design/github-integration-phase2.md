@@ -702,7 +702,78 @@ year's Business Central after a new release lands in the Object Explorer.
 
 **As built**
 
-_(appended by the implementer)_
+- **The table is `github_repository_drift`, and a scan replaces the whole
+  organisation's rows.** Not only the rows for the release being scanned: a
+  finding against a release that has since been superseded is not something
+  anybody should be offered a pull request for, and "replace everything" is also
+  what makes drift somebody has fixed by hand disappear on its own. The unique
+  index is `(organization_id, repository, path, field)`; `field` is
+  `application`, `platform` or `dependency:<app id>`, the id normalised the way
+  AL means it (braces and case are decoration). The row hangs off `oe_releases`
+  with a cascade, which is why the table is in `TenantTableCatalog.ContentTables`
+  rather than excluded as a cache - a per-tenant restore that deleted the
+  releases would otherwise take the findings with it and put nothing back.
+- **What counts as behind.** `application` and `platform` are compared at
+  `major.minor` (`BcArtifactIndex.ToMajorMinor` through `BcVersionComparer`) -
+  the wave a repository is on, not a build number nobody typed - and the
+  proposal is written in the shape the manifest already used, so `27.0.0.0`
+  becomes `28.2.0.0` rather than the release's four-part build. `platform` comes
+  from the release's `System` module (publisher Microsoft), `application` from
+  its `BcVersion`. Dependencies are compared full-version against the
+  well-known-dependency catalogue's default. A manifest with no `application` is
+  skipped whole: it states no Business Central to be behind of. So is a
+  dependency entry that states no version - there would be nothing to edit.
+- **The scan reads the same manifests repository discovery does**, through
+  `RepositoryDiscoveryService.ManifestPaths` on one recursive tree read per
+  repository, so the two features cannot come to disagree about what a
+  repository ships. Which repositories are read is "every GitHub repository a
+  live solution tracks, in the connected organisation" - matched to the
+  installation's own repository list, so one that is tracked but not shared with
+  the App is logged and skipped rather than failing the scan.
+- **`ReleaseImportService` takes the drift service as an optional constructor
+  parameter** (`DependencyDriftService? drift = null`). DI always supplies it;
+  the default exists so a test - or any caller that builds the importer by hand,
+  of which there were already four - can ingest a release without standing up
+  the whole GitHub stack. The hook runs at both completion points (import and
+  amend), only for `Kind == "first_party"`, and swallows everything: the modules
+  are in by the time it runs, so an unreachable GitHub is a warning, never a
+  failed release.
+- **The edit is a byte-level splice, not a re-serialise.** `AppJsonValueEditor`
+  walks the manifest with `Utf8JsonReader` and uses `TokenStartIndex` to find
+  exactly where a value sits, then replaces those bytes - so key order,
+  indentation, comments and a trailing byte-order mark all survive, and the
+  reviewer sees a two-line diff. A whole-document `JsonNode` rewrite is kept as
+  a fallback for a manifest the walk cannot place a value in; it logs when it
+  comes to that, because the formatting is then lost. Before each value is
+  written the manifest as it stands on the branch is re-checked, so a repository
+  that has moved on since the scan is not pushed back - and a run where
+  everything is already current commits nothing and says so.
+- **Branches follow the recipe service's rule**: `aldt/bump-bc-<major.minor>`,
+  joined while its pull request is open, stepped to `-2`, `-3` past a branch
+  whose pull request was merged or closed, and refused after ten. One pull
+  request per repository, one refusal never stopping the rest - every repository
+  asked for comes back with either a pull request or a reason a person can act
+  on.
+- **The panel narrows by solution, not by GitHub.** `GetSummaryAsync` drops the
+  repositories of solutions the viewer cannot see
+  (`ProjectAccess.VisibleProjectPredicate`), which keeps a Private solution's
+  repository from being named to somebody not on it - the same rule #629
+  follows, decided one step earlier because the answer is already in the
+  database and the Solutions page should not cost a call to GitHub per
+  repository to render. `OpenUpdatePullRequestsAsync` applies it again before
+  writing, and `GitHubRepositoryService.ResolveAsync` is still the gate on the
+  repository itself.
+- **`AppJsonDependency` gained `Version` as an optional positional parameter**,
+  so every existing caller compiles unchanged.
+- **No MCP tool.** `list_dependency_drift` was optional in the brief and is not
+  here: the GitHub MCP surface is #633's, and adding a tool to it from this
+  issue would have meant editing the same files that issue is rewriting. The
+  service method it would wrap (`GetSummaryAsync`) is ready for it.
+- **Left out.** No scheduler: the scan runs when a release lands and when
+  somebody presses Check again, which is when the answer can have changed. No
+  per-repository dismissal - drift is a fact, not a proposal, and it disappears
+  when it is fixed. No auto-merge, no compile before opening, no bump of
+  anything the catalogue has no default for.
 
 ## #633 MCP parity for the GitHub workflows
 

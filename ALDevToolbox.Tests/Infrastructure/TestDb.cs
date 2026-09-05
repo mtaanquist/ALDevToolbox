@@ -397,6 +397,29 @@ public sealed class TestDb : IDisposable
             NullLogger<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>.Instance);
     }
 
+    /// <summary>
+    /// Dependency drift (#630): the scan a first-party release triggers, what the
+    /// Solutions panel reads, and the pull requests that bump the manifests.
+    /// <paramref name="publicOrigin"/> is what the pull-request body links the
+    /// release comparison with; the default leaves it unset, which is the
+    /// deployment that has not configured one.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.DependencyDriftService NewDependencyDriftService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        string? publicOrigin = null,
+        TimeProvider? clock = null) =>
+        new(ctx, client, access, NewGitHubConnectionService(ctx, access),
+            NewGitHubRepositoryService(ctx, client, access),
+            new CatalogService(ctx, NullLogger<CatalogService>.Instance, OrgContext),
+            new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext),
+            new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks(),
+            new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
+            OrgContext,
+            clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.DependencyDriftService>.Instance);
+
 
     /// <summary>
     /// The per-organisation repository standards (#628): the files every
@@ -463,6 +486,8 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
         services.TryAddSingleton(new ALDevToolbox.Endpoints.PublicOrigin(null));
         services.AddScoped<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.DependencyDriftService>();
     }
 
     /// <summary>

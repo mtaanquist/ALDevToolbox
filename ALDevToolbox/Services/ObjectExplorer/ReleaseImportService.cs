@@ -37,6 +37,14 @@ public class ReleaseImportService
     private readonly CallSiteReferenceEmitter _callSites;
     private readonly ILogger<ReleaseImportService> _logger;
 
+    /// <summary>
+    /// The dependency drift scan (issue #630), run once a first-party Release
+    /// reaches <c>ready</c>. Optional so a test - or any caller that builds this
+    /// service by hand - can ingest a Release without standing up the whole
+    /// GitHub stack; in the app it is always injected.
+    /// </summary>
+    private readonly ALDevToolbox.Services.GitHub.DependencyDriftService? _drift;
+
     private static readonly HashSet<string> AllowedKinds = new(StringComparer.Ordinal)
     {
         "first_party",
@@ -55,7 +63,8 @@ public class ReleaseImportService
         StorageQuotaGuard quotaGuard,
         TranslationImportService translations,
         CallSiteReferenceEmitter callSites,
-        ILogger<ReleaseImportService> logger)
+        ILogger<ReleaseImportService> logger,
+        ALDevToolbox.Services.GitHub.DependencyDriftService? drift = null)
     {
         _db = db;
         _orgContext = orgContext;
@@ -63,6 +72,7 @@ public class ReleaseImportService
         _translations = translations;
         _callSites = callSites;
         _logger = logger;
+        _drift = drift;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -221,6 +231,14 @@ public class ReleaseImportService
             ready.SourceContentLength = totalsRow?.Length ?? 0;
 
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+
+            // A new Business Central release is exactly when the customer
+            // repositories that target the old one become worth knowing about,
+            // so the drift scan runs here (issue #630). Best-effort: a GitHub
+            // that will not answer must not fail an import that has already
+            // landed every module it was given.
+            await ScanForDependencyDriftAsync(ready, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Completed Release ingest: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported} TranslationsImported={TranslationsImported}",
@@ -386,6 +404,14 @@ public class ReleaseImportService
             ready.SourceContentLength = totalsRow?.Length ?? 0;
 
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+
+            // A new Business Central release is exactly when the customer
+            // repositories that target the old one become worth knowing about,
+            // so the drift scan runs here (issue #630). Best-effort: a GitHub
+            // that will not answer must not fail an import that has already
+            // landed every module it was given.
+            await ScanForDependencyDriftAsync(ready, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Completed Release amend: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported} TranslationsImported={TranslationsImported}",
@@ -1557,6 +1583,36 @@ public class ReleaseImportService
     /// hand on retry. Reads from the DB rather than tracker state because
     /// per-module SaveChanges has cleared the tracker by now.
     /// </summary>
+    /// <summary>
+    /// Asks the drift scan which tracked GitHub repositories are now behind, for
+    /// a first-party Release that has just gone <c>ready</c>. Anything else - a
+    /// pipeline build, a partner upload, a C/AL export - is not a Business
+    /// Central version anybody's <c>app.json</c> targets, so nothing is scanned.
+    ///
+    /// <para>Every failure is swallowed on purpose. The import is finished by the
+    /// time this runs; a scan that could not reach GitHub is a warning in the log
+    /// and a panel that is a day out of date, not a Release marked failed. See
+    /// <c>.design/github-integration-phase2.md</c>, issue #630.</para>
+    /// </summary>
+    private async Task ScanForDependencyDriftAsync(OeRelease release, CancellationToken ct)
+    {
+        if (_drift is null || release.Kind != "first_party") return;
+
+        try
+        {
+            var found = await _drift.ScanForReleaseAsync(release.Id, ct).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Dependency drift scan after Release {ReleaseId} recorded {FindingCount} findings.",
+                release.Id, found);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Could not check the tracked repositories for dependency drift after Release {ReleaseId}; the import itself is unaffected.",
+                release.Id);
+        }
+    }
+
     private async Task<string?> InferBcVersionAsync(int releaseId, CancellationToken ct)
     {
         var baseApp = await _db.OeModules.AsNoTracking()
