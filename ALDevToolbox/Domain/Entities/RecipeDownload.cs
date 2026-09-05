@@ -20,6 +20,15 @@ public enum RecipeUseSource
     /// once per visit however many files the user copies.
     /// </summary>
     Copy,
+
+    /// <summary>
+    /// The recipe was committed to a GitHub repository as a pull request. The
+    /// only source that names a place rather than only a person: the repository
+    /// is what "open a fix pull request everywhere this landed" iterates over.
+    /// Carries a customer name when one was given, exactly as a download does.
+    /// See issue #626.
+    /// </summary>
+    Repository,
 }
 
 /// <summary>
@@ -54,6 +63,15 @@ public class RecipeDownload
 
     /// <summary>How the recipe left the app.</summary>
     public RecipeUseSource Source { get; set; } = RecipeUseSource.Download;
+
+    /// <summary>
+    /// The GitHub repository this recipe was applied to, as <c>owner/name</c>,
+    /// for <see cref="RecipeUseSource.Repository"/> uses. Null for every other
+    /// source. It is the attribution that can be acted on later: when a bug
+    /// turns up in the recipe, the distinct repositories recorded here are the
+    /// ones a fix pull request is opened against. See issue #626.
+    /// </summary>
+    public string? Repository { get; set; }
 
     /// <summary>
     /// The project this use was attributed to, when there is one. Exists so the

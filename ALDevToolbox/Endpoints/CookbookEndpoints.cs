@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Cookbook;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
@@ -90,23 +91,14 @@ internal static class CookbookEndpoints
     /// The <c>/</c> separators between real segments survive so <c>ZipArchive</c>
     /// still materialises the recipe's folder structure. See #481.
     /// </summary>
-    internal static string BuildSafeEntryPath(string? relativePath, string fileName)
-    {
-        var combined = string.IsNullOrEmpty(relativePath)
-            ? fileName
-            : relativePath + "/" + fileName;
-        // Drop "." and ".." on the *raw* segment before sanitising — SanitiseFileName
-        // keeps dots, so ".." would otherwise survive as a traversal token.
-        var segments = combined
-            .Replace('\\', '/')
-            .Split('/', StringSplitOptions.RemoveEmptyEntries)
-            .Where(s => s != "." && s != "..")
-            .Select(SanitiseFileName)
-            .ToList();
-        // Everything collapsed away (e.g. a path made only of separators and
-        // ".." segments) — emit a neutral name rather than a bare dot-segment.
-        return segments.Count > 0 ? string.Join('/', segments) : "file";
-    }
+    /// <remarks>
+    /// The rule itself moved to <see cref="RecipePaths.SafeEntryPath"/> when a
+    /// recipe gained a second way out of the app — a commit into a GitHub
+    /// repository (issue #626) — because a download and a pull request of the
+    /// same recipe have to produce the same paths.
+    /// </remarks>
+    internal static string BuildSafeEntryPath(string? relativePath, string fileName) =>
+        RecipePaths.SafeEntryPath(relativePath, fileName);
 
     /// <summary>
     /// Lower-cases and slugifies the recipe title for the ZIP filename.
@@ -115,33 +107,11 @@ internal static class CookbookEndpoints
     /// </summary>
     internal static string BuildArchiveFileName(string title, int id)
     {
-        var slug = Slugify(title);
+        var slug = RecipePaths.Slugify(title);
         if (string.IsNullOrEmpty(slug))
         {
             slug = $"recipe-{id}";
         }
         return slug + ".zip";
-    }
-
-    private static string Slugify(string input)
-    {
-        var sb = new StringBuilder(input.Length);
-        var lastWasDash = true; // suppress leading dash
-        foreach (var raw in input)
-        {
-            var c = char.ToLowerInvariant(raw);
-            if (c is >= 'a' and <= 'z' or >= '0' and <= '9')
-            {
-                sb.Append(c);
-                lastWasDash = false;
-            }
-            else if (!lastWasDash)
-            {
-                sb.Append('-');
-                lastWasDash = true;
-            }
-        }
-        var result = sb.ToString();
-        return result.TrimEnd('-');
     }
 }

@@ -37,6 +37,8 @@ public sealed class RecipeService
     public const decimal MaxEstimatedValueHours = 100_000m;
     /// <summary>Cap on a recorded download's customer name.</summary>
     public const int MaxCustomerNameLength = 200;
+    /// <summary>Cap on a recorded repository's <c>owner/name</c>, matching the column.</summary>
+    public const int MaxRepositoryLength = 300;
 
     // One segment in a recipe file's RelativePath. Letters/digits/`._-`,
     // plus space anywhere but the first character. Matches the same shape
@@ -314,12 +316,14 @@ public sealed class RecipeService
 
         if (string.IsNullOrEmpty(name))
         {
-            await RecordUseAsync(recipeId, null, RecipeUseSource.Download, projectId: null, userId, ct);
+            await RecordUseAsync(
+                recipeId, null, RecipeUseSource.Download, projectId: null, userId, repository: null, ct);
             return;
         }
 
         await RecordUseAsync(
-            recipeId, name, RecipeUseSource.Download, await ResolveProjectIdAsync(name, ct), userId, ct);
+            recipeId, name, RecipeUseSource.Download, await ResolveProjectIdAsync(name, ct), userId,
+            repository: null, ct);
     }
 
     /// <summary>
@@ -360,10 +364,82 @@ public sealed class RecipeService
     /// Callers record this once per visit, not once per file.
     /// </summary>
     public Task RecordCopyAsync(int recipeId, int? userId, CancellationToken ct = default) =>
-        RecordUseAsync(recipeId, customerName: null, RecipeUseSource.Copy, projectId: null, userId, ct);
+        RecordUseAsync(recipeId, customerName: null, RecipeUseSource.Copy, projectId: null, userId,
+            repository: null, ct);
+
+    /// <summary>
+    /// Records that a recipe was applied to a GitHub repository as a pull
+    /// request (issue #626). The same shape as a download - the customer name
+    /// is optional and resolves to a solution when it names one - with the
+    /// repository stored beside it, because that is the attribution a later fix
+    /// can act on: the distinct repositories are what
+    /// <see cref="GetAppliedRepositoriesAsync"/> hands the admin page so a bug
+    /// found in the recipe can be pull-requested everywhere it landed.
+    ///
+    /// <para>The repository has already been through
+    /// <c>GitHubRepositoryService.ResolveAsync</c> by the time this is called,
+    /// so it names a place the acting user may write to rather than a string
+    /// they typed.</para>
+    /// </summary>
+    /// <exception cref="PlanValidationException">The recipe is missing in this org, or a value is oversized.</exception>
+    public async Task RecordRepositoryApplyAsync(
+        int recipeId, string repository, string? customerName, int? userId, CancellationToken ct = default)
+    {
+        var repo = (repository ?? string.Empty).Trim();
+        if (repo.Length is 0 or > MaxRepositoryLength)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["GitHubRepository"] = $"Repository must be given, and be {MaxRepositoryLength} characters or fewer.",
+            });
+        }
+
+        var name = customerName?.Trim();
+        if (name is { Length: > MaxCustomerNameLength })
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["CustomerName"] = $"Customer name must be {MaxCustomerNameLength} characters or fewer.",
+            });
+        }
+
+        var projectId = string.IsNullOrEmpty(name) ? null : await ResolveProjectIdAsync(name, ct);
+        await RecordUseAsync(
+            recipeId,
+            string.IsNullOrEmpty(name) ? null : name,
+            RecipeUseSource.Repository,
+            projectId,
+            userId,
+            repo,
+            ct);
+    }
+
+    /// <summary>
+    /// The distinct repositories this recipe has been applied to, the most
+    /// recently applied first. Drives the admin page's "Update the repositories
+    /// that use this recipe" card, which opens one pull request per entry.
+    /// See issue #626.
+    /// </summary>
+    public async Task<List<string>> GetAppliedRepositoriesAsync(int recipeId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        // Grouped in the database rather than de-duplicated in memory: a recipe
+        // that keeps being applied collects a row per apply and only the names
+        // are wanted. Ordered by each repository's most recent apply so the
+        // list reads the way the history above it does.
+        return await _db.RecipeDownloads
+            .AsNoTracking()
+            .Where(d => d.RecipeId == recipeId && d.Repository != null)
+            .GroupBy(d => d.Repository!)
+            .Select(g => new { Repository = g.Key, LastUsedAt = g.Max(d => d.DownloadedAt) })
+            .OrderByDescending(x => x.LastUsedAt)
+            .Select(x => x.Repository)
+            .ToListAsync(ct);
+    }
 
     private async Task RecordUseAsync(
-        int recipeId, string? customerName, RecipeUseSource source, int? projectId, int? userId, CancellationToken ct)
+        int recipeId, string? customerName, RecipeUseSource source, int? projectId, int? userId,
+        string? repository, CancellationToken ct)
     {
         var orgId = RequireOrganizationId();
 
@@ -385,14 +461,15 @@ public sealed class RecipeService
             CustomerName = customerName,
             ProjectId = projectId,
             Source = source,
+            Repository = repository,
             DownloadedByUserId = userId,
             DownloadedAt = DateTime.UtcNow,
         });
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Recorded {Source} of recipe {RecipeId} for customer '{Customer}' (project {ProjectId}) by user {UserId}.",
-            source, recipeId, customerName ?? "(not recorded)", projectId, userId);
+            "Recorded {Source} of recipe {RecipeId} for customer '{Customer}' (project {ProjectId}, repository {Repository}) by user {UserId}.",
+            source, recipeId, customerName ?? "(not recorded)", projectId, repository ?? "(none)", userId);
     }
 
     /// <summary>

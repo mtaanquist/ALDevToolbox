@@ -24,6 +24,10 @@ internal sealed class RecipeDownloadConfiguration : IEntityTypeConfiguration<Rec
             .HasConversion<string>()
             .HasMaxLength(16)
             .IsRequired();
+        // The repository a Repository-sourced use landed in, as owner/name.
+        // Null for downloads and copies. 300 characters is well past GitHub's
+        // own limit for owner + name, so a stored value is never truncated.
+        entity.Property(e => e.Repository).HasColumnName("repository").HasMaxLength(300);
         // Resolved from the customer name at record time (exact, case-insensitive,
         // active projects only). See issue #541.
         entity.Property(e => e.ProjectId).HasColumnName("project_id");

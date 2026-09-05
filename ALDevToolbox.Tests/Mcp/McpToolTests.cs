@@ -479,14 +479,27 @@ public sealed class McpToolTests : IDisposable
 
     private readonly MutableClock _clock = new(new DateTimeOffset(2026, 5, 22, 12, 0, 0, TimeSpan.Zero));
 
-    private CookbookTools NewCookbookTools(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(
+    private CookbookTools NewCookbookTools(ALDevToolbox.Data.AppDbContext ctx)
+    {
+        // None of the tools exercised here reaches GitHub; apply_recipe has its
+        // own file, with a fake that answers.
+        var client = _db.NewGitHubAppClient(ctx, new UnreachableGitHub());
+        var access = _db.NewGitHubAccessService(ctx, client);
+        return new CookbookTools(
             new RecipeService(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
             ctx,
             new RecipeSuggestionService(ctx, NullLogger<RecipeSuggestionService>.Instance, _db.OrgContext),
             _db.OrgContext,
             _db.DataProtectionProvider,
-            _clock);
+            _clock,
+            _db.NewGitHubRecipeDeliveryService(ctx, client, access));
+    }
+
+    private sealed class UnreachableGitHub : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new HttpRequestException("api.github.com is not reachable from tests.");
+    }
 
     [Fact]
     public async Task UpdateRecipe_rejects_caller_without_editor_role()

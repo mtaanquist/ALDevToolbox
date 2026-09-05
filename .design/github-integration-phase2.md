@@ -191,7 +191,57 @@ in the customer's repository as a reviewable change, not a ZIP on their desktop.
 
 **As built**
 
-_(appended by the implementer)_
+- `GitHubRecipeDeliveryService.ApplyAsync(recipeId, repoFullName, customerName?)`
+  returns `GitHubRecipeDelivery(Repository, PullRequest, IsNewPullRequest, FileCount)`.
+  It needed no new REST call: every primitive the commit uses - branch head, commit
+  tree, blob, tree, commit, create/update ref, find/create pull request - was already
+  on `GitHubAppClient` from phase 1, so this feature adds no
+  `GitHubAppClient.<Feature>.cs` file and leaves that class as it found it.
+- **Branch choice is one read-only walk, not two rules.** `aldt/recipe-<slug>`,
+  `-2`, `-3`... are tried in order and each is asked two questions: is a pull request
+  open on it (join that one, and commit on the branch's own head), and does the branch
+  exist at all (if not, cut it from the default branch head). The first name to answer
+  either is the target. That is a superset of the spec's "reuse the base name, else
+  step it", and it covers the case the literal reading gets wrong: once the base
+  name's pull request is merged, a third apply would open a *third* pull request
+  beside the still-open `-2` rather than joining it. Ten names is the cap, as
+  extension delivery uses.
+- **The tree's base is the target's own tree**, not always the default branch's -
+  otherwise the second commit on a reused branch would silently revert the first.
+  Files are still written over rather than merged, as the issue asks.
+- **"Which it is" is on the commit message, not the pull-request body.** A body is
+  only ever written when the pull request is opened, so by the time a second commit
+  joins one the words are already there and could not be corrected; the body says
+  what the pull request brings, and the commit says "Apply" or "Update".
+- **The attribution row is written after the pull request exists.** A row for a
+  commit that never landed would send the next round of fixes to a repository that
+  never took the recipe, which is exactly the question the row is kept to answer.
+- `recipe_downloads.repository` (text, 300, nullable) and `RecipeUseSource.Repository`,
+  in migration `20260920000000_AddRecipeDownloadRepository`. No new index: the admin
+  card reads one recipe's rows, which the existing
+  `(organization_id, recipe_id, downloaded_at)` index already serves.
+- **The zip-slip-safe path join and the title slug moved to
+  `Services/Cookbook/RecipePaths.cs`.** A recipe now leaves the app two ways and both
+  have to produce the same paths; `CookbookEndpoints.BuildSafeEntryPath` stays as a
+  one-line delegate so the existing tests still name the rule where they found it.
+- **The download modal gains an "or" section, not a second dialog.** It renders only
+  when `GetAccessAsync` says Ready - somebody with no GitHub account connected is not
+  told about a door they cannot open - and its button is an outline one, so the
+  download stays the dialog's only primary action. The customer name above is shared
+  by both paths. On success the dialog closes and the page carries the pull-request
+  link, because that link is what the consultant sends on.
+- **The admin card iterates in the page, not in a service.** "Open all" awaits one
+  apply per repository in order and records each outcome against its row; a refusal is
+  caught per repository so one archived repository does not stop the rest. No queue -
+  this is a person pressing a button behind a loading state, like every other GitHub
+  call a person triggers.
+- `apply_recipe` returns the shared `RepositoryDeliveryResult`, which gained an
+  `IsNewPullRequest` defaulting to true (a `generate_*` tool always opens a fresh pull
+  request, so the default is right there and the DTO stays one shape).
+- Tests: `GitHubRecipeDeliveryTests` (13), `ApplyRecipeToolTests` (5),
+  `RecipeDownloadTests` (+8 for the column and the distinct list), and two bUnit files
+  - `RecipeDetailRepositoryTests` and `AdminRecipeUpdateRepositoriesTests` - which are
+  this feature's rendered evidence, there being no browser in the build environment.
 
 ## #632 Publish build artifacts as GitHub Releases, and deliver from them
 

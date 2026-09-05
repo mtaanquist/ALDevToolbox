@@ -109,12 +109,19 @@ public sealed record RepositoryCreationResult(
 /// The pull request a <c>generate_*</c> tool opened, when it was asked to add
 /// its result to an existing repository.
 /// </summary>
+/// <param name="IsNewPullRequest">
+/// False when the commit joined a pull request that was already open on the
+/// branch, which <c>apply_recipe</c> does when the same recipe is applied twice
+/// before the first pull request is merged. A <c>generate_*</c> tool always
+/// opens a fresh one, which is why it defaults to true.
+/// </param>
 public sealed record RepositoryDeliveryResult(
     string RepositoryFullName,
     string Branch,
     string BaseBranch,
     int PullRequestNumber,
-    string PullRequestUrl);
+    string PullRequestUrl,
+    bool IsNewPullRequest = true);
 
 /// <summary>Trimmed projection of <see cref="RuntimeTemplate"/> for tool callers.</summary>
 public sealed record TemplateSummary(

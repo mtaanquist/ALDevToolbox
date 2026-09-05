@@ -6,8 +6,12 @@
 @inject IJSRuntime JS
 @inject IOrganizationContext OrgContext
 @inject ILogger<RecipeDetail> Logger
+@inject GitHubRepositoryService Repositories
+@inject GitHubRecipeDeliveryService RecipeDelivery
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services.Cookbook
+@using ALDevToolbox.Services.GitHub
 
 <PageTitle>@(_recipe?.Title ?? "Recipe") · AL Dev Toolbox</PageTitle>
 
@@ -105,6 +109,32 @@
                 }
             </div>
         </div>
+
+        @* What just happened, on the page rather than in a toast: a pull request
+           is somebody else's turn next, and the link to it is the thing the
+           consultant needs to send on. See issue #626. *@
+        @if (_delivery is { } delivery)
+        {
+            <div class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span class="u-stack">
+                    <span>
+                        @(delivery.IsNewPullRequest
+                            ? $"Pull request #{delivery.PullRequest.Number} was opened on "
+                            : $"The files were added to pull request #{delivery.PullRequest.Number}, already open on ")
+                        <strong>@delivery.Repository.FullName</strong>
+                        from branch <code class="code">@delivery.PullRequest.HeadBranch</code>.
+                        Review and merge it there to bring the recipe in.
+                    </span>
+                    <span>
+                        <a class="btn" href="@delivery.PullRequest.HtmlUrl" target="_blank" rel="noopener">
+                            <Icon Name="external-link" Width="15" Height="15" />
+                            <span>Open pull request #@delivery.PullRequest.Number</span>
+                        </a>
+                    </span>
+                </span>
+            </div>
+        }
 
         @if (_recipe.Deprecated)
         {
@@ -339,6 +369,39 @@
                         Only admins in your organisation can see it.
                     </p>
                 </div>
+
+                @* The second way out of the app (issue #626). It sits under the
+                   download rather than beside it because the two share the
+                   customer name above, and it renders at all only when this
+                   person could actually use it - a consultant with no GitHub
+                   account connected is better off not being told about a door
+                   they cannot open. *@
+                @if (_repoReady)
+                {
+                    <div class="rd-repo">
+                        <span class="section-label">or</span>
+                        <RepositoryPicker Label="Put it in a repository instead"
+                                          InputId="dl-repo"
+                                          @bind-Selected="_repository"
+                                          Disabled="_repoBusy"
+                                          Hint="The recipe's files are committed on a branch of their own and a pull request is opened for them, in your name. Nothing in the repository changes until somebody merges it." />
+                        @if (!string.IsNullOrEmpty(_repoError))
+                        {
+                            <p class="field-error" role="alert">
+                                <Icon Name="circle-alert" Width="13" Height="13" />
+                                <span>@_repoError</span>
+                            </p>
+                        }
+                        @if (_repository is not null)
+                        {
+                            <button type="button" class="btn" disabled="@_repoBusy"
+                                    @onclick="ApplyToRepositoryAsync">
+                                <Icon Name="git-branch" Width="14" Height="14" />
+                                <span>@(_repoBusy ? "Opening pull request..." : "Open pull request")</span>
+                            </button>
+                        }
+                    </div>
+                }
             </div>
             <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="CloseDownloadModal">Cancel</button>
@@ -364,9 +427,19 @@
     private string _customerName = string.Empty;
     private List<string> _customerSuggestions = new();
 
+    // The GitHub half (issue #626). _repoReady is answered from the database
+    // alone, so the modal decides whether to offer the repository section
+    // without waiting on GitHub.
+    private bool _repoReady;
+    private GitHubRepositorySummary? _repository;
+    private bool _repoBusy;
+    private string? _repoError;
+    private GitHubRecipeDelivery? _delivery;
+
     protected override async Task OnInitializedAsync()
     {
         _recipe = await Recipes.GetAsync(Id);
+        _repoReady = (await Repositories.GetAccessAsync()).IsReady;
         _loaded = true;
         // Deliberately no initial _active: the rail's highlight is the universal
         // "you are here" signal, and it only tracks clicks - it does not follow
@@ -387,6 +460,7 @@
     private async Task OpenDownloadModal()
     {
         _customerName = string.Empty;
+        _repoError = null;
         // Refresh suggestions each open so a solution added - or a customer named -
         // in this session shows up.
         _customerSuggestions = await Recipes.GetCustomerSuggestionsAsync();
@@ -432,6 +506,49 @@
         _toast?.Show(
             "Download started",
             customer.Length > 0 ? $"Recorded for {customer}." : null);
+    }
+
+    /// <summary>
+    /// Commits the recipe into the picked repository and opens a pull request
+    /// for it. The service owns the branch rule, the refusals and the
+    /// attribution, so the agent-facing tool behaves the same way; this method
+    /// only has to word what came back. See issue #626.
+    /// </summary>
+    private async Task ApplyToRepositoryAsync()
+    {
+        if (_recipe is null || _repository is null) return;
+
+        _repoBusy = true;
+        _repoError = null;
+        try
+        {
+            var customer = _customerName.Trim();
+            _delivery = await RecipeDelivery.ApplyAsync(
+                _recipe.Id, _repository.FullName, customer.Length > 0 ? customer : null);
+            _showDownloadModal = false;
+        }
+        catch (PlanValidationException ex)
+        {
+            // Both keys the service uses land beside the picker: the dialog has
+            // nowhere else to put them, and either way the person is standing
+            // right here.
+            _repoError = string.Join(" ", ex.Errors.Values);
+        }
+        catch (GitHubApiException ex)
+        {
+            Logger.LogWarning(ex, "GitHub refused the pull request on {RepoFullName}.", _repository.FullName);
+            _repoError = $"GitHub would not do that: {ex.Message}";
+        }
+        catch (Exception ex) when (ex is GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not reach GitHub to apply recipe {RecipeId}.", _recipe.Id);
+            _repoError = "The toolbox could not reach GitHub just now, so nothing was committed. "
+                + "Try again in a minute.";
+        }
+        finally
+        {
+            _repoBusy = false;
+        }
     }
 
     private static string DisplayPath(RecipeFile file) =>

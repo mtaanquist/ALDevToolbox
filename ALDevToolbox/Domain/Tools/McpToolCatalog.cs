@@ -100,6 +100,8 @@ public static class McpToolCatalog
             "Revises a suggestion the assistant already submitted.", true),
         new McpToolDescriptor("update_recipe", Cookbook,
             "Edits a published recipe. Needs the Editor role.", true),
+        new McpToolDescriptor("apply_recipe", Cookbook,
+            "Puts a recipe into one of your GitHub repositories as a pull request, in your name.", true),
 
         // ---- Translator ----
         new McpToolDescriptor("list_translation_languages", Translator,

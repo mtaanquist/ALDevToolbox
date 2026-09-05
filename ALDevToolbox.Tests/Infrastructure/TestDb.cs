@@ -364,6 +364,18 @@ public sealed class TestDb : IDisposable
         new(NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubTranslationService>.Instance);
 
+    /// <summary>The Cookbook's recipe service, wired to this fixture's database.</summary>
+    public RecipeService NewRecipeService(AppDbContext ctx) =>
+        new(ctx, NullLogger<RecipeService>.Instance, OrgContext, NewQuotaGuard(ctx));
+
+    /// <summary>"Apply a recipe to a repository": the access gate, the commit, and the attribution row.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService NewGitHubRecipeDeliveryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewRecipeService(ctx), NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>.Instance);
+
     /// <summary>The workspace / extension generator, wired to this fixture's database.</summary>
     public GenerationService NewGenerationService(AppDbContext ctx)
     {
@@ -396,6 +408,7 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubTranslationService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>();
     }
 
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>
