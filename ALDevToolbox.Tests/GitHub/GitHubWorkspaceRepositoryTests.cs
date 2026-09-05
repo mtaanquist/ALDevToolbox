@@ -101,8 +101,9 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         // token - the opposite of #623, where a write into an existing
         // repository goes out as the user.
         TokenFor(api, "POST", $"/orgs/{OrgLogin}/repos").Should().Be(InstallationToken);
+        TokenFor(api, "PUT", $"/repos/{Repo}/contents/").Should().Be(InstallationToken);
         TokenFor(api, "POST", $"/repos/{Repo}/git/trees").Should().Be(InstallationToken);
-        TokenFor(api, "POST", $"/repos/{Repo}/git/refs").Should().Be(InstallationToken);
+        TokenFor(api, "PATCH", $"/repos/{Repo}/git/refs/heads/").Should().Be(InstallationToken);
         // The person's own token is what answers "are they in this
         // organisation", and it is used for nothing else here.
         api.Credentials.Where(c => c.Token == UserToken)
@@ -133,14 +134,64 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         tree.Should().NotContain("base_tree");
 
         var commit = BodyOf(api, "POST", "/git/commits");
-        commit.Should().Contain("\"parents\":[]");
+        // On top of the seed commit, which is the only way a repository created
+        // empty can have a tree at all - see the note on CommitAsync.
+        commit.Should().Contain("\"parents\":[\"seed-commit-sha\"]");
         commit.Should().Contain("Add the CRONUS Customer workspace");
         // Credited to whoever asked for it, not to the app that made the call.
         // (The + in a GitHub noreply address comes back JSON-escaped.)
         commit.Should().Contain("cronus-dev@users.noreply.github.com");
         commit.Should().Contain("\"name\":\"cronus-dev\"");
 
-        BodyOf(api, "POST", "/git/refs").Should().Contain("refs/heads/main");
+        // The seed write put the branch there; this moves it on to the commit
+        // that carries the whole workspace.
+        api.Calls.Should().Contain(c => c.Contains("PATCH") && c.Contains("/git/refs/heads/main"));
+        BodyOf(api, "PATCH", "/git/refs/heads/main").Should().Contain("\"sha\":\"new-commit-sha\"");
+    }
+
+    [Fact]
+    public async Task The_first_write_into_the_empty_repository_goes_through_the_contents_api()
+    {
+        await ReadyAsync();
+        var api = WritableApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // A repository created with auto_init: false has no commits, and GitHub
+        // answers 409 "Git Repository is empty." to every Git Data call on one.
+        // PUT contents is the only route that works there, so it has to come
+        // first - the whole flow died on its first blob before it did.
+        var firstWrite = api.Calls.First(c => c.Contains($"/repos/{Repo}/"));
+        firstWrite.Should().StartWith("PUT").And.Contain("/contents/");
+
+        // Seeded with the README: it is what GitHub itself would have put in an
+        // initial commit, and it is a file the generator produced rather than
+        // one auto-init invented.
+        firstWrite.Should().Contain("/contents/README.md");
+        BodyOf(api, "PUT", "/contents/").Should().Contain("\"branch\":\"main\"");
+    }
+
+    [Fact]
+    public async Task The_workspace_commit_carries_every_generated_file_including_the_seeded_one()
+    {
+        await ReadyAsync();
+        var api = WritableApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // The tree is built from nothing, so it has to list everything the
+        // repository should end up with. Leaving the seeded file out would not
+        // duplicate it - it would delete it.
+        var tree = BodyOf(api, "POST", "/git/trees");
+        tree.Should().Contain("README.md");
+        tree.Should().NotContain("base_tree");
+        System.Text.RegularExpressions.Regex.Matches(tree, "\"README.md\"").Count
+            .Should().Be(1, "the seeded file is one entry, not two");
+        api.Calls.Count(c => c.Contains("/git/blobs")).Should().Be(created.FileCount);
     }
 
     [Fact]
@@ -367,10 +418,14 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
             .On(HttpMethod.Get, $"/orgs/{OrgLogin}/members/", HttpStatusCode.NoContent)
             .On(HttpMethod.Post, $"/orgs/{OrgLogin}/repos", HttpStatusCode.Created,
                 FakeGitHubApi.RepositoryJson(Repo))
+            .On(HttpMethod.Put, $"/repos/{Repo}/contents/", HttpStatusCode.Created, FakeGitHubApi.FileWriteJson())
             .On(HttpMethod.Post, $"/repos/{Repo}/git/blobs", HttpStatusCode.Created, FakeGitHubApi.ShaJson("blob-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/trees", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-tree-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/commits", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
-            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"));
+            .On(HttpMethod.Patch, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.OK, FakeGitHubApi.ShaJson("new-commit-sha"))
+            // GitHub refuses the Git Data API until a repository has a commit,
+            // which is what the Contents write above is for.
+            .EmptyRepository(Repo);
 
     private async Task ConfigureDeploymentAsync()
     {

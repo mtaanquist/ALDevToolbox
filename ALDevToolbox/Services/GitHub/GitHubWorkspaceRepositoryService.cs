@@ -9,7 +9,7 @@ namespace ALDevToolbox.Services.GitHub;
 
 /// <summary>What "Create repository" produced, for the success state to render.</summary>
 /// <param name="Repository">The repository that now exists, including the link the user needs next.</param>
-/// <param name="FileCount">How many files the first commit carried.</param>
+/// <param name="FileCount">How many generated files the repository was filled with.</param>
 /// <param name="ArchiveFileName">The name the same workspace would download under.</param>
 /// <param name="Archive">
 /// The very bytes that were committed, as the ZIP. Carried out rather than
@@ -26,7 +26,7 @@ public sealed record GitHubWorkspaceRepository(
 
 /// <summary>
 /// Creates a repository in the connected GitHub organisation and puts a freshly
-/// generated workspace in it, in one commit (issue #622).
+/// generated workspace in it (issue #622).
 ///
 /// <para><strong>Generation is unchanged.</strong> The files are the ones the
 /// ZIP is built from - the same in-memory archive, read back entry by entry -
@@ -68,9 +68,14 @@ public sealed class GitHubWorkspaceRepositoryService
     ///
     /// <para>The <c>pattern</c> attribute on the New Workspace field is this
     /// same expression, so the browser refuses exactly what the server would -
-    /// see CLAUDE.md on mirroring server rules in the form.</para>
+    /// see CLAUDE.md on mirroring server rules in the form. The hyphen is
+    /// escaped for the browser's sake, not .NET's: browsers compile
+    /// <c>pattern</c> with the RegExp <c>v</c> flag, under which a bare
+    /// <c>-</c> inside a character class is a syntax error - and a pattern that
+    /// does not compile is dropped silently, leaving the field claiming that
+    /// input the server refuses is fine.</para>
     /// </summary>
-    public const string NamePattern = @"^(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$";
+    public const string NamePattern = @"^(?!\.{1,2}$)[A-Za-z0-9._\-]{1,100}$";
 
     private static readonly Regex NameRegex = new(NamePattern, RegexOptions.Compiled);
 
@@ -130,7 +135,7 @@ public sealed class GitHubWorkspaceRepositoryService
     /// <summary>
     /// Generates <paramref name="plan"/> and creates
     /// <paramref name="repositoryName"/> in the connected GitHub organisation
-    /// with those files as its first commit.
+    /// with those files in it.
     ///
     /// <para>Nothing is created until every refusal has been ruled out, so a
     /// plan the generator rejects, a name GitHub would rewrite, or a user who
@@ -146,7 +151,7 @@ public sealed class GitHubWorkspaceRepositoryService
     /// aim it anywhere else.</para>
     /// </summary>
     /// <exception cref="PlanValidationException">The plan, the name, or the caller's access is not good enough.</exception>
-    /// <exception cref="GitHubApiException">GitHub refused one of the calls that make up the commit.</exception>
+    /// <exception cref="GitHubApiException">GitHub refused one of the calls that fill the repository.</exception>
     public async Task<GitHubWorkspaceRepository> CreateAsync(
         ProjectPlan plan, string repositoryName, bool isPrivate, CancellationToken ct = default)
     {
@@ -278,14 +283,45 @@ public sealed class GitHubWorkspaceRepositoryService
     }
 
     /// <summary>
-    /// The first commit: every file as a blob, one tree built from nothing, one
-    /// parentless commit, and the default branch pointed at it. The repository
-    /// has no history to branch from, so this is the whole of it.
+    /// Fills the new repository: one file through the Contents API to give it a
+    /// history, then every generated file as a blob, one tree, one commit on top
+    /// of that first one, and the default branch moved on to it.
+    ///
+    /// <para><strong>Why two writes.</strong> A repository created with
+    /// <c>auto_init: false</c> has no commits, and the Git Data API refuses
+    /// every call on one - <c>409 Conflict: Git Repository is empty.</c> - so
+    /// blobs and trees have nothing to attach to. <c>PUT
+    /// /repos/{owner}/{repo}/contents/{path}</c> is the one route that works
+    /// there, because it creates the initial commit itself. Letting GitHub
+    /// auto-initialise instead would plant a README nobody generated, which is
+    /// the property the repository is created empty to protect.</para>
+    ///
+    /// <para>The tree is still built <em>from nothing</em> and carries every
+    /// generated file, the seeded one included: layering onto the seed commit's
+    /// tree would add a round trip and make "exactly the files we generated" an
+    /// accident of what was there before rather than a fact about the tree. The
+    /// seed file's entry names the same content, so it is neither duplicated nor
+    /// overwritten - the second commit simply adds the rest.</para>
     /// </summary>
     private async Task CommitAsync(
         string token, GitHubRepositorySummary repository, ProjectPlan plan,
         List<GitHubCommitFile> files, int userId, CancellationToken ct)
     {
+        if (ChooseSeed(files) is not { } seed)
+        {
+            _logger.LogWarning(
+                "The '{Template}' template generated no files, so {RepoFullName} was left empty.",
+                plan.TemplateKey, repository.FullName);
+            return;
+        }
+
+        var seedCommit = await _github.PutFileAsync(
+            token, repository.Owner, repository.Name, seed.Path, repository.DefaultBranch,
+            "Initial commit", seed.Content, baseSha: null, ct);
+
+        // A workspace of exactly one file is already committed and on the branch.
+        if (files.Count == 1) return;
+
         var blobs = new List<(string Path, string BlobSha)>(files.Count);
         foreach (var file in files)
         {
@@ -298,10 +334,10 @@ public sealed class GitHubWorkspaceRepositoryService
             token, repository.Owner, repository.Name, baseTreeSha: null, blobs, ct);
         var commit = await _github.CreateCommitAsync(
             token, repository.Owner, repository.Name,
-            $"Add the {plan.WorkspaceName} workspace", tree, parentSha: null,
+            $"Add the {plan.WorkspaceName} workspace", tree, parentSha: seedCommit.CommitSha,
             author: await ResolveAuthorAsync(userId, ct), ct: ct);
 
-        if (!await _github.CreateBranchAsync(
+        if (!await _github.UpdateBranchAsync(
                 token, repository.Owner, repository.Name, repository.DefaultBranch, commit, ct))
         {
             // Only reachable if something else pushed to the repository in the
@@ -311,6 +347,24 @@ public sealed class GitHubWorkspaceRepositoryService
                 + "the generated files were not committed. Open it on GitHub to see what is there.");
         }
     }
+
+    /// <summary>
+    /// The one generated file that goes in through the Contents API to give the
+    /// repository its first commit.
+    ///
+    /// <para>Chosen rather than taken at random: this file is what somebody sees
+    /// if they open the repository between the two writes, and what the initial
+    /// commit contains for the rest of the repository's life. A README is what
+    /// GitHub itself would have put there, and a <c>.gitignore</c> is the next
+    /// most ordinary thing to find in an initial commit - but which files a
+    /// workspace has is up to the template, so the rule falls back to the first
+    /// path in order and never depends on a template opting either of them
+    /// in.</para>
+    /// </summary>
+    private static GitHubCommitFile? ChooseSeed(List<GitHubCommitFile> files) =>
+        files.FirstOrDefault(f => f.Path.Equals(PlatformOrganizationFiles.ReadmePath, StringComparison.OrdinalIgnoreCase))
+        ?? files.FirstOrDefault(f => f.Path.Equals(PlatformOrganizationFiles.GitignorePath, StringComparison.OrdinalIgnoreCase))
+        ?? files.OrderBy(f => f.Path, StringComparer.Ordinal).FirstOrDefault();
 
     /// <summary>
     /// The person the commit is credited to, so a repository's history names

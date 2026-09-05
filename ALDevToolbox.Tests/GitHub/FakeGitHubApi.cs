@@ -18,6 +18,9 @@ public sealed class FakeGitHubApi : HttpMessageHandler
 {
     private readonly List<(string Method, string Path, Func<HttpRequestMessage, HttpResponseMessage> Reply)> _routes = new();
 
+    /// <summary>Repositories that still have no commits. See <see cref="EmptyRepository"/>.</summary>
+    private readonly HashSet<string> _emptyRepositories = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Every request the handler saw, as "METHOD absolute-uri", in order.</summary>
     public List<string> Calls { get; } = new();
 
@@ -38,6 +41,15 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     /// detail.
     /// </summary>
     public List<(string Call, string? Token)> Credentials { get; } = new();
+
+    /// <summary>
+    /// The "status" that means GitHub did not answer at all: the handler throws
+    /// <see cref="HttpRequestException"/> instead of replying, which is how a
+    /// dropped connection, a DNS failure or a timeout reaches the client. It is
+    /// a different case from a 503 - there GitHub answered, and said so - and it
+    /// is the one the access questions must never remember as a definite no.
+    /// </summary>
+    public const HttpStatusCode Unreachable = 0;
 
     /// <summary>
     /// Registers a reply for requests whose path starts with
@@ -66,6 +78,23 @@ public sealed class FakeGitHubApi : HttpMessageHandler
             index++;
             return Respond(reply.Status, reply.Json);
         }));
+        return this;
+    }
+
+    /// <summary>
+    /// Makes <paramref name="fullName"/> behave like a repository that has just
+    /// been created with <c>auto_init: false</c>: it has no commits, so every
+    /// Git Data call on it answers <c>409 Conflict: Git Repository is empty.</c>
+    /// exactly as GitHub's does, until something writes the first file through
+    /// the Contents API.
+    ///
+    /// <para>Without this the fake answers 201 to a blob in a repository that
+    /// could not have accepted one, which is how the whole "create it on GitHub"
+    /// flow passed its tests while failing on the first call in production.</para>
+    /// </summary>
+    public FakeGitHubApi EmptyRepository(string fullName)
+    {
+        _emptyRepositories.Add(fullName);
         return this;
     }
 
@@ -121,9 +150,34 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     /// <summary>A <c>{"sha": …}</c> body, which most Git Data writes answer with.</summary>
     public static string ShaJson(string sha) => $"{{\"sha\":\"{sha}\"}}";
 
-    /// <summary>The <c>GET /user/installations</c> body.</summary>
-    public static string InstallationsJson(params long[] ids) =>
-        $"{{\"total_count\":{ids.Length},\"installations\":[{string.Join(',', ids.Select(i => $"{{\"id\":{i}}}"))}]}}";
+    /// <summary>The <c>PUT /repos/{owner}/{repo}/contents/{path}</c> body: the new file, and the commit it landed in.</summary>
+    public static string FileWriteJson(string contentSha = "written-blob-sha", string commitSha = "seed-commit-sha") =>
+        $"{{\"content\":{{\"sha\":\"{contentSha}\"}},\"commit\":{{\"sha\":\"{commitSha}\"}}}}";
+
+    /// <summary>
+    /// The <c>GET /user/installations</c> body, every entry sitting on the same
+    /// organisation. The <c>account</c> object is part of GitHub's shape and is
+    /// what the install gate reads: the list says which installations a person
+    /// can reach, and the account is what their role is then checked in.
+    /// </summary>
+    public static string InstallationsJson(params long[] ids) => InstallationsJson("cronus-dk", ids);
+
+    /// <summary>The same, on a named account.</summary>
+    public static string InstallationsJson(string accountLogin, params long[] ids) =>
+        InstallationsJson(accountLogin, "Organization", ids);
+
+    /// <summary>The same, on a named account of a given type (<c>Organization</c> or <c>User</c>).</summary>
+    public static string InstallationsJson(string accountLogin, string accountType, params long[] ids) =>
+        $"{{\"total_count\":{ids.Length},\"installations\":[{string.Join(',', ids.Select(i =>
+            $"{{\"id\":{i},\"account\":{{\"login\":\"{accountLogin}\",\"type\":\"{accountType}\"}}}}"))}]}}";
+
+    /// <summary>
+    /// The <c>GET /user/memberships/orgs/{org}</c> body. <c>admin</c> is what
+    /// GitHub calls an owner; everyone else is <c>member</c>, and a state other
+    /// than <c>active</c> is an invitation nobody has accepted.
+    /// </summary>
+    public static string OrgMembershipJson(string role = "admin", string state = "active") =>
+        $"{{\"state\":\"{state}\",\"role\":\"{role}\"}}";
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -138,6 +192,21 @@ public sealed class FakeGitHubApi : HttpMessageHandler
         }
 
         var path = request.RequestUri.AbsolutePath;
+
+        // An empty repository refuses the Git Data API and nothing else, and
+        // stops being empty the moment the Contents API writes into it.
+        var empty = _emptyRepositories.FirstOrDefault(
+            r => path.StartsWith($"/repos/{r}/", StringComparison.OrdinalIgnoreCase));
+        if (empty is not null)
+        {
+            if (path.StartsWith($"/repos/{empty}/git/", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(Respond(HttpStatusCode.Conflict,
+                    "{\"message\":\"Git Repository is empty.\","
+                    + "\"documentation_url\":\"https://docs.github.com/rest/git\",\"status\":\"409\"}"));
+            }
+        }
+
         var match = _routes
             .Select((Route, Index) => (Route, Index))
             .Where(r => r.Route.Method == request.Method.Method
@@ -146,7 +215,20 @@ public sealed class FakeGitHubApi : HttpMessageHandler
             .ThenByDescending(r => r.Index)
             .Select(r => (r.Route, Found: true))
             .FirstOrDefault();
-        if (match.Found) return Task.FromResult(match.Route.Reply(request));
+        if (match.Found)
+        {
+            var response = match.Route.Reply(request);
+            // The write that gave it a history: from here on the Git Data API
+            // works, as it does on any repository with a commit in it.
+            if (empty is not null
+                && response.IsSuccessStatusCode
+                && request.Method == HttpMethod.Put
+                && path.StartsWith($"/repos/{empty}/contents/", StringComparison.OrdinalIgnoreCase))
+            {
+                _emptyRepositories.Remove(empty);
+            }
+            return Task.FromResult(response);
+        }
 
         // An unregistered route is a test that asked GitHub something it did not
         // mean to; say which call, rather than failing later on an empty body.
@@ -157,9 +239,15 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     /// <summary>Routes are written without a leading slash for readability; the paths they match have one.</summary>
     private static string Normalise(string path) => path.StartsWith('/') ? path : "/" + path;
 
-    private static HttpResponseMessage Respond(HttpStatusCode status, string? json) =>
-        new(status)
+    private static HttpResponseMessage Respond(HttpStatusCode status, string? json)
+    {
+        if (status == Unreachable)
+        {
+            throw new HttpRequestException("FakeGitHubApi: GitHub could not be reached.");
+        }
+        return new HttpResponseMessage(status)
         {
             Content = new StringContent(json ?? string.Empty, Encoding.UTF8, "application/json"),
         };
+    }
 }

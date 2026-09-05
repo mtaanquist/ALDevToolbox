@@ -40,6 +40,36 @@ public sealed record GitHubUserTokens(
 public sealed record GitHubUserIdentity(long Id, string Login);
 
 /// <summary>
+/// One entry from <c>GET /user/installations</c>: an installation of this App
+/// and the account it sits on.
+///
+/// <para>The account matters as much as the id. That list is "installations
+/// covering at least one repository this person can reach", so being in it
+/// proves nothing about administering the installation - the account named here
+/// is what the toolbox then asks GitHub about the person's role in.</para>
+/// </summary>
+public sealed record GitHubUserInstallation(long Id, string AccountLogin, string AccountType)
+{
+    /// <summary>True when the installation sits on a GitHub organisation rather than a personal account.</summary>
+    public bool IsOrganization => string.Equals(AccountType, "Organization", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Somebody's own membership of one GitHub organisation, as
+/// <c>GET /user/memberships/orgs/{org}</c> reports it: <see cref="Role"/> is
+/// <c>admin</c> for an owner and <c>member</c> for everyone else, and
+/// <see cref="State"/> is <c>active</c> only once the invitation has been
+/// accepted.
+/// </summary>
+public sealed record GitHubOrgMembership(string State, string Role)
+{
+    /// <summary>True only for an accepted membership with owner rights.</summary>
+    public bool IsActiveAdmin =>
+        string.Equals(State, "active", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(Role, "admin", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// One entry in a repository's file listing: its full path from the root, its
 /// kind (<c>blob</c> for a file, <c>tree</c> for a folder) and the sha of what
 /// it points at.
@@ -280,19 +310,28 @@ public sealed class GitHubAppClient
 
     /// <summary>
     /// The installations of this App that <paramref name="userToken"/>'s owner
-    /// may administer. This is the only credential that can answer that — the
-    /// App JWT can read <em>every</em> installation of the App, which is why
-    /// the install callback cannot use it to decide whose organisation is
-    /// being connected. See "Binding the installation to the acting user" in
+    /// can reach at all, with the account each one sits on. This is the only
+    /// credential that can name them — the App JWT can read <em>every</em>
+    /// installation of the App, which is why the install callback cannot use it
+    /// to decide whose organisation is being connected. See "Binding the
+    /// installation to the acting user" in
     /// <c>.design/github-integration.md</c>.
+    ///
+    /// <para><strong>Reaching is not administering.</strong> GitHub documents
+    /// this list as the installations covering repositories the person owns,
+    /// collaborates on, or can see through an organisation - so an outside
+    /// collaborator on one repository is in it too. The account on each entry
+    /// is carried out precisely so the caller can go on to ask
+    /// <see cref="GetOrgMembershipAsync"/> what that person actually is
+    /// there.</para>
     /// </summary>
     /// <exception cref="GitHubApiException">GitHub refused the call, e.g. a revoked token.</exception>
-    public async Task<IReadOnlyList<long>> ListUserInstallationIdsAsync(
+    public async Task<IReadOnlyList<GitHubUserInstallation>> ListUserInstallationsAsync(
         string userToken, CancellationToken ct = default)
     {
-        var ids = new List<long>();
+        var installations = new List<GitHubUserInstallation>();
         // GitHub pages this at 30 by default; 100 is the cap and nobody
-        // administers more installations of one app than that in practice.
+        // reaches more installations of one app than that in practice.
         var path = "user/installations?per_page=100";
         using var request = NewRequest(HttpMethod.Get, path, userToken);
         using var document = await SendAsync(request, ct);
@@ -302,15 +341,55 @@ public sealed class GitHubAppClient
         {
             foreach (var element in list.EnumerateArray())
             {
-                if (element.TryGetProperty("id", out var id) && id.TryGetInt64(out var value))
-                {
-                    ids.Add(value);
-                }
+                if (!element.TryGetProperty("id", out var id) || !id.TryGetInt64(out var value)) continue;
+
+                var account = element.TryGetProperty("account", out var acc) ? acc : default;
+                var login = account.ValueKind == JsonValueKind.Object && account.TryGetProperty("login", out var l)
+                    ? l.GetString() ?? string.Empty
+                    : string.Empty;
+                var type = account.ValueKind == JsonValueKind.Object && account.TryGetProperty("type", out var t)
+                    ? t.GetString() ?? string.Empty
+                    : string.Empty;
+                installations.Add(new GitHubUserInstallation(value, login, type));
             }
         }
 
-        _logger.LogInformation("GitHub reported {InstallationCount} installations for the acting user.", ids.Count);
-        return ids;
+        _logger.LogInformation("GitHub reported {InstallationCount} installations for the acting user.", installations.Count);
+        return installations;
+    }
+
+    /// <summary>
+    /// What <paramref name="userToken"/>'s owner is in <paramref name="org"/>,
+    /// asked about themselves. <see langword="null"/> when GitHub says there is
+    /// no such membership - which, as everywhere else here, also covers an
+    /// organisation they cannot see.
+    ///
+    /// <para>This is the question <c>GET /user/installations</c> cannot answer:
+    /// it is the one route that reports a person's <em>role</em> rather than
+    /// their reach, and <c>role: admin</c> with <c>state: active</c> is what
+    /// GitHub calls an owner.</para>
+    /// </summary>
+    /// <exception cref="GitHubApiException">GitHub refused the call for any reason other than "no such membership".</exception>
+    public async Task<GitHubOrgMembership?> GetOrgMembershipAsync(
+        string userToken, string org, CancellationToken ct = default)
+    {
+        using var request = NewRequest(
+            HttpMethod.Get, $"user/memberships/orgs/{Uri.EscapeDataString(org)}", userToken);
+        using var document = await SendOrNotFoundAsync(request, ct);
+        if (document is null)
+        {
+            _logger.LogInformation("GitHub reports no membership of {OrgLogin} for the acting user.", org);
+            return null;
+        }
+
+        var root = document.RootElement;
+        var membership = new GitHubOrgMembership(
+            State: root.TryGetProperty("state", out var state) ? state.GetString() ?? string.Empty : string.Empty,
+            Role: root.TryGetProperty("role", out var role) ? role.GetString() ?? string.Empty : string.Empty);
+        _logger.LogInformation(
+            "GitHub reports the acting user as {Role} ({State}) in {OrgLogin}.",
+            membership.Role, membership.State, org);
+        return membership;
     }
 
     // ── Repositories: reading, and writing through a pull request ───────────
@@ -606,6 +685,43 @@ public sealed class GitHubAppClient
 
         _logger.LogWarning(
             "GitHub refused to create branch {Branch} on {Owner}/{Repo} with {Status}: {Message}",
+            branch, owner, repo, (int)response.StatusCode, message);
+        throw new GitHubApiException(response.StatusCode, message, url);
+    }
+
+    /// <summary>
+    /// Moves an existing branch on to <paramref name="commitSha"/>, refusing
+    /// anything that is not a fast-forward. Returns <see langword="false"/> when
+    /// GitHub says it is not one - meaning somebody else moved the branch in the
+    /// meantime, which the caller answers by saying so rather than by writing
+    /// over their work.
+    /// </summary>
+    public async Task<bool> UpdateBranchAsync(
+        string credential, string owner, string repo, string branch, string commitSha,
+        CancellationToken ct = default)
+    {
+        using var request = NewJsonRequest(
+            HttpMethod.Patch, $"{RepoPath(owner, repo)}/git/refs/heads/{EscapePath(branch)}", credential,
+            new { sha = commitSha, force = false });
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (response.IsSuccessStatusCode) return true;
+
+        var (message, url) = ReadError(body);
+        // As with creating a ref, GitHub's 422 covers both "this would not be a
+        // fast forward" - an answer - and a request that was simply wrong. Only
+        // the first is something the caller can word for a user.
+        if (response.StatusCode == HttpStatusCode.UnprocessableEntity
+            && message.Contains("fast forward", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "GitHub refused to move {Branch} on {Owner}/{Repo} to {CommitSha}: not a fast forward.",
+                branch, owner, repo, commitSha);
+            return false;
+        }
+
+        _logger.LogWarning(
+            "GitHub refused to move branch {Branch} on {Owner}/{Repo} with {Status}: {Message}",
             branch, owner, repo, (int)response.StatusCode, message);
         throw new GitHubApiException(response.StatusCode, message, url);
     }
