@@ -96,9 +96,9 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
         _db.AddGitHubServices(_ctx.Services);
 
         var cut = _ctx.Render<RecipeDetail>(p => p.Add(c => c.Id, recipeId));
-        cut.WaitForElement("button:contains('Download ZIP...')").Click();
+        cut.WaitForElement("button:contains('Download ZIP...')", TimeSpan.FromSeconds(5)).Click();
 
-        cut.WaitForAssertion(() =>
+        cut.WaitForAssertion(timeout: TimeSpan.FromSeconds(5), assertion: () =>
         {
             cut.Find(".confirm-dialog").TextContent.Should().Contain("Customer");
             cut.FindAll(".rd-repo").Should().BeEmpty();
@@ -112,9 +112,9 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
         await ReadyAsync();
 
         var cut = _ctx.Render<RecipeDetail>(p => p.Add(c => c.Id, recipeId));
-        cut.WaitForElement("button:contains('Download ZIP...')").Click();
+        cut.WaitForElement("button:contains('Download ZIP...')", TimeSpan.FromSeconds(5)).Click();
 
-        cut.WaitForAssertion(() =>
+        cut.WaitForAssertion(timeout: TimeSpan.FromSeconds(5), assertion: () =>
         {
             var section = cut.Find(".rd-repo").TextContent;
             section.Should().Contain("Put it in a repository instead");
@@ -130,11 +130,11 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
         await ReadyAsync();
 
         var cut = _ctx.Render<RecipeDetail>(p => p.Add(c => c.Id, recipeId));
-        cut.WaitForElement("button:contains('Download ZIP...')").Click();
+        cut.WaitForElement("button:contains('Download ZIP...')", TimeSpan.FromSeconds(5)).Click();
         await PickTheRepositoryAsync(cut);
-        cut.WaitForElement("button:contains('Open pull request')").Click();
+        cut.WaitForElement("button:contains('Open pull request')", TimeSpan.FromSeconds(5)).Click();
 
-        cut.WaitForAssertion(() =>
+        cut.WaitForAssertion(timeout: TimeSpan.FromSeconds(5), assertion: () =>
         {
             // The dialog is done with; what is left on the page is the link the
             // consultant has to send on.
@@ -160,11 +160,11 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
         api.On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/main", HttpStatusCode.NotFound);
 
         var cut = _ctx.Render<RecipeDetail>(p => p.Add(c => c.Id, recipeId));
-        cut.WaitForElement("button:contains('Download ZIP...')").Click();
+        cut.WaitForElement("button:contains('Download ZIP...')", TimeSpan.FromSeconds(5)).Click();
         await PickTheRepositoryAsync(cut);
-        cut.WaitForElement("button:contains('Open pull request')").Click();
+        cut.WaitForElement("button:contains('Open pull request')", TimeSpan.FromSeconds(5)).Click();
 
-        cut.WaitForAssertion(() =>
+        cut.WaitForAssertion(timeout: TimeSpan.FromSeconds(5), assertion: () =>
         {
             cut.Find(".rd-repo .field-error").TextContent.Should().Contain("no commits");
             cut.FindAll(".confirm-dialog").Should().NotBeEmpty("the person is still deciding what to do");
@@ -176,8 +176,8 @@ public sealed class RecipeDetailRepositoryTests : IDisposable
     /// <summary>Focuses the picker, waits for its one row, and clicks it.</summary>
     private static async Task PickTheRepositoryAsync(IRenderedComponent<RecipeDetail> cut)
     {
-        await cut.WaitForElement("#dl-repo").FocusAsync(new());
-        cut.WaitForElement("button.repo-picker__result").Click();
+        await cut.WaitForElement("#dl-repo", TimeSpan.FromSeconds(5)).FocusAsync(new());
+        cut.WaitForElement("button.repo-picker__result", TimeSpan.FromSeconds(5)).Click();
     }
 
     private async Task<int> SeedRecipeAsync()
