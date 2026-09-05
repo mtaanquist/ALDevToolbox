@@ -119,10 +119,13 @@ public sealed class GitHubConnectionService
     /// further check an admin could take their own valid state, hand-edit
     /// <c>installation_id</c> to a neighbouring integer, and connect their
     /// organisation to another customer's GitHub organisation. The one
-    /// credential that can settle it is the admin's own: GitHub will list the
-    /// installations <em>they</em> administer, and an id absent from that list
-    /// is refused. That is why connecting requires a linked GitHub account, and
-    /// why an answer we could not get is refused rather than assumed.</para>
+    /// credential that can settle it is the admin's own: GitHub names the
+    /// organisation the installation sits on, and then says what that person is
+    /// in it - only an active owner passes. Listing the installations they can
+    /// reach is not enough on its own, because that list includes every
+    /// installation covering a repository they merely collaborate on. That is
+    /// why connecting requires a linked GitHub account, and why an answer we
+    /// could not get is refused rather than assumed.</para>
     /// </summary>
     public async Task ConnectAsync(GitHubInstallation installation, CancellationToken ct = default)
     {

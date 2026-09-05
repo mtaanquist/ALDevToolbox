@@ -50,9 +50,16 @@ public sealed class GitHubConnectionServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
+    /// <summary>
+    /// A GitHub that lists <paramref name="ids"/> for the acting admin and
+    /// calls them an owner of the organisation those installations sit on -
+    /// which is both halves of the install gate.
+    /// </summary>
     private static FakeGitHubApi InstallationsOwnedBy(params long[] ids) =>
-        new FakeGitHubApi().On(
-            HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(ids));
+        new FakeGitHubApi()
+            .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(ids))
+            .On(HttpMethod.Get, "user/memberships/orgs/cronus-dk", HttpStatusCode.OK,
+                FakeGitHubApi.OrgMembershipJson());
 
     /// <summary>
     /// Gives the acting admin a GitHub link with a non-expiring token, written

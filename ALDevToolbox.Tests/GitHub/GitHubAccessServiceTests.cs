@@ -577,24 +577,105 @@ public sealed class GitHubAccessServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task An_installation_github_lists_for_the_user_is_confirmed()
+    public async Task An_installation_on_an_organisation_the_user_owns_is_confirmed()
     {
         await ConfigureDeploymentAsync();
-        var api = LinkableApi()
-            .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(7, 42));
+        var api = ClaimableApi();
         var (service, ctx) = NewService(api);
         await using var _ = ctx;
         await service.LinkAsync("the-code");
 
         (await service.CanAdministerInstallationAsync(UserId, 42))
             .Should().Be(GitHubInstallationClaim.Confirmed);
+        // Reaching the installation is not the answer on its own, so the role
+        // has to have been asked for.
+        api.Calls.Should().Contain(c => c.Contains("user/memberships/orgs/cronus-dk"));
+    }
+
+    [Fact]
+    public async Task An_outside_collaborator_on_one_repository_cannot_claim_the_installation()
+    {
+        await ConfigureDeploymentAsync();
+        // GET /user/installations lists every installation covering a repository
+        // this person can reach - including one they are only an outside
+        // collaborator on. Being in the list is reach, not authority.
+        var api = ClaimableApi(role: "member");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.CanAdministerInstallationAsync(UserId, 42))
+            .Should().Be(GitHubInstallationClaim.NotTheirs,
+                "otherwise a collaborator could connect somebody else's GitHub organisation and mint its installation token");
+    }
+
+    [Fact]
+    public async Task An_invitation_nobody_has_accepted_is_not_ownership()
+    {
+        await ConfigureDeploymentAsync();
+        var api = ClaimableApi(role: "admin", state: "pending");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.CanAdministerInstallationAsync(UserId, 42))
+            .Should().Be(GitHubInstallationClaim.NotTheirs);
+    }
+
+    [Fact]
+    public async Task An_installation_on_a_personal_account_is_refused_without_asking_about_an_organisation()
+    {
+        await ConfigureDeploymentAsync();
+        var api = LinkableApi()
+            .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK,
+                FakeGitHubApi.InstallationsJson("cronus-dev", "User", 42));
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.CanAdministerInstallationAsync(UserId, 42))
+            .Should().Be(GitHubInstallationClaim.NotTheirs);
+        api.Calls.Should().NotContain(c => c.Contains("user/memberships/orgs"),
+            "a personal account has no owners to be one of");
+    }
+
+    [Fact]
+    public async Task A_membership_github_will_not_report_is_not_a_pass()
+    {
+        await ConfigureDeploymentAsync();
+        var api = LinkableApi()
+            .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(42))
+            .On(HttpMethod.Get, "user/memberships/orgs/", FakeGitHubApi.Unreachable);
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.CanAdministerInstallationAsync(UserId, 42))
+            .Should().Be(GitHubInstallationClaim.Unknown);
+    }
+
+    [Fact]
+    public async Task Someone_who_is_in_no_such_organisation_at_all_is_refused()
+    {
+        await ConfigureDeploymentAsync();
+        var api = LinkableApi()
+            .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(42))
+            // GitHub answers 404 for a membership that is not there, as it does
+            // for anything else you cannot see.
+            .On(HttpMethod.Get, "user/memberships/orgs/", HttpStatusCode.NotFound, "{\"message\":\"Not Found\"}");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+        await service.LinkAsync("the-code");
+
+        (await service.CanAdministerInstallationAsync(UserId, 42))
+            .Should().Be(GitHubInstallationClaim.NotTheirs);
     }
 
     [Fact]
     public async Task An_installation_github_does_not_list_is_refused()
     {
         await ConfigureDeploymentAsync();
-        var api = LinkableApi()
+        var api = ClaimableApi()
             .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(7));
         var (service, ctx) = NewService(api);
         await using var _ = ctx;
@@ -619,4 +700,15 @@ public sealed class GitHubAccessServiceTests : IDisposable
         (await service.CanAdministerInstallationAsync(UserId, 42))
             .Should().Be(GitHubInstallationClaim.Unknown);
     }
+
+    /// <summary>
+    /// A GitHub that answers both halves of the install gate: the installations
+    /// this person can reach, and what they are in the organisation the one they
+    /// are claiming sits on.
+    /// </summary>
+    private static FakeGitHubApi ClaimableApi(string role = "admin", string state = "active") =>
+        LinkableApi()
+            .On(HttpMethod.Get, "user/installations", HttpStatusCode.OK, FakeGitHubApi.InstallationsJson(7, 42))
+            .On(HttpMethod.Get, "user/memberships/orgs/cronus-dk", HttpStatusCode.OK,
+                FakeGitHubApi.OrgMembershipJson(role, state));
 }

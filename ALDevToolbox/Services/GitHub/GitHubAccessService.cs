@@ -372,15 +372,31 @@ public sealed class GitHubAccessService
 
     /// <summary>
     /// Whether <paramref name="userId"/> may connect installation
-    /// <paramref name="installationId"/> to their organisation, answered by
-    /// <c>GET /user/installations</c> with that person's own token.
+    /// <paramref name="installationId"/> to their organisation, answered with
+    /// that person's own token in two steps: <c>GET /user/installations</c>
+    /// names the GitHub organisation the installation sits on, and
+    /// <c>GET /user/memberships/orgs/{org}</c> says what they are in it. Only
+    /// an <em>active owner</em> is
+    /// <see cref="GitHubInstallationClaim.Confirmed"/>.
     ///
     /// <para>This is the gate that closes the installation-claim hole: the App
     /// JWT is authorised for every installation of the App, so the install
     /// callback cannot tell whose organisation came back from a hand-edited
-    /// <c>installation_id</c>. Only the acting user's own credential can, and
-    /// an answer we could not get is <see cref="GitHubInstallationClaim.Unknown"/>,
-    /// never a pass.</para>
+    /// <c>installation_id</c>. Only the acting user's own credential can.</para>
+    ///
+    /// <para><strong>Why the second call.</strong> Being in
+    /// <c>/user/installations</c> only means the person can reach one repository
+    /// the installation covers - GitHub lists installations covering
+    /// repositories they own, collaborate on, or see through an organisation.
+    /// An outside collaborator on a single repository in a GitHub organisation
+    /// that has installed the App would otherwise have been able to connect
+    /// that organisation to their own toolbox organisation, and mint its
+    /// installation token for every repository the installation covers. The
+    /// role is the thing that had to be checked, and only the memberships route
+    /// reports it.</para>
+    ///
+    /// <para>An answer we could not get is
+    /// <see cref="GitHubInstallationClaim.Unknown"/>, never a pass.</para>
     /// </summary>
     public async Task<GitHubInstallationClaim> CanAdministerInstallationAsync(
         int userId, long installationId, CancellationToken ct = default)
@@ -392,24 +408,65 @@ public sealed class GitHubAccessService
         var token = await ResolveTokenForAsync(row, ct);
         if (token is null) return GitHubInstallationClaim.LinkUnusable;
 
-        IReadOnlyList<long> installations;
+        IReadOnlyList<GitHubUserInstallation> installations;
         try
         {
-            installations = await _github.ListUserInstallationIdsAsync(token, ct);
+            installations = await _github.ListUserInstallationsAsync(token, ct);
         }
         catch (Exception ex) when (IsGitHubUnreachable(ex, ct))
         {
             _logger.LogWarning(ex,
-                "Could not list the GitHub installations user {UserId} administers; refusing the claim on installation {InstallationId}.",
+                "Could not list the GitHub installations user {UserId} can reach; refusing the claim on installation {InstallationId}.",
                 userId, installationId);
             return GitHubInstallationClaim.Unknown;
         }
 
-        if (installations.Contains(installationId)) return GitHubInstallationClaim.Confirmed;
+        var installation = installations.FirstOrDefault(i => i.Id == installationId);
+        if (installation is null)
+        {
+            _logger.LogWarning(
+                "User {UserId} tried to connect GitHub installation {InstallationId}, which GitHub does not list among the {InstallationCount} they can reach.",
+                userId, installationId, installations.Count);
+            return GitHubInstallationClaim.NotTheirs;
+        }
+
+        // A personal-account installation has no owners to be one of, and
+        // ConnectAsync refuses it anyway. There is nothing to ask, so the claim
+        // is refused rather than assumed.
+        if (!installation.IsOrganization)
+        {
+            _logger.LogWarning(
+                "User {UserId} tried to connect GitHub installation {InstallationId}, which sits on the {AccountType} account {AccountLogin}.",
+                userId, installationId, installation.AccountType, installation.AccountLogin);
+            return GitHubInstallationClaim.NotTheirs;
+        }
+        if (string.IsNullOrWhiteSpace(installation.AccountLogin))
+        {
+            _logger.LogWarning(
+                "GitHub did not say which account installation {InstallationId} sits on, so user {UserId}'s claim on it cannot be checked.",
+                installationId, userId);
+            return GitHubInstallationClaim.Unknown;
+        }
+
+        GitHubOrgMembership? membership;
+        try
+        {
+            membership = await _github.GetOrgMembershipAsync(token, installation.AccountLogin, ct);
+        }
+        catch (Exception ex) when (IsGitHubUnreachable(ex, ct))
+        {
+            _logger.LogWarning(ex,
+                "Could not check user {UserId}'s role in {OrgLogin}; refusing the claim on installation {InstallationId}.",
+                userId, installation.AccountLogin, installationId);
+            return GitHubInstallationClaim.Unknown;
+        }
+
+        if (membership is { IsActiveAdmin: true }) return GitHubInstallationClaim.Confirmed;
 
         _logger.LogWarning(
-            "User {UserId} tried to connect GitHub installation {InstallationId}, which GitHub does not list among the {InstallationCount} they administer.",
-            userId, installationId, installations.Count);
+            "User {UserId} tried to connect GitHub installation {InstallationId} on {OrgLogin}, where GitHub calls them {Role} ({State}).",
+            userId, installationId, installation.AccountLogin,
+            membership?.Role ?? "nothing", membership?.State ?? "no membership");
         return GitHubInstallationClaim.NotTheirs;
     }
 
