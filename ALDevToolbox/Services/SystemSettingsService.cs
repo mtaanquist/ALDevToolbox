@@ -625,8 +625,13 @@ public sealed class SystemSettingsService
     /// 404 install link the admin has to debug. <see cref="GitHubAppSlugRegex"/>
     /// is built from this constant, so the browser rule and the server rule are
     /// one string rather than two that can drift.
+    ///
+    /// <para>The hyphen is escaped for the browser's sake: <c>pattern</c> is
+    /// compiled with the RegExp <c>v</c> flag, under which a bare <c>-</c>
+    /// inside a character class is a syntax error - and a pattern that does not
+    /// compile is dropped silently rather than reported.</para>
     /// </summary>
-    public const string GitHubAppSlugPattern = "[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?";
+    public const string GitHubAppSlugPattern = @"[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?";
 
     private static readonly System.Text.RegularExpressions.Regex GitHubAppSlugRegex = new(
         $"^{GitHubAppSlugPattern}$",
