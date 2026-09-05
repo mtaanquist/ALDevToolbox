@@ -31,6 +31,9 @@ jobs:
   # that already happened) — so what we wait for here is the run from the push
   # that put this commit on its branch. Same SHA, same guarantee, one pipeline
   # instead of two. See issue #392.
+  #
+  # If this gate reports no run for a commit that IS on main, suspect build.yml's
+  # push filter before suspecting the tag: #737 is what that looks like.
   require-green-build:
     runs-on: ubuntu-latest
     steps:
