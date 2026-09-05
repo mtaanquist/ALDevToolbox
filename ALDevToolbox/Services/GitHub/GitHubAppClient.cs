@@ -872,11 +872,15 @@ public sealed class GitHubAppClient
             // a write that quoted no sha at all landing on a path that already
             // exists - GitHub answers "'sha' wasn't supplied", which means the
             // same thing to a caller that expected to be creating the file.
+            // Matched on "supplied" alone rather than the whole phrase: the
+            // apostrophe in GitHub's wording is not something to depend on
+            // (and a curly one could not be written here anyway, the house
+            // style being ASCII), and no other 422 from a contents write
+            // mentions the word.
             if (response.StatusCode == HttpStatusCode.Conflict
                 || (response.StatusCode == HttpStatusCode.UnprocessableEntity
                     && (message.Contains("does not match", StringComparison.OrdinalIgnoreCase)
-                        || message.Contains("wasn't supplied", StringComparison.OrdinalIgnoreCase)
-                        || message.Contains("was not supplied", StringComparison.OrdinalIgnoreCase))))
+                        || message.Contains("supplied", StringComparison.OrdinalIgnoreCase))))
             {
                 _logger.LogInformation(
                     "GitHub refused to write {Path} on {Owner}/{Repo}: it has changed since it was read.",
