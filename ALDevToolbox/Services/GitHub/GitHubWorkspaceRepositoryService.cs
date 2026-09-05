@@ -315,9 +315,20 @@ public sealed class GitHubWorkspaceRepositoryService
             return;
         }
 
-        var seedCommit = await _github.PutFileAsync(
-            token, repository.Owner, repository.Name, seed.Path, repository.DefaultBranch,
-            "Initial commit", seed.Content, baseSha: null, ct);
+        GitHubFileWrite seedCommit;
+        try
+        {
+            seedCommit = await _github.PutFileAsync(
+                token, repository.Owner, repository.Name, seed.Path, repository.DefaultBranch,
+                "Initial commit", seed.Content, baseSha: null, ct);
+        }
+        catch (GitHubContentConflictException)
+        {
+            // The write quoted no base sha, so GitHub only refuses it if that
+            // path is already there - which in a repository this new means
+            // something else got in first. Same answer as a branch that moved.
+            throw RaceRefusal(repository);
+        }
 
         // A workspace of exactly one file is already committed and on the branch.
         if (files.Count == 1) return;
@@ -342,11 +353,20 @@ public sealed class GitHubWorkspaceRepositoryService
         {
             // Only reachable if something else pushed to the repository in the
             // seconds since it was created, which is not a case to paper over.
-            throw Refuse(RepositoryField,
-                $"Something else pushed to {repository.FullName} while the toolbox was filling it in, so "
-                + "the generated files were not committed. Open it on GitHub to see what is there.");
+            throw RaceRefusal(repository);
         }
     }
+
+    /// <summary>
+    /// What to say when somebody else wrote to the repository in the seconds
+    /// between its creation and the toolbox filling it in. Not a case to paper
+    /// over: whatever is in there now is not what was generated, and the person
+    /// has to look.
+    /// </summary>
+    private static PlanValidationException RaceRefusal(GitHubRepositorySummary repository) =>
+        Refuse(RepositoryField,
+            $"Something else pushed to {repository.FullName} while the toolbox was filling it in, so "
+            + "the generated files were not committed. Open it on GitHub to see what is there.");
 
     /// <summary>
     /// The one generated file that goes in through the Contents API to give the
