@@ -142,7 +142,11 @@ would immediately wrap.
   `GET /repos/{owner}/{repo}/contents/{path}`, `PUT` the same,
   `POST /orgs/{org}/repos`, the Git Data API (`/git/blobs`, `/git/trees`,
   `/git/commits`, `/git/refs`), `POST /repos/{owner}/{repo}/pulls`,
-  `GET /orgs/{org}/members/{username}`.
+  `GET /orgs/{org}/members/{username}`, `GET /user/installations` and
+  `GET /user/memberships/orgs/{org}`. The last two are the install gate; both read
+  organisation membership, so the App registration needs the organisation
+  **Members: read** permission that `GET /orgs/{org}/members/{username}` already
+  required.
 - **Errors.** One `GitHubApiException` carrying status and GitHub's `message`, so
   pages can render "a repository with that name already exists" rather than "500".
   Rate-limit headers are logged, not surfaced.
@@ -168,7 +172,19 @@ link), transparent token refresh, and:
   rather than as a failure.
 
 Every one of these returns "no" when GitHub could not be asked. Nothing here promotes
-an unanswered question into permission.
+an unanswered question into permission - and nothing *remembers* an unanswered one
+either, so one timeout does not stand in for a definite answer until the window
+lapses. `IsOrgMemberAsync` has a sibling, `TryGetOrgMembershipAsync`, that keeps the
+third state so the Account page can say "we could not reach GitHub just now" rather
+than "GitHub still does not list you in {org}" - advice the reader could not act on.
+
+Linking is refused, not 500ed, when the GitHub account is already linked to somebody
+else. The `(provider, issuer, subject)` index is deployment-wide while
+`user_external_logins` has no `organization_id`, so the pre-check inside the tenant
+filter only catches a colleague; a clash with another organisation is met at the save
+and translated into the same field-keyed refusal, worded so that nothing about the
+other organisation reaches the reader. That matters because the callback has already
+spent its one-shot `state` by then, so a 500 costs the retry as well as the answer.
 
 Results are remembered for thirty seconds, not for the life of the service. The rule
 being served is "a permission revoked on GitHub takes effect on the next page load, not
@@ -228,15 +244,34 @@ not work.
   attack first-come-first-served rather than free, and it makes the collision visible
   to the org that loses - but a customer who has not connected yet is still claimable.
 
-**The gate shipped in #621.** `ConnectAsync` now asks
-`GitHubAccessService.CanAdministerInstallationAsync(userId, installationId)`, which
-reads `GET /user/installations` with the acting Admin's *own* linked token - the only
-credential that can answer whose installation this is - and refuses anything the list
-does not contain. Its four refusals are distinct and all render as field-keyed errors
-on the Repositories tab: the Admin has not linked a GitHub account, their link no
-longer works, GitHub does not list them as an administrator of that installation, or
-GitHub could not be asked at all. **An answer we could not get is a refusal, never a
-pass.**
+**The gate shipped in #621, and #735 made it check the right thing.** `ConnectAsync`
+asks `GitHubAccessService.CanAdministerInstallationAsync(userId, installationId)`,
+which uses the acting Admin's *own* linked token - the only credential that can answer
+whose installation this is - in two steps:
+
+1. `GET /user/installations` names the account the installation sits on. An id that is
+   not in the list is refused here.
+2. `GET /user/memberships/orgs/{account.login}` says what the Admin is in that
+   organisation. Only `role: admin` with `state: active` - what GitHub's own UI calls
+   an owner - is confirmed.
+
+The second step is the load-bearing one. `GET /user/installations` returns the
+installations covering repositories the person owns, collaborates on, *or* can see
+through an organisation, so presence in it means "can reach one repository this
+installation covers", not "administers it". As first shipped the gate checked only
+presence, which left an Admin who is an outside collaborator on a single repository in
+an unconnected GitHub organisation able to connect that organisation to their own
+toolbox organisation - and then mint its installation token for every repository the
+installation covers. The account's id is not even guessed: it appears in their own
+`/user/installations`.
+
+Its refusals are distinct and all render as field-keyed errors on the Repositories
+tab: the Admin has not linked a GitHub account, their link no longer works, GitHub
+does not call them an owner of that organisation (including a pending invitation, a
+personal-account installation, and no membership at all), or GitHub could not be asked.
+**An answer we could not get is a refusal, never a pass** - which covers a deployment
+whose App registration cannot read organisation members, since GitHub's refusal there
+is not an answer either.
 
 The consequence is deliberate: connecting a GitHub organisation now requires the Admin
 to have linked their own GitHub account first. That is a precondition, so the
@@ -294,11 +329,31 @@ parameter surface changes once a second caller is compiling against it.
 
 ### #622 New workspace → create the repository
 
-Generation is unchanged: in memory, synchronous. After the file set exists, one
-commit is built through the Git Data API (blobs → tree → commit → the
-`refs/heads/{default branch}` ref) into a repository created with the
-installation token via `POST /orgs/{org}/repos`. Ordered, in-process, behind the
-Generate button's existing loading state. No queue.
+Generation is unchanged: in memory, synchronous. The repository is created with
+the installation token via `POST /orgs/{org}/repos` and `auto_init: false`, and
+then filled in two writes:
+
+1. **One file through the Contents API** (`PUT /repos/{owner}/{repo}/contents/{path}`
+   on the default branch), which creates the repository's initial commit. This is
+   not optional: a repository with no commits refuses *every* Git Data call with
+   `409 Conflict: Git Repository is empty.`, so blobs and trees have nothing to
+   attach to until something has committed. The Contents API is the one route
+   that works there. The seeded file is the generated `README.md` when the
+   template produces one, else `.gitignore`, else the first path in order - what
+   an initial commit conventionally holds, and always a file the generator
+   produced.
+2. **The workspace itself through the Git Data API** (blobs → tree → commit on
+   top of the seed commit → fast-forward `PATCH` of the `refs/heads/{default
+   branch}` ref). The tree is built from *nothing* and lists every generated
+   file, the seeded one included: layering onto the seed's tree would cost a
+   round trip and make "only files we generated" a property of what happened to
+   be there rather than of the tree.
+
+Ordered, in-process, behind the Generate button's existing loading state. No
+queue.
+
+`auto_init: true` would have solved the empty-repository problem by planting a
+README nobody generated, which is the thing creating it empty exists to prevent.
 
 Before creating, the user must be a member of the connected GitHub org
 (`IsOrgMemberAsync`). Failure modes rendered inline next to the field, not as a
