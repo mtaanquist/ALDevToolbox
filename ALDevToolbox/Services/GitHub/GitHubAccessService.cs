@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using ALDevToolbox.Data;
+using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
@@ -221,6 +222,7 @@ public sealed class GitHubAccessService
         }
 
         var now = _clock.GetUtcNow().UtcDateTime;
+        var inserting = mine is null;
         if (mine is null)
         {
             mine = new UserExternalLogin
@@ -236,7 +238,35 @@ public sealed class GitHubAccessService
         mine.Subject = subject;
         mine.DisplayIdentity = identity.Login;
         StoreTokens(mine, tokens);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+            when (DbErrors.IsUniqueViolation(ex, UserExternalLoginConfiguration.IdentityIndexName))
+        {
+            // The colleague check above runs inside the tenant filter on purpose
+            // (see its note), but the index it backstops is deployment-wide and
+            // this table carries no organisation of its own. So the same GitHub
+            // account held by someone in another organisation gets past the check
+            // and loses here instead - on the insert, and on the re-link that
+            // moves Subject onto an account another organisation claims.
+            //
+            // Translating it into the refusal the rest of this flow uses is what
+            // keeps that from being the generic error page: the callback consumes
+            // the handshake's one-shot state before calling in, so a 500 here
+            // costs the user the retry as well as the answer. The message stays
+            // deliberately vague - that a stranger exists elsewhere on this
+            // server is not something to tell them.
+            await UndoLinkAsync(mine, inserting, ct);
+            _logger.LogWarning(ex,
+                "User {UserId} tried to connect GitHub account {GitHubLogin} ({GitHubUserId}), which is already linked outside their organisation.",
+                userId, identity.Login, identity.Id);
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["GitHubLink"] = $"The GitHub account {identity.Login} is already connected to another account. Sign in to GitHub as yourself, then try again.",
+            });
+        }
 
         // Best effort, and after the link is safely stored: knowing the answer is
         // a convenience on the Account row, not a condition of linking, and a
@@ -247,6 +277,22 @@ public sealed class GitHubAccessService
         _logger.LogInformation(
             "User {UserId} linked GitHub account {GitHubLogin} ({GitHubUserId}); org member: {IsOrgMember}.",
             userId, identity.Login, identity.Id, mine.IsOrgMember?.ToString() ?? "unknown");
+    }
+
+    /// <summary>
+    /// Puts the change tracker back where it was after a link that could not be
+    /// saved, so the refused attempt is not still pending on a context the rest
+    /// of the request goes on using: a new row is forgotten, and an existing one
+    /// is read back as the database still has it.
+    /// </summary>
+    private async Task UndoLinkAsync(UserExternalLogin row, bool inserting, CancellationToken ct)
+    {
+        if (inserting)
+        {
+            _db.Entry(row).State = EntityState.Detached;
+            return;
+        }
+        await _db.Entry(row).ReloadAsync(ct);
     }
 
     /// <summary>

@@ -20,4 +20,15 @@ internal static class DbErrors
     /// </summary>
     internal static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+
+    /// <summary>
+    /// True when <paramref name="ex"/> wraps a unique-constraint violation on
+    /// <paramref name="constraintName"/> in particular. Naming the constraint
+    /// matters wherever the friendly message would otherwise be attached to any
+    /// clash a save happened to hit: a row can break more than one index, and
+    /// only one of them has an explanation the user can act on.
+    /// </summary>
+    internal static bool IsUniqueViolation(DbUpdateException ex, string constraintName) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } violation
+        && string.Equals(violation.ConstraintName, constraintName, StringComparison.Ordinal);
 }

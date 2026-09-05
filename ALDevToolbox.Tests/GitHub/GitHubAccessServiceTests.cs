@@ -244,6 +244,75 @@ public sealed class GitHubAccessServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Linking_a_github_account_someone_in_another_organisation_uses_is_refused_not_a_500()
+    {
+        await ConfigureDeploymentAsync();
+        SeedStrangerInAnotherOrganisation();
+        var (service, ctx) = NewService(LinkableApi());
+        await using var _ = ctx;
+
+        Func<Task> act = () => service.LinkAsync("the-code");
+
+        // The unique index is deployment-wide and the pre-check runs inside the
+        // tenant filter, so this clash can only be met at the save - and the
+        // callback has already spent its one-shot state by then, which is what
+        // turns a 500 here into "did not finish in time" on the retry too.
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("GitHubLink");
+        // Nothing about the other organisation reaches the person reading it.
+        ex.Which.Errors["GitHubLink"].Should().NotContain("stranger@example.com").And.NotContain("organisation");
+
+        await using var read = _db.NewContext();
+        (await read.UserExternalLogins.IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(l => l.UserId == UserId)).Should().Be(0, "nothing was written for the refused link");
+    }
+
+    [Fact]
+    public async Task Relinking_onto_a_github_account_another_organisation_holds_is_refused_not_a_500()
+    {
+        await ConfigureDeploymentAsync();
+        SeedStrangerInAnotherOrganisation();
+        // This user already has a link to a different GitHub account, so the
+        // save is an update onto the taken subject rather than an insert.
+        var (first, ctx1) = NewService(LinkableApi(1234, "someone-else"));
+        await using (ctx1) await first.LinkAsync("code-one");
+
+        var (second, ctx2) = NewService(LinkableApi());
+        await using var _ = ctx2;
+        Func<Task> act = () => second.LinkAsync("code-two");
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("GitHubLink");
+
+        await using var read = _db.NewContext();
+        var row = await read.UserExternalLogins.AsNoTracking().SingleAsync(l => l.UserId == UserId);
+        row.Subject.Should().Be("1234", "the link they had is still the link they have");
+        row.DisplayIdentity.Should().Be("someone-else");
+    }
+
+    /// <summary>
+    /// Gives GitHub account 4711 to a user in another organisation, which the
+    /// tenant filter hides from every read the linking flow makes.
+    /// </summary>
+    private void SeedStrangerInAnotherOrganisation()
+    {
+        using var ctx = _db.NewContext();
+        var stranger = NewUser(9001, "stranger@example.com");
+        stranger.OrganizationId = TestDb.OtherOrgId;
+        ctx.Users.Add(stranger);
+        ctx.UserExternalLogins.Add(new UserExternalLogin
+        {
+            UserId = stranger.Id,
+            Provider = GitHubAccessService.ProviderName,
+            Issuer = GitHubAccessService.IssuerValue,
+            Subject = "4711",
+            DisplayIdentity = "cronus-dev",
+            CreatedAt = DateTime.UtcNow,
+        });
+        ctx.SaveChanges();
+    }
+
+    [Fact]
     public async Task Linking_without_an_oauth_client_on_the_deployment_says_so()
     {
         // App id and private key only - the #620 half. The link flow needs the
