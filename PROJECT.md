@@ -74,6 +74,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `ui-design.md` — page layout, copy, components to factor out.
 - `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
 - `github-integration.md` — the GitHub App: which credential acts (installation vs the user's link), the schema, and the four features built on them.
+- `github-integration-phase2.md` — phase 2 of the GitHub integration (#626-#633): repository discovery, repository standards, recipe delivery, Releases, the pull-request compile gate, translation-memory ingest, dependency drift, and the MCP twins.
 - `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
 - `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
 
