@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918000000_AddGitHubRepositoryCandidates")]
+    partial class AddGitHubRepositoryCandidates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1797,10 +1800,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
-                    b.Property<int?>("GithubReleaseRepositoryId")
-                        .HasColumnType("integer")
-                        .HasColumnName("github_release_repository_id");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1826,8 +1825,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("GithubReleaseRepositoryId");
 
                     b.HasIndex("OrganizationId");
 
@@ -1961,21 +1958,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("finished_at");
-
-                    b.Property<string>("GithubReleaseError")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("github_release_error");
-
-                    b.Property<string>("GithubReleaseTag")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("github_release_tag");
-
-                    b.Property<string>("GithubReleaseUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("github_release_url");
 
                     b.Property<int>("OrganizationId")
                         .HasColumnType("integer")
@@ -2931,13 +2913,7 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("ArtifactSource")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("artifact_source");
-
-                    b.Property<int?>("BuildPipelineId")
+                    b.Property<int>("BuildPipelineId")
                         .HasColumnType("integer")
                         .HasColumnName("build_pipeline_id");
 
@@ -2958,10 +2934,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("deployment_schedule");
-
-                    b.Property<int?>("GithubReleaseRepositoryId")
-                        .HasColumnType("integer")
-                        .HasColumnName("github_release_repository_id");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -2997,8 +2969,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_release_pipelines_build_pipeline");
 
                     b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("GithubReleaseRepositoryId");
 
                     b.HasIndex("OrganizationId");
 
@@ -3730,11 +3700,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("RecipeId")
                         .HasColumnType("integer")
                         .HasColumnName("recipe_id");
-
-                    b.Property<string>("Repository")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("repository");
 
                     b.Property<string>("Source")
                         .IsRequired()
@@ -5891,11 +5856,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "GithubReleaseRepository")
-                        .WithMany()
-                        .HasForeignKey("GithubReleaseRepositoryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
                         .HasForeignKey("OrganizationId")
@@ -5909,8 +5869,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("CreatedByUser");
-
-                    b.Navigation("GithubReleaseRepository");
 
                     b.Navigation("Organization");
 
@@ -6266,16 +6224,12 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", "BuildPipeline")
                         .WithMany()
                         .HasForeignKey("BuildPipelineId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "GithubReleaseRepository")
-                        .WithMany()
-                        .HasForeignKey("GithubReleaseRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
@@ -6299,8 +6253,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("BuildPipeline");
 
                     b.Navigation("CreatedByUser");
-
-                    b.Navigation("GithubReleaseRepository");
 
                     b.Navigation("Organization");
 

@@ -1,0 +1,327 @@
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.GitHub
+@using ALDevToolbox.Domain.ValueObjects
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory Scopes
+@inject NavigationManager Nav
+@inject ILogger<UntrackedRepositoriesPanel> Logger
+
+@*
+    "There are AL repositories here that no solution tracks yet" (issue #629),
+    above the Solutions list.
+
+    Named user: a BC consultant who has just connected their company's GitHub
+    organisation and wants to know which of its repositories the toolbox does
+    not know about - without going through them by hand.
+
+    The panel is silent unless it can help: the organisation has to allow GitHub
+    repositories, have connected one, and the person looking has to have linked
+    their own GitHub account. Anyone else sees the Solutions page exactly as it
+    was, rather than machinery explaining a feature they cannot use.
+
+    What is listed has been narrowed twice. Every solution in the organisation
+    subtracts its repositories - including solutions this person may not see, so
+    a Private solution's repository is never offered here - and what remains is
+    then checked against what this person can open on GitHub themselves. Both
+    narrowings are RepositoryDiscoveryService's business; see its note.
+
+    Every read runs in this component's own service scope, not the host page's:
+    a child is mounted during the host's first render, so sharing its
+    AppDbContext is how "a second operation was started on this context
+    instance" kills a page that only placed the control. Same answer
+    RepositoryPicker and SiteBanner reached.
+
+    See .design/github-integration-phase2.md, issue #629.
+*@
+
+@if (_show)
+{
+    <section class="card untracked-repos" aria-labelledby="untracked-repos-title">
+        <div class="untracked-repos__head">
+            <div>
+                <h2 class="untracked-repos__title" id="untracked-repos-title">@Heading</h2>
+                <p class="untracked-repos__sub">
+                    Repositories in @OrgName that hold an AL extension and are not part of any solution yet.
+                </p>
+            </div>
+            <button type="button" class="btn btn--sm" disabled="@_busy" @onclick="CheckNowAsync">
+                <Icon Name="refresh-cw" Width="15" Height="15" />
+                <span>@(_checking ? "Checking..." : "Check GitHub now")</span>
+            </button>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading-block">
+                <span class="spinner"></span><span>Checking GitHub...</span>
+            </div>
+        }
+        else if (_failed)
+        {
+            <p class="alert alert--warn" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span class="u-stack">
+                    <span>The toolbox could not reach GitHub just now, so it cannot say what is untracked.</span>
+                    <span><button type="button" class="btn btn--sm" @onclick="ReloadAsync">Try again</button></span>
+                </span>
+            </p>
+        }
+        else if (_rows.Count == 0)
+        {
+            <p class="untracked-repos__none">
+                Every AL repository in @OrgName that you can see is already tracked.
+            </p>
+        }
+        else
+        {
+            <ul class="untracked-repos__list">
+                @foreach (var row in _rows)
+                {
+                    <li class="untracked-repos__row" @key="row.CandidateId">
+                        <div class="untracked-repos__repo">
+                            <a class="untracked-repos__name" href="@row.HtmlUrl" target="_blank" rel="noopener">@row.FullName</a>
+                            <span class="untracked-repos__app">@row.AppName</span>
+                        </div>
+                        @if (_trackingId != row.CandidateId)
+                        {
+                            <div class="untracked-repos__actions">
+                                <button type="button" class="btn btn--sm" disabled="@_busy" @onclick="() => StartTracking(row)">
+                                    <span>Track as solution</span>
+                                </button>
+                                <button type="button" class="btn btn--sm" disabled="@_busy" @onclick="() => IgnoreAsync(row)">
+                                    <span>Ignore</span>
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            @* A confirm step rather than a bare click: a solution
+                               needs a name people will recognise and the country
+                               its builds compile against, and guessing the second
+                               one for someone is how a build fails a day later. *@
+                            <div class="untracked-repos__form">
+                                <div class="field">
+                                    <label class="field__label" for="track-name">Solution name</label>
+                                    <input id="track-name" class="input" type="text" maxlength="200" required
+                                           @bind="_name" @bind:event="oninput" disabled="@_busy" />
+                                    <FieldError Field="Name" Errors="_errors" />
+                                </div>
+                                <div class="field">
+                                    <label class="field__label" for="track-country">Country code</label>
+                                    <input id="track-country" class="input" type="text" maxlength="20"
+                                           pattern="[A-Za-z0-9]{2,10}" required placeholder="e.g. dk or w1"
+                                           @bind="_country" @bind:event="oninput" disabled="@_busy" />
+                                    <FieldError Field="DefaultArtifactCountry" Errors="_errors" />
+                                    <small class="field__hint">
+                                        The Microsoft localisation this solution's builds compile against
+                                        (dk for Denmark, w1 for the worldwide base).
+                                    </small>
+                                </div>
+                                <div class="untracked-repos__actions">
+                                    <button type="button" class="btn btn--sm" disabled="@_busy" @onclick="() => ConfirmTrackAsync(row)">
+                                        <span>Create solution</span>
+                                    </button>
+                                    <button type="button" class="btn btn--sm btn--ghost" disabled="@_busy" @onclick="CancelTracking">
+                                        <span>Cancel</span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    private bool _show;
+    private bool _loadStarted;
+    private bool _loading = true;
+    private bool _failed;
+    private bool _busy;
+    private bool _checking;
+    private string? _orgLogin;
+    private string? _suggestedCountry;
+    private IReadOnlyList<UntrackedRepositoryRow> _rows = [];
+
+    private int? _trackingId;
+    private string _name = string.Empty;
+    private string _country = string.Empty;
+    private Dictionary<string, string> _errors = new();
+
+    private string OrgName => string.IsNullOrWhiteSpace(_orgLogin) ? "your GitHub organisation" : _orgLogin!;
+
+    private string Heading => _rows.Count switch
+    {
+        0 => "AL repositories on GitHub",
+        1 => "1 AL repository is not tracked yet",
+        _ => $"{_rows.Count} AL repositories are not tracked yet",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Two cached database reads and no call to GitHub, so a slow or
+        // unreachable GitHub cannot hold up the Solutions page behind this.
+        try
+        {
+            await using var scope = Scopes.CreateAsyncScope();
+            var config = scope.ServiceProvider.GetRequiredService<OrganizationConfigService>();
+            if (!(await config.GetAllowedProvidersAsync()).Contains(RepositoryProvider.GitHub)) return;
+
+            var repos = scope.ServiceProvider.GetRequiredService<GitHubRepositoryService>();
+            _show = (await repos.GetAccessAsync()).IsReady;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not tell whether the Solutions page can offer untracked repositories.");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The list is loaded after a render rather than during one: the narrowing
+        // costs one call to GitHub per candidate, and "Checking GitHub..." is
+        // only honest if it is on screen while that happens.
+        //
+        // Deliberately not gated on firstRender. Blazor renders this component
+        // once before OnInitializedAsync has come back from the database, so at
+        // the first render the panel does not yet know whether it has anything
+        // to show - gating on it means the read never happens and the panel sits
+        // on "Checking GitHub..." forever.
+        if (!_show || _loadStarted) return;
+        _loadStarted = true;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _failed = false;
+        StateHasChanged();
+        try
+        {
+            var view = await ReadAsync(s => s.ListUntrackedAsync());
+            _rows = view.Rows;
+            _orgLogin = view.OrgLogin;
+            _suggestedCountry = view.SuggestedCountry;
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not list the untracked repositories for the Solutions page.");
+            _failed = true;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Runs the sweep the nightly scheduler runs, for this organisation, and
+    /// then re-reads the list - so somebody who has just created a repository
+    /// does not have to wait until tomorrow to see it here.
+    /// </summary>
+    private async Task CheckNowAsync()
+    {
+        _busy = true;
+        _checking = true;
+        StateHasChanged();
+        try
+        {
+            await ReadAsync(async s =>
+            {
+                await s.SweepCurrentOrganisationAsync();
+                return true;
+            });
+            _failed = false;
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not sweep the connected GitHub organisation from the Solutions page.");
+            _failed = true;
+        }
+        finally
+        {
+            _busy = false;
+            _checking = false;
+        }
+        if (!_failed) await ReloadAsync();
+        else StateHasChanged();
+    }
+
+    private void StartTracking(UntrackedRepositoryRow row)
+    {
+        _trackingId = row.CandidateId;
+        _name = row.AppName;
+        _country = _suggestedCountry ?? string.Empty;
+        _errors = new();
+    }
+
+    private void CancelTracking()
+    {
+        _trackingId = null;
+        _errors = new();
+    }
+
+    private async Task ConfirmTrackAsync(UntrackedRepositoryRow row)
+    {
+        _busy = true;
+        _errors = new();
+        try
+        {
+            var projectId = await ReadAsync(s => s.TrackAsync(row.CandidateId, _name, _country));
+            Nav.NavigateTo($"/solutions/{projectId}");
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new Dictionary<string, string>(ex.Errors);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not track {RepoFullName} as a solution.", row.FullName);
+            _errors = new Dictionary<string, string>
+            {
+                ["Name"] = "The solution could not be created just now. Try again.",
+            };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task IgnoreAsync(UntrackedRepositoryRow row)
+    {
+        _busy = true;
+        try
+        {
+            await ReadAsync(async s =>
+            {
+                await s.IgnoreAsync(row.CandidateId);
+                return true;
+            });
+            _rows = _rows.Where(r => r.CandidateId != row.CandidateId).ToList();
+            if (_trackingId == row.CandidateId) _trackingId = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not set aside {RepoFullName}.", row.FullName);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// One operation through this component's own scope - see the note at the
+    /// top of the file.
+    /// </summary>
+    private async Task<T> ReadAsync<T>(Func<RepositoryDiscoveryService, Task<T>> operation)
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+        return await operation(scope.ServiceProvider.GetRequiredService<RepositoryDiscoveryService>());
+    }
+}

@@ -373,6 +373,28 @@ public sealed class TestDb : IDisposable
             new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
             clock ?? TimeProvider.System,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubReleaseService>.Instance);
+    /// Repository discovery (#629): the organisation-wide sweep, the panel's
+    /// narrowed read, and Track / Ignore. Builds its own ProjectService chain,
+    /// because tracking a repository creates a solution.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.RepositoryDiscoveryService NewRepositoryDiscoveryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        TimeProvider? clock = null)
+    {
+        var projectAccess = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext);
+        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService(
+            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue(),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>.Instance);
+        var projects = new ALDevToolbox.Services.ObjectExplorer.ProjectService(
+            ctx, OrgContext, projectAccess, extensionDiscovery,
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectService>.Instance);
+        return new ALDevToolbox.Services.GitHub.RepositoryDiscoveryService(
+            ctx, client, access, NewGitHubConnectionService(ctx, access), NewOrganizationConfigService(ctx),
+            projects, OrgContext, clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>.Instance);
+    }
 
     /// <summary>The Translator's repository round trip: list, open, save back.</summary>
     public ALDevToolbox.Services.GitHub.GitHubTranslationService NewGitHubTranslationService(
@@ -429,6 +451,7 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
         services.TryAddSingleton(new ALDevToolbox.Endpoints.PublicOrigin(null));
+        services.AddScoped<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>();
     }
 
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>

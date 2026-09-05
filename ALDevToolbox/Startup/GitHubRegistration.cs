@@ -29,6 +29,10 @@ public static class GitHubRegistration
         // Publishing a build's .app files as a Release, and staging a Release's
         // files back as a build so they can be deployed (issue #632).
         services.AddScoped<GitHubReleaseService>();
+        // Finding the organisation's AL repositories that no solution tracks yet
+        // (#629). Scoped like the rest: the nightly scheduler opens its own scope
+        // per organisation, and the Solutions panel opens one per read.
+        services.AddScoped<RepositoryDiscoveryService>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

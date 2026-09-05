@@ -1019,26 +1019,11 @@ public sealed class ProjectBuildService
 
     // ── Pure helpers (unit-tested) ──────────────────────────────────────
 
-    private static readonly HashSet<string> ExcludedDirs = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".alpackages", ".vscode", ".git", ".github", "node_modules", ".snapshots", ".altestrunner",
-    };
-
-    // Mirrors FolderZipWalker's test-folder rules so the two ingest paths agree
-    // on what counts as a test extension.
-    private static readonly HashSet<string> TestFolderNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Test", "Tests", "Test Library", "Test Libraries", "TestLibraries", "TestFramework",
-    };
-
-    private static readonly string[] TestFolderSuffixes =
-    {
-        " Test Library", " Test Libraries", " Test Toolkit", " Tests",
-    };
-
-    internal static bool IsTestSegment(string segment) =>
-        TestFolderNames.Contains(segment)
-        || TestFolderSuffixes.Any(suf => segment.EndsWith(suf, StringComparison.OrdinalIgnoreCase));
+    // The excluded-folder and test-folder rules now live in AppJsonManifestParser,
+    // because repository discovery (#629) asks the same questions of a manifest it
+    // read over the GitHub API rather than cloned. Kept as forwarders so the build
+    // pipeline's own call sites and tests stay put.
+    internal static bool IsTestSegment(string segment) => AppJsonManifestParser.IsTestSegment(segment);
 
     /// <summary>
     /// Walks <paramref name="root"/> for folders containing an <c>app.json</c>,
@@ -1060,7 +1045,7 @@ public sealed class ProjectBuildService
             foreach (var sub in subs)
             {
                 var name = Path.GetFileName(sub);
-                if (ExcludedDirs.Contains(name) || IsTestSegment(name)) continue;
+                if (AppJsonManifestParser.IsExcludedSegment(name) || AppJsonManifestParser.IsTestSegment(name)) continue;
                 stack.Push(sub);
             }
         }
@@ -1068,46 +1053,7 @@ public sealed class ProjectBuildService
     }
 
     /// <summary>Parses an <c>app.json</c> body into a manifest, tolerant of trailing commas / comments. Null when unreadable.</summary>
-    internal static AppJsonManifest? ParseManifest(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions
-            {
-                AllowTrailingCommas = true,
-                CommentHandling = JsonCommentHandling.Skip,
-            });
-            var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object) return null;
-
-            string Str(string prop) =>
-                root.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : string.Empty;
-            string? StrOrNull(string prop) =>
-                root.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-
-            var deps = new List<AppJsonDependency>();
-            if (root.TryGetProperty("dependencies", out var depsEl) && depsEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var d in depsEl.EnumerateArray())
-                {
-                    if (d.ValueKind != JsonValueKind.Object) continue;
-                    // Old app.json used "appId"; new uses "id".
-                    var depId = (d.TryGetProperty("id", out var idv) && idv.ValueKind == JsonValueKind.String ? idv.GetString()
-                              : d.TryGetProperty("appId", out var aidv) && aidv.ValueKind == JsonValueKind.String ? aidv.GetString() : null) ?? string.Empty;
-                    var depName = d.TryGetProperty("name", out var nv) && nv.ValueKind == JsonValueKind.String ? nv.GetString()! : string.Empty;
-                    if (depId.Length > 0) deps.Add(new AppJsonDependency(depId, depName));
-                }
-            }
-
-            var id = Str("id");
-            if (id.Length == 0) id = Str("appId");
-            return new AppJsonManifest(id, Str("name"), Str("publisher"), Str("version"), StrOrNull("application"), StrOrNull("platform"), StrOrNull("runtime"), deps);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    internal static AppJsonManifest? ParseManifest(string json) => AppJsonManifestParser.Parse(json);
 
     /// <summary>The highest <c>application</c> (else <c>platform</c>) Major.Minor any extension requires, or null when none declare one.</summary>
     internal static string? SelectTargetMajorMinor(IEnumerable<AppJsonManifest> manifests)
@@ -1343,20 +1289,6 @@ public sealed record DiscoveredExtension(
 /// <see cref="ProjectRepository"/> so the per-repo changelog and build record link back.
 /// </summary>
 public sealed record ClonedRepo(string Dir, string Url, string? CommitSha, DateTime? CommitDate, int? RepositoryId = null, string DisplayName = "");
-
-/// <summary>The fields the build pipeline reads from an <c>app.json</c>.</summary>
-public sealed record AppJsonManifest(
-    string Id,
-    string Name,
-    string Publisher,
-    string Version,
-    string? Application,
-    string? Platform,
-    string? Runtime,
-    IReadOnlyList<AppJsonDependency> Dependencies);
-
-/// <summary>One inter-app dependency declared in <c>app.json</c> (id + name).</summary>
-public sealed record AppJsonDependency(string Id, string Name);
 
 /// <summary>One extension's outcome from a build, before it's persisted as a <see cref="ProjectBuildResult"/> row. Carries the source provenance (repo + commit) when known.</summary>
 public sealed record BuildAppResult(

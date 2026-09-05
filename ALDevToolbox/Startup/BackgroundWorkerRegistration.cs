@@ -40,6 +40,10 @@ public static class BackgroundWorkerRegistration
         // disabled the tools report an empty knowledge base rather than failing.
         // See .design/bcquality.md.
         services.AddHostedService<ALDevToolbox.Services.BcQuality.BcQualityRefreshScheduler>();
+        // Daily sweep of each org's connected GitHub organisation for AL repositories
+        // no solution tracks yet, so the Solutions page can offer them without probing
+        // GitHub on a page render. See .design/github-integration-phase2.md.
+        services.AddHostedService<ALDevToolbox.Services.GitHub.RepositoryDiscoveryScheduler>();
         // Periodic prune of old login_attempts rows so the table doesn't grow
         // unbounded (the rate-limiter only reads a ~15-minute window). See issue #403.
         services.AddHostedService<ALDevToolbox.Services.LoginAttemptPruneScheduler>();

@@ -95,6 +95,22 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     }
 
     /// <summary>
+    /// Registers a reply computed from the request itself - for the routes whose
+    /// answer depends on <em>which credential</em> asked, as GitHub's own do
+    /// when two installations call the same path.
+    /// </summary>
+    public FakeGitHubApi On(
+        HttpMethod method, string path, Func<HttpRequestMessage, (HttpStatusCode Status, string? Json)> reply)
+    {
+        _routes.Add((method.Method, Normalise(path), request =>
+        {
+            var (status, json) = reply(request);
+            return Respond(status, json);
+        }));
+        return this;
+    }
+
+    /// <summary>
     /// Registers a reply that changes with each call - the sequence is consumed
     /// in order and the last entry repeats, which is how a refresh test says
     /// "expired, then good".

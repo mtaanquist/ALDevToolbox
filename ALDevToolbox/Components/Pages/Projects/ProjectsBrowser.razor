@@ -42,6 +42,12 @@
         </div>
     </div>
 
+    @* The one interactive island on an otherwise static page: it asks GitHub
+       what this person can see, which a GET-rendered page cannot do. It renders
+       nothing at all unless the organisation has connected GitHub and the
+       viewer has linked their account. See .design/github-integration-phase2.md. *@
+    <UntrackedRepositoriesPanel @rendermode="InteractiveServer" />
+
     @if (_rows is null)
     {
         <table class="data-table data-table--edge">

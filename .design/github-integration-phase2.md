@@ -110,7 +110,49 @@ to see which of its repositories the toolbox does not know about yet.
 
 **As built**
 
-_(appended by the implementer)_
+- **The table is `github_repository_candidates`**, with the columns the decisions
+  name, a unique `(organization_id, full_name)` the sweep upserts on, and the
+  ordinary tenant query filter. Migration `20260918000000_AddGitHubRepositoryCandidates`.
+  No `IgnoreQueryFilters()` call was added anywhere on this feature's path.
+- **`AppJsonManifestParser` is the lift the shared-plumbing section called for.**
+  `AppJsonManifest`, `AppJsonDependency`, `ParseManifest` and the test-folder rules
+  moved there unchanged; `ProjectBuildService` keeps `IsTestSegment` and
+  `ParseManifest` as one-line forwarders so the build's own call sites and tests
+  did not move. The excluded-folder list (`.alpackages`, `.git`, ...) went with
+  them, because the probe needs exactly the same answer the walk does.
+- **The probe reads the tree once and at most one manifest.** Root first, then
+  one-folder-down paths in a stable order, so two sweeps over an unchanged
+  repository settle on the same manifest; the first path that parses wins and the
+  rest are not fetched. A tree GitHub cropped is used as far as it goes, with a
+  warning - the alternative is a call per folder, which is what the recursive read
+  exists to avoid. A repository whose probe throws is logged and skipped: one
+  unreadable repository must not cost the organisation its sweep.
+- **A vanished candidate is deleted even when it was ignored.** The finding is
+  what the row records, so when the repository stops matching there is nothing
+  left for the decision to apply to. An ignored row whose repository is still
+  found keeps its `ignored_at`, and tracking one deletes the row outright.
+- **"Already tracked" ignores solutions in the recycle bin.** The subtraction is
+  over `oe_project_repositories` joined to non-deleted solutions, matched on the
+  clone URL with the `.git` suffix and trailing slash stripped - the same
+  normalisation `ProjectDetail` uses when it refuses a duplicate pick.
+- **The panel loads its list after its first render, not during it.** Narrowing
+  costs one call to GitHub per candidate, so "Checking GitHub..." is only honest
+  if it is on screen while that happens; readiness itself is two cached database
+  reads, so an unreachable GitHub cannot hold up the Solutions page behind it.
+  Every read runs in the component's own service scope, as `RepositoryPicker`
+  does.
+- **The panel renders nothing until it can help**, and that includes while it is
+  still working out whether it can: the organisation must allow GitHub, have
+  connected one, and the viewer must be linked. Failing that, the Solutions page
+  is exactly what it was.
+- **`RepositoryDiscoveryScheduler` sweeps at 04:00 UTC**, an hour after the
+  environment refresh so the two do not share a peak, polling every five minutes
+  on `PolledScheduler` with `DISABLE_GITHUB_REPOSITORY_DISCOVERY_SCHEDULER=1` as
+  the opt-out. It enumerates `organizations` and enters an
+  `AmbientOrganizationScope` per organisation, exactly as
+  `EnvironmentRefreshScheduler` does; an organisation that fails is logged and the
+  sweep carries on.
+- **No MCP tool**, as decided.
 
 ## #628 Repository standards when the toolbox creates a repository
 

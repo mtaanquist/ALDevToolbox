@@ -88,6 +88,10 @@ internal static class TenantTableCatalog
         "recipe_suggestion_files",
         "translation_memory",
         "translation_memory_votes",
+        // A cache of what GitHub said, but also where a person's "not this one"
+        // lives (ignored_at), which no sweep can work out again. Its only parent
+        // is organizations, so it can sit last.
+        "github_repository_candidates",
     ];
 
     /// <summary>

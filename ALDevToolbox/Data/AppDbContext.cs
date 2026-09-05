@@ -180,6 +180,9 @@ public class AppDbContext : DbContext
     public DbSet<Backup> Backups => Set<Backup>();
     public DbSet<PerTenantBackup> PerTenantBackups => Set<PerTenantBackup>();
     public DbSet<OrganizationUsageSnapshot> OrganizationUsageSnapshots => Set<OrganizationUsageSnapshot>();
+    // AL repositories the discovery sweep found in the connected GitHub
+    // organisation that no solution tracks yet — see .design/github-integration-phase2.md.
+    public DbSet<GitHubRepositoryCandidate> GitHubRepositoryCandidates => Set<GitHubRepositoryCandidate>();
     // Object Explorer (.app ingest) — see .design/object-explorer.md.
     public DbSet<OeRelease> OeReleases => Set<OeRelease>();
     public DbSet<OeModule> OeModules => Set<OeModule>();
@@ -298,6 +301,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OrganizationAsset>(modelBuilder);
         ScopeToOrganization<OrganizationFile>(modelBuilder);
         ScopeToOrganization<OrganizationEmailDomain>(modelBuilder);
+        ScopeToOrganization<GitHubRepositoryCandidate>(modelBuilder);
         ScopeToOrganization<OeRelease>(modelBuilder);
         ScopeToOrganization<OeModule>(modelBuilder);
         ScopeToOrganization<OeModuleFile>(modelBuilder);
