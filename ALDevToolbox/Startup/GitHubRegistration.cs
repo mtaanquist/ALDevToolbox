@@ -26,6 +26,9 @@ public static class GitHubRegistration
         // Putting a Cookbook recipe into a repository as a pull request, and
         // updating every repository that has taken it (issue #626).
         services.AddScoped<GitHubRecipeDeliveryService>();
+        // Publishing a build's .app files as a Release, and staging a Release's
+        // files back as a build so they can be deployed (issue #632).
+        services.AddScoped<GitHubReleaseService>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

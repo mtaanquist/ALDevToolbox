@@ -356,6 +356,24 @@ public sealed class TestDb : IDisposable
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
             NewGitHubConnectionService(ctx, access), access, client, ctx, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
+    /// <summary>
+    /// GitHub Releases in both directions (#632): publishing a build's app files to a
+    /// repository's Releases page, and staging a Release's files back as a build.
+    /// <paramref name="publicOrigin"/> is what the release body links builds with; the
+    /// default leaves it unset, which is the deployment that has not configured one.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubReleaseService NewGitHubReleaseService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        string? publicOrigin = null,
+        TimeProvider? clock = null) =>
+        new(ctx, client, NewGitHubConnectionService(ctx, access),
+            new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext), OrgContext,
+            new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
+            clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubReleaseService>.Instance);
+
     /// <summary>The Translator's repository round trip: list, open, save back.</summary>
     public ALDevToolbox.Services.GitHub.GitHubTranslationService NewGitHubTranslationService(
         AppDbContext ctx,
@@ -409,6 +427,8 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubTranslationService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
+        services.TryAddSingleton(new ALDevToolbox.Endpoints.PublicOrigin(null));
     }
 
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>

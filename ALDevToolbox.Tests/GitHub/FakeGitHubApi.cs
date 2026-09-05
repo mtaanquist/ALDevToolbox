@@ -65,6 +65,36 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     }
 
     /// <summary>
+    /// Registers a <c>302</c> pointing at <paramref name="location"/>, which is how
+    /// GitHub answers a request for a Release asset's bytes: the file itself lives on
+    /// storage behind a signed URL, and the client has to follow the hop by hand
+    /// because it does not auto-redirect.
+    /// </summary>
+    public FakeGitHubApi OnRedirect(HttpMethod method, string path, string location)
+    {
+        _routes.Add((method.Method, Normalise(path), _ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Found)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json"),
+            };
+            response.Headers.Location = new Uri(location);
+            return response;
+        }));
+        return this;
+    }
+
+    /// <summary>Registers a reply carrying raw bytes - a Release asset, say, rather than JSON.</summary>
+    public FakeGitHubApi OnBytes(HttpMethod method, string path, byte[] content)
+    {
+        _routes.Add((method.Method, Normalise(path), _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(content),
+        }));
+        return this;
+    }
+
+    /// <summary>
     /// Registers a reply that changes with each call - the sequence is consumed
     /// in order and the last entry repeats, which is how a refresh test says
     /// "expired, then good".
@@ -178,6 +208,30 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     /// </summary>
     public static string OrgMembershipJson(string role = "admin", string state = "active") =>
         $"{{\"state\":\"{state}\",\"role\":\"{role}\"}}";
+
+    /// <summary>
+    /// One Release, in the shape every Releases route returns. <c>upload_url</c> is
+    /// GitHub's URI template on the separate uploads host, whose <c>{?name,label}</c>
+    /// suffix the client has to strip.
+    /// </summary>
+    public static string ReleaseJson(
+        string fullName, string tag, long id = 900, string? name = null,
+        string publishedAt = "2026-09-01T10:00:00Z",
+        params (long Id, string Name)[] assets)
+    {
+        var assetJson = string.Join(',', assets.Select(a =>
+            "{\"id\":" + a.Id + ",\"name\":\"" + a.Name + "\",\"size\":3}"));
+        return "{\"id\":" + id
+            + ",\"tag_name\":\"" + tag + "\""
+            + ",\"name\":\"" + (name ?? tag) + "\""
+            + ",\"published_at\":\"" + publishedAt + "\""
+            + ",\"html_url\":\"https://github.com/" + fullName + "/releases/tag/" + tag + "\""
+            + ",\"upload_url\":\"https://uploads.github.com/repos/" + fullName + "/releases/" + id + "/assets{?name,label}\""
+            + ",\"assets\":[" + assetJson + "]}";
+    }
+
+    /// <summary>The <c>GET /repos/{owner}/{repo}/releases</c> body.</summary>
+    public static string ReleasesJson(params string[] releases) => "[" + string.Join(',', releases) + "]";
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

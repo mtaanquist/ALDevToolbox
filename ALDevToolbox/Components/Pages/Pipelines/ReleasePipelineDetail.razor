@@ -5,6 +5,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
 @inject ALDevToolbox.Services.ObjectExplorer.DeliveryService Deliveries
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject NavigationManager Nav
 @inject ILogger<ReleasePipelineDetail> Log
 @inject IServiceScopeFactory ScopeFactory
@@ -15,7 +16,8 @@
 
 @*
     A release pipeline's detail page: its target + how it publishes, the canonical
-    "Release" action (enabled once the source build pipeline has a successful build),
+    "Release" action (enabled once the source has something to send - a successful build,
+    or a GitHub release with app files on it),
     and the delivery history with live status. Mirrors the build pipeline's
     /pipelines/{id} (builds) for the release side. See .design/saas-delivery.md.
 
@@ -59,8 +61,14 @@
                     </span>
                 </div>
                 <p class="page-head__sub">
-                    Releases <a href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a>
-                    into @_rp.ProjectEnvironment.Name
+                    @if (_fromReleases)
+                    {
+                        <text>Releases @SourceName into @_rp.ProjectEnvironment.Name</text>
+                    }
+                    else
+                    {
+                        <text>Releases <a href="@($"/pipelines/{_rp.BuildPipelineId}")">@SourceName</a> into @_rp.ProjectEnvironment.Name</text>
+                    }
                 </p>
             </div>
             <div class="page-head__actions">
@@ -70,8 +78,8 @@
                     <button type="button" class="btn" @onclick="EditAsync">
                         <Icon Name="pencil" Width="15" Height="15" /><span>Edit</span>
                     </button>
-                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync" disabled="@(_successfulBuilds.Count == 0)"
-                            title="@(_successfulBuilds.Count == 0 ? "The build pipeline has no successful build to release yet." : null)">
+                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync" disabled="@(!HasSomethingToRelease)"
+                            title="@(HasSomethingToRelease ? null : _fromReleases ? "This repository has no release with app files attached yet." : "The build pipeline has no successful build to release yet.")">
                         <Icon Name="send" Width="15" Height="15" /><span>Release</span>
                     </button>
                 }
@@ -84,8 +92,8 @@
                 <span class="meta-item__value">@_rp.ProjectEnvironment.Name</span>
             </span>
             <span class="meta-item">
-                <span class="meta-item__label">Build pipeline</span>
-                <span class="meta-item__value">@_rp.BuildPipeline!.Name</span>
+                <span class="meta-item__label">@(_fromReleases ? "Releases from" : "Build pipeline")</span>
+                <span class="meta-item__value">@SourceName</span>
             </span>
             <span class="meta-item">
                 <span class="meta-item__label">Releases</span>
@@ -103,12 +111,27 @@
                 </span>
             </p>
         }
-        else if (_canManage && _successfulBuilds.Count == 0)
+        else if (_canManage && _releasesError is { } gre)
         {
-            <p class="u-muted">
-                <b>@_rp.BuildPipeline!.Name</b> has no successful build yet. Run a build on
-                <a href="@($"/pipelines/{_rp.BuildPipelineId}")">the build pipeline</a>, then come back to release it.
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" /><span>@gre</span>
             </p>
+        }
+        else if (_canManage && !HasSomethingToRelease)
+        {
+            @if (_fromReleases)
+            {
+                <p class="u-muted">
+                    <b>@SourceName</b> has no release with app files attached yet. Publish one there, then come back to install it.
+                </p>
+            }
+            else
+            {
+                <p class="u-muted">
+                    <b>@SourceName</b> has no successful build yet. Run a build on
+                    <a href="@($"/pipelines/{_rp.BuildPipelineId}")">the build pipeline</a>, then come back to release it.
+                </p>
+            }
         }
 
         <p class="state-label">Deliveries, newest first</p>
@@ -119,10 +142,10 @@
                 <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
                 <div class="empty-state__title">No releases yet</div>
                 <p class="empty-state__text">
-                    When you release a successful build, it uploads and installs the apps into
+                    When you release, the apps are uploaded and installed into
                     @_rp.ProjectEnvironment.Name and the run shows up here.
                 </p>
-                @if (_canManage && _successfulBuilds.Count > 0)
+                @if (_canManage && HasSomethingToRelease)
                 {
                     <button type="button" class="btn btn--primary empty-state__action" @onclick="OpenReleaseAsync">
                         <Icon Name="send" Width="16" Height="16" /><span>Release</span>
@@ -260,6 +283,21 @@
     private bool _isProduction;
     private List<DeliveryHistoryRow> _deliveries = new();
     private List<ReleaseBuildDialog.ReleasableBuildOption> _successfulBuilds = new();
+    // A Release-sourced pipeline offers the repository's release tags instead of the
+    // build pipeline's builds (#632).
+    private List<ALDevToolbox.Services.GitHub.GitHubReleaseOption> _releaseOptions = new();
+    private string? _releasesError;
+
+    /// <summary>True when this pipeline installs apps from a repository's GitHub releases.</summary>
+    private bool _fromReleases;
+
+    /// <summary>What this pipeline draws from: the build pipeline's name, or the repository's.</summary>
+    private string SourceName => _fromReleases
+        ? _rp?.GithubReleaseRepository?.DisplayName ?? "the repository"
+        : _rp?.BuildPipeline?.Name ?? "the build pipeline";
+
+    /// <summary>True when there is at least one build (or release) the person could send.</summary>
+    private bool HasSomethingToRelease => _fromReleases ? _releaseOptions.Count > 0 : _successfulBuilds.Count > 0;
 
     private ReleasePipelineEditorDialog? _editor;
     private ReleaseBuildDialog? _releaseDialog;
@@ -301,23 +339,52 @@
         _canManage = await Releases.CanManageAsync(Id);
         _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id);
 
-        // The releasable builds are the source build pipeline's successful builds, newest first.
-        var builds = await Artifacts.ListBuildsAsync(_rp.BuildPipelineId);
-        // The apps each build carries, so the release dialog can show what is about
-        // to be installed before the consultant confirms (#714).
-        var appsByBuild = await Artifacts.ListBuildAppsAsync(_rp.BuildPipelineId);
-        _successfulBuilds = builds
-            .Where(b => b.Status == "ready")
-            .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
-            .Select(b =>
+        _fromReleases = _rp.ArtifactSource == ALDevToolbox.Domain.ValueObjects.ObjectExplorer.ReleaseArtifactSource.GithubRelease;
+        _successfulBuilds = new();
+        _releaseOptions = new();
+        _releasesError = null;
+
+        if (_fromReleases)
+        {
+            // Asking GitHub is the one thing on this page that can be slow or fail; a
+            // refusal is shown above the history rather than replacing the page, so the
+            // deliveries already made stay readable.
+            try
             {
-                var apps = appsByBuild.TryGetValue(b.Id, out var found) ? found : [];
-                return new ReleaseBuildDialog.ReleasableBuildOption(
-                    b.Id,
-                    BuildLabel(b, apps.Count),
-                    apps.Select(a => new ReleaseBuildDialog.ReleasableBuildApp(a.AppName, a.AppVersion)).ToList());
-            })
-            .ToList();
+                _releaseOptions = (await GitHubReleases.ListReleasesAsync(Id))
+                    .Where(r => r.AppFileNames.Count > 0)
+                    .ToList();
+            }
+            catch (PlanValidationException ex)
+            {
+                _releasesError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't read this repository's releases.";
+            }
+            catch (Exception ex)
+            {
+                Log.LogError(ex, "Reading GitHub releases failed for release pipeline {ReleasePipelineId}.", Id);
+                _releasesError = "Couldn't read this repository's releases from GitHub. Try again in a moment.";
+            }
+        }
+        else if (_rp.BuildPipelineId is { } buildPipelineId)
+        {
+            // The releasable builds are the source build pipeline's successful builds, newest first.
+            var builds = await Artifacts.ListBuildsAsync(buildPipelineId);
+            // The apps each build carries, so the release dialog can show what is about
+            // to be installed before the consultant confirms (#714).
+            var appsByBuild = await Artifacts.ListBuildAppsAsync(buildPipelineId);
+            _successfulBuilds = builds
+                .Where(b => b.Status == "ready")
+                .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
+                .Select(b =>
+                {
+                    var apps = appsByBuild.TryGetValue(b.Id, out var found) ? found : [];
+                    return new ReleaseBuildDialog.ReleasableBuildOption(
+                        b.Id,
+                        BuildLabel(b, apps.Count),
+                        apps.Select(a => new ReleaseBuildDialog.ReleasableBuildApp(a.AppName, a.AppVersion)).ToList());
+                })
+                .ToList();
+        }
 
         _loading = false;
         if (startPollIfActive) EnsurePolling();
@@ -330,7 +397,8 @@
             _rp.Id, _rp.ProjectId, _rp.Project?.Name ?? "", _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
             _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
             _rp.ProjectEnvironment?.MissingSince != null,
-            _rp.DeploymentSchedule, _rp.SchemaSyncMode);
+            _rp.DeploymentSchedule, _rp.SchemaSyncMode,
+            _rp.ArtifactSource, _rp.GithubReleaseRepositoryId, _rp.GithubReleaseRepository?.DisplayName);
         await _editor.OpenForEditAsync(row);
     }
 
@@ -338,12 +406,14 @@
 
     private async Task OpenReleaseAsync()
     {
-        if (_releaseDialog is null || _rp is null || _successfulBuilds.Count == 0) return;
+        if (_releaseDialog is null || _rp is null || !HasSomethingToRelease) return;
         await _releaseDialog.OpenAsync(
             _rp.Id, _rp.Project?.Name ?? "", _rp.ProjectEnvironment!.Name, _rp.ProjectEnvironment.Type,
             _rp.DeploymentSchedule, _rp.SchemaSyncMode, _successfulBuilds,
             _rp.Project?.BcTimeZone, _rp.ProjectEnvironment.UpdateWindowStart, _rp.ProjectEnvironment.UpdateWindowEnd,
-            _rp.Project?.BcClientSecretExpiresAt);
+            _rp.Project?.BcClientSecretExpiresAt,
+            _fromReleases ? _releaseOptions : null,
+            _fromReleases ? SourceName : null);
     }
 
     private async Task OnReleasedAsync(int _)

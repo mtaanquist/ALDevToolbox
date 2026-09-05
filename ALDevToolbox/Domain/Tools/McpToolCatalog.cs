@@ -136,6 +136,10 @@ public static class McpToolCatalog
             "Lists what has been published, when, and whether it landed.", false),
         new McpToolDescriptor("publish_build", Projects,
             "Publishes a build to a Business Central environment.", true),
+        new McpToolDescriptor("list_github_releases", Projects,
+            "Lists the GitHub releases a release pipeline can install.", false),
+        new McpToolDescriptor("stage_github_release", Projects,
+            "Fetches the app files from a GitHub release so they can be published.", true),
 
         // ---- Quality guidance ----
         new McpToolDescriptor("search_bcquality", BcQuality,

@@ -289,7 +289,9 @@ the naming suggested.
 |---|---|---|
 | `id` / `organization_id` / `project_id` / `created_by_user_id` / `deleted_at` | | Standard, org-scoped, soft-deletable, owner-managed (same as `Pipeline`). |
 | `name` | `text` | e.g. `Contoso App → Production`. |
-| `build_pipeline_id` | FK → `oe_pipelines` | The artifact source — releases publish *this* build pipeline's builds. |
+| `artifact_source` | `text` | Where the apps come from: `build` (the default) or `github_release`. Added by #632, when "redeploy a version the toolbox did not build" stopped being a hole in the model. |
+| `build_pipeline_id` | FK → `oe_pipelines`, **nullable** | The artifact source when `artifact_source = build` — releases publish *this* build pipeline's builds. Null (and unused) for a Release-sourced pipeline. |
+| `github_release_repository_id` | FK → `oe_project_repositories`, nullable | The repository whose GitHub Releases the pipeline installs, when `artifact_source = github_release`. Exactly one of these two is set. |
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
 | `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate`. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Only three are offered in the picker — see *Deployment schedules* below. |
 | `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
@@ -318,6 +320,14 @@ specific build. Mirrors how `ProjectBuild` records a build run:
 - Per-app rows (`oe_project_delivery_results`, like `ProjectBuildResult`): app name/id, the BC
   install `operation_id`, the operation's result, message.
 - `failure_message`, and a log section for the raw API responses (secret-free).
+
+**As built (#632):** a delivery can also publish a build the toolbox never compiled. Choosing a
+tag on a Release-sourced pipeline downloads that Release's `.app` assets and **stages them as an
+ordinary `ProjectBuild`** — status `ready`, no `pipeline_id`, `github_release_tag` set — so
+`ProjectDelivery` and every downstream reader are unchanged; `ScheduleDeliveryAsync` accepts such a
+build in place of its build-pipeline check. `oe_project_builds` gained `github_release_tag`,
+`github_release_url` and `github_release_error` for both halves of that traffic: a build the toolbox
+compiled records where it was *published*, and a staged build records where it came *from*.
 
 **As built:** `oe_project_deliveries` also carries a denormalised `project_id` (so the worker
 resolves the BC credentials without a join) and a `diagnostics_log` text column (the secret-free

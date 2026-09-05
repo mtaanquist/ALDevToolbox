@@ -16,7 +16,7 @@ public static class GitHubPermissionLabels
         new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
         {
             ["administration"] = ("See repository settings", "Create new repositories"),
-            ["contents"] = ("Read files in repositories", "Read and write files in repositories"),
+            ["contents"] = ("Read files in repositories", "Read and write files, and publish releases, in repositories"),
             ["metadata"] = ("See repository names and descriptions", "See repository names and descriptions"),
             ["members"] = ("See who is in the organisation", "Manage who is in the organisation"),
             ["pull_requests"] = ("Read pull requests", "Open and update pull requests"),

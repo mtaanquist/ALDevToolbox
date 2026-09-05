@@ -15,7 +15,9 @@ internal sealed class ReleasePipelineConfiguration : IEntityTypeConfiguration<Re
         entity.Property(e => e.ProjectId).HasColumnName("project_id").IsRequired();
         entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
-        entity.Property(e => e.BuildPipelineId).HasColumnName("build_pipeline_id").IsRequired();
+        entity.Property(e => e.ArtifactSource).HasColumnName("artifact_source").HasMaxLength(30).IsRequired();
+        entity.Property(e => e.BuildPipelineId).HasColumnName("build_pipeline_id");
+        entity.Property(e => e.GithubReleaseRepositoryId).HasColumnName("github_release_repository_id");
         entity.Property(e => e.ProjectEnvironmentId).HasColumnName("project_environment_id").IsRequired();
         entity.Property(e => e.DeploymentSchedule).HasColumnName("deployment_schedule").HasMaxLength(50).IsRequired();
         entity.Property(e => e.SchemaSyncMode).HasColumnName("schema_sync_mode").HasMaxLength(50).IsRequired();
@@ -56,6 +58,14 @@ internal sealed class ReleasePipelineConfiguration : IEntityTypeConfiguration<Re
             .WithMany()
             .HasForeignKey(e => e.ProjectEnvironmentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // The other artifact source: a repository's GitHub Releases. SET NULL so
+        // removing the repository from the solution leaves the pipeline's delivery
+        // history readable rather than deleting it.
+        entity.HasOne(e => e.GithubReleaseRepository)
+            .WithMany()
+            .HasForeignKey(e => e.GithubReleaseRepositoryId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         entity.HasIndex(e => e.ProjectId).HasDatabaseName("ix_oe_release_pipelines_project");
         entity.HasIndex(e => e.BuildPipelineId)

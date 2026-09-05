@@ -1,9 +1,11 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.DeliveryService Deliveries
+@inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<ReleaseBuildDialog> Log
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Services.GitHub
 
 @*
     Release a build through a release pipeline: pick which successful build to publish
@@ -36,19 +38,38 @@
                     <b>@DeliveryModeDisplay.Schedule(_deploymentSchedule).ToLowerInvariant()</b>@(_schemaSyncMode == BcSyncMode.ForceSync ? ", using Force sync (which can drop columns)" : "").
                 </p>
 
-                <div class="field">
-                    <label class="field__label" for="rb-build">Build to release</label>
-                    <span class="select-wrap">
-                        <select id="rb-build" class="select" @bind="_buildId" disabled="@_releasing">
-                            @foreach (var b in _builds)
-                            {
-                                <option value="@b.Id">@b.Label</option>
-                            }
-                        </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
-                    <small class="field__hint">The latest successful build is selected. Older successful builds are available too.</small>
-                </div>
+                @if (_fromReleases)
+                {
+                    <div class="field">
+                        <label class="field__label" for="rb-release">Release to install</label>
+                        <span class="select-wrap">
+                            <select id="rb-release" class="select" @bind="_tag" disabled="@_releasing">
+                                @foreach (var r in _releases)
+                                {
+                                    <option value="@r.Tag">@ReleaseLabel(r)</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <small class="field__hint">The newest release is selected. Its app files are downloaded from @_repositoryName when you release.</small>
+                    </div>
+                }
+                else
+                {
+                    <div class="field">
+                        <label class="field__label" for="rb-build">Build to release</label>
+                        <span class="select-wrap">
+                            <select id="rb-build" class="select" @bind="_buildId" disabled="@_releasing">
+                                @foreach (var b in _builds)
+                                {
+                                    <option value="@b.Id">@b.Label</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <small class="field__hint">The latest successful build is selected. Older successful builds are available too.</small>
+                    </div>
+                }
 
                 <div class="field">
                     <label class="field__label" for="rb-when">When</label>
@@ -73,7 +94,19 @@
                     }
                 </div>
 
-                @if (SelectedApps.Count > 0)
+                @if (_fromReleases && SelectedReleaseFiles.Count > 0)
+                {
+                    <div class="rb-apps">
+                        <span class="rb-apps__label">This release installs</span>
+                        <ul class="rb-apps__list">
+                            @foreach (var file in SelectedReleaseFiles)
+                            {
+                                <li><span class="rb-apps__name">@file</span></li>
+                            }
+                        </ul>
+                    </div>
+                }
+                else if (!_fromReleases && SelectedApps.Count > 0)
                 {
                     <div class="rb-apps">
                         <span class="rb-apps__label">This build installs</span>
@@ -112,7 +145,7 @@
                 <button type="button" class="btn" @onclick="Cancel" disabled="@_releasing">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="ReleaseAsync" disabled="@(!CanRelease)">
                     <Icon Name="send" Width="14" Height="14" />
-                    <span>@(_releasing ? "Releasing..." : IsImmediate ? "Release now" : "Schedule release")</span>
+                    <span>@(_staging ? "Getting the apps..." : _releasing ? "Releasing..." : IsImmediate ? "Release now" : "Schedule release")</span>
                 </button>
             </div>
         </div>
@@ -135,6 +168,13 @@
     private string _schemaSyncMode = string.Empty;
     private List<ReleasableBuildOption> _builds = new();
     private int _buildId;
+    // Release-sourced pipelines pick a GitHub release rather than a build; the apps are
+    // downloaded and staged as a build at the moment the person releases (#632).
+    private bool _fromReleases;
+    private List<GitHubReleaseOption> _releases = new();
+    private string _tag = string.Empty;
+    private string _repositoryName = string.Empty;
+    private bool _staging;
     private bool _prodAck;
     private bool _releasing;
     private string? _error;
@@ -153,6 +193,19 @@
     /// <summary>The apps the currently-picked build would install, shown before the confirm.</summary>
     private IReadOnlyList<ReleasableBuildApp> SelectedApps =>
         _builds.FirstOrDefault(b => b.Id == _buildId)?.Apps ?? [];
+
+    /// <summary>The app files attached to the currently-picked release.</summary>
+    private IReadOnlyList<string> SelectedReleaseFiles =>
+        _releases.FirstOrDefault(r => r.Tag == _tag)?.AppFileNames ?? [];
+
+    /// <summary>How one release reads in the picker: its tag, its title when it has a different one, and when it was published.</summary>
+    private static string ReleaseLabel(GitHubReleaseOption release)
+    {
+        var title = string.IsNullOrWhiteSpace(release.Name) || release.Name == release.Tag ? null : release.Name;
+        var when = release.PublishedAt is { } at ? at.ToLocalTime().ToString("yyyy-MM-dd") : null;
+        var suffix = string.Join(" - ", new[] { title, when }.Where(x => !string.IsNullOrEmpty(x)));
+        return suffix.Length == 0 ? release.Tag : $"{release.Tag} ({suffix})";
+    }
 
     /// <summary>The picked customer-tz wall-clock as a UTC instant.</summary>
     private DateTime ScheduledUtc => TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_scheduledLocal, DateTimeKind.Unspecified), _tz);
@@ -188,7 +241,11 @@
     }
 
     private bool CanRelease =>
-        !_releasing && _buildId != 0 && _builds.Count > 0 && (!_isProduction || _prodAck);
+        !_releasing
+        && (_fromReleases
+            ? _tag.Length > 0 && SelectedReleaseFiles.Count > 0
+            : _buildId != 0 && _builds.Count > 0)
+        && (!_isProduction || _prodAck);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -208,9 +265,16 @@
     /// </summary>
     public Task OpenAsync(int releasePipelineId, string customerName, string envName, string envType, string deploymentSchedule, string schemaSyncMode,
         IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd,
-        DateTime? secretExpiresAt = null)
+        DateTime? secretExpiresAt = null,
+        IReadOnlyList<GitHubReleaseOption>? releases = null,
+        string? repositoryName = null)
     {
         _releasePipelineId = releasePipelineId;
+        _fromReleases = releases is not null;
+        _releases = releases?.Where(r => r.AppFileNames.Count > 0).ToList() ?? new();
+        _tag = _releases.Count > 0 ? _releases[0].Tag : string.Empty;
+        _repositoryName = repositoryName ?? "the repository";
+        _staging = false;
         _secretExpiresAt = secretExpiresAt;
         // The customer's project name is what tells a consultant with several projects
         // open *whose* tenant this writes to - an environment is often literally named
@@ -267,7 +331,17 @@
         _error = null;
         try
         {
-            var deliveryId = await Deliveries.ScheduleDeliveryAsync(_releasePipelineId, _buildId, ScheduledUtc);
+            var buildId = _buildId;
+            if (_fromReleases)
+            {
+                // Downloading the release's app files is what turns a tag into
+                // something deliverable; from there the flow is the ordinary one.
+                _staging = true;
+                StateHasChanged();
+                buildId = await GitHubReleases.StageReleaseAsync(_releasePipelineId, _tag);
+                _staging = false;
+            }
+            var deliveryId = await Deliveries.ScheduleDeliveryAsync(_releasePipelineId, buildId, ScheduledUtc);
             _open = false;
             await OnReleased.InvokeAsync(deliveryId);
         }
@@ -279,14 +353,21 @@
         {
             _error = "Only the solution owner or an admin can release this solution's builds.";
         }
+        catch (GitHubApiException ex)
+        {
+            _error = $"GitHub refused: {ex.Message}";
+        }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to start release for pipeline {ReleasePipelineId}.", _releasePipelineId);
-            _error = "Couldn't start the release.";
+            _error = _fromReleases
+                ? "Couldn't get the release's app files from GitHub. Try again in a moment."
+                : "Couldn't start the release.";
         }
         finally
         {
             _releasing = false;
+            _staging = false;
         }
     }
 

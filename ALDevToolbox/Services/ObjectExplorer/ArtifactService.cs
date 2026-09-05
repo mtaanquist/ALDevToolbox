@@ -282,6 +282,24 @@ public sealed class ArtifactService
         return await ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.ProjectId == projectId), ct);
     }
 
+    /// <summary>
+    /// One build as the history lists it, or null when it isn't in the acting org.
+    /// Gated on its solution's visibility, like every other build read here — used by
+    /// the agent-facing staging tool, which has a build id and needs the row back.
+    /// </summary>
+    public async Task<BuildRow?> GetBuildRowAsync(int buildId, CancellationToken ct = default)
+    {
+        var projectId = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.Id == buildId)
+            .Select(b => (int?)b.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is not { } pid) return null;
+        await _access.EnsureCanViewAsync(pid, ct);
+
+        var rows = await ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.Id == buildId), ct);
+        return rows.FirstOrDefault();
+    }
+
     private async Task<List<BuildRow>> ListBuildsCoreAsync(IQueryable<ProjectBuild> filtered, CancellationToken ct)
     {
         var builds = await filtered
@@ -290,6 +308,7 @@ public sealed class ArtifactService
             {
                 b.Id, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
                 b.StartedAt, b.FinishedAt, b.FailureMessage,
+                b.GithubReleaseTag, b.GithubReleaseUrl, b.GithubReleaseError,
                 StartedByName = b.StartedByUser != null ? b.StartedByUser.DisplayName : null,
                 ArtifactCount = b.Artifacts.Count,
             })
@@ -347,7 +366,10 @@ public sealed class ArtifactService
                 b.StartedAt, b.FinishedAt, b.FailureMessage, b.StartedByName, b.ArtifactCount,
                 HeadCommitShort: shortHash,
                 HeadCommitMessage: string.IsNullOrEmpty(message) ? null : message,
-                CommitCount: realCommits.Count);
+                CommitCount: realCommits.Count,
+                GitHubReleaseTag: b.GithubReleaseTag,
+                GitHubReleaseUrl: b.GithubReleaseUrl,
+                GitHubReleaseError: b.GithubReleaseError);
         }).ToList();
     }
 
@@ -582,7 +604,13 @@ public sealed record BuildRow(
     int ArtifactCount,
     string? HeadCommitShort = null,
     string? HeadCommitMessage = null,
-    int CommitCount = 0);
+    int CommitCount = 0,
+    /// <summary>The GitHub Release tag this build was published as, or staged from (#632). Null when neither.</summary>
+    string? GitHubReleaseTag = null,
+    /// <summary>The Release's page on GitHub, when there is one.</summary>
+    string? GitHubReleaseUrl = null,
+    /// <summary>Why the build was not published as a Release. The build itself still succeeded.</summary>
+    string? GitHubReleaseError = null);
 
 /// <summary>One build's full detail for the Artifacts build card.</summary>
 public sealed record BuildDetail(

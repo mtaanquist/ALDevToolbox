@@ -42,6 +42,38 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
 
     protected override string Describe(ReleaseImportJob job) => $"ReleaseId={job.ReleaseId}";
 
+    /// <summary>
+    /// Publishes the finished build as a GitHub Release when its pipeline names a
+    /// repository to publish to. Runs inside the job's own DI scope and organisation
+    /// identity, and swallows everything: the <c>.app</c> files are already built and
+    /// downloadable, so nothing GitHub says is allowed to turn a successful build into
+    /// a failed one. The reason lands on the build row and in its log instead. See
+    /// <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    private async Task PublishReleaseAsync(IServiceProvider services, int releaseId, CancellationToken ct)
+    {
+        try
+        {
+            var db = services.GetRequiredService<AppDbContext>();
+            var buildId = await db.OeProjectBuilds.AsNoTracking()
+                .Where(b => b.ReleaseId == releaseId)
+                .Select(b => (int?)b.Id)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (buildId is not { } id) return;
+
+            var releases = services.GetRequiredService<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
+            await releases.PublishBuildAsync(id, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // Shutdown, not a publish failure.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Publishing release {ReleaseId}'s build to GitHub failed.", releaseId);
+        }
+    }
+
     protected override async Task RunJobAsync(ReleaseImportJob job, CancellationToken ct)
     {
         using var orgScope = AmbientOrganizationScope.Enter(job.Identity);
@@ -159,6 +191,11 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
                     await buildService.MarkCompiledResultsIngestedAsync(job.ReleaseId, ct).ConfigureAwait(false);
                     // Flip the first-class build row ready alongside the Release.
                     await buildService.MarkBuildReadyAsync(job.ReleaseId, outcome.BcVersion, ct).ConfigureAwait(false);
+                    // The build is final at this point, so publishing it to GitHub can
+                    // only ever add to it: a pipeline that names a repository gets a
+                    // Release, and every refusal is recorded on the build rather than
+                    // failing it (issue #632).
+                    await PublishReleaseAsync(scope.ServiceProvider, job.ReleaseId, ct).ConfigureAwait(false);
                     jobSucceeded = true;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)

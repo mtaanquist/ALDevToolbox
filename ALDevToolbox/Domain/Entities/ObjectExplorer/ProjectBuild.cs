@@ -75,6 +75,26 @@ public class ProjectBuild
     /// </summary>
     public string? RequestedAppIdsJson { get; set; }
 
+    /// <summary>
+    /// The GitHub Release tag this build was published as (<c>v1.2.3.0</c>), when the
+    /// pipeline names a repository to publish to. It doubles as the marker of a
+    /// <em>staged</em> build: a build with a tag and no pipeline was not compiled here
+    /// at all but downloaded from a Release so it could be deployed. Null when nothing
+    /// was published. See <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    public string? GithubReleaseTag { get; set; }
+
+    /// <summary>The published Release's page on GitHub, for the link on the build card. Null when nothing was published.</summary>
+    public string? GithubReleaseUrl { get; set; }
+
+    /// <summary>
+    /// Why the build was not published as a Release - GitHub's own refusal, or "the apps
+    /// have different versions". A publish failure is never a build failure: the
+    /// <c>.app</c> files exist and download regardless, so this is a note on a build
+    /// that is still <c>ready</c>.
+    /// </summary>
+    public string? GithubReleaseError { get; set; }
+
     public DateTime StartedAt { get; set; }
 
     /// <summary>When the build reached a terminal state (<c>ready</c> / <c>failed</c>); null while in flight.</summary>

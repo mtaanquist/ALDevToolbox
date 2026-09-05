@@ -98,6 +98,7 @@ public sealed class DeliveryService
                 r.Id,
                 r.ProjectId,
                 r.BuildPipelineId,
+                r.ArtifactSource,
                 r.DeploymentSchedule,
                 r.SchemaSyncMode,
                 OwnerId = r.Project!.CreatedByUserId,
@@ -128,13 +129,24 @@ public sealed class DeliveryService
 
         var build = await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.Id == projectBuildId)
-            .Select(b => new { b.Id, b.ProjectId, b.PipelineId, b.Status })
+            .Select(b => new { b.Id, b.ProjectId, b.PipelineId, b.Status, b.GithubReleaseTag })
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("Build", "That build no longer exists.");
 
-        if (build.ProjectId != rp.ProjectId || build.PipelineId != rp.BuildPipelineId)
+        // Which builds this pipeline may publish depends on where it draws its apps
+        // from. A build pipeline's own runs, or - for a Release-sourced pipeline - a
+        // build staged from one of the repository's GitHub releases: no pipeline of its
+        // own, and the tag it came from recorded on it. See
+        // .design/github-integration-phase2.md (#632).
+        var acceptable = build.ProjectId == rp.ProjectId
+            && (rp.ArtifactSource == ReleaseArtifactSource.GithubRelease
+                ? build.PipelineId is null && build.GithubReleaseTag is not null
+                : build.PipelineId == rp.BuildPipelineId);
+        if (!acceptable)
         {
-            throw Validation("Build", "That build isn't from this release pipeline's build pipeline.");
+            throw Validation("Build", rp.ArtifactSource == ReleaseArtifactSource.GithubRelease
+                ? "That build didn't come from one of this release pipeline's GitHub releases."
+                : "That build isn't from this release pipeline's build pipeline.");
         }
         if (build.Status != ProjectBuildStatus.Ready)
         {

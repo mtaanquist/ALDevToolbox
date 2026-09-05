@@ -247,6 +247,21 @@
                                 <p class="pb-note">This build produced no downloadable files.</p>
                             }
 
+                            @* Where the customer can get these files themselves. A build
+                               that could not be published says why, without ever reading
+                               as a failed build - the files above downloaded fine (#632). *@
+                            @if (_latest.GitHubReleaseUrl is { Length: > 0 } releaseUrl)
+                            {
+                                <p class="pb-note">
+                                    Published as
+                                    <a href="@releaseUrl" target="_blank" rel="noopener noreferrer">@(_latest.GitHubReleaseTag ?? "a GitHub release")</a>.
+                                </p>
+                            }
+                            else if (_latest.GitHubReleaseError is { Length: > 0 } releaseError)
+                            {
+                                <p class="pb-note">Not published to GitHub: @releaseError</p>
+                            }
+
                             @if (_latestDetail?.ReleaseId is { } relId)
                             {
                                 <div class="pb-explore">
@@ -644,7 +659,7 @@
         if (pipeline is null || _editor is null) return;
         await _editor.OpenForEditAsync(
             pipeline.Id, pipeline.ProjectId, pipeline.Project?.Name ?? _header?.ProjectName ?? "",
-            pipeline.Name, pipeline.RequestedAppIdsJson);
+            pipeline.Name, pipeline.RequestedAppIdsJson, pipeline.GithubReleaseRepositoryId);
     }
 
     private async Task OnPipelineSavedAsync(int _)

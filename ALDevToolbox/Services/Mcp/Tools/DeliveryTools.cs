@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.GitHub;
 using ALDevToolbox.Services.ObjectExplorer;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
@@ -27,11 +28,19 @@ public sealed class DeliveryTools
 {
     private readonly DeliveryService _deliveries;
     private readonly ReleasePipelineService _releasePipelines;
+    private readonly GitHubReleaseService _githubReleases;
+    private readonly ArtifactService _artifacts;
 
-    public DeliveryTools(DeliveryService deliveries, ReleasePipelineService releasePipelines)
+    public DeliveryTools(
+        DeliveryService deliveries,
+        ReleasePipelineService releasePipelines,
+        GitHubReleaseService githubReleases,
+        ArtifactService artifacts)
     {
         _deliveries = deliveries;
         _releasePipelines = releasePipelines;
+        _githubReleases = githubReleases;
+        _artifacts = artifacts;
     }
 
     [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
@@ -86,6 +95,58 @@ public sealed class DeliveryTools
         }
     }
 
+    [McpServerTool(Name = "list_github_releases", ReadOnly = true)]
+    [Description("Lists the GitHub releases a release pipeline can install, newest first, with each release's tag, title, publication date and the app files attached to it. Only works for a release pipeline whose apps come from a repository's GitHub releases - one that releases a build pipeline's builds is refused, and you should use list_pipeline_builds for that. Releases with no app files attached cannot be installed. Requires the solution owner or an org admin.")]
+    public async Task<IReadOnlyList<GitHubReleaseOption>> ListGitHubReleasesAsync(
+        [Description("Release pipeline id (from list_release_pipelines).")] int releasePipelineId,
+        CancellationToken ct = default)
+    {
+        await _releasePipelines.EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
+        try
+        {
+            return await _githubReleases.ListReleasesAsync(releasePipelineId, ct);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            throw new McpException("You don't have permission to read this solution's releases — you must be the solution owner or an org admin.");
+        }
+        catch (PlanValidationException ex)
+        {
+            throw new McpException("Couldn't list the releases: " + string.Join("; ", ex.Errors.Values));
+        }
+        catch (GitHubApiException ex)
+        {
+            throw new McpException("GitHub refused to list the releases: " + ex.Message);
+        }
+    }
+
+    [McpServerTool(Name = "stage_github_release", ReadOnly = false, Idempotent = true)]
+    [Description("Downloads the app files attached to one GitHub release and records them as a build, so publish_build can install them into the release pipeline's Business Central environment. Nothing is installed yet — this only fetches the files. Staging the same release twice returns the build already recorded rather than fetching it again. Refused when the release pipeline does not draw from GitHub releases, when the tag no longer exists, or when the release has no app files attached. Requires the solution owner or an org admin.")]
+    public async Task<BuildRow> StageGitHubReleaseAsync(
+        [Description("Release pipeline id (from list_release_pipelines) — says which repository the release is read from.")] int releasePipelineId,
+        [Description("The release's tag, exactly as list_github_releases reports it (for example 'v1.2.3.0').")] string tag,
+        CancellationToken ct = default)
+    {
+        await _releasePipelines.EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
+        try
+        {
+            var buildId = await _githubReleases.StageReleaseAsync(releasePipelineId, tag, ct);
+            return await _artifacts.GetBuildRowAsync(buildId, ct)
+                ?? throw new McpException($"Release {tag} was staged as build {buildId}, but the build could not be read back.");
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            throw new McpException("You don't have permission to release this solution's builds — you must be the solution owner or an org admin.");
+        }
+        catch (PlanValidationException ex)
+        {
+            throw new McpException("Couldn't stage that release: " + string.Join("; ", ex.Errors.Values));
+        }
+        catch (GitHubApiException ex)
+        {
+            throw new McpException("GitHub refused: " + ex.Message);
+        }
+    }
 }
 
 /// <summary>The outcome of a <c>publish_build</c> call — the new delivery id and how to track it.</summary>

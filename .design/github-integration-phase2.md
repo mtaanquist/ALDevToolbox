@@ -285,7 +285,68 @@ Releases page, and who sometimes has to redeploy a version the toolbox did not b
 
 **As built**
 
-_(appended by the implementer)_
+- **Publishing hangs off the build worker, not off the build service.**
+  `ReleaseImportWorker` calls `GitHubReleaseService.PublishBuildAsync` immediately after
+  `MarkBuildReadyAsync`, inside the same DI scope and ambient organisation identity. That
+  is the one point where a build is final *and* nothing downstream is waiting, so a
+  publish can only add to it. The call is wrapped twice - the service catches GitHub's
+  refusals itself, the worker catches everything else - because "a publish failure is
+  never a build failure" has to hold for a bug in the publisher too.
+- **The outcome lives in three places, and each is for a different reader.**
+  `oe_project_builds.github_release_tag` / `_url` / `_error` are what the build card
+  renders ("Published as v1.2.3.0", linked, or "Not published to GitHub: ..."); a
+  `oe_project_build_logs` row headed "GitHub Release" is what the raw log download shows;
+  the returned `GitHubReleasePublishResult` is what a caller acts on. The log row is
+  appended after `PersistLogsAsync` has run rather than fed through it, so publishing does
+  not have to be part of the build service's log lifecycle.
+- **The tag doubles as the staged-build marker, and `pipeline_id is null` is the other
+  half of it.** A build with a tag and a pipeline was compiled here and published there; a
+  build with a tag and no pipeline was downloaded from a Release. `ScheduleDeliveryAsync`
+  distinguishes them on exactly that pair, so nothing new had to be added to say which
+  kind of build a delivery is publishing.
+- **Staging is idempotent on `(tag, release URL)`, not on the tag alone.** Two release
+  pipelines in one solution can draw from different repositories, and both their `v1.0.0.0`
+  releases are real; matching the URL as well keeps "which one did we deploy" a question
+  with one answer without inventing a repository column on the build.
+- **The `.app`'s manifest is read directly, not through `AppPackageReader`.** Staging wants
+  a name and a version; the full reader parses every symbol in the package, which on a
+  base-app-sized `.app` is minutes of work for two strings. `GitHubReleaseService` opens the
+  zip behind the 40-byte NAVX header, reads `NavxManifest.xml`, and falls back to the
+  `Publisher_Name_Version.app` file-name convention and then to the bare file name. No new
+  package.
+- **The publish path never asks `GitHubRepositoryService.ResolveAsync`.** That resolver is
+  the *user*-credential gate, and a build worker has no user - a webhook build will have
+  none at all. The repository is instead pinned to the pipeline's own
+  `oe_project_repositories` row (which only a manager of that solution can set), checked to
+  be on GitHub, and checked to sit inside the connected organisation's login before any
+  call is made. The two agent-facing calls, which do run as a person, go through
+  `ProjectAccess.EnsureCanManageAsync` on the owning solution.
+- **The editors show nothing they cannot act on.** Both the publish select and the
+  release-pipeline source choice are rendered only when
+  `GitHubReleaseService.ListRepositoryOptionsAsync` returns something, which needs a
+  connected GitHub organisation *and* a repository of this solution inside it. An
+  organisation on Azure DevOps sees the two dialogs exactly as they were - the same rule
+  #624 settled for the picker. A release pipeline with no build pipeline is no longer a
+  dead end either: it now offers the GitHub source instead of only pointing at the
+  Pipelines tab.
+- **`build_pipeline_id` became nullable rather than gaining a sentinel**, and
+  `ReleasePipelineService.ValidateAsync` writes exactly one of the two source columns -
+  switching an existing pipeline to Releases clears the build pipeline it used to draw
+  from. `artifact_source` is backfilled to `build` by the migration, so every pipeline that
+  existed before this reads as what it already was.
+- **Asset uploads and downloads are the two calls that leave `api.github.com`.** The upload
+  goes to the `upload_url` GitHub hands back (on `uploads.github.com`, with the
+  `{?name,label}` template stripped and the name passed as a query parameter, body as raw
+  bytes); the download follows the 302 to `objects.githubusercontent.com` by hand and
+  fetches it **with no Authorization header**, since the storage URL is already signed and
+  handing it our installation token would be giving a credential to a service that never
+  asked. A test asserts that call carries no credential.
+- **`contents: write` is what a Release needs**, and `GitHubPermissionLabels` now says so in
+  words ("Read and write files, and publish releases, in repositories") rather than adding a
+  permission name to the tab.
+- Deliberately left out: publishing a build to several repositories, a per-pipeline tag
+  template (the tag is `v<version>`), draft or pre-release Releases, and any retro-fitting
+  of Releases for builds that finished before this shipped.
 
 ## #627 Compile a pull-request branch and post the result as a check run
 

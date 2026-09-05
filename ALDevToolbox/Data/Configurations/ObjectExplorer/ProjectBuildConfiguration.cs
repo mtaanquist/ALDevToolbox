@@ -21,6 +21,9 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
         entity.Property(e => e.BcVersion).HasColumnName("bc_version").HasMaxLength(50);
         entity.Property(e => e.FailureMessage).HasColumnName("failure_message");
         entity.Property(e => e.RequestedAppIdsJson).HasColumnName("requested_app_ids_json");
+        entity.Property(e => e.GithubReleaseTag).HasColumnName("github_release_tag").HasMaxLength(200);
+        entity.Property(e => e.GithubReleaseUrl).HasColumnName("github_release_url").HasMaxLength(500);
+        entity.Property(e => e.GithubReleaseError).HasColumnName("github_release_error").HasMaxLength(2000);
         entity.Property(e => e.StartedAt).HasColumnName("started_at").IsRequired();
         entity.Property(e => e.FinishedAt).HasColumnName("finished_at");
 

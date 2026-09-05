@@ -80,13 +80,16 @@ public sealed class ReleasePipelineService
                 r.Project!.Name,
                 r.Name,
                 r.BuildPipelineId,
-                r.BuildPipeline!.Name,
+                r.BuildPipeline != null ? r.BuildPipeline.Name : string.Empty,
                 r.ProjectEnvironmentId,
                 r.ProjectEnvironment!.Name,
                 r.ProjectEnvironment.Type,
                 r.ProjectEnvironment.MissingSince != null,
                 r.DeploymentSchedule,
-                r.SchemaSyncMode))
+                r.SchemaSyncMode,
+                r.ArtifactSource,
+                r.GithubReleaseRepositoryId,
+                r.GithubReleaseRepository != null ? r.GithubReleaseRepository.DisplayName : null))
             .ToListAsync(ct);
     }
 
@@ -98,6 +101,7 @@ public sealed class ReleasePipelineService
             .Where(r => r.Id == id && r.DeletedAt == null)
             .Include(r => r.Project)
             .Include(r => r.BuildPipeline)
+            .Include(r => r.GithubReleaseRepository)
             .Include(r => r.ProjectEnvironment)
             .FirstOrDefaultAsync(ct);
     }
@@ -115,7 +119,9 @@ public sealed class ReleasePipelineService
             ProjectId = input.ProjectId,
             CreatedByUserId = _orgContext.CurrentUserId,
             Name = v.Name,
-            BuildPipelineId = input.BuildPipelineId,
+            ArtifactSource = v.ArtifactSource,
+            BuildPipelineId = v.BuildPipelineId,
+            GithubReleaseRepositoryId = v.GithubReleaseRepositoryId,
             ProjectEnvironmentId = input.ProjectEnvironmentId,
             DeploymentSchedule = v.DeploymentSchedule,
             SchemaSyncMode = v.SchemaSyncMode,
@@ -142,7 +148,9 @@ public sealed class ReleasePipelineService
         var v = await ValidateAsync(input with { ProjectId = pipeline.ProjectId }, existingId: id, ct);
 
         pipeline.Name = v.Name;
-        pipeline.BuildPipelineId = input.BuildPipelineId;
+        pipeline.ArtifactSource = v.ArtifactSource;
+        pipeline.BuildPipelineId = v.BuildPipelineId;
+        pipeline.GithubReleaseRepositoryId = v.GithubReleaseRepositoryId;
         pipeline.ProjectEnvironmentId = input.ProjectEnvironmentId;
         pipeline.DeploymentSchedule = v.DeploymentSchedule;
         pipeline.SchemaSyncMode = v.SchemaSyncMode;
@@ -179,7 +187,7 @@ public sealed class ReleasePipelineService
     /// schema-sync modes. Returns the normalised values. Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
-    private async Task<(string Name, string DeploymentSchedule, string SchemaSyncMode)> ValidateAsync(
+    private async Task<ValidatedReleasePipeline> ValidateAsync(
         ReleasePipelineInput input, int? existingId, CancellationToken ct)
     {
         // The parent project must exist in this org and be manageable by the user.
@@ -217,14 +225,49 @@ public sealed class ReleasePipelineService
             }
         }
 
-        // Source build pipeline: must be an active pipeline in the same project.
-        var buildPipelineOk = await _db.OePipelines.AsNoTracking()
-            .AnyAsync(p => p.Id == input.BuildPipelineId
-                           && p.DeletedAt == null
-                           && p.ProjectId == input.ProjectId, ct);
-        if (!buildPipelineOk)
+        // The artifact source: exactly one of the two, and the one named must belong
+        // to this project. A pipeline that named both would leave "what does this
+        // release install" with two answers.
+        var artifactSource = string.IsNullOrWhiteSpace(input.ArtifactSource)
+            ? ReleaseArtifactSource.Build
+            : input.ArtifactSource;
+        int? buildPipelineId = null;
+        int? releaseRepositoryId = null;
+        if (!ReleaseArtifactSource.IsValid(artifactSource))
         {
-            errors["BuildPipelineId"] = "Choose a build pipeline to release from.";
+            errors["ArtifactSource"] = "Choose where this release's apps come from.";
+        }
+        else if (artifactSource == ReleaseArtifactSource.Build)
+        {
+            // Source build pipeline: must be an active pipeline in the same project.
+            var buildPipelineOk = input.BuildPipelineId != 0 && await _db.OePipelines.AsNoTracking()
+                .AnyAsync(p => p.Id == input.BuildPipelineId
+                               && p.DeletedAt == null
+                               && p.ProjectId == input.ProjectId, ct);
+            if (!buildPipelineOk)
+            {
+                errors["BuildPipelineId"] = "Choose a build pipeline to release from.";
+            }
+            else
+            {
+                buildPipelineId = input.BuildPipelineId;
+            }
+        }
+        else
+        {
+            var repositoryOk = input.GithubReleaseRepositoryId is { } repoId && repoId != 0
+                && await _db.OeProjectRepositories.AsNoTracking()
+                    .AnyAsync(r => r.Id == repoId
+                                   && r.ProjectId == input.ProjectId
+                                   && r.Provider == RepositoryProvider.GitHub, ct);
+            if (!repositoryOk)
+            {
+                errors["GithubReleaseRepositoryId"] = "Choose one of this solution's GitHub repositories to release from.";
+            }
+            else
+            {
+                releaseRepositoryId = input.GithubReleaseRepositoryId;
+            }
         }
 
         // Target environment: must belong to the same project, must still be there, and
@@ -268,8 +311,18 @@ public sealed class ReleasePipelineService
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        return (name, deploymentSchedule, schemaSyncMode);
+        return new ValidatedReleasePipeline(
+            name, deploymentSchedule, schemaSyncMode, artifactSource, buildPipelineId, releaseRepositoryId);
     }
+
+    /// <summary>The normalised values a validated release-pipeline input settles on.</summary>
+    private sealed record ValidatedReleasePipeline(
+        string Name,
+        string DeploymentSchedule,
+        string SchemaSyncMode,
+        string ArtifactSource,
+        int? BuildPipelineId,
+        int? GithubReleaseRepositoryId);
 
     /// <summary>
     /// Gates a release-pipeline-keyed read on its project's visibility. One that
@@ -336,7 +389,15 @@ public sealed record ReleasePipelineInput(
     int BuildPipelineId,
     int ProjectEnvironmentId,
     string DeploymentSchedule,
-    string SchemaSyncMode);
+    string SchemaSyncMode,
+    /// <summary>
+    /// Where the apps come from: <c>build</c> (a build pipeline's builds) or
+    /// <c>github_release</c> (a repository's GitHub Releases). See
+    /// <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    string ArtifactSource = ReleaseArtifactSource.Build,
+    /// <summary>The solution repository whose Releases this pipeline draws from, when the source is <c>github_release</c>.</summary>
+    int? GithubReleaseRepositoryId = null);
 
 /// <summary>List-row projection of a release pipeline with its source and target resolved for display.</summary>
 public sealed record ReleasePipelineRow(
@@ -349,11 +410,17 @@ public sealed record ReleasePipelineRow(
     /// </summary>
     string ProjectName,
     string Name,
-    int BuildPipelineId,
+    int? BuildPipelineId,
     string BuildPipelineName,
     int ProjectEnvironmentId,
     string EnvironmentName,
     string EnvironmentType,
     bool EnvironmentMissing,
     string DeploymentSchedule,
-    string SchemaSyncMode);
+    string SchemaSyncMode,
+    /// <summary>Which of the two artifact sources this pipeline draws from (#632).</summary>
+    string ArtifactSource = ReleaseArtifactSource.Build,
+    /// <summary>The repository whose GitHub Releases it draws from, when that is the source.</summary>
+    int? GithubReleaseRepositoryId = null,
+    /// <summary>That repository's display name, for the list and the editor.</summary>
+    string? GithubReleaseRepositoryName = null);

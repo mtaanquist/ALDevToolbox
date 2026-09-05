@@ -109,7 +109,7 @@ public sealed record GitHubFileWrite(string ContentSha, string CommitSha);
 /// here and stored, encrypted, by <see cref="GitHubAccessService"/> — this class
 /// never touches the database.</para>
 /// </summary>
-public sealed class GitHubAppClient
+public sealed partial class GitHubAppClient
 {
     /// <summary>GitHub's REST base. Fixed public host, so no SSRF guard is needed.</summary>
     public const string ApiBaseUrl = "https://api.github.com/";

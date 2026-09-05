@@ -16,6 +16,7 @@ internal sealed class PipelineConfiguration : IEntityTypeConfiguration<Pipeline>
         entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         entity.Property(e => e.RequestedAppIdsJson).HasColumnName("requested_app_ids_json");
+        entity.Property(e => e.GithubReleaseRepositoryId).HasColumnName("github_release_repository_id");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
@@ -40,6 +41,14 @@ internal sealed class PipelineConfiguration : IEntityTypeConfiguration<Pipeline>
 
         // The build relationship is configured from the ProjectBuild side; don't
         // redeclare it here.
+
+        // Where successful builds are published as GitHub Releases. SET NULL so
+        // removing the repository from the solution turns publishing off rather than
+        // taking the pipeline with it.
+        entity.HasOne(e => e.GithubReleaseRepository)
+            .WithMany()
+            .HasForeignKey(e => e.GithubReleaseRepositoryId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         entity.HasIndex(e => e.ProjectId).HasDatabaseName("ix_oe_pipelines_project");
 
