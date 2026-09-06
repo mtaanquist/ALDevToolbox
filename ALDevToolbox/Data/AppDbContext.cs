@@ -2,6 +2,7 @@ using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
@@ -62,6 +63,17 @@ public class AppDbContext : DbContext
         _orgContext = NullOrganizationContext.Instance;
     }
 
+    /// <summary>
+    /// The constructor DI must use. <c>IDbContextFactory&lt;AppDbContext&gt;</c>
+    /// (registered in <c>DatabaseRegistration</c> for the audit reads, issue
+    /// #741) builds contexts through <c>ActivatorUtilities</c>, which refuses to
+    /// choose between our two public constructors on its own — and silently
+    /// picking the one-argument one would hand the context the null
+    /// organisation context and take the tenant query filter out of play. The
+    /// attribute pins the choice; <c>AppDbContextFactoryConstructorTests</c>
+    /// pins it in a test.
+    /// </summary>
+    [ActivatorUtilitiesConstructor]
     public AppDbContext(DbContextOptions<AppDbContext> options, IOrganizationContext orgContext) : base(options)
     {
         _orgContext = orgContext;
