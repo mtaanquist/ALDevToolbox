@@ -20,6 +20,7 @@
 @inject PersonalAccessTokenService Pats
 @inject OAuthClientAdminService OAuthClients
 @inject OrganizationConfigService OrgConfig
+@inject RepositoryProviderPolicyService RepoProviderPolicy
 @inject UserRepositoryTokenService RepoTokens
 @inject GitHubAccessService GitHubAccess
 @inject SystemSettingsService Settings
@@ -1515,7 +1516,7 @@ else
 
     private async Task ReloadReposAsync()
     {
-        _repoProviders = (await OrgConfig.GetAllowedProvidersAsync()).ToList();
+        _repoProviders = (await RepoProviderPolicy.GetAllowedProvidersAsync()).ToList();
         var status = await RepoTokens.GetTokenStatusAsync();
         _repoFields.Clear();
         foreach (var p in _repoProviders)

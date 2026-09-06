@@ -22,7 +22,7 @@ public sealed class OrganizationIdentityTests : IDisposable
     public async Task Rename_rejects_names_shorter_than_two_characters()
     {
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationBrandingService(ctx);
 
         Func<Task> act = () => svc.RenameOrganizationAsync("A");
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -34,12 +34,15 @@ public sealed class OrganizationIdentityTests : IDisposable
     {
         var ctx = _db.NewContext();
         var svc = _db.NewOrganizationConfigService(ctx);
+        // The name cache lives on the config service; the branding service that
+        // renames refreshes it, and both share this fixture's cache.
+        var branding = _db.NewOrganizationBrandingService(ctx);
 
         // Prime the cache with the seeded "Default" name.
         var before = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
         before.Should().Be("Default");
 
-        await svc.RenameOrganizationAsync("Renamed Co");
+        await branding.RenameOrganizationAsync("Renamed Co");
 
         var after = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
         after.Should().Be("Renamed Co",
@@ -51,9 +54,10 @@ public sealed class OrganizationIdentityTests : IDisposable
     {
         var ctx = _db.NewContext();
         var svc = _db.NewOrganizationConfigService(ctx);
+        var branding = _db.NewOrganizationBrandingService(ctx);
 
         await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
-        await svc.RenameOrganizationAsync("Renamed Co");
+        await branding.RenameOrganizationAsync("Renamed Co");
 
         // Change the row behind the service's back. A read that still went to
         // the database would come back "Out Of Band"; the cache must already
@@ -102,7 +106,7 @@ public sealed class OrganizationIdentityTests : IDisposable
     public async Task Rename_persists_trimmed_name_and_keeps_slug()
     {
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationBrandingService(ctx);
 
         await svc.RenameOrganizationAsync("  Acme Holdings  ");
 

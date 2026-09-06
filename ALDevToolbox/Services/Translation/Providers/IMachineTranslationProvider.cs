@@ -15,7 +15,7 @@ public sealed record MtTestResult(bool Success, string Message);
 /// <summary>
 /// Fully resolved machine-translation configuration with the plaintext API key.
 /// Built per call from the decrypted per-org settings by
-/// <see cref="OrganizationConfigService.ResolveMachineTranslationAsync"/>; held
+/// <see cref="MachineTranslationSettingsService.ResolveMachineTranslationAsync"/>; held
 /// only inside the service boundary, never persisted, never logged.
 /// </summary>
 public sealed record ResolvedMtSettings(string Provider, string ApiKey, MtTrigger Trigger);

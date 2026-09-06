@@ -144,7 +144,7 @@
         try
         {
             await using var scope = Scopes.CreateAsyncScope();
-            var config = scope.ServiceProvider.GetRequiredService<OrganizationConfigService>();
+            var config = scope.ServiceProvider.GetRequiredService<RepositoryProviderPolicyService>();
             if (!(await config.GetAllowedProvidersAsync()).Contains(RepositoryProvider.GitHub)) return;
 
             var repos = scope.ServiceProvider.GetRequiredService<GitHubRepositoryService>();

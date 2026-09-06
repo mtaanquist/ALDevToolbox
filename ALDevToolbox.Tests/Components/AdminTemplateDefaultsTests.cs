@@ -39,6 +39,7 @@ public sealed class AdminTemplateDefaultsTests : IDisposable
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<OrganizationBrandingService>();
         _ctx.Services.AddDataProtection();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);

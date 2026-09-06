@@ -1,7 +1,7 @@
 @page "/admin/administration/identity"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
-@inject OrganizationConfigService Config
+@inject OrganizationBrandingService Branding
 @inject OrganizationAdminService OrgAdmin
 @inject NavigationManager Nav
 @inject ILogger<AdminAdministrationIdentity> Log
@@ -611,7 +611,7 @@
         _nameErrMessage = null;
         try
         {
-            await Config.RenameOrganizationAsync(_name);
+            await Branding.RenameOrganizationAsync(_name);
             _baseName = _name.Trim();
             _name = _baseName;
             _nameOkMessage = "Renamed. The new name shows up the next time a page loads - nobody has to sign out.";
