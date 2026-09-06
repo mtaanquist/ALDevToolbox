@@ -47,9 +47,13 @@ public sealed class AdminTemplateEditTests : IDisposable
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
-        _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
+        // Factory registration mirrors the app (#741): it also registers
+        // AppDbContext itself as scoped, so the page's own services keep the
+        // shared context while AuditService resolves its factory.
+        _ctx.Services.AddDbContextFactory<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
-                .AddInterceptors(_db.CommandTracker));
+                .AddInterceptors(_db.CommandTracker),
+            ServiceLifetime.Scoped);
         _ctx.Services.AddScoped<FolderTreeHydrator>();
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();
@@ -147,11 +151,13 @@ public sealed class AdminTemplateEditTests : IDisposable
         cut.WaitForState(() => cut.FindAll("#tpl-name").Count > 0);
 
         // The page's own hydration must finish before the form is submitted.
-        // AuditHistoryPanel loads on the same scoped DbContext the save uses,
-        // so submitting while "Loading history..." is still up starts a second
-        // operation on that context and the save throws (#739). A real user
-        // cannot outrace the panel; a test on a loaded CI runner can, and did,
-        // about one run in six.
+        // AuditHistoryPanel used to load on the same scoped DbContext the save
+        // uses, so submitting while "Loading history..." was still up started a
+        // second operation on that context and the save threw (#739) - about one
+        // CI run in six. #741 closed that hazard for the audit panel: it now
+        // reads through its own short-lived context. The wait stays because a
+        // real user does wait for the page to settle, and it documents the
+        // history.
         cut.WaitForAssertion(() => cut.Markup.Should().NotContain("Loading history...",
             "the page is not idle until its history panel has loaded"));
 

@@ -115,7 +115,7 @@ These are the patterns the existing code has settled on. New code should match u
 
 ### Services
 
-- One class per service in `Services/`, registered as `Scoped` in `Program.cs`. EF context is scoped; services holding it must be too.
+- One class per service in `Services/`, registered as `Scoped` in `Program.cs`. EF context is scoped; services holding it must be too. `AuditService` is the one exception: it holds no context and opens a short-lived one per read through the scoped `IDbContextFactory<AppDbContext>`, because `AuditHistoryPanel` loads while the page around it may be saving and a `DbContext` allows one operation at a time (issue #741). A second service moving to the factory needs the same concurrent-read justification.
 - Read methods return `Task<List<T>>` or `Task<T?>`. Write methods return `Task` and throw on validation failure (don't return result objects).
 - Validation lives at the top of the service method, throws `PlanValidationException(Dictionary<string,string>)`. The form-layer validators are convenience; the service is the source of truth.
 - Each service logs its outcomes at `Information` for successful operations with structured fields (workspace name, template key, file count, duration). Warnings for skippable problems (missing example folder); exceptions for refusals.
