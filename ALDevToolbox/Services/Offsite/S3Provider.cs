@@ -2,6 +2,8 @@ using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
+using ALDevToolbox.Services.Backups;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Services.Offsite;
 

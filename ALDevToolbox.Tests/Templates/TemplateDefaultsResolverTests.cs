@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using AwesomeAssertions;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.Templates;
 

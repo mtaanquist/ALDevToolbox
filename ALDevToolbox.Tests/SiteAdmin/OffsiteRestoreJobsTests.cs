@@ -3,6 +3,8 @@ using ALDevToolbox.Tests.Auth;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Backups;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

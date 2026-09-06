@@ -3,6 +3,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.Configuration;
 

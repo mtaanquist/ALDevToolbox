@@ -13,6 +13,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
+using ALDevToolbox.Services.Operations;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.GitHub;
 

@@ -71,7 +71,7 @@ public sealed class GenerationFieldNameTests
     private static string[] ValidatorKeys()
     {
         var source = File.ReadAllText(Path.Combine(Root(),
-            "ALDevToolbox", "Services", "GenerationService.cs"));
+            "ALDevToolbox", "Services", "Generation", "GenerationService.cs"));
         return Regex.Matches(source, @"errors\[nameof\(plan\.(\w+)\)\]")
             .Select(m => m.Groups[1].Value)
             .Distinct()

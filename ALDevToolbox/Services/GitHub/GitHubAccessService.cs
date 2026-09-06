@@ -5,6 +5,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Services.GitHub;
 

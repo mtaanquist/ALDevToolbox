@@ -387,7 +387,7 @@ public sealed class TranslationMemoryIngestServiceTests : IDisposable
 
         // The deployment's App registration: without a private key there is no
         // JWT to sign, and so no installation token to read with.
-        await _db.NewSystemSettingsService(ctx).SaveGitHubAppAsync(new ALDevToolbox.Services.GitHubAppInput(
+        await _db.NewSystemSettingsService(ctx).SaveGitHubAppAsync(new ALDevToolbox.Services.Operations.GitHubAppInput(
             AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: System.Security.Cryptography.RSA.Create(2048).ExportRSAPrivateKeyPem(),

@@ -3,6 +3,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.Templates;
 

@@ -11,6 +11,7 @@ using Bunit.TestDoubles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Tests.Components;
 
@@ -48,7 +49,7 @@ public sealed class AdminTranslationMemoryTests : IDisposable
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
         _db.AddStorageServices(_ctx.Services);
         _db.AddGitHubServices(_ctx.Services, ConnectedApi());
-        _ctx.Services.AddScoped<ALDevToolbox.Services.OrganizationConfigService>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.Organizations.OrganizationConfigService>();
     }
 
     public void Dispose()

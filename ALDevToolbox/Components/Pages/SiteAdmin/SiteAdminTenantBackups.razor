@@ -2,6 +2,8 @@
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.SingleTenant
+@using ALDevToolbox.Services.Backups
+@using ALDevToolbox.Services.Operations
 @inject PerTenantBackupService Backups
 @inject SystemSettingsService Settings
 @inject OffsiteBackupService Offsite

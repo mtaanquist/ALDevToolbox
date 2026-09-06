@@ -3,6 +3,7 @@
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.SingleTenant
 @using ALDevToolbox.Services.Tools
+@using ALDevToolbox.Services.Operations
 @inject IOrganizationContext OrgContext
 @inject IToolAvailability ToolAvailability
 @inject ISingleTenantMode SingleTenant
@@ -382,7 +383,7 @@
         &copy; @DateTime.UtcNow.Year Mads Taanquist
         @* Only release builds carry a version stamp; dev and branch builds
            render the copyright alone rather than a link to a release this
-           build isn't. See Services/BuildInfo. *@
+           build isn't. See Services/Operations/BuildInfo. *@
         @if (BuildInfo.Current is { } build)
         {
             <a class="nav-version" href="@build.ReleaseUrl" title="@build.HoverTitle"
