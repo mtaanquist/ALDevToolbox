@@ -1,4 +1,4 @@
-using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;

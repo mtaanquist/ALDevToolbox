@@ -1,6 +1,6 @@
 @page "/admin/object-explorer/new/dvd"
 @attribute [Authorize(Roles = "Admin,Editor")]
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
 @inject IAntiforgery Antiforgery
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer

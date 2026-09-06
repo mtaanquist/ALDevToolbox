@@ -1,7 +1,7 @@
 # SaaS delivery — publishing builds to a BC environment
 
 > **Status: shipped.** The delivery pipeline is built and running. Implementation lives in
-> `Services/ObjectExplorer/DeliveryService.cs`, `DeliveryScheduler.cs`, `DeliveryWorker.cs`,
+> `Services/ObjectExplorer/Delivery/DeliveryService.cs`, `DeliveryScheduler.cs`, `DeliveryWorker.cs`,
 > `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC API clients under
 > `Services/ObjectExplorer/Bc/`. The entities are `ProjectDelivery`, `ProjectDeliveryResult`, and
 > `ReleasePipeline`; the maintenance-window math is the `UpdateWindow` value object; MCP tools

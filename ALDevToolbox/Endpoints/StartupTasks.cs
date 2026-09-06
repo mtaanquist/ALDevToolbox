@@ -154,8 +154,8 @@ internal static class StartupTasks
         // temp file lives in container-local /tmp and is gone. The reconciler
         // returns the jobs to re-enqueue here; we push them through the queue
         // so the worker picks them up like a fresh submission.
-        var persistedJobs = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
-        var queue = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
+        var persistedJobs = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs>();
+        var queue = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportQueue>();
         var resumable = await persistedJobs.ReconcileOnStartupAsync(stopping);
         foreach (var job in resumable)
         {

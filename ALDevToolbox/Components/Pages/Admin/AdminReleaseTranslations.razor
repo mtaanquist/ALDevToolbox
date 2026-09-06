@@ -1,10 +1,11 @@
 @page "/admin/object-explorer/release/{ReleaseId:int}/translations"
 @attribute [Authorize(Roles = "Admin,Editor")]
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
-@inject ALDevToolbox.Services.ObjectExplorer.TranslationQueryService Translations
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.TranslationQueryService Translations
 @inject IAntiforgery Antiforgery
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Import
 @using Microsoft.AspNetCore.Antiforgery
 
 @*

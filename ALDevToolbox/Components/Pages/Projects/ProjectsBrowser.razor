@@ -1,8 +1,8 @@
 @page "/solutions"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject IHttpContextAccessor Http
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 
 @*
     The Solutions directory: every customer/solution in the org, who owns it, how

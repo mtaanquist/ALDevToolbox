@@ -1,9 +1,10 @@
 @page "/admin/object-explorer/release/{ReleaseId:int}/manage"
 @attribute [Authorize(Roles = "Admin,Editor")]
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
-@inject ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs ImportJobs
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs ImportJobs
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Import
 
 @*
     Per-release admin hub. Consolidates everything that used to crowd the

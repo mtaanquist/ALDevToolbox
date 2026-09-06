@@ -1,10 +1,10 @@
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
-@inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService Pipelines
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService Releases
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connections
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<ReleasePipelineEditorDialog> Log
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.Entities.ObjectExplorer

@@ -1,10 +1,11 @@
 @page "/object-explorer/compare/file"
 @attribute [Authorize]
-@inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
-@inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.SourceViewerService SourceViewer
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService Comparison
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks Links
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Explore
 @using ALDevToolbox.Services.Diff
 @using DiffPlex.DiffBuilder
 @using System.Text.Json

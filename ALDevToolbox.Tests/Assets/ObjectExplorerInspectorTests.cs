@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
+using ALDevToolbox.Services.ObjectExplorer.Explore;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -93,7 +94,7 @@ public sealed class ObjectExplorerInspectorTests
 
         // The class comment still names the env var, on purpose - it is the
         // history of the route. What must be gone is any code that reads it.
-        Read("ALDevToolbox/Services/ObjectExplorer/ObjectExplorerLinks.cs")
+        Read("ALDevToolbox/Services/ObjectExplorer/Explore/ObjectExplorerLinks.cs")
             .Should().NotContain("GetEnvironmentVariable",
                 because: "the env var only ever chose between the two viewers");
     }

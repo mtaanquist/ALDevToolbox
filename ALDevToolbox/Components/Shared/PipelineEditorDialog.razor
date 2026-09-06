@@ -1,12 +1,13 @@
 @rendermode InteractiveServer
 @implements IAsyncDisposable
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService Discovery
-@inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService Discovery
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService Pipelines
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<PipelineEditorDialog> Log
 @inject IServiceScopeFactory ScopeFactory
 @using Microsoft.Extensions.DependencyInjection
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.ValueObjects
 

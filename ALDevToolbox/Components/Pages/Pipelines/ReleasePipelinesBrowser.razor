@@ -1,10 +1,10 @@
 @page "/releases"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
 @inject ILogger<ReleasePipelinesBrowser> Log
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 

@@ -2,9 +2,9 @@
 @page "/solutions/{Id:int}"
 @attribute [Authorize]
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
-@inject ALDevToolbox.Services.ObjectExplorer.PipelineService PipelinesSvc
-@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService PipelinesSvc
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
@@ -17,7 +17,7 @@
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 @using ALDevToolbox.Services
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Services.GitHub
 

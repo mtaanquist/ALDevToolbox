@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Import;
 using ALDevToolbox.Services.Translation;
 using AwesomeAssertions;
 
