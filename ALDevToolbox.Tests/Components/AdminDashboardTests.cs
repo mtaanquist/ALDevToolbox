@@ -47,10 +47,13 @@ public sealed class AdminDashboardTests : IDisposable
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
-        _ctx.Services.AddDbContext<AppDbContext>(opts => opts
+        // Factory registration mirrors the app (#741); it also registers
+        // AppDbContext as scoped, so the dashboard's other services are unaffected.
+        _ctx.Services.AddDbContextFactory<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
             .AddInterceptors(_db.CommandTracker)
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)),
+            ServiceLifetime.Scoped);
         _ctx.Services.AddScoped<DashboardService>();
         _ctx.Services.AddScoped<AuditService>();
         _ctx.Services.AddScoped(sp => _db.NewOrganizationConfigService(sp.GetRequiredService<AppDbContext>()));

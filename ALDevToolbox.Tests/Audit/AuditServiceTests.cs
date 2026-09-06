@@ -118,7 +118,7 @@ public sealed class AuditServiceTests : IDisposable
         nextOfThird.Should().BeNull("nothing after the most recent");
     }
 
-    private AuditService NewService() => new(_db.NewContext(), _db.OrgContext);
+    private AuditService NewService() => new(_db.NewContextFactory(), _db.OrgContext);
 
     private async Task SeedAuditRowsAsync()
     {

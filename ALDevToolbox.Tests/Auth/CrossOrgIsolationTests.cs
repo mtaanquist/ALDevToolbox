@@ -121,7 +121,7 @@ public sealed class CrossOrgIsolationTests : IDisposable
         }
 
         // Every public AuditService read is empty for the other org's row.
-        var svc = new AuditService(_db.NewContext(), _db.OrgContext);
+        var svc = new AuditService(_db.NewContextFactory(), _db.OrgContext);
         (await svc.GetRecentAsync()).Should().NotContain(e => e.Id == otherId);
         var (paged, _) = await svc.GetPagedAsync(new AuditFilter(null, null, null, null, null, null), 0, 100);
         paged.Should().NotContain(e => e.Id == otherId);
