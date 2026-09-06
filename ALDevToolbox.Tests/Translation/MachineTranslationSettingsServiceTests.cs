@@ -1,5 +1,6 @@
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Translation;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -8,11 +9,11 @@ namespace ALDevToolbox.Tests.Translation;
 
 /// <summary>
 /// Round-trip for the per-org machine-translation settings on
-/// <see cref="OrganizationConfigService"/>: the API key is encrypted, the view
+/// <see cref="MachineTranslationSettingsService"/>: the API key is encrypted, the view
 /// reports it as stored without exposing it, clearing removes it, and enabling
 /// without a key is rejected with a field-keyed error.
 /// </summary>
-public sealed class OrganizationConfigMachineTranslationTests : IDisposable
+public sealed class MachineTranslationSettingsServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
@@ -22,7 +23,7 @@ public sealed class OrganizationConfigMachineTranslationTests : IDisposable
     public async Task Save_encrypts_key_and_view_reports_stored_without_exposing_it()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewMachineTranslationSettingsService(ctx);
 
         await svc.SaveMachineTranslationAsync(new MtSettingsInput("deepl", "secret-key:fx", false, MtTrigger.OnDemand));
 
@@ -44,7 +45,7 @@ public sealed class OrganizationConfigMachineTranslationTests : IDisposable
     public async Task Resolve_returns_settings_after_save_and_null_when_off()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewMachineTranslationSettingsService(ctx);
 
         (await svc.ResolveMachineTranslationAsync()).Should().BeNull("nothing is configured by default");
 
@@ -64,7 +65,7 @@ public sealed class OrganizationConfigMachineTranslationTests : IDisposable
     public async Task Enabling_without_a_key_is_rejected_with_field_keyed_error()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewMachineTranslationSettingsService(ctx);
 
         var act = () => svc.SaveMachineTranslationAsync(new MtSettingsInput("deepl", null, false, MtTrigger.OnDemand));
 
@@ -76,7 +77,7 @@ public sealed class OrganizationConfigMachineTranslationTests : IDisposable
     public async Task Empty_key_keeps_the_stored_one()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewMachineTranslationSettingsService(ctx);
         await svc.SaveMachineTranslationAsync(new MtSettingsInput("deepl", "k:fx", false, MtTrigger.OnDemand));
 
         // Re-saving with a blank key (the form posts blank to keep it) must not wipe it.
@@ -92,7 +93,7 @@ public sealed class OrganizationConfigMachineTranslationTests : IDisposable
     public async Task Clear_key_removes_stored_value()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewMachineTranslationSettingsService(ctx);
         await svc.SaveMachineTranslationAsync(new MtSettingsInput("deepl", "k:fx", false, MtTrigger.OnDemand));
 
         await svc.SaveMachineTranslationAsync(new MtSettingsInput("deepl", null, true, MtTrigger.Off));

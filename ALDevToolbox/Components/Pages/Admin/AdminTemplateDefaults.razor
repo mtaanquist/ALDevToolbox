@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
+@inject OrganizationBrandingService Branding
 @inject NavigationManager Nav
 @inject ILogger<AdminTemplateDefaults> Log
 @using ALDevToolbox.Components.Shared
@@ -123,7 +124,7 @@
                     <h2 class="card__title">Logo</h2>
                     <p class="card__sub">
                         Bundled into every generated workspace. SVG or PNG,
-                        up to @(OrganizationConfigService.MaxLogoBytes / 1024) KB.
+                        up to @(OrganizationBrandingService.MaxLogoBytes / 1024) KB.
                     </p>
                 </div>
                 @* .btn--file hides the native input under the label. It used to
@@ -271,14 +272,14 @@
     {
         var file = e.File;
         if (file is null) return;
-        if (file.Size > OrganizationConfigService.MaxLogoBytes)
+        if (file.Size > OrganizationBrandingService.MaxLogoBytes)
         {
-            _errMessage = $"Logo must be {OrganizationConfigService.MaxLogoBytes / 1024} KB or smaller.";
+            _errMessage = $"Logo must be {OrganizationBrandingService.MaxLogoBytes / 1024} KB or smaller.";
             return;
         }
         try
         {
-            await using var stream = file.OpenReadStream(OrganizationConfigService.MaxLogoBytes);
+            await using var stream = file.OpenReadStream(OrganizationBrandingService.MaxLogoBytes);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
             _pendingLogoBytes = ms.ToArray();
@@ -332,11 +333,11 @@
             // admin can retry the logo step.
             if (_removeLogo)
             {
-                await Config.RevertLogoAsync();
+                await Branding.RevertLogoAsync();
             }
             else if (_pendingLogoBytes is not null)
             {
-                await Config.UploadLogoAsync(_pendingLogoContentType ?? string.Empty, _pendingLogoBytes);
+                await Branding.UploadLogoAsync(_pendingLogoContentType ?? string.Empty, _pendingLogoBytes);
             }
             Nav.NavigateTo("/admin/templates/defaults?ok=saved", forceLoad: true);
         }

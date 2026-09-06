@@ -7,11 +7,11 @@ namespace ALDevToolbox.Tests.Configuration;
 
 /// <summary>
 /// The per-org allowed-source-control-providers setting on
-/// <see cref="OrganizationConfigService"/>: an unconfigured org permits both, a
+/// <see cref="RepositoryProviderPolicyService"/>: an unconfigured org permits both, a
 /// saved selection round-trips, and an empty selection is rejected with a
 /// field-keyed error. See <c>.design/artifacts.md</c>.
 /// </summary>
-public sealed class OrganizationConfigAllowedProvidersTests : IDisposable
+public sealed class RepositoryProviderPolicyServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
@@ -21,7 +21,7 @@ public sealed class OrganizationConfigAllowedProvidersTests : IDisposable
     public async Task Unconfigured_org_allows_all_providers()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewRepositoryProviderPolicyService(ctx);
 
         var allowed = await svc.GetAllowedProvidersAsync();
 
@@ -34,7 +34,7 @@ public sealed class OrganizationConfigAllowedProvidersTests : IDisposable
     public async Task Save_narrows_the_allowed_set_and_round_trips()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewRepositoryProviderPolicyService(ctx);
 
         await svc.SaveAllowedProvidersAsync(new[] { RepositoryProvider.GitHub });
 
@@ -47,7 +47,7 @@ public sealed class OrganizationConfigAllowedProvidersTests : IDisposable
     public async Task Empty_selection_is_rejected_with_a_field_keyed_error()
     {
         await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewRepositoryProviderPolicyService(ctx);
 
         var act = () => svc.SaveAllowedProvidersAsync(Array.Empty<RepositoryProvider>());
 

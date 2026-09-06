@@ -40,7 +40,7 @@ internal static class AdminEndpoints
         // Note: tenants never see database backup/restore; this endpoint only
         // replays the per-org configuration TOML.
         app.MapPost("/admin/export/import", async (
-            HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
+            HttpContext ctx, OrganizationConfigTomlImporter importer, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
@@ -55,7 +55,7 @@ internal static class AdminEndpoints
             }
             try
             {
-                await config.ImportFromTomlAsync(toml, ct);
+                await importer.ImportFromTomlAsync(toml, ct);
                 ctx.Response.Redirect($"{RouteConstants.AdminExport}?{RouteConstants.OkQuery}=imported");
             }
             catch (PlanValidationException ex)

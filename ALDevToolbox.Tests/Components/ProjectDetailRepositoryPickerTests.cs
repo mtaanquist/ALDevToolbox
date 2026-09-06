@@ -68,6 +68,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         _ctx.Services.AddSingleton(TimeProvider.System);
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<RepositoryProviderPolicyService>();
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
@@ -222,7 +223,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         // does not build from GitHub.
         await using (var ctx = _db.NewContext())
         {
-            await _db.NewOrganizationConfigService(ctx)
+            await _db.NewRepositoryProviderPolicyService(ctx)
                 .SaveAllowedProvidersAsync(new[] { RepositoryProvider.AzureDevOps });
         }
         _db.AddGitHubServices(_ctx.Services, api);

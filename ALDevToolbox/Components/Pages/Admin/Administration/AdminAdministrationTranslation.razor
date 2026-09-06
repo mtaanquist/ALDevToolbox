@@ -1,7 +1,7 @@
 @page "/admin/administration/translation"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
-@inject OrganizationConfigService Config
+@inject MachineTranslationSettingsService MtSettings
 @inject MachineTranslationService Mt
 @inject ILogger<AdminAdministrationTranslation> Log
 @using ALDevToolbox.Domain.ValueObjects
@@ -160,7 +160,7 @@
 
     private async Task ReloadAsync()
     {
-        var view = await Config.GetMachineTranslationViewAsync();
+        var view = await MtSettings.GetMachineTranslationViewAsync();
         _trigger = view.Trigger;
         _provider = view.Provider;
         _hasStoredKey = view.HasApiKey;
@@ -175,7 +175,7 @@
         _okMessage = _errMessage = _testMessage = null;
         try
         {
-            await Config.SaveMachineTranslationAsync(new MtSettingsInput(_provider, _apiKey, _clearKey, _trigger));
+            await MtSettings.SaveMachineTranslationAsync(new MtSettingsInput(_provider, _apiKey, _clearKey, _trigger));
             await ReloadAsync();
             _okMessage = "Translation settings saved.";
         }

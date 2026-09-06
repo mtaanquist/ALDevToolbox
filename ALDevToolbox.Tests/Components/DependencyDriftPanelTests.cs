@@ -56,6 +56,7 @@ public sealed class DependencyDriftPanelTests : IDisposable
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<RepositoryProviderPolicyService>();
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<CatalogService>();
         _db.AddStorageServices(_ctx.Services);

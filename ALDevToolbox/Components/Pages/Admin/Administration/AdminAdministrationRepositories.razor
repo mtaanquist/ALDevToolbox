@@ -1,7 +1,7 @@
 @page "/admin/administration/repositories"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
-@inject OrganizationConfigService Config
+@inject RepositoryProviderPolicyService Providers
 @inject GitHubConnectionService GitHub
 @inject GitHubAppClient GitHubApi
 @inject GitHubAccessService GitHubAccess
@@ -409,7 +409,7 @@
 
     private async Task ReloadAsync()
     {
-        var allowed = await Config.GetAllowedProvidersAsync();
+        var allowed = await Providers.GetAllowedProvidersAsync();
         _allowGitHub = _savedAllowGitHub = allowed.Contains(RepositoryProvider.GitHub);
         _allowAzureDevOps = allowed.Contains(RepositoryProvider.AzureDevOps);
         _github = await GitHub.GetStatusAsync();
@@ -428,7 +428,7 @@
             if (_allowGitHub) providers.Add(RepositoryProvider.GitHub);
             if (_allowAzureDevOps) providers.Add(RepositoryProvider.AzureDevOps);
 
-            await Config.SaveAllowedProvidersAsync(providers);
+            await Providers.SaveAllowedProvidersAsync(providers);
             await ReloadAsync();
             // Saying only "Saved" here reads as "you are done", which is wrong
             // while GitHub is ticked and unconnected - the tick allows the host,

@@ -6,7 +6,7 @@ namespace ALDevToolbox.Services.Translation;
 /// <summary>
 /// Orchestrates per-tenant machine translation for the Translator page and the
 /// MCP <c>machine_translate</c> tool. Resolves the org's decrypted settings via
-/// <see cref="OrganizationConfigService"/>, builds the configured provider, and
+/// <see cref="MachineTranslationSettingsService"/>, builds the configured provider, and
 /// returns a translation — degrading to <see langword="null"/> (memory-only) when
 /// the feature is off, unconfigured, or the provider call fails, so a missing or
 /// invalid key never surfaces as an error to the translator. See
@@ -14,12 +14,12 @@ namespace ALDevToolbox.Services.Translation;
 /// </summary>
 public sealed class MachineTranslationService
 {
-    private readonly OrganizationConfigService _config;
+    private readonly MachineTranslationSettingsService _config;
     private readonly IMachineTranslationProviderFactory _factory;
     private readonly ILogger<MachineTranslationService> _logger;
 
     public MachineTranslationService(
-        OrganizationConfigService config,
+        MachineTranslationSettingsService config,
         IMachineTranslationProviderFactory factory,
         ILogger<MachineTranslationService> logger)
     {
