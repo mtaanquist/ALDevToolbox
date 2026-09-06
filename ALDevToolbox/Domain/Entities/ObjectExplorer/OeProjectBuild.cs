@@ -3,18 +3,18 @@ using ALDevToolbox.Domain.Entities;
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One build of a <see cref="Project"/> — a first-class entity split off
-/// <see cref="Release"/>. A build is a <em>set</em> of <c>(repository, commit)</c>
-/// pairs (<see cref="ProjectBuildRepoCommit"/>) with captured logs
-/// (<see cref="ProjectBuildLog"/>), a per-repo changelog
-/// (<see cref="ProjectBuildCommit"/>), and the retained downloadable <c>.app</c>
-/// deliverables (<see cref="ProjectBuildArtifact"/>) — none of which a Release
+/// One build of a <see cref="OeProject"/> — a first-class entity split off
+/// <see cref="OeRelease"/>. A build is a <em>set</em> of <c>(repository, commit)</c>
+/// pairs (<see cref="OeProjectBuildRepoCommit"/>) with captured logs
+/// (<see cref="OeProjectBuildLog"/>), a per-repo changelog
+/// (<see cref="OeProjectBuildCommit"/>), and the retained downloadable <c>.app</c>
+/// deliverables (<see cref="OeProjectBuildArtifact"/>) — none of which a Release
 /// models. It still produces exactly one <c>project</c>-kind Release for Object
 /// Explorer object navigation, referenced by <see cref="ReleaseId"/> (the
 /// importer hook). Org-scoped via the standard query filter. See
 /// <c>.design/artifacts.md</c>.
 /// </summary>
-public class ProjectBuild
+public class OeProjectBuild
 {
     public int Id { get; set; }
 
@@ -24,7 +24,7 @@ public class ProjectBuild
 
     /// <summary>The project this build belongs to. Builds ride along on the project's soft-delete.</summary>
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>
     /// The pipeline this build is a run of. Nullable (<c>ON DELETE SET NULL</c>) so
@@ -33,7 +33,7 @@ public class ProjectBuild
     /// for migration-synthesised legacy builds before the Default pipeline backfill.
     /// </summary>
     public int? PipelineId { get; set; }
-    public Pipeline? Pipeline { get; set; }
+    public OePipeline? Pipeline { get; set; }
 
     /// <summary>
     /// User who triggered the build (the clone runs as them, using their per-user
@@ -45,13 +45,13 @@ public class ProjectBuild
     public User? StartedByUser { get; set; }
 
     /// <summary>
-    /// The produced <c>project</c>-kind <see cref="Release"/> — the Object Explorer
+    /// The produced <c>project</c>-kind <see cref="OeRelease"/> — the Object Explorer
     /// hook that keeps the build's objects navigable. Nullable: set once the
     /// release row exists, and cleared (<c>ON DELETE SET NULL</c>) if the release
     /// is later reaped, leaving the build's deliverables and logs intact.
     /// </summary>
     public int? ReleaseId { get; set; }
-    public Release? Release { get; set; }
+    public OeRelease? Release { get; set; }
 
     /// <summary>
     /// The branch built (provenance label). A manual build clones the default
@@ -127,14 +127,14 @@ public class ProjectBuild
     /// <summary>When the build reached a terminal state (<c>ready</c> / <c>failed</c>); null while in flight.</summary>
     public DateTime? FinishedAt { get; set; }
 
-    public ICollection<ProjectBuildRepoCommit> RepoCommits { get; set; } = new List<ProjectBuildRepoCommit>();
-    public ICollection<ProjectBuildCommit> Changelog { get; set; } = new List<ProjectBuildCommit>();
-    public ICollection<ProjectBuildArtifact> Artifacts { get; set; } = new List<ProjectBuildArtifact>();
-    public ICollection<ProjectBuildLog> Logs { get; set; } = new List<ProjectBuildLog>();
-    public ICollection<ProjectBuildDiagnostic> Diagnostics { get; set; } = new List<ProjectBuildDiagnostic>();
+    public ICollection<OeProjectBuildRepoCommit> RepoCommits { get; set; } = new List<OeProjectBuildRepoCommit>();
+    public ICollection<OeProjectBuildCommit> Changelog { get; set; } = new List<OeProjectBuildCommit>();
+    public ICollection<OeProjectBuildArtifact> Artifacts { get; set; } = new List<OeProjectBuildArtifact>();
+    public ICollection<OeProjectBuildLog> Logs { get; set; } = new List<OeProjectBuildLog>();
+    public ICollection<OeProjectBuildDiagnostic> Diagnostics { get; set; } = new List<OeProjectBuildDiagnostic>();
 }
 
-/// <summary>What asked for a <see cref="ProjectBuild"/>.</summary>
+/// <summary>What asked for a <see cref="OeProjectBuild"/>.</summary>
 public static class ProjectBuildTrigger
 {
     /// <summary>A person pressed Build on a pipeline. The clone uses their own repository token.</summary>
@@ -148,7 +148,7 @@ public static class ProjectBuildTrigger
     public const string PullRequest = "pull_request";
 }
 
-/// <summary>The lifecycle states a <see cref="ProjectBuild"/> moves through.</summary>
+/// <summary>The lifecycle states a <see cref="OeProjectBuild"/> moves through.</summary>
 public static class ProjectBuildStatus
 {
     /// <summary>Created and enqueued; the worker hasn't started cloning yet.</summary>
@@ -160,6 +160,6 @@ public static class ProjectBuildStatus
     /// <summary>At least one extension compiled and the release ingested. Deliverables are downloadable.</summary>
     public const string Ready = "ready";
 
-    /// <summary>The build failed as a whole. <see cref="ProjectBuild.FailureMessage"/> says why.</summary>
+    /// <summary>The build failed as a whole. <see cref="OeProjectBuild.FailureMessage"/> says why.</summary>
     public const string Failed = "failed";
 }

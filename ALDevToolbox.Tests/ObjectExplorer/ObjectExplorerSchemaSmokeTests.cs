@@ -1,10 +1,7 @@
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
-using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
-using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
-using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

@@ -123,7 +123,7 @@ public sealed class ProjectRepositoryReconcileTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -135,7 +135,7 @@ public sealed class ProjectRepositoryReconcileTests : IDisposable
         ctx.OePipelines.Add(pipeline);
         await ctx.SaveChangesAsync();
 
-        var environment = new ProjectEnvironment
+        var environment = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -146,7 +146,7 @@ public sealed class ProjectRepositoryReconcileTests : IDisposable
         ctx.OeProjectEnvironments.Add(environment);
         await ctx.SaveChangesAsync();
 
-        var releasePipeline = new ReleasePipeline
+        var releasePipeline = new OeReleasePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

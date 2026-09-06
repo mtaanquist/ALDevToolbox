@@ -5,7 +5,7 @@
 > `UpgradeFleetService` (read), `UpgradeActionService` (request/cancel/history),
 > `UpgradeActionWorker` (booked slots) and the two write methods on
 > `ProjectConnectionService`, all under `Services/ObjectExplorer/Bc/`. The mirror lives in
-> `bc_next_update_*` columns on `ProjectEnvironment`; the actions and the history are one
+> `bc_next_update_*` columns on `OeProjectEnvironment`; the actions and the history are one
 > table, `oe_environment_upgrade_actions` (`EnvironmentUpgradeAction`). The grant is
 > `team_members.manages_updates` — see [`teams-and-visibility.md`](./teams-and-visibility.md).
 >
@@ -204,7 +204,7 @@ update (version, when, and a marker when it ignores Microsoft's window), the lat
 update can still be pushed to, and how old the mirror is. Filters are text search,
 environment type, and "update available"; loading, empty and populated states as usual.
 
-**The join is the guard.** `ProjectEnvironment` has no visibility rule of its own — it
+**The join is the guard.** `OeProjectEnvironment` has no visibility rule of its own — it
 inherits its project's. `UpgradeFleetService.ListFleetAsync` therefore reaches the
 environments table *through* `VisibleProjectPredicate`, and any future query that lists
 environments must do the same rather than reading the DbSet directly. "May act" is computed
@@ -268,7 +268,7 @@ application that writes to `audit_log` outside `AuditInterceptor`. It has to be:
 on the customer's tenant and touch no row of ours that the interceptor watches — and the
 re-mirror afterwards is deliberately outside `AuditInterceptor.EnvironmentSettingColumns`,
 because the nightly sweep writes those same columns and would otherwise fill the log with rows
-nobody made. The entry is a `ProjectEnvironment` row keyed by the environment id, and its
+nobody made. The entry is an `OeProjectEnvironment` row keyed by the environment id, and its
 snapshot keeps the log's "state before the change" contract — the update as we read it, plus a
 plain-words `Action` naming which of the two writes it was, since the audit model records rows
 changing and these are events. The actor is resolved from the database rather than from claims,

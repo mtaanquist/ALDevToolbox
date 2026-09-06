@@ -1,16 +1,16 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One AL object inside a <see cref="Module"/> — a codeunit, table, page, report, xmlport,
+/// One AL object inside a <see cref="OeModule"/> — a codeunit, table, page, report, xmlport,
 /// query, controladdin, enum, interface, permissionset, or any of the *extension variants
 /// (pageextension, tableextension, etc.). Mirrors the entries in <c>SymbolReference.json</c>
 /// 's namespace tree; populated at ingest time.
 ///
-/// Children: <see cref="ModuleSymbol"/> (procedures, fields, triggers, events) and
-/// <see cref="ModuleVariable"/> (object-scoped globals). Outbound references from this object
-/// live in <see cref="ModuleReference"/> rows with <c>source_object_id</c> pointing here.
+/// Children: <see cref="OeModuleSymbol"/> (procedures, fields, triggers, events) and
+/// <see cref="OeModuleVariable"/> (object-scoped globals). Outbound references from this object
+/// live in <see cref="OeModuleReference"/> rows with <c>source_object_id</c> pointing here.
 /// </summary>
-public class ModuleObject
+public class OeModuleObject
 {
     public long Id { get; set; }
 
@@ -18,7 +18,7 @@ public class ModuleObject
     public Organization? Organization { get; set; }
 
     public long ModuleId { get; set; }
-    public Module? Module { get; set; }
+    public OeModule? Module { get; set; }
 
     /// <summary>Lower-cased AL declaration keyword (<c>codeunit</c>, <c>table</c>, …).</summary>
     public string Kind { get; set; } = string.Empty;
@@ -74,7 +74,7 @@ public class ModuleObject
 
     /// <summary>Source file this object is declared in. Null when source wasn't available.</summary>
     public long? SourceFileId { get; set; }
-    public ModuleFile? SourceFile { get; set; }
+    public OeModuleFile? SourceFile { get; set; }
 
     /// <summary>1-based line where the object declaration appears in the source file.</summary>
     public int LineNumber { get; set; }
@@ -91,6 +91,6 @@ public class ModuleObject
     /// </summary>
     public string? ObsoleteState { get; set; }
 
-    public ICollection<ModuleSymbol> Symbols { get; set; } = new List<ModuleSymbol>();
-    public ICollection<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
+    public ICollection<OeModuleSymbol> Symbols { get; set; } = new List<OeModuleSymbol>();
+    public ICollection<OeModuleVariable> Variables { get; set; } = new List<OeModuleVariable>();
 }

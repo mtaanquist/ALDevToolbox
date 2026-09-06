@@ -196,7 +196,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS Retail " + Guid.NewGuid().ToString("N")[..8],
@@ -207,7 +207,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
         await ctx.SaveChangesAsync();
 
         var repositories = new[] { UnderReview, Elsewhere }
-            .Select(full => new ProjectRepository
+            .Select(full => new OeProjectRepository
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ProjectId = project.Id,
@@ -218,7 +218,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
             .ToList();
         ctx.OeProjectRepositories.AddRange(repositories);
 
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "CRONUS Retail " + Guid.NewGuid().ToString("N"),
@@ -231,7 +231,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
         ctx.OeReleases.Add(release);
         await ctx.SaveChangesAsync();
 
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = project.Id,
@@ -243,7 +243,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
             StartedAt = now,
         };
         ctx.OeProjectBuilds.Add(build);
-        ctx.OeProjectBuildResults.Add(new ProjectBuildResult
+        ctx.OeProjectBuildResults.Add(new OeProjectBuildResult
         {
             OrganizationId = TestDb.DefaultOrgId,
             ReleaseId = release.Id,
@@ -261,7 +261,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
         Seed seed, string repositoryFullName, string path, int line, string severity, string code)
     {
         await using var ctx = _db.NewContext();
-        ctx.OeProjectBuildDiagnostics.Add(new ProjectBuildDiagnostic
+        ctx.OeProjectBuildDiagnostics.Add(new OeProjectBuildDiagnostic
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectBuildId = seed.BuildId,

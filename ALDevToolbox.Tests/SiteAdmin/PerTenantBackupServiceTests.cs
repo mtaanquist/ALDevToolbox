@@ -12,10 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
-using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
-using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
-using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 using ALDevToolbox.Services.Configuration;
 using ALDevToolbox.Services.Backups;

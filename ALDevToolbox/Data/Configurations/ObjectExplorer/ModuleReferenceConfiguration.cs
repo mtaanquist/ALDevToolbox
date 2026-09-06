@@ -6,9 +6,9 @@ using ALDevToolbox.Services.ObjectExplorer.Import;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<ModuleReference>
+internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<OeModuleReference>
 {
-    public void Configure(EntityTypeBuilder<ModuleReference> entity)
+    public void Configure(EntityTypeBuilder<OeModuleReference> entity)
     {
         entity.ToTable("oe_module_references");
         entity.HasKey(e => e.Id);

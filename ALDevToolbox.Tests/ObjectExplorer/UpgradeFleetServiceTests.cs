@@ -73,7 +73,7 @@ public sealed class UpgradeFleetServiceTests : IDisposable
         string name, ProjectVisibility visibility = ProjectVisibility.Public)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,
@@ -121,7 +121,7 @@ public sealed class UpgradeFleetServiceTests : IDisposable
                 CreatedAt = DateTime.UtcNow,
             });
         }
-        ctx.OeProjectTeams.Add(new ProjectTeam
+        ctx.OeProjectTeams.Add(new OeProjectTeam
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, TeamId = team.Id,
             CreatedAt = DateTime.UtcNow,
@@ -134,7 +134,7 @@ public sealed class UpgradeFleetServiceTests : IDisposable
         DateTime? missingSince = null, string? nextVersion = "27.6")
     {
         await using var ctx = _db.NewContext();
-        var env = new ProjectEnvironment
+        var env = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

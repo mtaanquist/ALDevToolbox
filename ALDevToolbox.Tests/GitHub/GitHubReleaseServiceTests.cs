@@ -276,7 +276,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         staged.StartedByUserId.Should().Be(UserId);
         // The manifest inside the .app is what names the app, not the file name.
         staged.Artifacts.Should().ContainSingle()
-            .Which.Should().Match<ProjectBuildArtifact>(a => a.AppName == "CRONUS Core" && a.AppVersion == "1.0.0.0");
+            .Which.Should().Match<OeProjectBuildArtifact>(a => a.AppName == "CRONUS Core" && a.AppVersion == "1.0.0.0");
     }
 
     [Fact]
@@ -354,13 +354,13 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         var seed = await SeedAsync(publishTo: false, apps: [("CRONUS Core", "1.0.0.0")]);
         await using (var ctx = _db.NewContext())
         {
-            ctx.OeProjectRepositories.Add(new ProjectRepository
+            ctx.OeProjectRepositories.Add(new OeProjectRepository
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = seed.ProjectId,
                 Provider = RepositoryProvider.GitHub, Url = "https://github.com/another-org/thing.git",
                 DisplayName = "Somebody else's",
             });
-            ctx.OeProjectRepositories.Add(new ProjectRepository
+            ctx.OeProjectRepositories.Add(new OeProjectRepository
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = seed.ProjectId,
                 Provider = RepositoryProvider.AzureDevOps, Url = "https://dev.azure.com/cronus/_git/thing",
@@ -500,7 +500,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
 
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS " + Guid.NewGuid().ToString("N"),
@@ -509,7 +509,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
-        var repository = new ProjectRepository
+        var repository = new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id,
             Provider = RepositoryProvider.GitHub, Url = repoUrl ?? RepoUrl, DisplayName = RepoName,
@@ -517,7 +517,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         ctx.OeProjectRepositories.Add(repository);
         await ctx.SaveChangesAsync();
 
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Build",
             GithubReleaseRepositoryId = publishTo ? repository.Id : null,
@@ -525,7 +525,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         };
         ctx.OePipelines.Add(pipeline);
 
-        var environment = new ProjectEnvironment
+        var environment = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id,
             Name = "Production", Type = "Production", FetchedAt = now,
@@ -533,7 +533,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         ctx.OeProjectEnvironments.Add(environment);
         await ctx.SaveChangesAsync();
 
-        var releasePipeline = new ReleasePipeline
+        var releasePipeline = new OeReleasePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "CRONUS App -> Production",
             ArtifactSource = releaseSourced ? ReleaseArtifactSource.GithubRelease : ReleaseArtifactSource.Build,
@@ -545,7 +545,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         };
         ctx.OeReleasePipelines.Add(releasePipeline);
 
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, PipelineId = pipeline.Id,
             Status = ProjectBuildStatus.Ready, StartedAt = now, FinishedAt = now,
@@ -555,7 +555,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
 
         foreach (var app in apps)
         {
-            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
                 FileName = $"{app.Name}_{app.Version}.app", AppName = app.Name, AppVersion = app.Version,

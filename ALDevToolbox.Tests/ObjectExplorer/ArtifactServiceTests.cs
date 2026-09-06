@@ -51,8 +51,8 @@ public sealed class ArtifactServiceTests : IDisposable
             var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main");
             // Two repos: the cell shows the first by display name ("core"), shortened to 7 chars.
             ctx.OeProjectBuildRepoCommits.AddRange(
-                new ProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "trade", CommitHash = "9999999bbb" },
-                new ProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def" });
+                new OeProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "trade", CommitHash = "9999999bbb" },
+                new OeProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def" });
             await ctx.SaveChangesAsync();
         }
 
@@ -86,17 +86,17 @@ public sealed class ArtifactServiceTests : IDisposable
             buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", artifactCount: 1);
             var repoId = ctx.OeProjectRepositories.First(r => r.ProjectId == projectId).Id;
 
-            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            ctx.OeProjectBuildRepoCommits.Add(new OeProjectBuildRepoCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, ProjectRepositoryId = repoId,
                 RepoUrl = "https://github.com/cronus/core", RepoDisplayName = "core", CommitHash = "abc1234",
             });
-            ctx.OeProjectBuildCommits.Add(new ProjectBuildCommit
+            ctx.OeProjectBuildCommits.Add(new OeProjectBuildCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, ProjectRepositoryId = repoId,
                 ShortHash = "abc1234", Message = "Fix posting", Author = "Ada", Ordering = 0,
             });
-            ctx.OeProjectBuildLogs.Add(new ProjectBuildLog
+            ctx.OeProjectBuildLogs.Add(new OeProjectBuildLog
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId,
                 Section = "core", Content = "Cloned.", Ordering = 0, CreatedAt = DateTime.UtcNow,
@@ -128,24 +128,24 @@ public sealed class ArtifactServiceTests : IDisposable
             // A build with two changelog commits — the head (Ordering 0) names the row,
             // winning over the pinned commit so hash + message come from the same commit.
             withCommits = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
-            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            ctx.OeProjectBuildRepoCommits.Add(new OeProjectBuildRepoCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId,
                 RepoUrl = "u", RepoDisplayName = "core", CommitHash = "pinned00aaa",
             });
             ctx.OeProjectBuildCommits.AddRange(
-                new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "head123", Message = "Add posting-date validation", Author = "Ada", Ordering = 0 },
-                new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "old456", Message = "Earlier change", Author = "Ada", Ordering = 1 });
+                new OeProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "head123", Message = "Add posting-date validation", Author = "Ada", Ordering = 0 },
+                new OeProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "old456", Message = "Earlier change", Author = "Ada", Ordering = 1 });
 
             // An earlier build with no new commits: only a summary note in the changelog,
             // but it still has a pinned commit (what it was built at) to show as the hash.
             summaryNote = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
-            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            ctx.OeProjectBuildRepoCommits.Add(new OeProjectBuildRepoCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ProjectRepositoryId = repoId,
                 RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def",
             });
-            ctx.OeProjectBuildCommits.Add(new ProjectBuildCommit
+            ctx.OeProjectBuildCommits.Add(new OeProjectBuildCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ShortHash = "", Message = "First build", Author = "", Ordering = 0,
             });
@@ -195,14 +195,14 @@ public sealed class ArtifactServiceTests : IDisposable
         {
             var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
             buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow);
-            var art = new ProjectBuildArtifact
+            var art = new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId,
                 FileName = "CRONUS_Core_1.0.0.0.app", AppName = "Core", AppVersion = "1.0.0.0",
                 SizeBytes = 3, Content = new byte[] { 1, 2, 3 }, CreatedAt = DateTime.UtcNow,
             };
             ctx.OeProjectBuildArtifacts.Add(art);
-            ctx.OeProjectBuildLogs.Add(new ProjectBuildLog
+            ctx.OeProjectBuildLogs.Add(new OeProjectBuildLog
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId,
                 Section = "Build", Content = "alc ok", Ordering = 0, CreatedAt = DateTime.UtcNow,
@@ -240,10 +240,10 @@ public sealed class ArtifactServiceTests : IDisposable
 
     private static async Task<int> SeedProjectAsync(Data.AppDbContext ctx, string name, string[]? repoNames = null, int orgId = TestDb.DefaultOrgId)
     {
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = orgId, Name = name, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
-            Repositories = (repoNames ?? new[] { "repo" }).Select(n => new ProjectRepository
+            Repositories = (repoNames ?? new[] { "repo" }).Select(n => new OeProjectRepository
             {
                 OrganizationId = orgId, Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub,
                 Url = $"https://github.com/x/{n}", DisplayName = n,
@@ -256,7 +256,7 @@ public sealed class ArtifactServiceTests : IDisposable
 
     private static async Task<int> SeedReleaseAsync(Data.AppDbContext ctx, int orgId = TestDb.DefaultOrgId)
     {
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = orgId, Label = "build", Kind = "project", Status = "ready",
             ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
@@ -268,7 +268,7 @@ public sealed class ArtifactServiceTests : IDisposable
 
     private static async Task<int> SeedPipelineAsync(Data.AppDbContext ctx, int projectId, string name = "Default", int orgId = TestDb.DefaultOrgId)
     {
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = orgId, ProjectId = projectId, Name = name,
             CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
@@ -283,7 +283,7 @@ public sealed class ArtifactServiceTests : IDisposable
         string? bcVersion = null, int artifactCount = 0, int? releaseId = null, string? branch = null,
         int? pipelineId = null, int orgId = TestDb.DefaultOrgId)
     {
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = orgId, ProjectId = projectId, PipelineId = pipelineId, Status = status, BcVersion = bcVersion, Branch = branch,
             StartedAt = startedAt, FinishedAt = status is ProjectBuildStatus.Ready or ProjectBuildStatus.Failed ? startedAt : null,
@@ -294,7 +294,7 @@ public sealed class ArtifactServiceTests : IDisposable
 
         for (var i = 0; i < artifactCount; i++)
         {
-            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = orgId, ProjectBuildId = build.Id,
                 FileName = $"app{i}.app", AppName = $"App {i}", AppVersion = "1.0.0.0",

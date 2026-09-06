@@ -76,7 +76,7 @@ public abstract record ReleaseImportSource
     public sealed record ProjectBuild(int ProjectId) : ReleaseImportSource;
 
     /// <summary>
-    /// The same compile as <see cref="ProjectBuild"/>, asked for by GitHub rather
+    /// The same compile as <see cref="OeProjectBuild"/>, asked for by GitHub rather
     /// than by a person: one repository of the project is checked out at
     /// <paramref name="HeadSha"/> instead of its default branch, every clone
     /// authenticates as the app's installation rather than as a user (there is no

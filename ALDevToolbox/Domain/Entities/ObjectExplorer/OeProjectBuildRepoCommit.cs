@@ -1,12 +1,12 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// The commit one repository was pinned at for a <see cref="ProjectBuild"/>. A
+/// The commit one repository was pinned at for a <see cref="OeProjectBuild"/>. A
 /// build is identified by the <em>set</em> of these (one per successfully cloned
 /// repo), not a single hash — so the changelog and "what was built" are answerable
 /// per repository. See <c>.design/artifacts.md</c>.
 /// </summary>
-public class ProjectBuildRepoCommit
+public class OeProjectBuildRepoCommit
 {
     public int Id { get; set; }
 
@@ -15,7 +15,7 @@ public class ProjectBuildRepoCommit
     public Organization? Organization { get; set; }
 
     public int ProjectBuildId { get; set; }
-    public ProjectBuild? ProjectBuild { get; set; }
+    public OeProjectBuild? ProjectBuild { get; set; }
 
     /// <summary>
     /// The repository this commit belongs to. Nullable (<c>ON DELETE SET NULL</c>)
@@ -24,7 +24,7 @@ public class ProjectBuildRepoCommit
     /// keep the row legible afterwards.
     /// </summary>
     public int? ProjectRepositoryId { get; set; }
-    public ProjectRepository? ProjectRepository { get; set; }
+    public OeProjectRepository? ProjectRepository { get; set; }
 
     /// <summary>The repository's clone URL, snapshotted so the row stays meaningful if the repo is later removed.</summary>
     public string RepoUrl { get; set; } = string.Empty;

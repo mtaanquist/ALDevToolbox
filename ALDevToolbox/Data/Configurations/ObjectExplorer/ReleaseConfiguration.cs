@@ -5,9 +5,9 @@ using ALDevToolbox.Services.ObjectExplorer.Import;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
+internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<OeRelease>
 {
-    public void Configure(EntityTypeBuilder<Release> entity)
+    public void Configure(EntityTypeBuilder<OeRelease> entity)
     {
         entity.ToTable("oe_releases");
         entity.HasKey(e => e.Id);

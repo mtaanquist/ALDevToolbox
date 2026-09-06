@@ -27,7 +27,7 @@ internal static class ObjectSearchRanking
 
     /// <summary>
     /// Maps a search-box kind prefix to the canonical lower-case
-    /// <see cref="ModuleObject.Kind"/> value. Both a short letter form
+    /// <see cref="OeModuleObject.Kind"/> value. Both a short letter form
     /// (<c>t</c>) and the full kind name (<c>table</c>) point at the same
     /// kind so users can type whichever they remember; lookups are
     /// case-insensitive. When Microsoft adds a new object kind, add its
@@ -124,8 +124,8 @@ internal static class ObjectSearchRanking
     /// <c>ObjectId</c>. Returns the positive token texts so the caller can
     /// rank matches; negated tokens only filter and never contribute a score.
     /// </summary>
-    public static (IQueryable<ModuleObject> Query, IReadOnlyList<string> Tokens)
-        ApplySearchTokens(IQueryable<ModuleObject> q, string? search)
+    public static (IQueryable<OeModuleObject> Query, IReadOnlyList<string> Tokens)
+        ApplySearchTokens(IQueryable<OeModuleObject> q, string? search)
     {
         if (string.IsNullOrWhiteSpace(search))
             return (q, Array.Empty<string>());
@@ -282,11 +282,11 @@ internal static class ObjectSearchRanking
     /// <see cref="Expression.Not"/>) when <paramref name="negated"/> is set, so
     /// a leading <c>-</c> works uniformly across exact / range / glob tokens.
     /// </summary>
-    private static IQueryable<ModuleObject> ApplyPredicate(
-        IQueryable<ModuleObject> q, bool negated, Expression<Func<ModuleObject, bool>> predicate)
+    private static IQueryable<OeModuleObject> ApplyPredicate(
+        IQueryable<OeModuleObject> q, bool negated, Expression<Func<OeModuleObject, bool>> predicate)
     {
         if (!negated) return q.Where(predicate);
-        var not = Expression.Lambda<Func<ModuleObject, bool>>(
+        var not = Expression.Lambda<Func<OeModuleObject, bool>>(
             Expression.Not(predicate.Body), predicate.Parameters);
         return q.Where(not);
     }
@@ -340,7 +340,7 @@ internal static class ObjectSearchRanking
     /// extra work is small even on releases with thousands of objects.
     /// </summary>
     public static async Task<List<ReleaseObjectMatch>> ExecuteAndRankAsync(
-        IQueryable<ModuleObject> q,
+        IQueryable<OeModuleObject> q,
         IReadOnlyList<string> tokens,
         int take,
         CancellationToken ct)

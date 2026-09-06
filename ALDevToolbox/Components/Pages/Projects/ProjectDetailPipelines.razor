@@ -65,7 +65,7 @@
     [Parameter] public string SolutionName { get; set; } = string.Empty;
 
     /// <summary>The pipelines, read with the solution by the page.</summary>
-    [Parameter] public IReadOnlyList<Pipeline> Pipelines { get; set; } = Array.Empty<Pipeline>();
+    [Parameter] public IReadOnlyList<OePipeline> Pipelines { get; set; } = Array.Empty<OePipeline>();
 
     /// <summary>True while the page's own Save is in flight.</summary>
     [Parameter] public bool Saving { get; set; }
@@ -82,9 +82,9 @@
 
     /// <summary>
     /// One-line scope summary for a pipeline row: how many extensions it builds.
-    /// A null/empty <see cref="Pipeline.RequestedAppIdsJson"/> means "build everything".
+    /// A null/empty <see cref="OePipeline.RequestedAppIdsJson"/> means "build everything".
     /// </summary>
-    private static string PipelineScope(Pipeline pl)
+    private static string PipelineScope(OePipeline pl)
     {
         if (string.IsNullOrWhiteSpace(pl.RequestedAppIdsJson)) return "Builds all extensions";
         try

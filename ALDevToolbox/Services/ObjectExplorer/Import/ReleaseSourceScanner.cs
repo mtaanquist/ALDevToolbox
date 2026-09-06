@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Services.Al;
-using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Import;
 

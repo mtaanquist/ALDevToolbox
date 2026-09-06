@@ -47,7 +47,7 @@ public class GitHubRepositoryDrift
 
     /// <summary>The release whose import found this. Deleting the release takes its findings with it.</summary>
     public int ReleaseId { get; set; }
-    public ObjectExplorer.Release? Release { get; set; }
+    public ObjectExplorer.OeRelease? Release { get; set; }
 
     /// <summary>When the scan that recorded it ran (UTC).</summary>
     public DateTime DetectedAt { get; set; }

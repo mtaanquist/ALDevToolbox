@@ -293,7 +293,7 @@ public sealed class ProjectServiceTests : IDisposable
         // A project release + the import job that links it back to the project.
         await using (var seed = _db.NewContext())
         {
-            var rel = new Release
+            var rel = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "Acme on BC 26.0",
@@ -305,7 +305,7 @@ public sealed class ProjectServiceTests : IDisposable
             };
             seed.OeReleases.Add(rel);
             await seed.SaveChangesAsync();
-            seed.OeImportJobs.Add(new ImportJob
+            seed.OeImportJobs.Add(new OeImportJob
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ReleaseId = rel.Id,
@@ -433,7 +433,7 @@ public sealed class ProjectServiceTests : IDisposable
         // apply); the org-scoped read must not surface it.
         await using (var seed = _db.NewContext())
         {
-            seed.OeProjects.Add(new Project
+            seed.OeProjects.Add(new OeProject
             {
                 OrganizationId = TestDb.OtherOrgId,
                 Name = "Other Co",

@@ -75,7 +75,7 @@ public sealed class EnvironmentsListTests : IDisposable
     private async Task<int> SeedSolutionAsync(string name)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,
@@ -93,7 +93,7 @@ public sealed class EnvironmentsListTests : IDisposable
         DateTime environmentFetchedAt, DateTime? updatesFetchedAt)
     {
         await using var ctx = _db.NewContext();
-        ctx.OeProjectEnvironments.Add(new ProjectEnvironment
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

@@ -28,7 +28,7 @@ public sealed class AddPipelinesBackfillMigrationTests : IDisposable
 
         await using (var seed = _db.NewContext())
         {
-            var project = new Project
+            var project = new OeProject
             {
                 OrganizationId = org, Name = "CRONUS A/S " + Guid.NewGuid().ToString("N"),
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
@@ -38,7 +38,7 @@ public sealed class AddPipelinesBackfillMigrationTests : IDisposable
             projectId = project.Id;
 
             // A pre-Pipeline build hanging directly off the project (pipeline_id null).
-            var build = new ProjectBuild
+            var build = new OeProjectBuild
             {
                 OrganizationId = org, ProjectId = projectId, PipelineId = null,
                 Status = ProjectBuildStatus.Ready, StartedAt = DateTime.UtcNow,

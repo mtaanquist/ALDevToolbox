@@ -6,7 +6,6 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -411,7 +410,7 @@ public sealed class ExplorerTreeTests : IDisposable
         {
             (_, _, moduleId) = await AFileAsync(ctx);
             var fileId = await AddFileAsync(ctx, moduleId, "src/Sorting/ZZZ.Codeunit.al");
-            ctx.OeModuleObjects.Add(new ModuleObject
+            ctx.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = moduleId,
@@ -434,14 +433,14 @@ public sealed class ExplorerTreeTests : IDisposable
     private static async Task<long> AddFileAsync(Data.AppDbContext ctx, long moduleId, string path)
     {
         var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-        ctx.OeFileContents.Add(new FileContent
+        ctx.OeFileContents.Add(new OeFileContent
         {
             ContentHash = hash,
             Content = "// " + path,
             ContentLength = path.Length + 3,
             LineCount = 1,
         });
-        var file = new ModuleFile
+        var file = new OeModuleFile
         {
             OrganizationId = TestDb.DefaultOrgId,
             ModuleId = moduleId,
@@ -653,7 +652,7 @@ public sealed class ExplorerTreeTests : IDisposable
                 because: "the lowest line number is the object the file leads with");
     }
 
-    private static ModuleObject NewObject(long moduleId, long fileId, string name, int lineNumber) => new()
+    private static OeModuleObject NewObject(long moduleId, long fileId, string name, int lineNumber) => new()
     {
         OrganizationId = TestDb.DefaultOrgId,
         ModuleId = moduleId,
@@ -685,7 +684,7 @@ public sealed class ExplorerTreeTests : IDisposable
             (_, _, moduleId) = await AFileAsync(ctx);
 
             var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-            ctx.OeFileContents.Add(new FileContent
+            ctx.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash,
                 Content = "// bundled",
@@ -693,10 +692,10 @@ public sealed class ExplorerTreeTests : IDisposable
                 LineCount = 1,
             });
 
-            var files = new List<ModuleFile>(Files);
+            var files = new List<OeModuleFile>(Files);
             for (var i = 0; i < Files; i++)
             {
-                files.Add(new ModuleFile
+                files.Add(new OeModuleFile
                 {
                     OrganizationId = TestDb.DefaultOrgId,
                     ModuleId = moduleId,

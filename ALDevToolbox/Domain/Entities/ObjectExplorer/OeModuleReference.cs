@@ -1,10 +1,10 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One outbound reference from a <see cref="ModuleObject"/> to some target AL object,
+/// One outbound reference from a <see cref="OeModuleObject"/> to some target AL object,
 /// expressed as the qualified <c>(target_app_id, target_object_kind, target_object_id,
 /// target_object_name)</c> triplet pulled from the symbol package — NOT as a resolved
-/// <see cref="ModuleObject"/> foreign key. The actual target row is resolved at query time
+/// <see cref="OeModuleObject"/> foreign key. The actual target row is resolved at query time
 /// via the recursive CTE over <c>Release.parent_release_id</c>. This is what makes
 /// retargeting a one-line <c>UPDATE</c>: change the parent, every reference re-resolves.
 ///
@@ -19,7 +19,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 ///   - <c>event_publisher</c>    — event-subscriber binding to a publisher
 ///   - <c>data_item</c>          — report data item or xmlport table source
 /// </summary>
-public class ModuleReference
+public class OeModuleReference
 {
     public long Id { get; set; }
 
@@ -28,10 +28,10 @@ public class ModuleReference
 
     /// <summary>Denormalised from the source object so the resolution query doesn't join twice.</summary>
     public long ModuleId { get; set; }
-    public Module? Module { get; set; }
+    public OeModule? Module { get; set; }
 
     public long SourceObjectId { get; set; }
-    public ModuleObject? SourceObject { get; set; }
+    public OeModuleObject? SourceObject { get; set; }
 
     /// <summary>AppId of the module that declares the target. Same-module refs stamped with the importing module's AppId.</summary>
     public Guid TargetAppId { get; set; }
@@ -87,7 +87,7 @@ public class ModuleReference
     public string? TargetMemberKind { get; set; }
 
     /// <summary>
-    /// Optional direct FK to the resolved <see cref="ModuleSymbol"/>, stamped
+    /// Optional direct FK to the resolved <see cref="OeModuleSymbol"/>, stamped
     /// at import time when the referenced member is known to live in the
     /// same imported release. Auxiliary — query-side matching still uses the
     /// stable (TargetAppId, TargetObjectKind, …, TargetMemberName) tuple so
@@ -96,10 +96,10 @@ public class ModuleReference
     /// </summary>
     public long? TargetSymbolId { get; set; }
 
-    public ModuleSymbol? TargetSymbol { get; set; }
+    public OeModuleSymbol? TargetSymbol { get; set; }
 
     /// <summary>
-    /// Direct FK to a <see cref="ModuleVariable"/> when the reference
+    /// Direct FK to a <see cref="OeModuleVariable"/> when the reference
     /// is a <c>variable_use</c> — a bare identifier in a procedure
     /// body that resolves to an object-scope global on the file's
     /// owner. Stamped at import time from the
@@ -110,10 +110,10 @@ public class ModuleReference
     /// </summary>
     public long? TargetVariableId { get; set; }
 
-    public ModuleVariable? TargetVariable { get; set; }
+    public OeModuleVariable? TargetVariable { get; set; }
 
     /// <summary>
-    /// Optional FK to the <see cref="ModuleSymbol"/> whose body emitted
+    /// Optional FK to the <see cref="OeModuleSymbol"/> whose body emitted
     /// this reference — the calling procedure / trigger. Stamped at
     /// import time when the extractor was inside a procedure scope.
     /// Null for object-scope references (<c>extends_target</c>,
@@ -125,5 +125,5 @@ public class ModuleReference
     /// </summary>
     public long? SourceSymbolId { get; set; }
 
-    public ModuleSymbol? SourceSymbol { get; set; }
+    public OeModuleSymbol? SourceSymbol { get; set; }
 }

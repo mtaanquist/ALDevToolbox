@@ -51,7 +51,7 @@ public sealed class ArtifactReleaseImporterTests : IDisposable
     public async Task ImportAsync_skips_a_version_whose_dedup_key_is_already_in_the_catalogue()
     {
         await using var ctx = _db.NewContext();
-        var existing = new Release
+        var existing = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             // A differently-labelled release with the SAME dedup key still dedups —
@@ -84,7 +84,7 @@ public sealed class ArtifactReleaseImporterTests : IDisposable
         // A manual upload that happens to use the same display label carries no
         // dedup key, so it must not stop the artifact import from running.
         await using var ctx = _db.NewContext();
-        ctx.OeReleases.Add(new Release
+        ctx.OeReleases.Add(new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "Business Central 28.2 (DK)",

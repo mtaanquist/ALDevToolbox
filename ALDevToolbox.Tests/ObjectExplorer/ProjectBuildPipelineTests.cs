@@ -175,7 +175,7 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         int otherReleaseId;
         await using (var seed = _db.NewContext())
         {
-            var release = new Release
+            var release = new OeRelease
             {
                 OrganizationId = TestDb.OtherOrgId,
                 Label = "Other on BC 26.0",
@@ -230,7 +230,7 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         }
     }
 
-    private static Release Rel(string label, string kind, string? dedupKey = null) => new()
+    private static OeRelease Rel(string label, string kind, string? dedupKey = null) => new()
     {
         OrganizationId = TestDb.DefaultOrgId,
         Label = label,
@@ -250,7 +250,7 @@ public sealed class ProjectBuildPipelineTests : IDisposable
     private async Task<int> SeedProjectReleaseAsync(string status)
     {
         await using var ctx = _db.NewContext();
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "Acme (building…) " + Guid.NewGuid().ToString("N"),
@@ -265,7 +265,7 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         return release.Id;
     }
 
-    private static ProjectBuildResult Result(
+    private static OeProjectBuildResult Result(
         int releaseId, string app, string status, string? message, int orgId = TestDb.DefaultOrgId,
         string? repoUrl = null, string? commitSha = null, DateTime? commitDate = null) =>
         new()

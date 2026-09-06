@@ -296,7 +296,7 @@ E.g. a new "clicked token resolves to an enum value" affordance.
 
 The extractor emits to `ExtractedReference.ReferenceKind`; the import side persists to `oe_module_references.reference_kind`. To add a new kind:
 
-1. Decide on the storage shape — does it need a new column on `ModuleReference`? Variable uses needed `TargetVariableId`. New kinds with a unique target shape need a new nullable FK column and a migration with a filtered index for the find-references join.
+1. Decide on the storage shape — does it need a new column on `OeModuleReference`? Variable uses needed `TargetVariableId`. New kinds with a unique target shape need a new nullable FK column and a migration with a filtered index for the find-references join.
 2. Emit from the extractor — `_state.Refs.Add(new ExtractedReference(... ReferenceKind: "your_kind", ...))`.
 3. Stamp the new column at import time — `EmitCallSiteReferencesAsync` in `ReleaseImportService.cs` is where targetSymbolId / targetVariableId stamping lives; add a parallel lookup.
 4. Update `ReferenceSessionService.CreateFromXxxAsync` (or add a new one) for the click-time path.

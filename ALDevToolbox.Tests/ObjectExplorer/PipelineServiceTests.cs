@@ -143,7 +143,7 @@ public sealed class PipelineServiceTests : IDisposable
 
     private static async Task<int> SeedProjectAsync(AppDbContext ctx)
     {
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS " + Guid.NewGuid().ToString("N"),

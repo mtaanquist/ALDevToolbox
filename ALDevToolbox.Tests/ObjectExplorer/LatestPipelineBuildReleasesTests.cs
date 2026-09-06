@@ -100,7 +100,7 @@ public sealed class LatestPipelineBuildReleasesTests : IDisposable
     {
         await using (var seed = _db.NewContext())
         {
-            seed.OeReleases.Add(new Release
+            seed.OeReleases.Add(new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "CRONUS objects 2016",
@@ -125,7 +125,7 @@ public sealed class LatestPipelineBuildReleasesTests : IDisposable
 
     private static async Task<int> SeedProjectAsync(AppDbContext ctx, string name)
     {
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,
@@ -139,7 +139,7 @@ public sealed class LatestPipelineBuildReleasesTests : IDisposable
 
     private static async Task<int> SeedPipelineAsync(AppDbContext ctx, int projectId, string name)
     {
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -155,7 +155,7 @@ public sealed class LatestPipelineBuildReleasesTests : IDisposable
     private static async Task<int> SeedProjectReleaseAsync(
         AppDbContext ctx, string label, string status = "ready", bool deleted = false)
     {
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = label,
@@ -174,7 +174,7 @@ public sealed class LatestPipelineBuildReleasesTests : IDisposable
     private static async Task SeedBuildAsync(
         AppDbContext ctx, int projectId, int? pipelineId, int releaseId, string status, DateTime startedAt)
     {
-        ctx.OeProjectBuilds.Add(new ProjectBuild
+        ctx.OeProjectBuilds.Add(new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

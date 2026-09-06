@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ProjectBuildLogConfiguration : IEntityTypeConfiguration<ProjectBuildLog>
+internal sealed class ProjectBuildLogConfiguration : IEntityTypeConfiguration<OeProjectBuildLog>
 {
-    public void Configure(EntityTypeBuilder<ProjectBuildLog> entity)
+    public void Configure(EntityTypeBuilder<OeProjectBuildLog> entity)
     {
         entity.ToTable("oe_project_build_logs");
         entity.HasKey(e => e.Id);

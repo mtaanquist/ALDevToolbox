@@ -5,17 +5,17 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
 /// A customer/project entity the Artifacts tool builds. Groups one or more
-/// <see cref="ProjectRepository"/> rows (Azure DevOps or GitHub) that the
+/// <see cref="OeProjectRepository"/> rows (Azure DevOps or GitHub) that the
 /// project-build pipeline clones, compiles, and ingests; each build is a
-/// first-class <see cref="ProjectBuild"/> that produces a <c>project</c>-kind
-/// <see cref="Release"/> for object navigation. Any signed-in user may create a
+/// first-class <see cref="OeProjectBuild"/> that produces a <c>project</c>-kind
+/// <see cref="OeRelease"/> for object navigation. Any signed-in user may create a
 /// project; who may read and change an existing one depends on its
 /// <see cref="Visibility"/> and the <see cref="Teams">teams</see> assigned to it —
 /// the owner, org Admins, and SiteAdmins always can, and deleting stays with that
 /// set alone. Org-scoped and soft-deletable. See <c>.design/artifacts.md</c> and
 /// <c>.design/teams-and-visibility.md</c>.
 /// </summary>
-public class Project
+public class OeProject
 {
     public int Id { get; set; }
 
@@ -73,7 +73,7 @@ public class Project
     /// The teams granted access to this project. Empty exactly when
     /// <see cref="Visibility"/> is <see cref="ProjectVisibility.Public"/>.
     /// </summary>
-    public ICollection<ProjectTeam> Teams { get; set; } = new List<ProjectTeam>();
+    public ICollection<OeProjectTeam> Teams { get; set; } = new List<OeProjectTeam>();
 
     // ── Business Central SaaS connection (delivery) ───────────────────────
     // One Entra tenant + one set of S2S (client-credentials) credentials per
@@ -111,7 +111,7 @@ public class Project
     public DateTime? BcConnectionVerifiedAt { get; set; }
 
     /// <summary>This project's fetched BC environments (the delivery targets). Populated by Test connection / Refresh.</summary>
-    public ICollection<ProjectEnvironment> Environments { get; set; } = new List<ProjectEnvironment>();
+    public ICollection<OeProjectEnvironment> Environments { get; set; } = new List<OeProjectEnvironment>();
 
     // ── Discovered-extensions cache (the "New/Edit pipeline" picker) ──────
     // A denormalised cache of the extensions found by a shallow clone of the
@@ -130,16 +130,16 @@ public class Project
     /// <summary>The last discovery failure reason (no token / clone failed / no app.json), shown when there's no usable cache. Cleared on success.</summary>
     public string? DiscoveryError { get; set; }
 
-    public ICollection<ProjectRepository> Repositories { get; set; } = new List<ProjectRepository>();
+    public ICollection<OeProjectRepository> Repositories { get; set; } = new List<OeProjectRepository>();
 
     /// <summary>
-    /// Operator-supplied third-party symbols (<see cref="ProjectSymbol"/>) the build
+    /// Operator-supplied third-party symbols (<see cref="OeProjectSymbol"/>) the build
     /// merges into the symbol cache — the manual-symbols recovery path for a
     /// dependency absent from both the repos' <c>.alpackages/</c> and any Microsoft
     /// artifact. See <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
-    public ICollection<ProjectSymbol> Symbols { get; set; } = new List<ProjectSymbol>();
+    public ICollection<OeProjectSymbol> Symbols { get; set; } = new List<OeProjectSymbol>();
 
     /// <summary>This project's builds (newest interesting first when ordered by the service). Reaped with the project.</summary>
-    public ICollection<ProjectBuild> Builds { get; set; } = new List<ProjectBuild>();
+    public ICollection<OeProjectBuild> Builds { get; set; } = new List<OeProjectBuild>();
 }

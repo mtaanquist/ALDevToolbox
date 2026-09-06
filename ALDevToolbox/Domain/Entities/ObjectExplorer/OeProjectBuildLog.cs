@@ -1,13 +1,13 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// Captured output from a <see cref="ProjectBuild"/> — clone and <c>alc</c>
+/// Captured output from a <see cref="OeProjectBuild"/> — clone and <c>alc</c>
 /// stdout/stderr — so a failed build is diagnosable and the Artifacts UI can offer
 /// a <c>Raw log</c> download. <see cref="ProjectRepositoryId"/> is set for a
 /// per-repo log (clone output) and null for an orchestration-level log (symbol
 /// resolution + compile). See <c>.design/artifacts.md</c>.
 /// </summary>
-public class ProjectBuildLog
+public class OeProjectBuildLog
 {
     public int Id { get; set; }
 
@@ -16,11 +16,11 @@ public class ProjectBuildLog
     public Organization? Organization { get; set; }
 
     public int ProjectBuildId { get; set; }
-    public ProjectBuild? ProjectBuild { get; set; }
+    public OeProjectBuild? ProjectBuild { get; set; }
 
     /// <summary>The repository this log covers (clone output), or null for a build-level orchestration log.</summary>
     public int? ProjectRepositoryId { get; set; }
-    public ProjectRepository? ProjectRepository { get; set; }
+    public OeProjectRepository? ProjectRepository { get; set; }
 
     /// <summary>A short section label for the log (e.g. a repo display name or <c>Build</c>).</summary>
     public string Section { get; set; } = string.Empty;

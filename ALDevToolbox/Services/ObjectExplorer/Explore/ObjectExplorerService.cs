@@ -563,7 +563,7 @@ public class ObjectExplorerService
 
     /// <summary>
     /// Returns the AL source slice for a procedure / trigger / event
-    /// publisher / event subscriber, looked up by <see cref="ModuleSymbol.Id"/>.
+    /// publisher / event subscriber, looked up by <see cref="OeModuleSymbol.Id"/>.
     /// Slices from the declaration line through the body's matching
     /// <c>end;</c>; when <c>EndLine</c> is null (legacy / pre-#181
     /// ingest), falls back to the next-sibling-symbol's start line as

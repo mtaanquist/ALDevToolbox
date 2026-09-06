@@ -3,7 +3,7 @@
 > **Naming.** The entity this doc calls a *project* is called a **Solution** in the
 > product — nav, headings, routes (`/solutions*`) and MCP tool names — because
 > Business Central now uses "project" for its own project-accounting area. The C#
-> types, tables and columns still say `Project`, deliberately; CLAUDE.md has the
+> types, tables and columns still say `OeProject`, deliberately; CLAUDE.md has the
 > table of which side says which. Prose below that says "project" is describing the
 > code and is still correct.
 
@@ -16,13 +16,13 @@ its objects remain navigable in the Object Explorer; what changes is *who* owns 
 it's credentialed, and *where* it surfaces.
 
 **Status:** implemented on the `feat/artifacts` branch across four slices (per-user tokens; the
-`ProjectBuild` model; the Projects/Artifacts tools + nav rework + OE split; MCP parity + the
+`OeProjectBuild` model; the Projects/Artifacts tools + nav rework + OE split; MCP parity + the
 existing-data backfill). This doc is the behavioural contract. Where it diverges from
 `object-explorer-project-builds.md`, this doc wins and that doc is updated to describe the
 post-split OE (symbol navigation only).
 
 **Update (post-launch): the Pipeline layer.** The **Artifacts** tool was renamed to **Pipelines**
-(the artifact is the *product* of a build, not the action), and a first-class **`Pipeline`** entity
+(the artifact is the *product* of a build, not the action), and a first-class **`OePipeline`** entity
 was introduced between Project and Build. The model is now **Project → Pipeline(s) → Build(s) →
 Artifacts**:
 
@@ -32,14 +32,14 @@ Artifacts**:
 - A **Pipeline** (`oe_pipelines`, org-scoped, soft-deleted) is a *named build configuration* under a
   project. A project has **many** — different customer environments get different subsets of
   extensions. The pipeline owns the extension selection (`RequestedAppIdsJson`, null = build all).
-- A **Build** (`ProjectBuild`) is one *run of a pipeline*: it gains `PipelineId` (keeps `ProjectId`),
+- A **Build** (`OeProjectBuild`) is one *run of a pipeline*: it gains `PipelineId` (keeps `ProjectId`),
   and **snapshots** the pipeline's selection onto its own `RequestedAppIdsJson` at run time so
   editing the pipeline later doesn't rewrite history.
 
 Creating/editing a pipeline shows the project's extension checklist from a **per-project discovery
 cache** (`oe_projects.discovered_extensions_json`), warmed in the background when repos change and
 refreshable on demand — so the editor opens instantly instead of cloning every time. **Build** then
-just runs the pipeline's saved selection. The `ProjectBuild` entity, the `/artifacts/build/...` download
+just runs the pipeline's saved selection. The `OeProjectBuild` entity, the `/artifacts/build/...` download
 endpoints, `ArtifactService`, and the `ArtifactsTools` MCP surface keep their names ("artifact"
 still names the downloadable `.app`). Routes: `/pipelines` (landing, lists pipelines),
 `/pipelines/{pipelineId}` (pipeline detail), pipelines listed/created on the project detail page;
@@ -96,7 +96,7 @@ Build **trigger** (the **New build** action with its extension picker) is a Pipe
 
 ## Roles & ownership
 
-- A `Project` records `CreatedByUserId` — its **owner** — and a `Visibility`
+- An `OeProject` records `CreatedByUserId` — its **owner** — and a `Visibility`
   (`Public` / `ReadOnly` / `Private`) with a set of assigned **teams**. Any signed-in user may
   create a project; who may read or change an existing one follows from those two.
 - **Browsing and downloading** is open to everyone in the org *except* on a `Private` project,
@@ -138,54 +138,54 @@ The token is decrypted only inside the build service, only for the clone, inject
 
 ## The build entity
 
-Builds are split off `Release` into a first-class **`ProjectBuild`**. This is the central
+Builds are split off `OeRelease` into a first-class **`OeProjectBuild`**. This is the central
 modelling decision: a build is a *set* of `(repository, commit)` pairs with logs, a changelog, and
-multiple downloadable `.app`s — none of which `Release` models — while still producing exactly one
-`project`-kind `Release` for object navigation.
+multiple downloadable `.app`s — none of which `OeRelease` models — while still producing exactly one
+`project`-kind `OeRelease` for object navigation.
 
 New entities under `Domain/Entities/ObjectExplorer/` (`oe_` tables, org-scoped via the standard
 query filter):
 
-- **`ProjectBuild`** — `ProjectId`, `StartedByUserId`, `Branch`, `Status`
+- **`OeProjectBuild`** — `ProjectId`, `StartedByUserId`, `Branch`, `Status`
   (`queued|building|ready|failed`), `BcVersion`, `StartedAt`, `FinishedAt`, `FailureMessage`,
   **`RequestedAppIdsJson`** (the per-build extension selection — a JSON array of app-id GUIDs, or
   `null` for "build everything"; see "Extension selection" below), and **`ReleaseId`** (nullable FK
-  to the produced `Release` — *the Object Explorer hook*).
-- **`ProjectBuildRepoCommit`** — `(ProjectBuildId, ProjectRepositoryId, CommitHash, CommittedAt)`.
+  to the produced `OeRelease` — *the Object Explorer hook*).
+- **`OeProjectBuildRepoCommit`** — `(ProjectBuildId, ProjectRepositoryId, CommitHash, CommittedAt)`.
   The per-repo keying; a build is identified by this set, not a single hash.
-- **`ProjectBuildCommit`** — the changelog: `(ProjectBuildId, ProjectRepositoryId, ShortHash,
+- **`OeProjectBuildCommit`** — the changelog: `(ProjectBuildId, ProjectRepositoryId, ShortHash,
   Message, Author, CommittedAt)`, captured at build time.
-- **`ProjectBuildArtifact`** — a downloadable deliverable: `(ProjectBuildId, FileName, AppName,
+- **`OeProjectBuildArtifact`** — a downloadable deliverable: `(ProjectBuildId, FileName, AppName,
   AppVersion, RuntimeVersion, SizeBytes, Content)`. `*.dep.app` is excluded at ingest, so it never
   appears as a download.
-- **`ProjectBuildLog`** — `(ProjectBuildId, ProjectRepositoryId?, Content)` — captured clone +
+- **`OeProjectBuildLog`** — `(ProjectBuildId, ProjectRepositoryId?, Content)` — captured clone +
   `alc` stdout/stderr, with a `Raw log` download.
 
-`Project` drops `AutoBuildEnabled` (builds are user-initiated only). The existing
-`oe_project_build_results` table is superseded by `ProjectBuildRepoCommit` + `ProjectBuildArtifact`
+`OeProject` drops `AutoBuildEnabled` (builds are user-initiated only). The existing
+`oe_project_build_results` table is superseded by `OeProjectBuildRepoCommit` + `OeProjectBuildArtifact`
 and migrated onto them.
 
 ## Build flow
 
 The clean seam in `Services/ObjectExplorer/` is preserved: `ProjectBuildService.BuildAsync`
-produces uploads, and `ReleaseImportService.ProcessReleaseAsync` ingests them into a `Release`
-unchanged. The lifecycle is wrapped in `ProjectBuild`:
+produces uploads, and `ReleaseImportService.ProcessReleaseAsync` ingests them into an `OeRelease`
+unchanged. The lifecycle is wrapped in `OeProjectBuild`:
 
-1. `StartBuildAsync(projectId)` (owner/admin) creates a `ProjectBuild` (`queued`, with
-   `StartedByUserId`) and the `Release` (`Kind=project`, `Status=ingesting`), links them via
-   `ProjectBuild.ReleaseId`, and enqueues the existing `ReleaseImportJob`.
+1. `StartBuildAsync(projectId)` (owner/admin) creates an `OeProjectBuild` (`queued`, with
+   `StartedByUserId`) and the `OeRelease` (`Kind=project`, `Status=ingesting`), links them via
+   `OeProjectBuild.ReleaseId`, and enqueues the existing `ReleaseImportJob`.
 2. The worker runs `BuildAsync`, which now also:
    - clones each repo with the **triggering user's** token and records HEAD per repo
-     (`ProjectBuildRepoCommit`);
+     (`OeProjectBuildRepoCommit`);
    - computes the changelog per repo as `git log <prev>..<new>` against the project's **last
      successful build**, with a merge-base ancestry check and guards for first-build /
      force-push (non-ancestor) / very large ranges (cap ~100, "…and N more")
-     (`ProjectBuildCommit`);
-   - captures clone + `alc` output (`ProjectBuildLog`);
-   - excludes `*.dep.app` and **retains** the real `.app` bytes (`ProjectBuildArtifact`) — new,
+     (`OeProjectBuildCommit`);
+   - captures clone + `alc` output (`OeProjectBuildLog`);
+   - excludes `*.dep.app` and **retains** the real `.app` bytes (`OeProjectBuildArtifact`) — new,
      since today's uploads stream into ingest and aren't kept;
    - still returns `outcome.Uploads` for `ProcessReleaseAsync`.
-3. `ProjectBuild.Status` flips ready/failed alongside the Release flip. The detail page's bounded
+3. `OeProjectBuild.Status` flips ready/failed alongside the Release flip. The detail page's bounded
    status poll drives "Building…" → "Ready" live.
 
 ### Extension selection
@@ -208,7 +208,7 @@ app). The **New build** action lets the user pick which to build:
   the prior good list intact — discovery is a picker convenience, so the build re-clones and filters
   by the pipeline's saved app-ids regardless. The discovery clone is intentionally separate from the
   build's full clone (the changelog needs history).
-- **Persisted on the build.** The picked app-ids are stored on `ProjectBuild.RequestedAppIdsJson`
+- **Persisted on the build.** The picked app-ids are stored on `OeProjectBuild.RequestedAppIdsJson`
   (the build row is the source of truth, so a restart-resumed job rebuilds the same subset). When
   *every* extension is selected the value is `null` — "build everything" — so an app added to a repo
   after discovery is still built. App-ids are compared normalised (trimmed, de-braced, lower-cased)
@@ -276,7 +276,7 @@ Each user-facing page states the CLAUDE.md "UX definition of done" and gets a fr
 Minimal-API `ArtifactEndpoints` (mirroring `GenerationEndpoints` / `EndpointHelpers`:
 `ValidateAntiforgeryAsync`, `WriteAttachmentHeaders`, `.RequireAuthorization()`): single `.app`,
 a build's Download-all zip, and the raw log. Each re-checks org scope before streaming bytes from
-`ProjectBuildArtifact` / `ProjectBuildLog`.
+`OeProjectBuildArtifact` / `OeProjectBuildLog`.
 
 ## MCP parity
 
@@ -286,10 +286,10 @@ same project. Per the CLAUDE.md parity rule — agents want the same answers as 
 
 ## Migration
 
-- Backfill `Project.CreatedByUserId` (ownerless → an org Admin).
-- For each existing `Kind=project` Release, synthesise a `ProjectBuild` from the
+- Backfill `OeProject.CreatedByUserId` (ownerless → an org Admin).
+- For each existing `Kind=project` Release, synthesise an `OeProjectBuild` from the
   `oe_import_jobs.project_id → release_id` mapping and migrate `oe_project_build_results`
-  provenance into `ProjectBuildRepoCommit`. Older builds lack retained `.app` bytes, full logs, and
+  provenance into `OeProjectBuildRepoCommit`. Older builds lack retained `.app` bytes, full logs, and
   changelog — surface "captured before logs were kept" rather than fabricating them. The backfill
   ships as the idempotent data migration `BackfillArtifactsData`. `oe_project_build_results` itself
   is **retained**, not dropped — the Object Explorer release-manage page still reads it; the

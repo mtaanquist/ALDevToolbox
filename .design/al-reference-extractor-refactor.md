@@ -127,9 +127,9 @@ public interface IAlObjectStructureExtractor
 
 Add what's missing so the resolver doesn't have to text-search at click time:
 
-- `ModuleReference.ColumnNumber` — **already added in PR #159.** Just leave it.
-- `ModuleVariable.LineNumber` / `.ColumnStart` / `.ColumnEnd` — currently null. Source extractor learns to capture var-block declarations (object-scope `var` blocks). Enables Go-to-definition on page / codeunit globals like `SalesDocCheckFactboxVisible` — currently broken because we can't tell the resolver where to jump even if we find the variable.
-- Optionally: `ModuleSymbol.OwnerKind` denormalised so `ListDeclarationsInFileAsync` doesn't need the join. Marginal; defer unless query becomes a hotspot.
+- `OeModuleReference.ColumnNumber` — **already added in PR #159.** Just leave it.
+- `OeModuleVariable.LineNumber` / `.ColumnStart` / `.ColumnEnd` — currently null. Source extractor learns to capture var-block declarations (object-scope `var` blocks). Enables Go-to-definition on page / codeunit globals like `SalesDocCheckFactboxVisible` — currently broken because we can't tell the resolver where to jump even if we find the variable.
+- Optionally: `OeModuleSymbol.OwnerKind` denormalised so `ListDeclarationsInFileAsync` doesn't need the join. Marginal; defer unless query becomes a hotspot.
 
 Migration: nullable columns, backfill on re-import. Same shape as the `column_number` add already done.
 
@@ -186,7 +186,7 @@ Specific gaps to close as part of the refactor (independent of architecture but 
 In decreasing ROI per effort, suitable as a sequenced punch list for a planning agent:
 
 1. **Split symbol kinds at storage** (`table_field` vs `page_field` etc.). ~1 day. Eliminates the entire category of "kind=field, but if owner is X" branches in filters, resolvers, search. Touches `AlSymbolExtractor`, `ReleaseImportService.EmitSymbols`, `SourceFileViewer.razor` filter, possibly the right-click resolver's symbol lookup. Migration: re-import.
-2. **Position-augmented `ModuleVariable`**. ~1 day. Add `LineNumber` / `ColumnStart` / `ColumnEnd`. Source extractor extracts var-block positions. Unblocks Go-to-definition on globals. Migration: nullable columns + re-import.
+2. **Position-augmented `OeModuleVariable`**. ~1 day. Add `LineNumber` / `ColumnStart` / `ColumnEnd`. Source extractor extracts var-block positions. Unblocks Go-to-definition on globals. Migration: nullable columns + re-import.
 3. **Unified `ReferenceResolver`**. ~2 days. Extract from both extractor and `ReferenceSessionService`. Add the global-variable strategy. Forces the two paths to stay in sync going forward.
 4. **Per-kind object-scope extractors**. ~3–5 days. The big one. Splits ~1000 lines of the current `AlReferenceExtractor.Walker` into kind-specific files. Shared `AlProcedureWalker` extracted first as a refactor (no behaviour change), then per-kind extractors take it as a dependency. Tests rewritten to target individual extractors instead of the unified walker.
 5. **Cross-page resolution for SubPageLink / RunPageLink LHS field names**. ~1 day after #4. Trivial once `AlPageStructure` exists; near-impossible before.

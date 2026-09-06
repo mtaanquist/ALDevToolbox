@@ -10,7 +10,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -397,7 +396,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
     {
         await using var ctx = _db.NewContext();
 
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "BC 26 CRONUS",
@@ -426,7 +425,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         // One shared content row: the store is deduplicated by hash, and the
         // text is irrelevant to what these tests measure.
         const string hash = "scaling-fixture-content-hash";
-        ctx.OeFileContents.Add(new FileContent
+        ctx.OeFileContents.Add(new OeFileContent
         {
             ContentHash = hash,
             Content = "// fixture",
@@ -434,7 +433,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
             LineCount = 1,
         });
 
-        var files = new List<ModuleFile>(FilesInFolder + FilesElsewhere);
+        var files = new List<OeModuleFile>(FilesInFolder + FilesElsewhere);
         for (var i = 0; i < FilesInFolder; i++)
         {
             files.Add(NewFile(module.Id, $"src/Target/Target{i}.al", hash));
@@ -447,11 +446,11 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         ctx.OeModuleFiles.AddRange(files);
         await ctx.SaveChangesAsync();
 
-        var objects = new List<ModuleObject>(files.Count);
+        var objects = new List<OeModuleObject>(files.Count);
         foreach (var file in files)
         {
             var isTarget = file.Path.StartsWith("src/Target/", StringComparison.Ordinal);
-            objects.Add(new ModuleObject
+            objects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -474,7 +473,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         return module.Id;
     }
 
-    private static ModuleFile NewFile(long moduleId, string path, string hash) => new()
+    private static OeModuleFile NewFile(long moduleId, string path, string hash) => new()
     {
         OrganizationId = TestDb.DefaultOrgId,
         ModuleId = moduleId,

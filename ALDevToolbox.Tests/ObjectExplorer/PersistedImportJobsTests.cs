@@ -26,9 +26,9 @@ public sealed class PersistedImportJobsTests : IDisposable
     private PersistedImportJobs NewService(Data.AppDbContext ctx) =>
         new(ctx, TimeProvider.System);
 
-    private async Task<Release> SeedReleaseAsync(Data.AppDbContext ctx, string status = "ingesting")
+    private async Task<OeRelease> SeedReleaseAsync(Data.AppDbContext ctx, string status = "ingesting")
     {
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = Identity.OrganizationId,
             Label = "Test Release " + Guid.NewGuid().ToString("N").Substring(0, 8),

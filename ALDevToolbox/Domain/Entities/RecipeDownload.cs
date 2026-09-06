@@ -1,4 +1,4 @@
-using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 namespace ALDevToolbox.Domain.Entities;
 

@@ -5,9 +5,9 @@ using ALDevToolbox.Services.ObjectExplorer.Import;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ModuleFileConfiguration : IEntityTypeConfiguration<ModuleFile>
+internal sealed class ModuleFileConfiguration : IEntityTypeConfiguration<OeModuleFile>
 {
-    public void Configure(EntityTypeBuilder<ModuleFile> entity)
+    public void Configure(EntityTypeBuilder<OeModuleFile> entity)
     {
         entity.ToTable("oe_module_files");
         entity.HasKey(e => e.Id);

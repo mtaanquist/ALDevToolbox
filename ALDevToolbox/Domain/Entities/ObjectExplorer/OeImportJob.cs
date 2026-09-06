@@ -17,7 +17,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// they're never resumed automatically.
 /// </para>
 /// </summary>
-public class ImportJob
+public class OeImportJob
 {
     public long Id { get; set; }
 

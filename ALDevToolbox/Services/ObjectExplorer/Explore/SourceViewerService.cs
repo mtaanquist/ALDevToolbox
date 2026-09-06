@@ -268,7 +268,7 @@ public sealed class SourceViewerService
     /// 1. <b>Member-access</b>: when the clicked token matches a
     ///    <c>method_call</c> / <c>field_access</c> reference row on the same
     ///    file + line, follow <c>TargetSymbolId</c> to the
-    ///    <see cref="ModuleSymbol"/> declaration and return its file + line.
+    ///    <see cref="OeModuleSymbol"/> declaration and return its file + line.
     ///    This is the path that resolves <c>GLAcc."Account Type"</c> and
     ///    <c>ConfirmManagement.GetResponseOrDefault</c> — the dominant cases
     ///    that the legacy object-name fallback couldn't reach.

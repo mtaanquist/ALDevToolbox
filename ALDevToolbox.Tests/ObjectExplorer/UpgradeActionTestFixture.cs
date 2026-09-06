@@ -131,7 +131,7 @@ internal sealed class UpgradeActionTestFixture : IDisposable
         int projectId;
         await using (var ctx = Db.NewContext())
         {
-            var project = new Project
+            var project = new OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Name = name,
@@ -159,7 +159,7 @@ internal sealed class UpgradeActionTestFixture : IDisposable
         int environmentId;
         await using (var ctx = Db.NewContext())
         {
-            var env = new ProjectEnvironment
+            var env = new OeProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ProjectId = projectId,
@@ -206,7 +206,7 @@ internal sealed class UpgradeActionTestFixture : IDisposable
             OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = PlainTeamUserId,
             CreatedAt = DateTime.UtcNow,
         });
-        ctx.OeProjectTeams.Add(new ProjectTeam
+        ctx.OeProjectTeams.Add(new OeProjectTeam
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, TeamId = team.Id,
             CreatedAt = DateTime.UtcNow,

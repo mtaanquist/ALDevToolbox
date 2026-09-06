@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class BcArtifactVersionConfiguration : IEntityTypeConfiguration<BcArtifactVersion>
+internal sealed class BcArtifactVersionConfiguration : IEntityTypeConfiguration<OeArtifactVersion>
 {
-    public void Configure(EntityTypeBuilder<BcArtifactVersion> entity)
+    public void Configure(EntityTypeBuilder<OeArtifactVersion> entity)
     {
         entity.ToTable("oe_artifact_versions");
         entity.HasKey(e => e.Id);
