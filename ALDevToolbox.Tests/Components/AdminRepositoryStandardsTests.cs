@@ -39,6 +39,7 @@ public sealed class AdminRepositoryStandardsTests : IDisposable
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<RepositoryProviderPolicyService>();
         _ctx.Services.AddScoped<GitHubRepositoryStandardsService>();
         // The Repositories tab renders the row that links here, so its own
         // services have to resolve too. Nothing reaches GitHub in these tests.

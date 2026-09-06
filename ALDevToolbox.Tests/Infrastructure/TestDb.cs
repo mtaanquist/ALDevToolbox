@@ -231,7 +231,43 @@ public sealed class TestDb : IDisposable
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
         new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance,
-            _memoryCache, DataProtectionProvider, ScopeFactory);
+            _memoryCache, ScopeFactory);
+
+    /// <summary>
+    /// The organisation's name and logo, split out of
+    /// <see cref="OrganizationConfigService"/>. Shares this fixture's config
+    /// service (and therefore its cache) so a rename or a logo upload here is
+    /// visible to the next read, as it is in the app.
+    /// </summary>
+    public OrganizationBrandingService NewOrganizationBrandingService(AppDbContext ctx) =>
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NewOrganizationConfigService(ctx),
+            NullLogger<OrganizationBrandingService>.Instance);
+
+    /// <summary>
+    /// The per-org repository-provider allow-list, split out of
+    /// <see cref="OrganizationConfigService"/> and sharing its cache.
+    /// </summary>
+    public RepositoryProviderPolicyService NewRepositoryProviderPolicyService(AppDbContext ctx) =>
+        new(ctx, OrgContext, NewOrganizationConfigService(ctx),
+            NullLogger<RepositoryProviderPolicyService>.Instance);
+
+    /// <summary>
+    /// The wipe-and-replace TOML restore for the per-org configuration, split
+    /// out of <see cref="OrganizationConfigService"/> and sharing its cache.
+    /// </summary>
+    public OrganizationConfigTomlImporter NewOrganizationConfigTomlImporter(AppDbContext ctx) =>
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NewOrganizationConfigService(ctx),
+            NullLogger<OrganizationConfigTomlImporter>.Instance);
+
+    /// <summary>
+    /// The per-org machine-translation settings (provider, trigger and the
+    /// encrypted key), split out of <see cref="OrganizationConfigService"/> and
+    /// sharing its cache.
+    /// </summary>
+    public ALDevToolbox.Services.Translation.MachineTranslationSettingsService NewMachineTranslationSettingsService(AppDbContext ctx) =>
+        new(ctx, OrgContext, NewOrganizationConfigService(ctx),
+            NullLogger<ALDevToolbox.Services.Translation.MachineTranslationSettingsService>.Instance,
+            DataProtectionProvider);
 
     /// <summary>
     /// An <see cref="IServiceScopeFactory"/> whose scopes hand out a fresh

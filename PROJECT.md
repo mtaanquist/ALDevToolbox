@@ -17,13 +17,13 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Shared/`         | Reusable components (`SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, `EnvironmentActivityFeed`, ...). Check here before building a new control. |
 | `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
 | `Startup/`                   | Service-registration groups, one file per area (`AddObjectExplorer`, `AddAccountServices`, `AddMcp`, `AddBackgroundWorkers`, …), called from `Program.cs` as `builder.Services.AddX()`. A new registration goes into the matching `Add*` method, not back into `Program.cs`. |
-| `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). Anything belonging to one tool or one concern goes in a subfolder rather than at the top level. |
+| `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). Anything belonging to one tool or one concern goes in a subfolder rather than at the top level. The per-organisation configuration is split by concern across four siblings here: `OrganizationConfigService` (cached read model + the settings writes), `OrganizationBrandingService` (name and logo), `RepositoryProviderPolicyService` (the source-control provider allow-list) and `OrganizationConfigTomlImporter` (the wipe-and-replace TOML restore). |
 | `Services/Account/`          | Sign-in and account services: `AuthService`, `EntraSignInService`, `PasskeyService`, `EmailMfaService`. |
 | `Services/Al/` and `Services/Cal/` | The AL and C/AL source parsers and reference extractors (see the extractor guides in this file). |
 | `Services/Generation/`       | The generation core: `WorkspaceZipBuilder`, `MustacheRenderer`, `IdRangeAllocator`, `EmittableExtension`. |
 | `Services/ObjectExplorer/`   | By far the largest subsystem: release/module/object ingest, project builds, pipelines, deliveries, discovery, and their queues and workers. |
 | `Services/ObjectExplorer/Bc/`| Everything that talks to a customer's Business Central tenant: the Admin Center clients, `ProjectConnectionService`, and the Upgrades services (`UpgradeFleetService`, `UpgradeActionService`, `UpgradeActionWorker`, `EnvironmentRefreshScheduler`/`Queue`/`Worker`). |
-| `Services/Translation/`      | Translator services: translation memory, machine-translation providers, suggestion coordination. |
+| `Services/Translation/`      | Translator services: translation memory, machine-translation providers and their per-organisation settings (`MachineTranslationSettingsService`), suggestion coordination. |
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
 | `Services/OAuth/`            | The MCP OAuth surface: client resolution, claims transformation, bearer policy. |
 | `Services/Offsite/`          | `IOffsiteStorageProvider` and its S3 / Azure Blob implementations.            |

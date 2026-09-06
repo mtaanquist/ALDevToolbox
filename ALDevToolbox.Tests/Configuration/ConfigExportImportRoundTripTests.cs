@@ -48,7 +48,7 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
                 new OrganizationFileInput(null, ".editorconfig", "indent=tab", false),
                 new OrganizationFileInput(null, "docs/onboarding.md", "Welcome {{publisher}}", true),
             });
-            await svc.UploadLogoAsync("image/png", logoBytes);
+            await _db.NewOrganizationBrandingService(ctx).UploadLogoAsync("image/png", logoBytes);
         }
 
         // Export: pull organization-config.toml out of the archive.
@@ -75,8 +75,8 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
         // Re-import.
         await using (var ctx = _db.NewContext())
         {
-            var svc = _db.NewOrganizationConfigService(ctx);
-            await svc.ImportFromTomlAsync(toml);
+            var importer = _db.NewOrganizationConfigTomlImporter(ctx);
+            await importer.ImportFromTomlAsync(toml);
         }
 
         // Verify the post-state matches.

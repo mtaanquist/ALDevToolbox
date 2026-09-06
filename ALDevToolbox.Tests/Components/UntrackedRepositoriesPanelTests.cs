@@ -49,6 +49,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<RepositoryProviderPolicyService>();
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
         _ctx.Services.AddScoped<ProjectDiscoveryService>();

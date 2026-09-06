@@ -11,6 +11,9 @@ public static class OrganizationRegistration
         services.AddScoped<AuditService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<OrganizationConfigService>();
+        services.AddScoped<OrganizationBrandingService>();
+        services.AddScoped<OrganizationConfigTomlImporter>();
+        services.AddScoped<RepositoryProviderPolicyService>();
         services.AddScoped<OrganizationAdminService>();
         services.AddScoped<TeamService>();
         return services;

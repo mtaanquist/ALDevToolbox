@@ -25,7 +25,7 @@ public sealed class MachineTranslationServiceTests : IDisposable
     public async Task Translate_returns_null_and_never_builds_a_provider_when_off()
     {
         await using var ctx = _db.NewContext();
-        var config = _db.NewOrganizationConfigService(ctx);
+        var config = _db.NewMachineTranslationSettingsService(ctx);
         var factory = new FakeFactory(new FakeProvider(new MtTranslation("Hej", "Fake", "EN")));
         var svc = new MachineTranslationService(config, factory, NullLogger<MachineTranslationService>.Instance);
 
@@ -38,7 +38,7 @@ public sealed class MachineTranslationServiceTests : IDisposable
     public async Task Translate_uses_provider_and_passes_context_when_configured()
     {
         await using var ctx = _db.NewContext();
-        var config = _db.NewOrganizationConfigService(ctx);
+        var config = _db.NewMachineTranslationSettingsService(ctx);
         await config.SaveMachineTranslationAsync(new MtSettingsInput("deepl", "k:fx", false, MtTrigger.OnDemand));
         var provider = new FakeProvider(new MtTranslation("Hej", "Fake", "EN"));
         var svc = new MachineTranslationService(config, new FakeFactory(provider), NullLogger<MachineTranslationService>.Instance);
@@ -55,7 +55,7 @@ public sealed class MachineTranslationServiceTests : IDisposable
     public async Task Translate_degrades_to_null_when_provider_throws()
     {
         await using var ctx = _db.NewContext();
-        var config = _db.NewOrganizationConfigService(ctx);
+        var config = _db.NewMachineTranslationSettingsService(ctx);
         await config.SaveMachineTranslationAsync(new MtSettingsInput("deepl", "k:fx", false, MtTrigger.AlwaysAuto));
         var svc = new MachineTranslationService(config, new FakeFactory(new ThrowingProvider()), NullLogger<MachineTranslationService>.Instance);
 
@@ -66,7 +66,7 @@ public sealed class MachineTranslationServiceTests : IDisposable
     public async Task TestConnection_reports_not_configured_when_off()
     {
         await using var ctx = _db.NewContext();
-        var config = _db.NewOrganizationConfigService(ctx);
+        var config = _db.NewMachineTranslationSettingsService(ctx);
         var svc = new MachineTranslationService(config, new FakeFactory(new ThrowingProvider()), NullLogger<MachineTranslationService>.Instance);
 
         var result = await svc.TestConnectionAsync();

@@ -94,7 +94,7 @@ public class OrganizationSettings
     /// <summary>
     /// The org's machine-translation API key, encrypted with the Data Protection
     /// key ring (purpose
-    /// <see cref="Services.OrganizationConfigService.MachineTranslationApiKeyProtectionPurpose"/>).
+    /// <see cref="Services.Translation.MachineTranslationSettingsService.MachineTranslationApiKeyProtectionPurpose"/>).
     /// Null when unset. Losing <c>app-keys</c> requires re-entering it. The audit
     /// interceptor redacts this column so ciphertext never lands in history.
     /// </summary>

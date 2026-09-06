@@ -11,6 +11,7 @@ public static class TranslatorRegistration
     {
         services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryService>();
         services.AddScoped<ALDevToolbox.Services.Translation.MachineTranslationService>();
+        services.AddScoped<ALDevToolbox.Services.Translation.MachineTranslationSettingsService>();
         services.AddScoped<ALDevToolbox.Services.Translation.TranslationSuggestionCoordinator>();
         // Fills the memory from the .xlf files in the organisation's own
         // repositories (issue #631) - nightly, and on demand from the admin

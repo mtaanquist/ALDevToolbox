@@ -63,6 +63,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddSingleton(TimeProvider.System);
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<RepositoryProviderPolicyService>();
         _db.AddStorageServices(_ctx.Services);
         // The Repositories tab offers a GitHub picker when one can be offered
         // (issue #624), so the page's chain has to resolve. With no handler every
