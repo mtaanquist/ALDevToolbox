@@ -61,7 +61,7 @@ This brings up Postgres and the app, runs migrations, ensures the singleton **sy
 
 Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yaml`, then run `docker compose up --build`.
 
-The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery.
+The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery. Connecting the toolbox to a GitHub organisation (the App registration, the org connection, and per-member links) is in [`docs/github-app-setup.md`](./docs/github-app-setup.md).
 
 ## Run locally without Docker
 
