@@ -91,7 +91,11 @@ public static class ObjectExplorerRegistration
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>();
+        // The project-visibility fence both source surfaces share, and the two
+        // halves of the source page: the file viewer and the explorer tree.
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.SourceVisibility>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.SourceViewerService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ExplorerTreeService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceResolver>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();

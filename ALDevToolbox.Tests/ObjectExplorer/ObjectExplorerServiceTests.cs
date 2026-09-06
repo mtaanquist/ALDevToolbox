@@ -41,7 +41,9 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         new(ctx, NewReferences(ctx), NewAccess(ctx), NullLogger<ObjectExplorerService>.Instance);
 
     private SourceViewerService NewSourceViewer(Data.AppDbContext ctx) =>
-        new(ctx, NewReferences(ctx), NewAccess(ctx));
+        new(ctx, NewReferences(ctx), NewVisibility(ctx));
+
+    private SourceVisibility NewVisibility(Data.AppDbContext ctx) => new(ctx, NewAccess(ctx));
 
     private ReleaseComparisonService NewComparison(Data.AppDbContext ctx) =>
         new(ctx, NewAccess(ctx), NullLogger<ReleaseComparisonService>.Instance);

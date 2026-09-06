@@ -35,7 +35,7 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// object row in the organisation, so it fails this by two orders of magnitude
 /// on a fixture that seeds in about a second.
 ///
-/// See <c>SourceViewerService.LoadPrimaryObjectsAsync</c> for the shape being
+/// See <c>ExplorerTreeService.LoadPrimaryObjectsAsync</c> for the shape being
 /// guarded and why EF produces it.
 /// </summary>
 public sealed class ExplorerQueryScalingTests : IDisposable
@@ -85,7 +85,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         var moduleId = await SeedSkewedModuleAsync();
 
         var (_, examined) = await MeasureAsync(
-            viewer => viewer.GetTreeChildrenAsync(moduleId, "src/Target/"));
+            (_, tree) => tree.GetTreeChildrenAsync(moduleId, "src/Target/"));
 
         examined.Should().BeLessThan(ObjectRowBudget,
             because: "a ten-file folder listing must cost ten files' worth of object rows, "
@@ -106,7 +106,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         // "Needle" is on the ten target objects only, so the answer is small
         // however big the module is around it.
         var (_, examined) = await MeasureAsync(
-            viewer => viewer.SearchTreeAsync(releaseId, "Needle"));
+            (_, tree) => tree.SearchTreeAsync(releaseId, "Needle"));
 
         examined.Should().BeLessThan(SearchRowBudget,
             because: "the search may read the object table once, but not once per file - "
@@ -131,7 +131,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
     {
         var moduleId = await SeedSkewedModuleAsync();
 
-        var (sql, _) = await MeasureAsync(viewer => Invoke(viewer, listing, moduleId));
+        var (sql, _) = await MeasureAsync((_, tree) => Invoke(tree, listing, moduleId));
 
         var objectQueries = sql.Where(s => s.Contains("oe_module_objects")).ToList();
         objectQueries.Should().NotBeEmpty(because: "the listing does read the object table");
@@ -183,7 +183,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
                 .SingleAsync();
         }
 
-        var (sql, _) = await MeasureAsync(async viewer =>
+        var (sql, _) = await MeasureAsync(async (viewer, _) =>
         {
             await viewer.GetFileHeaderAsync(fileId);
             await viewer.GetFileAsync(fileId);
@@ -224,15 +224,15 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         Search,
     }
 
-    private async Task Invoke(SourceViewerService viewer, Listing listing, long moduleId)
+    private async Task Invoke(ExplorerTreeService tree, Listing listing, long moduleId)
     {
         switch (listing)
         {
             case Listing.Folder:
-                await viewer.GetTreeChildrenAsync(moduleId, "src/Target/");
+                await tree.GetTreeChildrenAsync(moduleId, "src/Target/");
                 break;
             case Listing.WholeModule:
-                await viewer.ListModuleFilesAsync(moduleId);
+                await tree.ListModuleFilesAsync(moduleId);
                 break;
             case Listing.Search:
                 int releaseId;
@@ -241,7 +241,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
                     releaseId = await ctx.OeModules.AsNoTracking()
                         .Where(m => m.Id == moduleId).Select(m => m.ReleaseId).SingleAsync();
                 }
-                await viewer.SearchTreeAsync(releaseId, "Needle");
+                await tree.SearchTreeAsync(releaseId, "Needle");
                 break;
         }
     }
@@ -254,7 +254,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
     /// under EXPLAIN ANALYZE and totals the rows the database actually visited.
     /// </summary>
     private async Task<(List<string> Sql, long ObjectRowsExamined)> MeasureAsync(
-        Func<SourceViewerService, Task> work)
+        Func<SourceViewerService, ExplorerTreeService, Task> work)
     {
         var recorder = new CommandRecorder();
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -265,9 +265,14 @@ public sealed class ExplorerQueryScalingTests : IDisposable
 
         await using (var ctx = new AppDbContext(options, _db.OrgContext))
         {
-            await work(new SourceViewerService(
-                ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
-                new ProjectAccess(ctx, _db.OrgContext)));
+            // One SourceVisibility for both, as the DI scope hands them.
+            var visibility = new SourceVisibility(ctx, new ProjectAccess(ctx, _db.OrgContext));
+            await work(
+                new SourceViewerService(
+                    ctx,
+                    new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
+                    visibility),
+                new ExplorerTreeService(ctx, visibility));
         }
 
         long examined = 0;

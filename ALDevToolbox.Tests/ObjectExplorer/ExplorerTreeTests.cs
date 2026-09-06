@@ -41,9 +41,8 @@ public sealed class ExplorerTreeTests : IDisposable
             new CallSiteReferenceEmitter(ctx, NullLogger<CallSiteReferenceEmitter>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
-    private SourceViewerService NewViewer(Data.AppDbContext ctx) =>
-        new(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
-            new ProjectAccess(ctx, _db.OrgContext));
+    private ExplorerTreeService NewTree(Data.AppDbContext ctx) =>
+        new(ctx, new SourceVisibility(ctx, new ProjectAccess(ctx, _db.OrgContext)));
 
     /// <summary>Two modules in one release, so the tree has siblings to close.</summary>
     private async Task<int> SeedAsync()
@@ -77,7 +76,7 @@ public sealed class ExplorerTreeTests : IDisposable
         await using var ctx = _db.NewContext();
         var (fileId, _, moduleId) = await AFileAsync(ctx);
 
-        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId);
+        var tree = await NewTree(ctx).GetExplorerTreeAsync(fileId);
 
         var modules = tree.Where(n => n.Kind == "module").ToList();
         modules.Should().HaveCount(2, because: "the release holds DK Core and OIOUBL");
@@ -94,7 +93,7 @@ public sealed class ExplorerTreeTests : IDisposable
         await using var ctx = _db.NewContext();
         var (fileId, path, _) = await AFileAsync(ctx);
 
-        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId);
+        var tree = await NewTree(ctx).GetExplorerTreeAsync(fileId);
 
         // "src/Codeunits/DKCoreEventSubscribers.Codeunit.al" → src, Codeunits
         var folders = path.Split('/')[..^1];
@@ -123,7 +122,7 @@ public sealed class ExplorerTreeTests : IDisposable
         await using var ctx = _db.NewContext();
         var (fileId, path, _) = await AFileAsync(ctx);
 
-        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId);
+        var tree = await NewTree(ctx).GetExplorerTreeAsync(fileId);
 
         for (var i = 1; i < tree.Count; i++)
         {
@@ -144,7 +143,7 @@ public sealed class ExplorerTreeTests : IDisposable
         await SeedAsync();
         await using var ctx = _db.NewContext();
 
-        (await NewViewer(ctx).GetExplorerTreeAsync(-1)).Should().BeEmpty();
+        (await NewTree(ctx).GetExplorerTreeAsync(-1)).Should().BeEmpty();
     }
 
     // ── Lazy children ──────────────────────────────────────────────────
@@ -159,9 +158,9 @@ public sealed class ExplorerTreeTests : IDisposable
         await SeedAsync();
         await using var ctx = _db.NewContext();
         var (_, _, moduleId) = await AFileAsync(ctx);
-        var viewer = NewViewer(ctx);
+        var tree = NewTree(ctx);
 
-        var root = await viewer.GetTreeChildrenAsync(moduleId, "");
+        var root = await tree.GetTreeChildrenAsync(moduleId, "");
         root.Should().NotBeEmpty();
         root.Should().OnlyContain(n => n.Depth == 0, because: "the caller assigns depth");
         root.Where(n => n.Kind == "folder").Select(n => n.Name)
@@ -169,7 +168,7 @@ public sealed class ExplorerTreeTests : IDisposable
         root.Should().NotContain(n => n.Name.Contains('/'),
             because: "a child is one segment, never a path");
 
-        var src = await viewer.GetTreeChildrenAsync(moduleId, "src");
+        var src = await tree.GetTreeChildrenAsync(moduleId, "src");
         src.Should().NotBeEmpty();
         src.Where(n => n.Kind == "folder").Should().OnlyContain(n => n.Path.StartsWith("src/"));
         src.Should().NotContain(n => n.Name == "src", because: "src is the parent, not its own child");
@@ -186,10 +185,10 @@ public sealed class ExplorerTreeTests : IDisposable
         await SeedAsync();
         await using var ctx = _db.NewContext();
         var (_, _, moduleId) = await AFileAsync(ctx);
-        var viewer = NewViewer(ctx);
+        var tree = NewTree(ctx);
 
-        var withSlash = await viewer.GetTreeChildrenAsync(moduleId, "src/");
-        var without = await viewer.GetTreeChildrenAsync(moduleId, "src");
+        var withSlash = await tree.GetTreeChildrenAsync(moduleId, "src/");
+        var without = await tree.GetTreeChildrenAsync(moduleId, "src");
 
         withSlash.Should().BeEquivalentTo(without);
     }
@@ -202,7 +201,7 @@ public sealed class ExplorerTreeTests : IDisposable
         var (_, path, moduleId) = await AFileAsync(ctx);
         var parent = path[..(path.LastIndexOf('/') + 1)];
 
-        var children = await NewViewer(ctx).GetTreeChildrenAsync(moduleId, parent);
+        var children = await NewTree(ctx).GetTreeChildrenAsync(moduleId, parent);
 
         var kinds = children.Select(c => c.Kind).ToList();
         kinds.LastIndexOf("folder").Should().BeLessThan(
@@ -223,7 +222,7 @@ public sealed class ExplorerTreeTests : IDisposable
             .Select(o => new { o.Name, o.Kind, o.ObjectId })
             .FirstAsync();
 
-        var row = (await NewViewer(ctx).GetTreeChildrenAsync(moduleId, parent))
+        var row = (await NewTree(ctx).GetTreeChildrenAsync(moduleId, parent))
             .Single(c => c.FileId == fileId);
 
         row.Name.Should().Be(expected.Name);
@@ -240,13 +239,13 @@ public sealed class ExplorerTreeTests : IDisposable
         await SeedAsync();
         await using var ctx = _db.NewContext();
         var (_, _, moduleId) = await AFileAsync(ctx);
-        var viewer = NewViewer(ctx);
+        var tree = NewTree(ctx);
 
         var seen = new List<long>();
         var queue = new Queue<string>([""]);
         while (queue.Count > 0)
         {
-            foreach (var child in await viewer.GetTreeChildrenAsync(moduleId, queue.Dequeue()))
+            foreach (var child in await tree.GetTreeChildrenAsync(moduleId, queue.Dequeue()))
             {
                 if (child.Kind == "folder") queue.Enqueue(child.Path);
                 else seen.Add(child.FileId!.Value);
@@ -284,7 +283,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, $"src/{withMeta}/");
+        var children = await NewTree(read).GetTreeChildrenAsync(moduleId, $"src/{withMeta}/");
 
         children.Should().ContainSingle(because: "only this folder's own file belongs to it")
             .Which.FileName.Should().Be("Own.Codeunit.al");
@@ -316,7 +315,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+        var tree = await NewTree(read).GetExplorerTreeAsync(fileId);
 
         tree.Should().ContainSingle(n => n.Name == "Symbols Only")
             .Which.HasChildren.Should().BeFalse();
@@ -362,7 +361,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+        var tree = await NewTree(read).GetExplorerTreeAsync(fileId);
 
         tree.Should().NotContain(n => n.Name.EndsWith(" Tests"));
         tree.Should().NotContain(n => n.Name.EndsWith(" Internal"));
@@ -389,7 +388,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+        var tree = await NewTree(read).GetExplorerTreeAsync(fileId);
 
         tree.Should().ContainSingle(n => n.Kind == "module" && n.ModuleId == moduleId && n.IsOpen);
         tree.Should().ContainSingle(n => n.FileId == fileId && n.IsActive);
@@ -424,7 +423,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "src/Sorting/");
+        var children = await NewTree(read).GetTreeChildrenAsync(moduleId, "src/Sorting/");
 
         children.Select(c => c.Name).Should()
             .ContainInOrder("AAA.Codeunit.al", "ZZZ.Codeunit.al");
@@ -475,7 +474,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "CAL/Table/");
+        var children = await NewTree(read).GetTreeChildrenAsync(moduleId, "CAL/Table/");
 
         children.Count(c => c.Kind == "file").Should().Be(400);
         var overflow = children.Should().ContainSingle(c => c.Kind == "overflow").Which;
@@ -498,8 +497,8 @@ public sealed class ExplorerTreeTests : IDisposable
         await using var ctx = _db.NewContext();
         var (fileId, _, moduleId) = await AFileAsync(ctx);
 
-        var tree = await NewViewer(ctx).GetExplorerTreeAsync(
-            fileId, SourceViewerService.TreeGrouping.None);
+        var tree = await NewTree(ctx).GetExplorerTreeAsync(
+            fileId, ExplorerTreeService.TreeGrouping.None);
 
         tree.Should().NotContain(n => n.Kind == "folder", because: "ungrouped means no folders");
         tree.Should().NotContain(n => n.Kind == "module", because: "and no other apps");
@@ -525,8 +524,8 @@ public sealed class ExplorerTreeTests : IDisposable
         await using var ctx = _db.NewContext();
         var (fileId, _, moduleId) = await AFileAsync(ctx);
 
-        var tree = await NewViewer(ctx).GetExplorerTreeAsync(
-            fileId, SourceViewerService.TreeGrouping.Kind);
+        var tree = await NewTree(ctx).GetExplorerTreeAsync(
+            fileId, ExplorerTreeService.TreeGrouping.Kind);
 
         var sections = tree.Where(n => n.Kind == "section").ToList();
         sections.Should().NotBeEmpty();
@@ -548,15 +547,15 @@ public sealed class ExplorerTreeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(null, SourceViewerService.TreeGrouping.Folder)]
-    [InlineData("", SourceViewerService.TreeGrouping.Folder)]
-    [InlineData("nonsense", SourceViewerService.TreeGrouping.Folder)]
-    [InlineData("KIND", SourceViewerService.TreeGrouping.Kind)]
-    [InlineData("none", SourceViewerService.TreeGrouping.None)]
+    [InlineData(null, ExplorerTreeService.TreeGrouping.Folder)]
+    [InlineData("", ExplorerTreeService.TreeGrouping.Folder)]
+    [InlineData("nonsense", ExplorerTreeService.TreeGrouping.Folder)]
+    [InlineData("KIND", ExplorerTreeService.TreeGrouping.Kind)]
+    [InlineData("none", ExplorerTreeService.TreeGrouping.None)]
     public void An_unknown_grouping_falls_back_to_folders(string? raw, string expected)
     {
         // The value arrives from a cookie and a query string, so it is not ours.
-        SourceViewerService.TreeGrouping.Parse(raw).Should().Be(expected);
+        ExplorerTreeService.TreeGrouping.Parse(raw).Should().Be(expected);
     }
 
     /// <summary>
@@ -569,7 +568,7 @@ public sealed class ExplorerTreeTests : IDisposable
         var releaseId = await SeedAsync();
         await using var ctx = _db.NewContext();
 
-        var hits = await NewViewer(ctx).SearchTreeAsync(releaseId, "subscriber");
+        var hits = await NewTree(ctx).SearchTreeAsync(releaseId, "subscriber");
 
         hits.Should().NotBeEmpty();
         hits.Should().OnlyContain(h => h.Kind == "file" || h.Kind == "overflow");
@@ -590,7 +589,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var hits = await NewViewer(read).SearchTreeAsync(releaseId, "DkCoreAdmin");
+        var hits = await NewTree(read).SearchTreeAsync(releaseId, "DkCoreAdmin");
 
         hits.Should().ContainSingle(h => h.Name.Contains("DkCoreAdmin"));
     }
@@ -611,7 +610,7 @@ public sealed class ExplorerTreeTests : IDisposable
 
         // "Subscriber" appears in the object name *and* in the file path of
         // the DK Core event-subscriber codeunit.
-        var hits = await NewViewer(ctx).SearchTreeAsync(releaseId, "Subscriber");
+        var hits = await NewTree(ctx).SearchTreeAsync(releaseId, "Subscriber");
 
         var files = hits.Where(h => h.Kind == "file").ToList();
         files.Should().NotBeEmpty();
@@ -645,7 +644,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "src/Bundled/");
+        var children = await NewTree(read).GetTreeChildrenAsync(moduleId, "src/Bundled/");
 
         children.Should().ContainSingle(n => n.FileId == fileId)
             .Which.Name.Should().Be("First Object",
@@ -674,7 +673,7 @@ public sealed class ExplorerTreeTests : IDisposable
     [Fact]
     public async Task Search_fills_a_full_page_when_files_hold_several_matching_objects()
     {
-        const int MaxSearchResults = 200;   // SourceViewerService's cap.
+        const int MaxSearchResults = 200;   // ExplorerTreeService's cap.
         const int Files = MaxSearchResults + 100;
 
         var releaseId = await SeedAsync();
@@ -726,7 +725,7 @@ public sealed class ExplorerTreeTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var hits = await NewViewer(read).SearchTreeAsync(releaseId, "Needle");
+        var hits = await NewTree(read).SearchTreeAsync(releaseId, "Needle");
 
         hits.Count(h => h.Kind == "file").Should().Be(MaxSearchResults,
             because: "the cap counts files the reader can open, not object rows behind them");
@@ -745,7 +744,7 @@ public sealed class ExplorerTreeTests : IDisposable
         var releaseId = await SeedAsync();
         await using var ctx = _db.NewContext();
 
-        (await NewViewer(ctx).SearchTreeAsync(releaseId, query)).Should().BeEmpty(
+        (await NewTree(ctx).SearchTreeAsync(releaseId, query)).Should().BeEmpty(
             because: "one character across a whole release is every file, which is not an answer");
     }
 
@@ -754,10 +753,10 @@ public sealed class ExplorerTreeTests : IDisposable
     {
         var releaseId = await SeedAsync();
         await using var ctx = _db.NewContext();
-        var viewer = NewViewer(ctx);
+        var tree = NewTree(ctx);
 
-        var lower = await viewer.SearchTreeAsync(releaseId, "subscriber");
-        var upper = await viewer.SearchTreeAsync(releaseId, "SUBSCRIBER");
+        var lower = await tree.SearchTreeAsync(releaseId, "subscriber");
+        var upper = await tree.SearchTreeAsync(releaseId, "SUBSCRIBER");
 
         upper.Select(h => h.FileId).Should().BeEquivalentTo(lower.Select(h => h.FileId));
     }
@@ -775,7 +774,7 @@ public sealed class ExplorerTreeTests : IDisposable
         try
         {
             await using var other = _db.NewContext();
-            (await NewViewer(other).SearchTreeAsync(releaseId, "subscriber")).Should().BeEmpty();
+            (await NewTree(other).SearchTreeAsync(releaseId, "subscriber")).Should().BeEmpty();
         }
         finally
         {
@@ -789,7 +788,7 @@ public sealed class ExplorerTreeTests : IDisposable
         await SeedAsync();
         await using var ctx = _db.NewContext();
 
-        (await NewViewer(ctx).GetTreeChildrenAsync(-1, "")).Should().BeEmpty();
+        (await NewTree(ctx).GetTreeChildrenAsync(-1, "")).Should().BeEmpty();
     }
 
     /// <summary>
@@ -812,8 +811,8 @@ public sealed class ExplorerTreeTests : IDisposable
         try
         {
             await using var other = _db.NewContext();
-            (await NewViewer(other).GetTreeChildrenAsync(moduleId, "")).Should().BeEmpty();
-            (await NewViewer(other).GetExplorerTreeAsync(fileId)).Should().BeEmpty();
+            (await NewTree(other).GetTreeChildrenAsync(moduleId, "")).Should().BeEmpty();
+            (await NewTree(other).GetExplorerTreeAsync(fileId)).Should().BeEmpty();
         }
         finally
         {
@@ -831,6 +830,6 @@ public sealed class ExplorerTreeTests : IDisposable
         var expected = await ctx.OeModuleObjects.AsNoTracking()
             .CountAsync(o => o.ModuleId == moduleId);
 
-        (await NewViewer(ctx).CountModuleObjectsAsync(moduleId)).Should().Be(expected).And.BePositive();
+        (await NewTree(ctx).CountModuleObjectsAsync(moduleId)).Should().Be(expected).And.BePositive();
     }
 }
