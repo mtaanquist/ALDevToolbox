@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using ALDevToolbox.Data;
+using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
@@ -95,6 +96,14 @@ public sealed class EntraSignInService
 {
     /// <summary>Provider discriminator stamped on <see cref="UserExternalLogin"/> rows.</summary>
     public const string ProviderName = "entra";
+
+    /// <summary>
+    /// The refusal shown when a Microsoft identity is already connected to
+    /// someone else. Both paths in <see cref="LinkAsync"/> raise it - the
+    /// pre-check and the unique-index backstop below it - so it lives here
+    /// rather than being written out twice and drifting.
+    /// </summary>
+    private const string IdentityTakenMessage = "That Microsoft account is already connected to a different user.";
 
     private readonly AppDbContext _db;
     private readonly AuthService _auth;
@@ -473,22 +482,43 @@ public sealed class EntraSignInService
         // organisation can't be linked here either. This is the one read in
         // the linking half that has to see past the filter, and it is
         // deliberately existence-only: it projects a bool, never a row, so
-        // nothing about the other organisation reaches the caller. Without it
-        // the insert surfaces as a raw unique-violation 500 instead of a
-        // message the user can act on.
+        // nothing about the other organisation reaches the caller. It is the
+        // fast, specific refusal - the catch on the save below is what
+        // actually guarantees it, for the identity that gets claimed
+        // elsewhere between this read and that save (issue #736).
         var takenElsewhere = await _db.UserExternalLogins.IgnoreQueryFilters()
             .AnyAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
         if (takenElsewhere)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["EntraLink"] = "That Microsoft account is already connected to a different user.",
+                ["EntraLink"] = IdentityTakenMessage,
             });
         }
 
-        AddLink(userId, tid, token.ObjectId,
+        var link = AddLink(userId, tid, token.ObjectId,
             AuthService.NormaliseEmail(token.Email ?? string.Empty), now, lastLogin: null);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+            when (DbErrors.IsUniqueViolation(ex, UserExternalLoginConfiguration.IdentityIndexName))
+        {
+            // Lost the race with a link made elsewhere after the check above.
+            // The row is always a fresh insert here, so forgetting it is
+            // enough to leave the context usable for the rest of the request.
+            // The message stays the pre-check's: that the stranger is in
+            // another organisation is not something to tell this user.
+            _db.Entry(link).State = EntityState.Detached;
+            _logger.LogWarning(ex,
+                "User {UserId} tried to connect Entra identity {Tid}/{Oid}, which was claimed by another account before the link could be saved.",
+                userId, tid, token.ObjectId);
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["EntraLink"] = IdentityTakenMessage,
+            });
+        }
         _logger.LogInformation("User {UserId} connected Entra identity {Tid}/{Oid} from /account.", userId, tid, token.ObjectId);
     }
 
