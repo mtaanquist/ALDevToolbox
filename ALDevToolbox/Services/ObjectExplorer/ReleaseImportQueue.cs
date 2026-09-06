@@ -87,13 +87,22 @@ public abstract record ReleaseImportSource
     /// against, and a second code path would drift from the first. See
     /// <c>.design/github-integration-phase2.md</c> (#627).</para>
     /// </summary>
+    /// <param name="ForkAuthor">
+    /// The member whose own fork the head lives in, or null when the pull request
+    /// is on a branch of the repository itself. It is carried so the check run can
+    /// say where the code came from - a reviewer reading "from someone's fork"
+    /// knows to look harder than at a branch a colleague pushed. Not persisted:
+    /// the job is in memory for the life of one build, like the rest of this
+    /// record.
+    /// </param>
     public sealed record PullRequestBuild(
         int ProjectId,
         int RepositoryId,
         string HeadSha,
         long InstallationId,
         string RepositoryFullName,
-        int PullRequestNumber) : ReleaseImportSource;
+        int PullRequestNumber,
+        string? ForkAuthor = null) : ReleaseImportSource;
 
     /// <summary>Open a ZIP already staged to a temp file. <paramref name="IsDvd"/> selects the DVD-subset walk vs the whole-archive walk.</summary>
     public sealed record StagedZip(string TempPath, bool IsDvd) : ReleaseImportSource;

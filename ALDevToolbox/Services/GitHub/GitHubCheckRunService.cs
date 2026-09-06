@@ -142,10 +142,17 @@ public sealed class GitHubCheckRunService
     /// claim we cannot support; the summary says what stopped it.</description></item>
     /// </list>
     /// </summary>
+    /// <param name="forkAuthor">
+    /// When the head being compiled lives in a member's own fork rather than in
+    /// the repository itself, that member's GitHub login. The summary says so, so
+    /// a reviewer reading the check run knows where the code came from without
+    /// having to notice the branch label. Null for an ordinary pull request.
+    /// </param>
     public async Task CompleteAsync(
         long installationId,
         string repositoryFullName,
         int releaseId,
+        string? forkAuthor = null,
         CancellationToken ct = default)
     {
         var parts = repositoryFullName.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -222,7 +229,7 @@ public sealed class GitHubCheckRunService
 
         var summary = BuildSummary(
             conclusion, build.FailureMessage, build.BcVersion, errors, warnings, elsewhereErrors, omitted,
-            results.Select(r => (r.AppName, r.Status, r.Message)).ToList());
+            results.Select(r => (r.AppName, r.Status, r.Message)).ToList(), forkAuthor);
 
         var annotations = annotated
             .Take(MaxAnnotations)
@@ -273,7 +280,8 @@ public sealed class GitHubCheckRunService
         int warnings,
         int errorsElsewhere,
         int omittedAnnotations,
-        IReadOnlyList<(string AppName, string Status, string? Message)> results)
+        IReadOnlyList<(string AppName, string Status, string? Message)> results,
+        string? forkAuthor)
     {
         var lines = new List<string>();
         lines.Add(conclusion switch
@@ -282,6 +290,15 @@ public sealed class GitHubCheckRunService
             GitHubCheckConclusion.Failure => "The compiler reported errors. Each one is marked on its own line in the Files tab.",
             _ => failureMessage ?? "The build could not run, so nothing was compiled.",
         });
+
+        // Where the code came from, when that is not "a branch of this
+        // repository". A member's fork is built, a stranger's is not, and the
+        // reviewer is the person who should be told which of the two this was.
+        if (forkAuthor is { Length: > 0 })
+        {
+            lines.Add(string.Empty);
+            lines.Add($"Built from {forkAuthor}'s fork.");
+        }
 
         if (bcVersion is { Length: > 0 })
         {

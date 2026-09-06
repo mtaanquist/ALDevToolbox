@@ -42,6 +42,15 @@ public static class GitHubWebhookEndpoints
     private static readonly HashSet<string> BuildableActions =
         new(StringComparer.OrdinalIgnoreCase) { "opened", "synchronize", "reopened" };
 
+    /// <summary>
+    /// The two values of GitHub's <c>author_association</c> that mean the author
+    /// is inside the organisation the repository belongs to. Everything else -
+    /// <c>COLLABORATOR</c>, <c>CONTRIBUTOR</c>, <c>NONE</c>, or the field being
+    /// absent - is somebody whose fork is not built.
+    /// </summary>
+    private static readonly HashSet<string> MemberAssociations =
+        new(StringComparer.OrdinalIgnoreCase) { "MEMBER", "OWNER" };
+
     public static IEndpointRouteBuilder MapGitHubWebhookEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost(WebhookPath, async (
@@ -229,26 +238,66 @@ public static class GitHubWebhookEndpoints
                 return null;
             }
 
-            // A pull request from a fork is not built. Building it would clone and
-            // compile a stranger's code on the customer's own installation token,
-            // on a machine holding that organisation's symbols - anybody on GitHub
-            // can open such a pull request. So the head repository has to be the
-            // repository the delivery is about.
+            // A pull request whose head lives in another repository is a fork
+            // pull request. Building one blindly would clone and compile a
+            // stranger's code on the customer's own installation token, on a
+            // machine holding that organisation's symbols - anybody on GitHub can
+            // open such a pull request. So a fork is built only when GitHub says
+            // its author is a member or owner of the organisation *and* the fork
+            // is that person's own; the worker then asks GitHub the membership
+            // question again with the installation token before anything is
+            // cloned. See .design/github-integration-phase2.md (#627).
             var headRepository = head.ValueKind == JsonValueKind.Object
                 && head.TryGetProperty("repo", out var repoElement)
                     ? repoElement : default;
             var headFullName = Text(headRepository, "full_name");
-            var isFork = headRepository.ValueKind == JsonValueKind.Object
-                && headRepository.TryGetProperty("fork", out var forkFlag)
-                && forkFlag.ValueKind == JsonValueKind.True;
-            if (headFullName is null
-                || isFork
-                || !string.Equals(headFullName, fullName, StringComparison.OrdinalIgnoreCase))
+            var headOwner = headRepository.ValueKind == JsonValueKind.Object
+                && headRepository.TryGetProperty("owner", out var ownerElement)
+                    ? Text(ownerElement, "login") : null;
+            var authorLogin = pullRequest.TryGetProperty("user", out var userElement)
+                ? Text(userElement, "login") : null;
+            var association = Text(pullRequest, "author_association");
+
+            var isMemberFork = false;
+            if (headFullName is null)
             {
-                log.LogInformation(
-                    "A pull request on {Repository} ({DeliveryId}) comes from a fork ({HeadRepository}); not built.",
-                    fullName, deliveryId, headFullName ?? "unknown");
+                log.LogWarning(
+                    "A pull_request delivery ({DeliveryId}) named no head repository; not built.", deliveryId);
                 return null;
+            }
+
+            if (!string.Equals(headFullName, fullName, StringComparison.OrdinalIgnoreCase))
+            {
+                // GitHub's own verdict on who the author is to the repository.
+                // MEMBER and OWNER are the two that mean "inside the
+                // organisation"; CONTRIBUTOR, COLLABORATOR, FIRST_TIME_CONTRIBUTOR
+                // and NONE are not, and a missing field is read as NONE.
+                if (!MemberAssociations.Contains(association ?? string.Empty))
+                {
+                    log.LogInformation(
+                        "A pull request on {Repository} ({DeliveryId}) comes from a fork ({HeadRepository}) opened by somebody who is not a member of the organisation; not built.",
+                        fullName, deliveryId, headFullName);
+                    return null;
+                }
+
+                // The fork has to be the author's own. A fork's owner can hand
+                // push rights to anyone, so a member opening a pull request from
+                // a third party's fork is still somebody else's code arriving
+                // under a member's name.
+                if (authorLogin is null
+                    || headOwner is null
+                    || !string.Equals(headOwner, authorLogin, StringComparison.OrdinalIgnoreCase))
+                {
+                    log.LogInformation(
+                        "A pull request on {Repository} ({DeliveryId}) comes from a fork owned by {ForkOwner}, not by its author {Author}; not built.",
+                        fullName, deliveryId, headOwner ?? "unknown", authorLogin ?? "unknown");
+                    return null;
+                }
+
+                isMemberFork = true;
+                log.LogInformation(
+                    "A pull request on {Repository} ({DeliveryId}) comes from the author's own fork and GitHub reports {Author} as a member of the organisation; the build worker confirms that with GitHub before cloning.",
+                    fullName, deliveryId, authorLogin);
             }
 
             // The SHA and the branch name go on a git command line, so they are
@@ -270,7 +319,9 @@ public static class GitHubWebhookEndpoints
                 HeadSha: headSha,
                 HeadRef: headRef,
                 BaseRef: baseRef ?? string.Empty,
-                DeliveryId: deliveryId);
+                DeliveryId: deliveryId,
+                AuthorLogin: authorLogin ?? string.Empty,
+                IsMemberFork: isMemberFork);
         }
         catch (JsonException ex)
         {

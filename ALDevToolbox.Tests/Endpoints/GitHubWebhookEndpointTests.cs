@@ -52,6 +52,18 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         _db.Dispose();
     }
 
+    /// <param name="authorAssociation">
+    /// GitHub's verdict on who the author is to the repository. Null leaves the
+    /// property out of the payload entirely, which is how a delivery from an old
+    /// GitHub Enterprise or a shape we have not seen would arrive - and is read
+    /// as "not a member".
+    /// </param>
+    /// <param name="headOwner">
+    /// Who owns the head repository. Defaults to the owner half of
+    /// <paramref name="headRepository"/>, which is what GitHub sends; a test that
+    /// passes something else is describing a member opening a pull request from
+    /// somebody else's fork.
+    /// </param>
     private static string PullRequestPayload(
         string action = "opened",
         long installationId = 42,
@@ -59,7 +71,18 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         string headSha = "abc1234",
         string headRef = "feature/vat",
         string headRepository = "cronus-dk/customer-app",
-        bool headIsFork = false) => $$"""
+        bool headIsFork = false,
+        string authorLogin = "erik",
+        string? authorAssociation = "MEMBER",
+        string? headOwner = null)
+    {
+        var owner = headOwner ?? headRepository.Split('/')[0];
+        var association = authorAssociation is null
+            ? string.Empty
+            : $"""
+                "author_association": "{authorAssociation}",
+            """;
+        return $$"""
         {
           "action": "{{action}}",
           "installation": { "id": {{installationId}} },
@@ -69,15 +92,22 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
           },
           "pull_request": {
             "number": {{number}},
+            "user": { "login": "{{authorLogin}}" },
+            {{association}}
             "head": {
               "sha": "{{headSha}}",
               "ref": "{{headRef}}",
-              "repo": { "full_name": "{{headRepository}}", "fork": {{(headIsFork ? "true" : "false")}} }
+              "repo": {
+                "full_name": "{{headRepository}}",
+                "fork": {{(headIsFork ? "true" : "false")}},
+                "owner": { "login": "{{owner}}" }
+              }
             },
             "base": { "ref": "main" }
           }
         }
         """;
+    }
 
     private async Task StoreSecretAsync(string secret = Secret)
     {
@@ -280,7 +310,9 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         using var client = _factory.CreateClient();
 
         using var response = await client.SendAsync(Delivery(
-            PullRequestPayload(headRepository: "stranger/customer-app", headIsFork: true), Secret));
+            PullRequestPayload(
+                headRepository: "stranger/customer-app", headIsFork: true,
+                authorLogin: "stranger", authorAssociation: "CONTRIBUTOR"), Secret));
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         _factory.Services.GetRequiredService<GitHubWebhookQueue>()
@@ -294,7 +326,9 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         using var client = _factory.CreateClient();
 
         using var response = await client.SendAsync(Delivery(
-            PullRequestPayload(headRepository: "stranger/customer-app", headIsFork: false), Secret));
+            PullRequestPayload(
+                headRepository: "stranger/customer-app", headIsFork: false,
+                authorLogin: "stranger", authorAssociation: "NONE"), Secret));
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         _factory.Services.GetRequiredService<GitHubWebhookQueue>()
@@ -314,6 +348,84 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
             "GitHub repository names are case-insensitive, so a differently-cased head is the same repository");
         _factory.Services.GetRequiredService<GitHubWebhookQueue>()
             .Reader.TryRead(out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("MEMBER")]
+    [InlineData("OWNER")]
+    [InlineData("member")]
+    public async Task A_fork_pull_request_opened_by_a_member_from_their_own_fork_is_queued(string association)
+    {
+        // The one fork that is built: GitHub calls the author a member or an
+        // owner of the organisation, and the fork is that person's own. The job
+        // is marked so the worker asks GitHub the membership question again
+        // before anything is cloned.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            PullRequestPayload(
+                headRepository: "erik/customer-app", headIsFork: true,
+                authorLogin: "erik", authorAssociation: association), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
+        queue.Reader.TryRead(out var job).Should().BeTrue();
+        job!.IsMemberFork.Should().BeTrue();
+        job.AuthorLogin.Should().Be("erik");
+    }
+
+    [Fact]
+    public async Task A_member_opening_a_pull_request_from_somebody_elses_fork_is_not_built()
+    {
+        // A fork's owner can give push rights to anyone, so code arriving from a
+        // third party's fork is a stranger's however good the author's standing
+        // in the organisation is.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            PullRequestPayload(
+                headRepository: "somebody-else/customer-app", headIsFork: true,
+                authorLogin: "erik", authorAssociation: "MEMBER"), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_fork_pull_request_with_no_author_association_at_all_is_not_built()
+    {
+        // A missing verdict is not a favourable one.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            PullRequestPayload(
+                headRepository: "erik/customer-app", headIsFork: true,
+                authorLogin: "erik", authorAssociation: null), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_pull_request_from_the_repository_itself_is_never_marked_as_a_fork()
+    {
+        // Nothing about the same-repository path changed, and the marker is what
+        // the worker keys the extra GitHub call off - so it has to stay false
+        // even for a member's own branch.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(PullRequestPayload(), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
+        queue.Reader.TryRead(out var job).Should().BeTrue();
+        job!.IsMemberFork.Should().BeFalse();
     }
 
     [Theory]

@@ -142,6 +142,38 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
 
     private sealed record Seed(int ProjectId, int ReleaseId, int BuildId, int UnderReviewRepositoryId, int ElsewhereRepositoryId);
 
+    [Fact]
+    public async Task A_build_of_a_member_fork_says_whose_fork_it_came_from()
+    {
+        // A reviewer looking at a green tick should be able to see that the code
+        // was compiled from somebody's fork rather than from a branch of the
+        // repository - the check run is where they are already looking.
+        await ConfigureDeploymentAsync();
+        var seed = await SeedBuildAsync();
+
+        var api = ApiWithChecks();
+        await using var ctx = _db.NewContext();
+        await NewService(ctx, api).CompleteAsync(InstallationId, UnderReview, seed.ReleaseId, "erik");
+
+        var body = JsonDocument.Parse(api.Bodies.Single(b => b.Call.StartsWith("PATCH")).Body).RootElement;
+        body.GetProperty("output").GetProperty("summary").GetString()
+            .Should().Contain("Built from erik's fork.");
+    }
+
+    [Fact]
+    public async Task An_ordinary_pull_request_says_nothing_about_forks()
+    {
+        await ConfigureDeploymentAsync();
+        var seed = await SeedBuildAsync();
+
+        var api = ApiWithChecks();
+        await CompleteAsync(api, seed.ReleaseId);
+
+        var body = JsonDocument.Parse(api.Bodies.Single(b => b.Call.StartsWith("PATCH")).Body).RootElement;
+        body.GetProperty("output").GetProperty("summary").GetString()
+            .Should().NotContain("fork");
+    }
+
     private async Task CompleteAsync(FakeGitHubApi api, int releaseId)
     {
         await using var ctx = _db.NewContext();
