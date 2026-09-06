@@ -1,6 +1,7 @@
 @page "/object-explorer/file/{FileId:long}"
 @attribute [Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
+@inject ALDevToolbox.Services.ObjectExplorer.ExplorerTreeService ExplorerTree
 @inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
@@ -150,9 +151,9 @@ else
                        wants from an app they did not write. *@
                     <span class="select-wrap sv-tree-group">
                         <select class="select" aria-label="Group the file list by">
-                            <option value="folder" selected="@(_grouping == SourceViewerService.TreeGrouping.Folder)">Folder</option>
-                            <option value="kind" selected="@(_grouping == SourceViewerService.TreeGrouping.Kind)">Object type</option>
-                            <option value="none" selected="@(_grouping == SourceViewerService.TreeGrouping.None)">No grouping</option>
+                            <option value="folder" selected="@(_grouping == ExplorerTreeService.TreeGrouping.Folder)">Folder</option>
+                            <option value="kind" selected="@(_grouping == ExplorerTreeService.TreeGrouping.Kind)">Object type</option>
+                            <option value="none" selected="@(_grouping == ExplorerTreeService.TreeGrouping.None)">No grouping</option>
                         </select>
                         <Icon Name="chevron-down" Css="select-wrap__caret" />
                     </span>
@@ -457,7 +458,7 @@ else
     /// select writes, so a navigation renders the reader's arrangement
     /// straight away rather than painting folders and correcting itself.
     /// </summary>
-    private string _grouping = SourceViewerService.TreeGrouping.Folder;
+    private string _grouping = ExplorerTreeService.TreeGrouping.Folder;
     /// <summary>
     /// Whether the reader has folded the explorer away. Read from the cookie
     /// the toggle writes, so a folded pane is folded in the HTML rather than
@@ -493,13 +494,13 @@ else
         _declarations = await SourceViewer.ListDeclarationsInFileAsync(FileId);
         _resolvables = await SourceViewer.ListResolvablesInFileAsync(FileId);
         _compareTargets = await Comparison.GetCompareTargetsAsync(FileId);
-        _grouping = SourceViewerService.TreeGrouping.Parse(
+        _grouping = ExplorerTreeService.TreeGrouping.Parse(
             Http.HttpContext?.Request.Cookies["aldt-oe-grouping"]);
         _explorerHidden = Http.HttpContext?.Request.Cookies["aldt-oe-explorer-hidden"] == "1";
         _explorerWidthStyle = BuildExplorerWidthStyle(
             Http.HttpContext?.Request.Cookies["aldt-oe-explorer-width"]);
-        _tree = await SourceViewer.GetExplorerTreeAsync(FileId, _grouping);
-        _moduleObjectCount = await SourceViewer.CountModuleObjectsAsync(_header.ModuleId);
+        _tree = await ExplorerTree.GetExplorerTreeAsync(FileId, _grouping);
+        _moduleObjectCount = await ExplorerTree.CountModuleObjectsAsync(_header.ModuleId);
         _appCount = _tree.Count(n => n.Kind == "module");
 
         var ctx = Http.HttpContext;

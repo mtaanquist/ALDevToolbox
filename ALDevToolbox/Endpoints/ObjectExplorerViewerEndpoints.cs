@@ -61,18 +61,18 @@ internal static class ObjectExplorerViewerEndpoints
             string? path,
             string? grouping,
             long? activeFileId,
-            SourceViewerService viewer,
+            ExplorerTreeService tree,
             CancellationToken ct) =>
         {
             if (grouping is not null
-                && SourceViewerService.TreeGrouping.Parse(grouping) != SourceViewerService.TreeGrouping.Folder)
+                && ExplorerTreeService.TreeGrouping.Parse(grouping) != ExplorerTreeService.TreeGrouping.Folder)
             {
-                var arranged = await viewer.ListModuleTreeAsync(
-                    moduleId, SourceViewerService.TreeGrouping.Parse(grouping), activeFileId, ct);
+                var arranged = await tree.ListModuleTreeAsync(
+                    moduleId, ExplorerTreeService.TreeGrouping.Parse(grouping), activeFileId, ct);
                 return Results.Ok(arranged);
             }
 
-            var children = await viewer.GetTreeChildrenAsync(moduleId, path ?? string.Empty, ct);
+            var children = await tree.GetTreeChildrenAsync(moduleId, path ?? string.Empty, ct);
             return Results.Ok(children);
         }).RequireAuthorization();
 
@@ -81,10 +81,10 @@ internal static class ObjectExplorerViewerEndpoints
         app.MapGet("/api/object-explorer/releases/{releaseId:int}/tree-search", async (
             int releaseId,
             string? q,
-            SourceViewerService viewer,
+            ExplorerTreeService tree,
             CancellationToken ct) =>
         {
-            var hits = await viewer.SearchTreeAsync(releaseId, q ?? string.Empty, ct);
+            var hits = await tree.SearchTreeAsync(releaseId, q ?? string.Empty, ct);
             return Results.Ok(hits);
         }).RequireAuthorization();
 
@@ -132,7 +132,7 @@ internal static class ObjectExplorerViewerEndpoints
                 CancellationToken ct) =>
         {
             // This one reads the module table directly instead of going through
-            // SourceViewerService, so it carries its own project-visibility
+            // SourceVisibility, so it carries its own project-visibility
             // check. A release built under a Private project the caller has no
             // grant on answers 404, the same as an id in another org.
             if (!await access.IsReleaseVisibleAsync(releaseId, ct)) return Results.NotFound();
