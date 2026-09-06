@@ -1,11 +1,11 @@
 /*
-    Scoped chrome for the project settings page.
+    Scoped chrome for the Business Central tab of the solution settings page.
 
-    The page is the settings archetype - .settings, .header-tabs, .card +
-    .card__body + .form-sec, .form-actions - with the environment list as a
-    .data-table and the pipeline list as .sub-rows. What is left here is the
-    two things the design system has no opinion about: the update-window
-    editor that opens as a table sub-row, and the pipeline row's chevron.
+    The tab is the settings archetype - .card + .card__body, .form-sec,
+    .form-actions - with the environment list as a .data-table. What is left
+    here is what the design system has no opinion about: the update-window
+    editor that opens as a table sub-row, the environment panel under it, and
+    the setup checklist in the rail.
 */
 
 /* The update window opens under the environment it belongs to, as a
@@ -58,34 +58,6 @@
 .pd-env-card { min-width: 0; }
 .pd-env-scroll { overflow-x: auto; }
 
-/* The environment's BC version, under its status pill - context for the status,
-   not a column of its own. */
-.pd-env-version { margin-top: var(--space-1); font-size: var(--text-xs); }
-
-/* A whole-row link into the Pipelines tool. The chevron is the affordance that
-   says so - .sub-row is normally an editor row, not a link. */
-.pd-pipe { text-decoration: none; color: inherit; }
-.pd-pipe:hover .sub-row__name { color: var(--primary-ink); }
-.pd-pipe__chev { color: var(--ink-4); flex: none; }
-
-/* A read-only repository URL in the repositories table. The system has no
-   mono utility - .u-num is numerics only - and .sub-row__val, which would fit,
-   belongs to a component this cell is not part of. */
-.pd-url { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); overflow-wrap: anywhere; }
-
-/* The GitHub picker at the top of the repositories card, ruled off from the
-   list it adds to so the two read as "pick one" and "the ones you picked"
-   rather than as one long form. */
-.pd-repo-pick {
-    display: grid;
-    gap: var(--space-2);
-    padding-bottom: var(--space-4);
-    margin-bottom: var(--space-4);
-    border-bottom: 1px solid var(--border);
-}
-
-.pd-repo-pick__note { margin: 0; }
-
 /* The Business Central tab's main column. .settings__body is a two-column grid
    when the rail is present, so the section's rows have to arrive as one grid
    item; this restates the single-column stack they had under --wide. */
@@ -106,41 +78,6 @@
 /* The partner case is a footnote, not a fourth step - most connections never
    need it, and numbering it would imply they do. */
 .pd-setup__note { margin: 0; padding-top: var(--space-2); border-top: 1px solid var(--border); font-size: var(--text-2xs); color: var(--ink-4); text-wrap: pretty; }
-
-/* The destructive setting at the foot of General. .setting is a two-column grid
-   built for a .setting-list inside a card body; here it is the card's only row,
-   so the card supplies no body of its own and the row's bottom rule is dead.
-   No .card--danger either: .setting--danger already tints the row and draws the
-   keyline, and a red border under a red fill is a second telling of one fact.
-
-   The columns are re-proportioned for the same reason. The archetype's 260px
-   label column is sized for a *list* of rows, where the neighbours fill the
-   wide control column and the labels line up down the page; the handoff's own
-   danger rows (PageSettings.dc.html) sit in a .setting-list and hold a select
-   plus a button. Alone in a full-width card the 260px column wrapped a
-   two-sentence hint into a narrow ribbon and left three quarters of the row
-   empty beside one button. Flipping to 1fr + auto gives the hint the line
-   length it was written for and puts the button at the row's end, where a
-   setting's control belongs. ::deep because the row is rendered by SettingRow,
-   so the markup carries that component's scope, not this page's. */
-.pd-danger { overflow: hidden; }
-.pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr) auto; border-bottom: 0; }
-@container (max-width: 720px) { .pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr); } }
-
-
-/* The visibility levels are a one-of-three choice, and .module-card's tick is
-   square because every other caller of it is a multi-select. Three square ticks
-   in a row read as "pick as many as you like", which is the one thing this
-   control must not say - so the marker goes round here, the way a radio does
-   everywhere else in the app (.check__dot). Nothing else about the card
-   changes; it is the same selection card the rest of the app uses. */
-.pd-choice .module-card__check { border-radius: var(--r-pill); }
-
-/* The "needs a team" note on a level the org can't reach yet. .module-card__text
-   is the caption line; this is a second one that has to read as a constraint,
-   not as more explanation - so it takes the muted-warning ink and sits tight
-   under the caption rather than as another paragraph. */
-.pd-choice .pd-choice__blocked { color: var(--ink-4); font-weight: var(--fw-medium); }
 
 /* The environment panel: four live reads from Business Central, shown in a sub-row
    under the environment they describe. Sections stack rather than sitting in a grid,
