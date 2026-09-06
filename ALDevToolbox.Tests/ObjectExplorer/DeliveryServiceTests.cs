@@ -129,6 +129,51 @@ public sealed class DeliveryServiceTests : IDisposable
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Build");
     }
 
+    /// <summary>
+    /// A release pipeline that draws from a repository's GitHub releases takes the
+    /// build that was staged from one - no pipeline of its own, the tag recorded on it -
+    /// and nothing else. See <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    [Fact]
+    public async Task ReleaseBuildNowAsync_accepts_a_build_staged_from_a_github_release()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await MakeReleaseSourcedAsync(ctx, seed.ReleasePipelineId);
+        var staged = await SeedStagedBuildAsync(ctx, seed.ProjectId, "v1.0.0.0", new[] { "CRONUS Core" });
+
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, staged);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == deliveryId);
+        delivery.ProjectBuildId.Should().Be(staged);
+    }
+
+    [Fact]
+    public async Task ReleaseBuildNowAsync_rejects_a_staged_build_on_a_pipeline_that_releases_builds()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var staged = await SeedStagedBuildAsync(ctx, seed.ProjectId, "v1.0.0.0", new[] { "CRONUS Core" });
+
+        var act = () => NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, staged);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Build");
+    }
+
+    [Fact]
+    public async Task ReleaseBuildNowAsync_rejects_a_pipeline_build_on_a_release_sourced_pipeline()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await MakeReleaseSourcedAsync(ctx, seed.ReleasePipelineId);
+
+        var act = () => NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors["Build"].Should().Contain("GitHub releases");
+    }
+
     [Fact]
     public async Task RunDeliveryAsync_publishes_all_apps_in_order_and_marks_deployed()
     {
@@ -563,6 +608,52 @@ public sealed class DeliveryServiceTests : IDisposable
 
         var buildId = await SeedBuildAsync(ctx, project.Id, pipelineId, buildStatus, appNames);
         return new Seed(project.Id, pipelineId, env.Id, releasePipeline.Id, buildId);
+    }
+
+    /// <summary>Points a seeded release pipeline at a repository's GitHub releases instead of a build pipeline.</summary>
+    private static async Task MakeReleaseSourcedAsync(AppDbContext ctx, int releasePipelineId)
+    {
+        var rp = await ctx.OeReleasePipelines.SingleAsync(r => r.Id == releasePipelineId);
+        var repository = new ProjectRepository
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = rp.ProjectId,
+            Provider = RepositoryProvider.GitHub, Url = "https://github.com/cronus-dk/cronus-customer.git",
+            DisplayName = "cronus-customer",
+        };
+        ctx.OeProjectRepositories.Add(repository);
+        await ctx.SaveChangesAsync();
+
+        rp.ArtifactSource = ReleaseArtifactSource.GithubRelease;
+        rp.BuildPipelineId = null;
+        rp.GithubReleaseRepositoryId = repository.Id;
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>A build staged from a GitHub release: ready, no pipeline, the tag recorded.</summary>
+    private static async Task<int> SeedStagedBuildAsync(AppDbContext ctx, int projectId, string tag, string[] appNames)
+    {
+        var now = DateTime.UtcNow;
+        var build = new ProjectBuild
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = null,
+            Status = ProjectBuildStatus.Ready, GithubReleaseTag = tag,
+            GithubReleaseUrl = $"https://github.com/cronus-dk/cronus-customer/releases/tag/{tag}",
+            StartedAt = now, FinishedAt = now,
+        };
+        ctx.OeProjectBuilds.Add(build);
+        await ctx.SaveChangesAsync();
+
+        foreach (var name in appNames)
+        {
+            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
+                FileName = $"{name}_1.0.0.0.app", AppName = name, AppVersion = "1.0.0.0",
+                SizeBytes = 3, Content = new byte[] { 1, 2, 3 }, CreatedAt = now,
+            });
+        }
+        await ctx.SaveChangesAsync();
+        return build.Id;
     }
 
     private static async Task<int> SeedPipelineAsync(AppDbContext ctx, int projectId)

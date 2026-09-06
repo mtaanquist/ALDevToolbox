@@ -8,6 +8,7 @@
 @inject GenerationService Gen
 @inject GitHubRepositoryService GitHubRepos
 @inject GitHubWorkspaceRepositoryService GitHubCreate
+@inject GitHubRepositoryStandardsService Standards
 @inject ILogger<NewWorkspace> Logger
 @inject IJSRuntime JS
 @using ALDevToolbox.Components.Shared
@@ -403,6 +404,15 @@
                                             <strong>@_createdRepo.Repository.FullName</strong> is ready, with
                                             @_createdRepo.FileCount @(_createdRepo.FileCount == 1 ? "file" : "files")
                                             committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
+                                            @if (_createdRepo.StandardsFileCount > 0)
+                                            {
+                                                <text>
+                                                    Your organisation's
+                                                    @_createdRepo.StandardsFileCount
+                                                    @(_createdRepo.StandardsFileCount == 1 ? "standard file was" : "standard files were")
+                                                    added too.
+                                                </text>
+                                            }
                                         </span>
                                         <span>
                                             <a class="btn" href="@_createdRepo.Repository.HtmlUrl"
@@ -417,6 +427,16 @@
                                         </span>
                                     </span>
                                 </p>
+                                @if (!string.IsNullOrEmpty(_createdRepo.StandardsWarning))
+                                {
+                                    @* The repository is there and holds the files; only
+                                       the branch rules are missing. A warning beside the
+                                       success, not instead of it (#628). *@
+                                    <p class="alert alert--warn" role="status">
+                                        <Icon Name="triangle-alert" Width="16" Height="16" />
+                                        <span>@_createdRepo.StandardsWarning</span>
+                                    </p>
+                                }
                             }
                             else if (_gitHub is null)
                             {
@@ -486,6 +506,17 @@
                                 <p>
                                     Creates <strong>@_gitHub.OrgLogin/@RepositoryName</strong> on GitHub and
                                     commits the generated files to it.
+                                    @if (_standardsSummary is not null)
+                                    {
+                                        @* Said, not offered: the standards are the
+                                           organisation's, and this person does not
+                                           choose per repository whether to follow
+                                           them (#628). *@
+                                        <text>
+                                            Your administrators have set files and branch rules that every new
+                                            repository here starts with; they will be added for you.
+                                        </text>
+                                    }
                                 </p>
                                 <div class="field">
                                     <label class="field__label" for="ws-repo-name">Repository name</label>
@@ -494,11 +525,13 @@
                                     <input class="input" id="ws-repo-name" type="text"
                                            pattern="@GitHubWorkspaceRepositoryService.NamePattern" required
                                            maxlength="100"
-                                           title="Letters, digits, hyphens, underscores and full stops."
                                            placeholder="e.g. CRONUS-Customer"
                                            value="@RepositoryName"
                                            @oninput="OnRepositoryNameInput" />
                                     <FieldError Field="GitHubRepositoryName" Errors="_repoErrors" />
+                                    <small class="field__hint">
+                                        Letters, digits, hyphens, underscores and full stops.
+                                    </small>
                                 </div>
                                 <div class="field">
                                     <label class="field__label" for="ws-repo-visibility">Who can see it</label>
@@ -588,6 +621,12 @@
     private bool _repoBusy;
     private Dictionary<string, string> _repoErrors = new();
     private GitHubWorkspaceRepository? _createdRepo;
+    /// <summary>
+    /// What the organisation's repository standards amount to, or null when
+    /// nothing is configured - in which case the card says nothing about them
+    /// rather than saying there are none (#628).
+    /// </summary>
+    private string? _standardsSummary;
 
     /// <summary>
     /// The name in the field, or the one the workspace name suggests while the
@@ -800,6 +839,10 @@
         // when it cannot. Two cached reads, no call to GitHub - so the card
         // below renders its guidance even while GitHub is unreachable.
         var gitHub = await GitHubRepos.GetAccessAsync();
+        // One more database read, no call to GitHub: whether this organisation
+        // has repository standards, which the card mentions before the button
+        // is pressed rather than after (#628).
+        var standardsSummary = await Standards.GetSummaryAsync();
         // Honour the ?template=<key> hint from the Templates browser when present
         // and the key matches an active template; otherwise fall back to the
         // per-org default flagged in admin, then the first row in the list.
@@ -816,6 +859,7 @@
         _applicationVersions = applicationVersions;
         _orgConfig = orgConfig;
         _gitHub = gitHub;
+        _standardsSummary = standardsSummary;
         _selected = selected;
         // Pre-fill the brief / description from the org's defaults block
         // (Milestone P3.14). Users can still edit either field; the template's

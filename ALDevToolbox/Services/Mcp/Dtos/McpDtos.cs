@@ -97,24 +97,71 @@ public sealed record WorkspaceResult(
 /// The repository a <c>generate_*</c> tool created, when it was asked to put
 /// its result in a new one.
 /// </summary>
+/// <param name="StandardsFileCount">
+/// How many of the organisation's repository standard files were committed on
+/// top of the workspace, in a commit of their own (issue #628).
+/// </param>
+/// <param name="StandardsWarning">
+/// What GitHub refused while applying those standards, or null when nothing
+/// was. The repository exists either way.
+/// </param>
 public sealed record RepositoryCreationResult(
     string RepositoryFullName,
     string HtmlUrl,
     string CloneUrl,
     string DefaultBranch,
     bool IsPrivate,
-    int FileCount);
+    int FileCount,
+    int StandardsFileCount = 0,
+    string? StandardsWarning = null)
+{
+    /// <summary>
+    /// The projection of a created repository, written once because two tools
+    /// report the same thing: <c>generate_workspace</c> with its create-a-repository
+    /// option, and <c>create_repository</c> on its own (issue #633).
+    /// </summary>
+    public static RepositoryCreationResult From(ALDevToolbox.Services.GitHub.GitHubWorkspaceRepository created) => new(
+        RepositoryFullName: created.Repository.FullName,
+        HtmlUrl: created.Repository.HtmlUrl,
+        CloneUrl: created.Repository.CloneUrl,
+        DefaultBranch: created.Repository.DefaultBranch,
+        IsPrivate: created.Repository.IsPrivate,
+        FileCount: created.FileCount,
+        StandardsFileCount: created.StandardsFileCount,
+        StandardsWarning: created.StandardsWarning);
+}
 
 /// <summary>
 /// The pull request a <c>generate_*</c> tool opened, when it was asked to add
 /// its result to an existing repository.
 /// </summary>
+/// <param name="IsNewPullRequest">
+/// False when the commit joined a pull request that was already open on the
+/// branch, which <c>apply_recipe</c> does when the same recipe is applied twice
+/// before the first pull request is merged. A <c>generate_*</c> tool always
+/// opens a fresh one, which is why it defaults to true.
+/// </param>
 public sealed record RepositoryDeliveryResult(
     string RepositoryFullName,
     string Branch,
     string BaseBranch,
     int PullRequestNumber,
-    string PullRequestUrl);
+    string PullRequestUrl,
+    bool IsNewPullRequest = true)
+{
+    /// <summary>
+    /// The projection of an extension added to a repository, written once
+    /// because two tools report the same thing: <c>generate_extension</c> with
+    /// its add-to-repository option, and <c>add_extension_to_repository</c> on
+    /// its own (issue #633).
+    /// </summary>
+    public static RepositoryDeliveryResult From(ALDevToolbox.Services.GitHub.GitHubExtensionDelivery delivered) => new(
+        RepositoryFullName: delivered.Repository.FullName,
+        Branch: delivered.PullRequest.HeadBranch,
+        BaseBranch: delivered.Repository.DefaultBranch,
+        PullRequestNumber: delivered.PullRequest.Number,
+        PullRequestUrl: delivered.PullRequest.HtmlUrl);
+}
 
 /// <summary>Trimmed projection of <see cref="RuntimeTemplate"/> for tool callers.</summary>
 public sealed record TemplateSummary(
@@ -308,3 +355,71 @@ public sealed record CookbookGuidance(
     IReadOnlyDictionary<string, string> TypeDescriptions,
     string GuidanceToken,
     int GuidanceTokenExpiresInSeconds);
+
+/// <summary>
+/// What <c>list_repositories</c> returns: the repositories the caller can act
+/// on, and - when there are none for a reason they can do something about - the
+/// sentence that says what to do next.
+/// </summary>
+/// <param name="Readiness">
+/// The state of the GitHub connection, named as
+/// <see cref="ALDevToolbox.Services.GitHub.GitHubRepositoryReadiness"/> names
+/// it, so an agent can branch on the state rather than on the prose.
+/// </param>
+/// <param name="Guidance">
+/// Null when everything is in place. Otherwise one plain sentence to pass on to
+/// the person, naming the step that unblocks them.
+/// </param>
+public sealed record RepositoryListResult(
+    string Readiness,
+    string? Guidance,
+    IReadOnlyList<RepositorySummary> Repositories);
+
+/// <summary>
+/// One repository, as an agent needs it: enough to name it in a later call, to
+/// link to it, and to clone it.
+/// </summary>
+public sealed record RepositorySummary(
+    string FullName,
+    string DefaultBranch,
+    bool IsPrivate,
+    string? Description,
+    string HtmlUrl,
+    string CloneUrl);
+
+/// <summary>One XLIFF file <c>list_translation_files</c> found in a repository.</summary>
+/// <param name="Folder">
+/// The folder holding the <c>Translations</c> folder - the extension, in an AL
+/// workspace. Empty when <c>Translations</c> sits at the repository root.
+/// </param>
+/// <param name="IsSource">
+/// True for the file the AL compiler generates. It holds every string and no
+/// translations, so it is the file a new language starts from.
+/// </param>
+public sealed record TranslationFileSummary(
+    string Path,
+    string Folder,
+    string? Language,
+    bool IsSource);
+
+/// <summary>One translated string for <c>open_translation_pr</c> to write.</summary>
+/// <param name="Id">The trans-unit id, exactly as the file carries it.</param>
+/// <param name="Target">The translated text.</param>
+/// <param name="State">
+/// Optional XLIFF state for this target, e.g. <c>translated</c>. Left as it was
+/// when not given.
+/// </param>
+public sealed record TranslationUnitEditInput(string Id, string Target, string? State = null);
+
+/// <summary>What <c>open_translation_pr</c> did.</summary>
+/// <param name="SavedPath">
+/// The file that was written. It is the file that was read, unless that was the
+/// compiler's generated source file - then it is the new language file written
+/// beside it, because the generated file belongs to the compiler.
+/// </param>
+/// <param name="UnitsEdited">How many strings the commit changed.</param>
+public sealed record TranslationPullRequestResult(
+    RepositoryDeliveryResult PullRequest,
+    bool IsNewPullRequest,
+    string SavedPath,
+    int UnitsEdited);

@@ -354,8 +354,96 @@ public sealed class TestDb : IDisposable
         ALDevToolbox.Services.GitHub.GitHubAppClient client,
         ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
-            NewGitHubConnectionService(ctx, access), access, client, ctx, OrgContext,
+            NewGitHubConnectionService(ctx, access), access, client,
+            NewGitHubRepositoryStandardsService(ctx), ctx, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
+    /// <summary>
+    /// GitHub Releases in both directions (#632): publishing a build's app files to a
+    /// repository's Releases page, and staging a Release's files back as a build.
+    /// <paramref name="publicOrigin"/> is what the release body links builds with; the
+    /// default leaves it unset, which is the deployment that has not configured one.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubReleaseService NewGitHubReleaseService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        string? publicOrigin = null,
+        TimeProvider? clock = null) =>
+        new(ctx, client, NewGitHubConnectionService(ctx, access),
+            new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext), OrgContext,
+            new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
+            clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubReleaseService>.Instance);
+    /// A <see cref="ALDevToolbox.Services.ObjectExplorer.ProjectService"/> on this
+    /// fixture's context, with the discovery queue nobody drains here.
+    /// </summary>
+    public ALDevToolbox.Services.ObjectExplorer.ProjectService NewProjectService(AppDbContext ctx)
+    {
+        var projectAccess = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext);
+        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService(
+            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue(),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>.Instance);
+        return new ALDevToolbox.Services.ObjectExplorer.ProjectService(
+            ctx, OrgContext, projectAccess, extensionDiscovery,
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectService>.Instance);
+    }
+
+    /// <summary>
+    /// Repository discovery (#629): the organisation-wide sweep, the panel's
+    /// narrowed read, and Track / Ignore. Builds its own ProjectService chain,
+    /// because tracking a repository creates a solution.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.RepositoryDiscoveryService NewRepositoryDiscoveryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        TimeProvider? clock = null)
+    {
+        var projectAccess = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext);
+        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService(
+            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue(),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>.Instance);
+        var projects = new ALDevToolbox.Services.ObjectExplorer.ProjectService(
+            ctx, OrgContext, projectAccess, extensionDiscovery,
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectService>.Instance);
+        return new ALDevToolbox.Services.GitHub.RepositoryDiscoveryService(
+            ctx, client, access, NewGitHubConnectionService(ctx, access), NewOrganizationConfigService(ctx),
+            projects, OrgContext, clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>.Instance);
+    }
+
+    /// <summary>
+    /// Dependency drift (#630): the scan a first-party release triggers, what the
+    /// Solutions panel reads, and the pull requests that bump the manifests.
+    /// <paramref name="publicOrigin"/> is what the pull-request body links the
+    /// release comparison with; the default leaves it unset, which is the
+    /// deployment that has not configured one.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.DependencyDriftService NewDependencyDriftService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        string? publicOrigin = null,
+        TimeProvider? clock = null) =>
+        new(ctx, client, access, NewGitHubConnectionService(ctx, access),
+            NewGitHubRepositoryService(ctx, client, access),
+            new CatalogService(ctx, NullLogger<CatalogService>.Instance, OrgContext),
+            new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext),
+            new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks(),
+            new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
+            OrgContext,
+            clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.DependencyDriftService>.Instance);
+
+
+    /// <summary>
+    /// The per-organisation repository standards (#628): the files every
+    /// created repository gets, and the branch ruleset applied to it.
+    /// </summary>
+    public ALDevToolbox.Services.GitHub.GitHubRepositoryStandardsService NewGitHubRepositoryStandardsService(
+        AppDbContext ctx) =>
+        new(ctx, NewOrganizationConfigService(ctx), OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubRepositoryStandardsService>.Instance);
     /// <summary>The Translator's repository round trip: list, open, save back.</summary>
     public ALDevToolbox.Services.GitHub.GitHubTranslationService NewGitHubTranslationService(
         AppDbContext ctx,
@@ -363,6 +451,18 @@ public sealed class TestDb : IDisposable
         ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
         new(NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubTranslationService>.Instance);
+
+    /// <summary>The Cookbook's recipe service, wired to this fixture's database.</summary>
+    public RecipeService NewRecipeService(AppDbContext ctx) =>
+        new(ctx, NullLogger<RecipeService>.Instance, OrgContext, NewQuotaGuard(ctx));
+
+    /// <summary>"Apply a recipe to a repository": the access gate, the commit, and the attribution row.</summary>
+    public ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService NewGitHubRecipeDeliveryService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        new(NewRecipeService(ctx), NewGitHubRepositoryService(ctx, client, access), access, client, OrgContext,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>.Instance);
 
     /// <summary>The workspace / extension generator, wired to this fixture's database.</summary>
     public GenerationService NewGenerationService(AppDbContext ctx)
@@ -395,8 +495,32 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRepositoryStandardsService>();
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubTranslationService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubRecipeDeliveryService>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
+        services.TryAddSingleton(new ALDevToolbox.Endpoints.PublicOrigin(null));
+        services.AddScoped<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
+        services.AddScoped<ALDevToolbox.Services.GitHub.DependencyDriftService>();
     }
+
+    /// <summary>
+    /// The translation-memory ingest (#631): the org's GitHub connection, the
+    /// API client, and the memory it feeds. Reads go out on the installation
+    /// token, so no user link is involved.
+    /// </summary>
+    public ALDevToolbox.Services.Translation.TranslationMemoryIngestService NewTranslationMemoryIngestService(
+        AppDbContext ctx,
+        ALDevToolbox.Services.GitHub.GitHubAppClient client,
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        TimeProvider? clock = null) =>
+        new(ctx, NewGitHubConnectionService(ctx, access), client,
+            new ALDevToolbox.Services.Translation.TranslationMemoryService(
+                ctx, OrgContext,
+                NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance),
+            OrgContext, clock ?? TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryIngestService>.Instance);
 
     /// <summary>Stands in for a GitHub that cannot be reached at all.</summary>
     private sealed class UnreachableHandler : HttpMessageHandler

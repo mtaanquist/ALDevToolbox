@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace ALDevToolbox.Services.GitHub;
@@ -35,6 +36,19 @@ public sealed record GitHubUserTokens(
     DateTimeOffset? ExpiresAt,
     string? RefreshToken,
     DateTimeOffset? RefreshTokenExpiresAt);
+
+/// <summary>
+/// What an installation shared with the app, and whether the listing stopped
+/// short of the end.
+///
+/// <para><see cref="Truncated"/> is the difference between "the App cannot read
+/// the rest" and "there are more than we read", and the two are not the same
+/// thing to say to a person looking at a repository that is missing from a
+/// list.</para>
+/// </summary>
+public sealed record GitHubInstallationRepositories(
+    IReadOnlyList<GitHubRepositorySummary> Repositories,
+    bool Truncated);
 
 /// <summary>Who a user-to-server token belongs to: GitHub's stable numeric id and the renameable login.</summary>
 public sealed record GitHubUserIdentity(long Id, string Login);
@@ -109,7 +123,7 @@ public sealed record GitHubFileWrite(string ContentSha, string CommitSha);
 /// here and stored, encrypted, by <see cref="GitHubAccessService"/> — this class
 /// never touches the database.</para>
 /// </summary>
-public sealed class GitHubAppClient
+public sealed partial class GitHubAppClient
 {
     /// <summary>GitHub's REST base. Fixed public host, so no SSRF guard is needed.</summary>
     public const string ApiBaseUrl = "https://api.github.com/";
@@ -403,15 +417,16 @@ public sealed class GitHubAppClient
     /// two together are what the repository picker offers.
     /// </summary>
     /// <exception cref="GitHubApiException">GitHub refused the call.</exception>
-    public async Task<IReadOnlyList<GitHubRepositorySummary>> ListInstallationRepositoriesAsync(
+    public async Task<GitHubInstallationRepositories> ListInstallationRepositoriesAsync(
         string installationToken, CancellationToken ct = default)
     {
         var repositories = new List<GitHubRepositorySummary>();
+        var truncated = false;
         // GitHub pages this at 30 by default and caps a page at 100. The loop
         // stops at ten pages: a thousand repositories is far past the point
         // where a typeahead is the right control, and an unbounded loop behind
         // a page render is how one bad answer becomes a hung request.
-        for (var page = 1; page <= 10; page++)
+        for (var page = 1; page <= MaxRepositoryPages; page++)
         {
             using var request = NewRequest(
                 HttpMethod.Get, $"installation/repositories?per_page=100&page={page}", installationToken);
@@ -419,18 +434,31 @@ public sealed class GitHubAppClient
             var root = document.RootElement;
             if (!root.TryGetProperty("repositories", out var list) || list.ValueKind != JsonValueKind.Array) break;
 
-            var before = repositories.Count;
+            // Counted on what GitHub returned, not on what we could read: a row
+            // this client skips (no full_name) would otherwise end the paging
+            // early and hide the rest of the installation.
+            var returned = list.GetArrayLength();
             foreach (var element in list.EnumerateArray())
             {
                 if (ReadRepository(element) is { } repository) repositories.Add(repository);
             }
-            if (repositories.Count - before < 100) break;
+            if (returned < 100) break;
+            if (page == MaxRepositoryPages) truncated = true;
         }
 
+        if (truncated)
+        {
+            _logger.LogWarning(
+                "The installation has more than {Cap} repositories; only the first {RepositoryCount} were read.",
+                MaxRepositoryPages * 100, repositories.Count);
+        }
         _logger.LogInformation(
             "GitHub reported {RepositoryCount} repositories for the installation.", repositories.Count);
-        return repositories;
+        return new GitHubInstallationRepositories(repositories, truncated);
     }
+
+    /// <summary>How many pages of a hundred an installation listing reads before it stops.</summary>
+    private const int MaxRepositoryPages = 10;
 
     /// <summary>
     /// One repository as <paramref name="credential"/>'s owner sees it, or
@@ -478,7 +506,7 @@ public sealed class GitHubAppClient
                 @private = isPrivate,
                 auto_init = false,
             });
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (response.IsSuccessStatusCode)
@@ -538,6 +566,18 @@ public sealed class GitHubAppClient
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
         if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.String) return null;
+        // A file over the Contents API's 1 MB inlining limit comes back as a
+        // complete-looking object whose `encoding` is "none" and whose `content`
+        // is empty. Handing that back as a file whose text is "" would be worse
+        // than saying there is nothing to read: the caller cannot tell it from
+        // an empty file. Callers that must have the bytes read the blob by sha
+        // instead (see GetBlobAsync).
+        var encoding = root.TryGetProperty("encoding", out var enc) ? enc.GetString() : null;
+        if (!string.Equals(encoding, "base64", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("GitHub would not inline {Path}; its encoding is {Encoding}.", path, encoding ?? "absent");
+            return null;
+        }
         var sha = root.TryGetProperty("sha", out var shaElement) ? shaElement.GetString() ?? string.Empty : string.Empty;
 
         try
@@ -667,7 +707,7 @@ public sealed class GitHubAppClient
         using var request = NewJsonRequest(
             HttpMethod.Post, $"{RepoPath(owner, repo)}/git/refs", credential,
             new { @ref = $"refs/heads/{branch}", sha = commitSha });
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (response.IsSuccessStatusCode) return true;
 
@@ -703,7 +743,7 @@ public sealed class GitHubAppClient
         using var request = NewJsonRequest(
             HttpMethod.Patch, $"{RepoPath(owner, repo)}/git/refs/heads/{EscapePath(branch)}", credential,
             new { sha = commitSha, force = false });
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (response.IsSuccessStatusCode) return true;
 
@@ -787,15 +827,20 @@ public sealed class GitHubAppClient
     /// <para>One recursive read rather than a Contents listing per folder: the
     /// Translator has to find <c>Translations</c> folders whose place it cannot
     /// predict - an AL workspace keeps one inside every extension folder - and
-    /// walking for them would cost a call per folder. Empty when there is no
-    /// such tree, which is also the answer for a repository with no commits.</para>
+    /// walking for them would cost a call per folder. Empty when there is no such
+    /// tree, and equally empty for a repository with no commits at all - GitHub
+    /// answers that with a 409 rather than a 404, and it means the same thing to
+    /// a caller: there are no files.</para>
     /// </summary>
     public async Task<GitHubTree> ListTreeAsync(
         string credential, string owner, string repo, string treeIsh, CancellationToken ct = default)
     {
         using var request = NewRequest(
             HttpMethod.Get, $"{RepoPath(owner, repo)}/git/trees/{EscapePath(treeIsh)}?recursive=1", credential);
-        using var document = await SendOrNotFoundAsync(request, ct);
+        // A repository with no commits answers 409 "Git Repository is empty" from
+        // every Git Data route. That is an answer - the repository has no files -
+        // and a caller sweeping an organisation must not count it as a failure.
+        using var document = await SendOrNotFoundAsync(request, ct, HttpStatusCode.Conflict);
         if (document is null) return new GitHubTree([], false);
 
         var root = document.RootElement;
@@ -859,7 +904,7 @@ public sealed class GitHubAppClient
 
         using var request = NewJsonRequest(
             HttpMethod.Put, $"{RepoPath(owner, repo)}/contents/{EscapePath(path)}", credential, body);
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -958,13 +1003,25 @@ public sealed class GitHubAppClient
                 ? sha.GetString()
                 : null;
 
+    /// <summary>
+    /// How every request body is written. A null property is left out rather
+    /// than sent as <c>null</c>: GitHub's schemas tell "absent" from "null" and
+    /// answer 422 for the second - a check run with no details URL and an
+    /// annotation with no title are the two that bit us - while no route the
+    /// toolbox calls means anything by an explicit null.
+    /// </summary>
+    private static readonly JsonSerializerOptions JsonRequestOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
     /// <summary>A request carrying <paramref name="body"/> as JSON.</summary>
     private static HttpRequestMessage NewJsonRequest(
         HttpMethod method, string path, string credential, object body)
     {
         var request = NewRequest(method, path, credential);
         request.Content = new StringContent(
-            JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            JsonSerializer.Serialize(body, JsonRequestOptions), Encoding.UTF8, "application/json");
         return request;
     }
 
@@ -974,11 +1031,12 @@ public sealed class GitHubAppClient
     /// there, a branch that does not exist. Every other failure status still
     /// throws.
     /// </summary>
-    private async Task<JsonDocument?> SendOrNotFoundAsync(HttpRequestMessage request, CancellationToken ct)
+    private async Task<JsonDocument?> SendOrNotFoundAsync(
+        HttpRequestMessage request, CancellationToken ct, HttpStatusCode? alsoEmpty = null)
     {
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        if (response.StatusCode == HttpStatusCode.NotFound || response.StatusCode == alsoEmpty)
         {
             _logger.LogDebug("GitHub has nothing at {Method} {Path}.", request.Method, request.RequestUri);
             return null;
@@ -1022,7 +1080,7 @@ public sealed class GitHubAppClient
         request.Headers.Accept.Clear();
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
         {
@@ -1077,7 +1135,7 @@ public sealed class GitHubAppClient
         HttpMethod method, string path, string credential, CancellationToken ct)
     {
         using var request = NewRequest(method, path, credential);
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         _logger.LogDebug("GitHub answered {Status} for {Method} {Path}.", (int)response.StatusCode, method, path);
         return response.StatusCode;
     }
@@ -1119,6 +1177,51 @@ public sealed class GitHubAppClient
     /// GitHub accepts <c>Bearer</c> for both the App JWT and installation
     /// tokens, so there is only ever one scheme.
     /// </summary>
+    /// <summary>
+    /// How long one ordinary call to GitHub may take. This used to be the typed
+    /// client's own <c>Timeout</c>, but that ceiling applies to every call the
+    /// client makes - including a Release asset transfer, where thirty seconds is
+    /// a few megabytes. So the client's timeout is infinite (see
+    /// <c>GitHubRegistration</c>) and the deadline is per call, here.
+    /// </summary>
+    internal TimeSpan DefaultDeadline { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The deadline for the two calls that move a file rather than a few
+    /// kilobytes of JSON: uploading a <c>.app</c> to a Release, and downloading
+    /// one back. Ten minutes is "a slow link and a large extension", not "however
+    /// long it takes".
+    /// </summary>
+    internal static readonly TimeSpan TransferDeadline = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Sends one request under its own deadline, linked to
+    /// <paramref name="ct"/> so shutdown still wins.
+    ///
+    /// <para>The token is disposed the moment the send returns, which is safe
+    /// because <see cref="HttpCompletionOption.ResponseContentRead"/> - the
+    /// default - has already buffered the whole body by then. A caller that
+    /// wanted to stream the response would have to hold the source itself.</para>
+    /// </summary>
+    private async Task<HttpResponseMessage> SendRawAsync(
+        HttpRequestMessage request, CancellationToken ct, TimeSpan? deadline = null)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(deadline ?? DefaultDeadline);
+        try
+        {
+            return await _http.SendAsync(request, cts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "GitHub did not answer {Method} {Path} within {Seconds}s.",
+                request.Method, request.RequestUri, (deadline ?? DefaultDeadline).TotalSeconds);
+            throw new GitHubApiException(
+                HttpStatusCode.RequestTimeout, "GitHub did not answer within the time allowed.");
+        }
+    }
+
     private static HttpRequestMessage NewRequest(HttpMethod method, string path, string credential)
     {
         var request = new HttpRequestMessage(method, path);
@@ -1134,7 +1237,7 @@ public sealed class GitHubAppClient
     /// </summary>
     private async Task<JsonDocument> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (response.Headers.TryGetValues("x-ratelimit-remaining", out var remaining))

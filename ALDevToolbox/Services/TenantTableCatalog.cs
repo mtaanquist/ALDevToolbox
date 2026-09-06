@@ -50,6 +50,7 @@ internal static class TenantTableCatalog
         "organization_settings",
         "organization_assets",
         "organization_files",
+        "github_repository_standard_files",
         "organization_email_domains",
         "runtime_template_included_files",
         "teams",
@@ -79,6 +80,7 @@ internal static class TenantTableCatalog
         "oe_project_build_commits",
         "oe_project_build_artifacts",
         "oe_project_build_logs",
+        "oe_project_build_diagnostics",
         "oe_project_deliveries",
         "oe_project_delivery_results",
         "recipes",
@@ -88,6 +90,19 @@ internal static class TenantTableCatalog
         "recipe_suggestion_files",
         "translation_memory",
         "translation_memory_votes",
+        // A cache of what GitHub said, but also where a person's "not this one"
+        // lives (ignored_at), which no sweep can work out again. Its only parent
+        // is organizations, so it can sit last.
+        "github_repository_candidates",
+        // Recomputable by a rescan, but restored all the same: it hangs off
+        // oe_releases, so a restore that deleted the releases would take these
+        // with them and put nothing back.
+        "github_repository_drift",
+        // Which repository file each learned pair last came from, and the
+        // version of it already read. Restorable content: without it a restored
+        // organisation would re-read every translation file once, which costs
+        // calls and teaches nothing new.
+        "translation_memory_sources",
     ];
 
     /// <summary>

@@ -85,7 +85,7 @@ public sealed class PipelineService
     public async Task<int> CreatePipelineAsync(PipelineInput input, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
-        var (name, selectionJson) = await ValidateAsync(input, existingId: null, ct);
+        var (name, selectionJson, releaseRepositoryId) = await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
         var pipeline = new Pipeline
@@ -95,6 +95,7 @@ public sealed class PipelineService
             CreatedByUserId = _orgContext.CurrentUserId,
             Name = name,
             RequestedAppIdsJson = selectionJson,
+            GithubReleaseRepositoryId = releaseRepositoryId,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -116,10 +117,11 @@ public sealed class PipelineService
 
         // Validate against the pipeline's own project (input.ProjectId is ignored on
         // update — a pipeline can't move between projects).
-        var (name, selectionJson) = await ValidateAsync(input with { ProjectId = pipeline.ProjectId }, existingId: id, ct);
+        var (name, selectionJson, releaseRepositoryId) = await ValidateAsync(input with { ProjectId = pipeline.ProjectId }, existingId: id, ct);
 
         pipeline.Name = name;
         pipeline.RequestedAppIdsJson = selectionJson;
+        pipeline.GithubReleaseRepositoryId = releaseRepositoryId;
         pipeline.UpdatedAt = DateTime.UtcNow;
         await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated pipeline {PipelineId} ({Name}).", pipeline.Id, name);
@@ -151,7 +153,8 @@ public sealed class PipelineService
     /// selection serialised to JSON (null = build everything). Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
-    private async Task<(string Name, string? SelectionJson)> ValidateAsync(PipelineInput input, int? existingId, CancellationToken ct)
+    private async Task<(string Name, string? SelectionJson, int? GithubReleaseRepositoryId)> ValidateAsync(
+        PipelineInput input, int? existingId, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
 
@@ -190,13 +193,32 @@ public sealed class PipelineService
             }
         }
 
+        // Publishing target: a repository of this very project, so a pipeline can
+        // never be pointed at another customer's repository by editing a form value.
+        int? releaseRepositoryId = null;
+        if (input.GithubReleaseRepositoryId is { } repoId && repoId != 0)
+        {
+            var belongs = await _db.OeProjectRepositories.AsNoTracking()
+                .AnyAsync(r => r.Id == repoId
+                               && r.ProjectId == input.ProjectId
+                               && r.Provider == RepositoryProvider.GitHub, ct);
+            if (!belongs)
+            {
+                errors["GithubReleaseRepositoryId"] = "Choose one of this solution's GitHub repositories, or don't publish releases.";
+            }
+            else
+            {
+                releaseRepositoryId = repoId;
+            }
+        }
+
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         // null/empty selection = build everything (the default), stored as a null column.
         var selectionJson = input.SelectedAppIds is { Count: > 0 }
             ? JsonSerializer.Serialize(input.SelectedAppIds)
             : null;
-        return (name, selectionJson);
+        return (name, selectionJson, releaseRepositoryId);
     }
 
     /// <summary>
@@ -239,7 +261,13 @@ public sealed class PipelineService
 public sealed record PipelineInput(
     int ProjectId,
     string Name,
-    IReadOnlyList<string>? SelectedAppIds);
+    IReadOnlyList<string>? SelectedAppIds,
+    /// <summary>
+    /// The solution repository each successful build is published to as a GitHub
+    /// Release. Null (the default) means builds are not published anywhere. See
+    /// <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    int? GithubReleaseRepositoryId = null);
 
 /// <summary>A project choice for the "New pipeline" dialog's project picker.</summary>
 public sealed record PipelineProjectOption(int Id, string Name);

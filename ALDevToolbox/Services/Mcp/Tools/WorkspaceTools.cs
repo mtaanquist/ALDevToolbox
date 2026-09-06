@@ -180,12 +180,7 @@ public sealed class WorkspaceTools
             ContentBase64: inline ? Convert.ToBase64String(bytes) : string.Empty,
             SizeBytes: bytes.Length,
             Sha256: Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-            AddedToRepository: new RepositoryDeliveryResult(
-                RepositoryFullName: delivered.Repository.FullName,
-                Branch: delivered.PullRequest.HeadBranch,
-                BaseBranch: delivered.Repository.DefaultBranch,
-                PullRequestNumber: delivered.PullRequest.Number,
-                PullRequestUrl: delivered.PullRequest.HtmlUrl));
+            AddedToRepository: RepositoryDeliveryResult.From(delivered));
     }
 
     /// <summary>
@@ -206,13 +201,7 @@ public sealed class WorkspaceTools
             ContentBase64: inline ? Convert.ToBase64String(bytes) : string.Empty,
             SizeBytes: bytes.Length,
             Sha256: Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-            CreatedRepository: new RepositoryCreationResult(
-                RepositoryFullName: created.Repository.FullName,
-                HtmlUrl: created.Repository.HtmlUrl,
-                CloneUrl: created.Repository.CloneUrl,
-                DefaultBranch: created.Repository.DefaultBranch,
-                IsPrivate: created.Repository.IsPrivate,
-                FileCount: created.FileCount));
+            CreatedRepository: RepositoryCreationResult.From(created));
     }
 
     private WorkspaceResult BuildResult(GeneratedArchive archive)

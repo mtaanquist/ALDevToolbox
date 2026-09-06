@@ -2,10 +2,12 @@
 @implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService Discovery
 @inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
+@inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<PipelineEditorDialog> Log
 @inject IServiceScopeFactory ScopeFactory
 @using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
@@ -141,6 +143,41 @@
                     </div>
                 }
 
+                @if (_releaseRepositories is { Count: > 0 } && (!_pickProject || _projectId != 0))
+                {
+                    <div class="field">
+                        <label class="field__label" for="pe-release-repo">Publish successful builds to GitHub</label>
+                        <span class="select-wrap">
+                            <select id="pe-release-repo" class="select" @bind="_releaseRepositoryId" disabled="@_saving">
+                                <option value="0">Don't publish releases</option>
+                                @foreach (var repo in _releaseRepositories)
+                                {
+                                    <option value="@repo.Id">@repo.FullName</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <small class="field__hint">All apps in a build have to share one version number, because the release is tagged with it. If they don't match, the build still succeeds and its files can still be downloaded here; only the release is skipped.</small>
+                    </div>
+                }
+                else if (ShowUnavailableReleaseField)
+                {
+                    <div class="field">
+                        <label class="field__label" for="pe-release-repo">Publish successful builds to GitHub</label>
+                        <span class="select-wrap">
+                            <select id="pe-release-repo" class="select" disabled>
+                                <option value="0">Don't publish releases</option>
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <small class="field__hint">
+                            @(_releaseRepositoriesFailed
+                                ? "Couldn't reach GitHub just now; try again."
+                                : "GitHub isn't connected for this organisation yet. An admin can connect it under Administration → Repositories.")
+                        </small>
+                    </div>
+                }
+
                 @if (_saveError is { } se)
                 {
                     <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@se</span></p>
@@ -196,6 +233,18 @@
     private string? _projectName;
     private int? _pipelineId;
     private string _name = string.Empty;
+    // The solution's GitHub repositories inside the connected organisation. Empty
+    // (and the whole field hidden) when there is no GitHub connection - an
+    // organisation on Azure DevOps is shown no GitHub machinery at all.
+    private IReadOnlyList<GitHubReleaseRepositoryOption>? _releaseRepositories;
+    private int _releaseRepositoryId;
+    // True when there is nothing to pick but the person can still be told why.
+    private bool _releaseRepositoriesExplainable;
+    private bool _releaseRepositoriesFailed;
+
+    /// <summary>Show the field disabled with a reason rather than hiding it entirely.</summary>
+    private bool ShowUnavailableReleaseField =>
+        _releaseRepositoriesExplainable && (!_pickProject || _projectId != 0);
 
     private bool _loadingDiscovery;
     private bool _saving;
@@ -224,6 +273,7 @@
         _projectName = projectName;
         _open = true;
         _focusPending = true;
+        await LoadReleaseRepositoriesAsync();
         await LoadDiscoveryAsync();
     }
 
@@ -242,7 +292,8 @@
     }
 
     /// <summary>Opens the dialog to edit an existing pipeline. <paramref name="requestedAppIdsJson"/> is the stored selection (null = all).</summary>
-    public async Task OpenForEditAsync(int pipelineId, int projectId, string projectName, string name, string? requestedAppIdsJson)
+    public async Task OpenForEditAsync(int pipelineId, int projectId, string projectName, string name, string? requestedAppIdsJson,
+        int? githubReleaseRepositoryId = null)
     {
         ResetForCreate();
         _editing = true;
@@ -254,8 +305,10 @@
         var parsed = ProjectBuildService.ParseSelectedAppIds(requestedAppIdsJson);
         _initialSelection = parsed;
         _initialIsAll = parsed is null;
+        _releaseRepositoryId = githubReleaseRepositoryId ?? 0;
         _open = true;
         _focusPending = true;
+        await LoadReleaseRepositoriesAsync();
         await LoadDiscoveryAsync();
     }
 
@@ -273,6 +326,39 @@
         _discovery = null;
         _extensions = null;
         _selected = new(StringComparer.Ordinal);
+        _releaseRepositories = null;
+        _releaseRepositoryId = 0;
+        _releaseRepositoriesExplainable = false;
+        _releaseRepositoriesFailed = false;
+    }
+
+    /// <summary>
+    /// Loads the solution's publishable repositories. Never fails the dialog: without
+    /// them the field simply isn't offered, which is the same as an organisation that
+    /// has not connected GitHub.
+    /// </summary>
+    private async Task LoadReleaseRepositoriesAsync()
+    {
+        _releaseRepositoriesFailed = false;
+        _releaseRepositoriesExplainable = false;
+        if (_projectId == 0) { _releaseRepositories = null; return; }
+        try
+        {
+            var choices = await GitHubReleases.DescribeRepositoryOptionsAsync(_projectId);
+            _releaseRepositories = choices.Options;
+            // Somebody whose solution is on GitHub but whose organisation has not
+            // connected it can be helped by an admin - say so instead of hiding the
+            // field, which would look like the feature does not exist.
+            _releaseRepositoriesExplainable =
+                choices.DeploymentConfigured && choices.HasGitHubRepositories && choices.Options.Count == 0;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Reading the solution's GitHub repositories failed for solution {ProjectId}.", _projectId);
+            _releaseRepositories = null;
+            _releaseRepositoriesFailed = true;
+            _releaseRepositoriesExplainable = true;
+        }
     }
 
     private async Task OnProjectChosenAsync(ChangeEventArgs e)
@@ -280,7 +366,12 @@
         StopPoll();
         _selectionSeeded = false;
         _projectId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
-        if (_projectId != 0) await LoadDiscoveryAsync();
+        _releaseRepositoryId = 0;
+        if (_projectId != 0)
+        {
+            await LoadReleaseRepositoriesAsync();
+            await LoadDiscoveryAsync();
+        }
     }
 
     /// <summary>
@@ -527,7 +618,9 @@
                 .ToList();
             // All selected == build everything: store null so apps added later are included.
             var selection = picked.Count == _extensions.Count ? null : picked;
-            var input = new PipelineInput(_projectId, _name.Trim(), selection);
+            var input = new PipelineInput(
+                _projectId, _name.Trim(), selection,
+                _releaseRepositoryId == 0 ? null : _releaseRepositoryId);
 
             int id;
             if (_editing && _pipelineId is { } pid)

@@ -31,6 +31,7 @@ using OeProjectBuildRepoCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.Pro
 using OeProjectBuildCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit;
 using OeProjectBuildArtifact = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact;
 using OeProjectBuildLog = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog;
+using OeProjectBuildDiagnostic = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildDiagnostic;
 using EnvironmentUpgradeAction = ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction;
 
 namespace ALDevToolbox.Data;
@@ -176,10 +177,17 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationSettings> OrganizationSettings => Set<OrganizationSettings>();
     public DbSet<OrganizationAsset> OrganizationAssets => Set<OrganizationAsset>();
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
+    public DbSet<GitHubRepositoryStandardFile> GitHubRepositoryStandardFiles => Set<GitHubRepositoryStandardFile>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<Backup> Backups => Set<Backup>();
     public DbSet<PerTenantBackup> PerTenantBackups => Set<PerTenantBackup>();
     public DbSet<OrganizationUsageSnapshot> OrganizationUsageSnapshots => Set<OrganizationUsageSnapshot>();
+    // AL repositories the discovery sweep found in the connected GitHub
+    // organisation that no solution tracks yet — see .design/github-integration-phase2.md.
+    public DbSet<GitHubRepositoryCandidate> GitHubRepositoryCandidates => Set<GitHubRepositoryCandidate>();
+    // What a tracked repository's app.json is behind on, as the last drift scan
+    // found it — see .design/github-integration-phase2.md.
+    public DbSet<GitHubRepositoryDrift> GitHubRepositoryDrift => Set<GitHubRepositoryDrift>();
     // Object Explorer (.app ingest) — see .design/object-explorer.md.
     public DbSet<OeRelease> OeReleases => Set<OeRelease>();
     public DbSet<OeModule> OeModules => Set<OeModule>();
@@ -211,12 +219,16 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectBuildCommit> OeProjectBuildCommits => Set<OeProjectBuildCommit>();
     public DbSet<OeProjectBuildArtifact> OeProjectBuildArtifacts => Set<OeProjectBuildArtifact>();
     public DbSet<OeProjectBuildLog> OeProjectBuildLogs => Set<OeProjectBuildLog>();
+    public DbSet<OeProjectBuildDiagnostic> OeProjectBuildDiagnostics => Set<OeProjectBuildDiagnostic>();
     // What the upgrade team did (or scheduled) to a customer's environment — the rows
     // behind the per-environment activity feed. See .design/saas-delivery.md.
     public DbSet<EnvironmentUpgradeAction> OeEnvironmentUpgradeActions => Set<EnvironmentUpgradeAction>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
+    // Which file in which repository each learned pair last came from, so the
+    // nightly ingest reads only what has changed (#631).
+    public DbSet<TranslationMemorySource> TranslationMemorySources => Set<TranslationMemorySource>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
     public DbSet<RecipeDownload> RecipeDownloads => Set<RecipeDownload>();
@@ -297,7 +309,10 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OrganizationSettings>(modelBuilder);
         ScopeToOrganization<OrganizationAsset>(modelBuilder);
         ScopeToOrganization<OrganizationFile>(modelBuilder);
+        ScopeToOrganization<GitHubRepositoryStandardFile>(modelBuilder);
         ScopeToOrganization<OrganizationEmailDomain>(modelBuilder);
+        ScopeToOrganization<GitHubRepositoryCandidate>(modelBuilder);
+        ScopeToOrganization<GitHubRepositoryDrift>(modelBuilder);
         ScopeToOrganization<OeRelease>(modelBuilder);
         ScopeToOrganization<OeModule>(modelBuilder);
         ScopeToOrganization<OeModuleFile>(modelBuilder);
@@ -324,6 +339,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectBuildCommit>(modelBuilder);
         ScopeToOrganization<OeProjectBuildArtifact>(modelBuilder);
         ScopeToOrganization<OeProjectBuildLog>(modelBuilder);
+        ScopeToOrganization<OeProjectBuildDiagnostic>(modelBuilder);
         ScopeToOrganization<EnvironmentUpgradeAction>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
@@ -346,6 +362,7 @@ public class AppDbContext : DbContext
         // IgnoreQueryFiltersUnfilteredRootTests enforces the rule.
         ScopeToOrganization<TranslationMemoryEntry>(modelBuilder);
         ScopeToOrganization<TranslationMemoryVote>(modelBuilder);
+        ScopeToOrganization<TranslationMemorySource>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);
         ScopeToOrganization<RecipeFile>(modelBuilder);
         ScopeToOrganization<RecipeDownload>(modelBuilder);

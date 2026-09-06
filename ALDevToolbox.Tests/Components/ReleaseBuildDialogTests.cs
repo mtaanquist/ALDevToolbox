@@ -32,9 +32,50 @@ public sealed class ReleaseBuildDialogTests : IDisposable
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(NewUnusedDeliveryService());
+        _ctx.Services.AddSingleton(NewUnusedGitHubReleaseService());
     }
 
     public void Dispose() => _ctx.Dispose();
+
+    /// <summary>
+    /// The dialog injects the Releases service so a Release-sourced pipeline can stage
+    /// its apps when the person releases. Nothing here releases, so this one is
+    /// constructed and never called - like the delivery service beside it.
+    /// </summary>
+    private static ALDevToolbox.Services.GitHub.GitHubReleaseService NewUnusedGitHubReleaseService()
+    {
+        var db = NewUnopenedContext();
+        var org = new SignedOutOrganizationContext();
+        var settings = new SystemSettingsService(db, NewProtection(), NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        var client = new ALDevToolbox.Services.GitHub.GitHubAppClient(
+            new HttpClient(new UnreachableHandler()) { BaseAddress = new Uri(ALDevToolbox.Services.GitHub.GitHubAppClient.ApiBaseUrl) },
+            settings, new Microsoft.Extensions.Caching.Memory.MemoryCache(
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            TimeProvider.System, NullLogger<ALDevToolbox.Services.GitHub.GitHubAppClient>.Instance);
+        return new ALDevToolbox.Services.GitHub.GitHubReleaseService(
+            db, client,
+            // Constructed so the service resolves; nothing here asks it anything.
+            new ALDevToolbox.Services.GitHub.GitHubConnectionService(
+                db, org, null!, settings, null!,
+                NullLogger<ALDevToolbox.Services.GitHub.GitHubConnectionService>.Instance, TimeProvider.System),
+            new ProjectAccess(db, org), org,
+            new ALDevToolbox.Endpoints.PublicOrigin(null), TimeProvider.System,
+            NullLogger<ALDevToolbox.Services.GitHub.GitHubReleaseService>.Instance);
+    }
+
+    private static Microsoft.AspNetCore.DataProtection.IDataProtectionProvider NewProtection() =>
+        Microsoft.AspNetCore.DataProtection.DataProtectionProvider.Create(
+            new DirectoryInfo(Path.Combine(Path.GetTempPath(), "aldt-release-dialog-tests")));
+
+    private static AppDbContext NewUnopenedContext() =>
+        new(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=never-opened").Options);
+
+    private sealed class UnreachableHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new HttpRequestException("GitHub is not reachable from this test.");
+    }
 
     private static DeliveryService NewUnusedDeliveryService()
     {
@@ -108,6 +149,67 @@ public sealed class ReleaseBuildDialogTests : IDisposable
 
         cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS A/S — UAT");
         cut.FindAll(".check--ack").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_release_sourced_pipeline_picks_a_github_release_and_shows_the_files_it_installs()
+    {
+        var cut = _ctx.Render<ReleaseBuildDialog>();
+        cut.InvokeAsync(() => cut.Instance.OpenAsync(
+            releasePipelineId: 1,
+            customerName: "CRONUS A/S",
+            envName: "Production",
+            envType: "Production",
+            deploymentSchedule: "Immediate",
+            schemaSyncMode: "Add",
+            builds: [],
+            timeZone: "Europe/Copenhagen",
+            windowStart: null,
+            windowEnd: null,
+            secretExpiresAt: null,
+            releases:
+            [
+                new ALDevToolbox.Services.GitHub.GitHubReleaseOption(
+                    "v1.4.2.0", "v1.4.2.0", new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero),
+                    ["CRONUS Sales Extension_1.4.2.0.app"]),
+                // Nothing installable on it, so it is not offered at all.
+                new ALDevToolbox.Services.GitHub.GitHubReleaseOption("v1.4.1.0", null, null, []),
+            ],
+            repositoryName: "cronus-customer")).GetAwaiter().GetResult();
+
+        // The build picker is gone: this pipeline has no builds of its own.
+        cut.FindAll("#rb-build").Should().BeEmpty();
+        var tags = cut.FindAll("#rb-release option").Select(o => o.TextContent.Trim()).ToList();
+        tags.Should().ContainSingle().Which.Should().StartWith("v1.4.2.0");
+        cut.Markup.Should().Contain("This release installs");
+        cut.Markup.Should().Contain("CRONUS Sales Extension_1.4.2.0.app");
+        cut.Markup.Should().Contain("cronus-customer");
+    }
+
+    [Fact]
+    public async Task A_repository_with_no_installable_release_says_what_to_publish_instead_of_an_empty_picker()
+    {
+        var cut = _ctx.Render<ReleaseBuildDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenAsync(
+            releasePipelineId: 1,
+            customerName: "CRONUS A/S",
+            envName: "Production",
+            envType: "Sandbox",
+            deploymentSchedule: "Immediate",
+            schemaSyncMode: "Add",
+            builds: [],
+            timeZone: "Europe/Copenhagen",
+            windowStart: null,
+            windowEnd: null,
+            secretExpiresAt: null,
+            // One release, nothing installable attached to it.
+            releases: [new ALDevToolbox.Services.GitHub.GitHubReleaseOption("v1.4.1.0", null, null, [])],
+            repositoryName: "cronus-customer"));
+
+        cut.FindAll("#rb-release").Should().BeEmpty();
+        cut.Markup.Should().Contain("No release on cronus-customer has an .app file attached yet.");
+        cut.Markup.Should().Contain("Publish a release with the compiled apps attached");
+        cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
     }
 
     // ── Unused seams: the dialog never releases in these tests ────────────────

@@ -37,9 +37,32 @@ public class ReleasePipeline
     /// <summary>Display name, unique per project among active rows (e.g. <c>Contoso App → Production</c>).</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>The artifact source — releases publish this build pipeline's builds.</summary>
-    public int BuildPipelineId { get; set; }
+    /// <summary>
+    /// Where the artifacts come from: <see cref="ReleaseArtifactSource.Build"/> (this
+    /// build pipeline's builds) or <see cref="ReleaseArtifactSource.GithubRelease"/>
+    /// (the Releases published on a GitHub repository). Exactly one of
+    /// <see cref="BuildPipelineId"/> / <see cref="GithubReleaseRepositoryId"/> is set
+    /// accordingly. See <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    public string ArtifactSource { get; set; } = ReleaseArtifactSource.Build;
+
+    /// <summary>
+    /// The artifact source — releases publish this build pipeline's builds. Null when
+    /// <see cref="ArtifactSource"/> is <see cref="ReleaseArtifactSource.GithubRelease"/>,
+    /// which draws its apps from a repository's Releases instead.
+    /// </summary>
+    public int? BuildPipelineId { get; set; }
     public Pipeline? BuildPipeline { get; set; }
+
+    /// <summary>
+    /// The solution repository whose GitHub Releases this pipeline publishes from.
+    /// Set only when <see cref="ArtifactSource"/> is
+    /// <see cref="ReleaseArtifactSource.GithubRelease"/>; nullable FK with
+    /// <c>ON DELETE SET NULL</c> so removing the repository from the solution leaves
+    /// the pipeline's history intact.
+    /// </summary>
+    public int? GithubReleaseRepositoryId { get; set; }
+    public ProjectRepository? GithubReleaseRepository { get; set; }
 
     /// <summary>The target environment (carries the chosen company and the Production/Sandbox type).</summary>
     public int ProjectEnvironmentId { get; set; }

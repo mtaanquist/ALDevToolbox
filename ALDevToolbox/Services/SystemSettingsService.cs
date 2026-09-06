@@ -147,7 +147,8 @@ public sealed record GitHubAppView(
     string? AppSlug,
     string? ClientId,
     bool HasClientSecret,
-    bool HasPrivateKey)
+    bool HasPrivateKey,
+    bool HasWebhookSecret = false)
 {
     /// <summary>
     /// True when an organisation could actually start the install handshake:
@@ -172,7 +173,9 @@ public sealed record GitHubAppInput(
     string? ClientSecret,
     bool ClearClientSecret,
     string? PrivateKeyPem,
-    bool ClearPrivateKey);
+    bool ClearPrivateKey,
+    string? WebhookSecret = null,
+    bool ClearWebhookSecret = false);
 
 /// <summary>
 /// Fully resolved GitHub App credentials with plaintext secrets. Held only
@@ -246,6 +249,13 @@ public sealed class SystemSettingsService
     /// <summary>Data Protection purpose string for the GitHub App's PEM private key.</summary>
     public const string GitHubPrivateKeyProtectionPurpose = "ALDevToolbox.SystemSettings.GitHubPrivateKey";
 
+    /// <summary>
+    /// Data Protection purpose string for the secret GitHub signs webhook
+    /// deliveries with. Its own purpose, like every other secret on this row, so
+    /// ciphertext minted for one field can never be unprotected as another.
+    /// </summary>
+    public const string GitHubWebhookSecretProtectionPurpose = "ALDevToolbox.SystemSettings.GitHubWebhookSecret";
+
     /// <summary>Discriminator for the default S3-compatible off-site backend.</summary>
     public const string S3ProviderName = "s3";
 
@@ -260,6 +270,7 @@ public sealed class SystemSettingsService
     private readonly IDataProtector _entraSecretProtector;
     private readonly IDataProtector _githubSecretProtector;
     private readonly IDataProtector _githubKeyProtector;
+    private readonly IDataProtector _githubWebhookProtector;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
     private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
@@ -292,6 +303,7 @@ public sealed class SystemSettingsService
         _entraSecretProtector = protectionProvider.CreateProtector(EntraClientSecretProtectionPurpose);
         _githubSecretProtector = protectionProvider.CreateProtector(GitHubClientSecretProtectionPurpose);
         _githubKeyProtector = protectionProvider.CreateProtector(GitHubPrivateKeyProtectionPurpose);
+        _githubWebhookProtector = protectionProvider.CreateProtector(GitHubWebhookSecretProtectionPurpose);
         _logger = logger;
         _clock = clock;
         // Optional so existing tests that build the service by hand without
@@ -607,7 +619,8 @@ public sealed class SystemSettingsService
             AppSlug: row.GitHubAppSlug,
             ClientId: row.GitHubClientId,
             HasClientSecret: !string.IsNullOrEmpty(row.GitHubClientSecretEncrypted),
-            HasPrivateKey: !string.IsNullOrEmpty(row.GitHubPrivateKeyEncrypted));
+            HasPrivateKey: !string.IsNullOrEmpty(row.GitHubPrivateKeyEncrypted),
+            HasWebhookSecret: !string.IsNullOrEmpty(row.GitHubWebhookSecretEncrypted));
     }
 
     /// <summary>
@@ -684,9 +697,10 @@ public sealed class SystemSettingsService
             errors["GitHubPrivateKey"] = "That does not look like the private key file GitHub gave you. Paste the whole file, including the BEGIN and END lines.";
         }
 
-        if (rawAppId is null && (privateKey is not null || !string.IsNullOrEmpty(input.ClientSecret)))
+        if (rawAppId is null && (privateKey is not null || !string.IsNullOrEmpty(input.ClientSecret)
+            || !string.IsNullOrEmpty(input.WebhookSecret)))
         {
-            errors["GitHubAppId"] = "Enter the App ID before saving the private key or the client secret.";
+            errors["GitHubAppId"] = "Enter the App ID before saving the private key, the client secret or the webhook secret.";
         }
         if (clientId is null && !string.IsNullOrEmpty(input.ClientSecret))
         {
@@ -718,14 +732,55 @@ public sealed class SystemSettingsService
             row.GitHubPrivateKeyEncrypted = _githubKeyProtector.Protect(privateKey);
         }
 
+        // Same three branches as the two secrets above: clearing the App (or the
+        // explicit Forget tick) wipes it, a value replaces it, and a blank field
+        // leaves the stored one alone so a save that does not retype it keeps
+        // deliveries verifiable.
+        if (appId is null || input.ClearWebhookSecret)
+        {
+            row.GitHubWebhookSecretEncrypted = null;
+        }
+        else if (!string.IsNullOrEmpty(input.WebhookSecret))
+        {
+            row.GitHubWebhookSecretEncrypted = _githubWebhookProtector.Protect(input.WebhookSecret);
+        }
+
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation(
-            "Deployment-wide GitHub App registration updated (app_id={AppId}, slug={Slug}, has_key={HasKey}, has_secret={HasSecret}).",
+            "Deployment-wide GitHub App registration updated (app_id={AppId}, slug={Slug}, has_key={HasKey}, has_secret={HasSecret}, has_webhook_secret={HasWebhookSecret}).",
             row.GitHubAppId?.ToString() ?? "<unset>",
             row.GitHubAppSlug ?? "<unset>",
             !string.IsNullOrEmpty(row.GitHubPrivateKeyEncrypted),
-            !string.IsNullOrEmpty(row.GitHubClientSecretEncrypted));
+            !string.IsNullOrEmpty(row.GitHubClientSecretEncrypted),
+            !string.IsNullOrEmpty(row.GitHubWebhookSecretEncrypted));
+    }
+
+    /// <summary>
+    /// The plaintext secret GitHub signs webhook deliveries with, or
+    /// <see langword="null"/> when none is stored or the key ring can no longer
+    /// read it.
+    ///
+    /// <para>Deliberately narrower than <see cref="ResolveGitHubAppAsync"/>: the
+    /// signature check is the very first thing an anonymous inbound request meets,
+    /// and it has nothing to do with whether the App id and private key happen to
+    /// be filled in. Null here means every delivery is refused, which is the safe
+    /// direction. See <c>.design/github-integration-phase2.md</c> (#627).</para>
+    /// </summary>
+    public async Task<string?> ResolveGitHubWebhookSecretAsync(CancellationToken ct = default)
+    {
+        var row = await _db.SystemSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == 1, ct);
+        if (string.IsNullOrEmpty(row?.GitHubWebhookSecretEncrypted)) return null;
+        try
+        {
+            return _githubWebhookProtector.Unprotect(row.GitHubWebhookSecretEncrypted);
+        }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            _logger.LogError(ex, "Failed to decrypt the GitHub webhook secret; deliveries will be refused until it is re-entered.");
+            return null;
+        }
     }
 
     /// <summary>

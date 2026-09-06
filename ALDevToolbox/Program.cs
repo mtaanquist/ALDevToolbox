@@ -136,6 +136,7 @@ app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapEntraAuthEndpoints();
 app.MapGitHubAppEndpoints();
+app.MapGitHubWebhookEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapCookbookEndpoints();

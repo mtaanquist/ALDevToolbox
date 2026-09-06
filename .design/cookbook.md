@@ -82,8 +82,20 @@ tell them apart. The free-text name is still stored as typed: it is the
 label, the id is the attribution. `project_id` is nullable with
 `ON DELETE SET NULL`, so hard-deleting a project leaves the history intact.
 The admin recipe page links the customer cell to the project when one
-matched. See #541. Downloads are a web-UI flow only — the MCP surface does
-not record them.
+matched. See #541.
+
+A third source, `Repository`, records that the recipe was committed to a
+GitHub repository as a pull request (`RecordRepositoryApplyAsync`, #626).
+It is the only source that names a *place*: `recipe_downloads.repository`
+holds the `owner/name`, and the distinct values
+(`GetAppliedRepositoriesAsync`, most recently applied first) are what the
+admin page's "Update the repositories that use this recipe" card iterates
+when a bug found in a recipe has to reach everywhere it landed. The
+customer half behaves exactly as a download's does, project match
+included. Both the download modal and the `apply_recipe` MCP tool record
+through the same method, so an agent's apply shows up in the history like
+anyone else's — the older "downloads are a web-UI flow only" rule no
+longer holds for this source.
 
 ## MCP surface
 
@@ -111,6 +123,14 @@ Tools live in `Services/Mcp/Tools/CookbookTools.cs`:
   must be Editor or Admin (or SiteAdmin), mirroring the web admin pages.
   `Deprecated` is optional in the payload and preserves the recipe's
   current flag when omitted.
+- `apply_recipe(recipeId, repository, customer?)` — commits the recipe's
+  files into a GitHub repository and opens a pull request for them,
+  returning a `RepositoryDeliveryResult` (with `IsNewPullRequest`). It
+  routes through `GitHubRecipeDeliveryService`, the same service the
+  download modal uses, so `GitHubRepositoryService.ResolveAsync`'s gate is
+  inherited: a repository the picker would not offer is refused here too.
+  Records the apply exactly as the page does. See #626 and
+  `.design/github-integration-phase2.md`.
 
 Suggestion inputs (and `update_recipe`) also accept an optional
 `EstimatedValueHours`; the proposed value is stored on the suggestion

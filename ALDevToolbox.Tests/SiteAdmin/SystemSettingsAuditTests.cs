@@ -94,6 +94,61 @@ public sealed class SystemSettingsAuditTests : IDisposable
                 "the off-site key columns are replaced with a fixed sentinel before snapshotting");
     }
 
+    [Fact]
+    public async Task SaveGitHubApp_writes_audit_row_with_a_redacted_webhook_secret()
+    {
+        // The webhook secret is the one new key-ring-encrypted secret of #627, so
+        // it has to be redacted the same way its siblings on this row are - an
+        // audit trail carrying ciphertext history would defeat encrypting it.
+        var protector = _db.DataProtectionProvider;
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+        {
+            var svc = new SystemSettingsService(ctx, protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+            await svc.SaveGitHubAppAsync(NewGitHubInput("first-webhook-secret"));
+        }
+        // The second save's audit row snapshots the previous state, which is where
+        // the first save's ciphertext would otherwise show up.
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+        {
+            var svc = new SystemSettingsService(ctx, protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+            await svc.SaveGitHubAppAsync(NewGitHubInput("second-webhook-secret"));
+        }
+
+        await using var read = _db.NewContext();
+        var rows = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.SystemSettings)
+            .ToListAsync();
+        rows.Should().NotBeEmpty();
+        foreach (var row in rows.Where(r => r.SnapshotJson is not null))
+        {
+            row.SnapshotJson.Should().NotContain("first-webhook-secret");
+            row.SnapshotJson.Should().NotContain("second-webhook-secret");
+        }
+
+        await using var reread = _db.NewContext();
+        var stored = await reread.SystemSettings.AsNoTracking().FirstAsync(x => x.Id == 1);
+        stored.GitHubWebhookSecretEncrypted.Should().NotBeNullOrEmpty();
+        rows.Where(r => r.SnapshotJson is not null && r.SnapshotJson.Contains("[redacted]"))
+            .Should().NotBeEmpty(
+                "the webhook secret column is replaced with a fixed sentinel before snapshotting");
+        foreach (var row in rows.Where(r => r.SnapshotJson is not null))
+        {
+            row.SnapshotJson.Should().NotContain(stored.GitHubWebhookSecretEncrypted!,
+                "not even the ciphertext belongs in the audit log");
+        }
+    }
+
+    private static GitHubAppInput NewGitHubInput(string webhookSecret) => new(
+        AppId: "123456",
+        AppSlug: "al-dev-toolbox",
+        ClientId: null,
+        ClientSecret: null,
+        ClearClientSecret: false,
+        PrivateKeyPem: null,
+        ClearPrivateKey: false,
+        WebhookSecret: webhookSecret,
+        ClearWebhookSecret: false);
+
     private static OffsiteSettingsInput NewOffsiteInput(string accessKey, string secretKey) => new(
         Enabled: true,
         Provider: null,

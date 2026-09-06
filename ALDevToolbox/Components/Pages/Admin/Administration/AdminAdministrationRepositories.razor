@@ -5,6 +5,7 @@
 @inject GitHubConnectionService GitHub
 @inject GitHubAppClient GitHubApi
 @inject GitHubAccessService GitHubAccess
+@inject GitHubRepositoryStandardsService Standards
 @inject ILogger<AdminAdministrationRepositories> Log
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.GitHub
@@ -226,6 +227,36 @@
                         </div>
                     </SettingRow>
 
+                    @* Standards sit here rather than on a tab of their own for the
+                       same reason the connection does: they are only meaningful
+                       once a GitHub organisation is connected, and this is where
+                       an admin already is when they think about it. (#628) *@
+                    <SettingRow Name="Repository standards"
+                                Hint="The files and branch rules every repository the toolbox creates starts with.">
+                        <div class="u-stack">
+                            @if (_standardsSummary is null)
+                            {
+                                <span class="u-muted">
+                                    Nothing set up yet. New repositories get only the files the
+                                    workspace template generates.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="u-row">
+                                    <Icon Name="check" Width="14" Height="14" />
+                                    <span>Every new repository gets @_standardsSummary.</span>
+                                </span>
+                            }
+                            <div class="u-row">
+                                <a class="btn" href="/admin/administration/repositories/standards">
+                                    <Icon Name="file-text" Width="16" Height="16" />
+                                    <span>@(_standardsSummary is null ? "Set up standards" : "Change standards")</span>
+                                </a>
+                            </div>
+                        </div>
+                    </SettingRow>
+
                     <SettingRow Name="Check the connection"
                                 Hint="Asks GitHub whether the toolbox can still act for your organisation, and brings the list above up to date. Nothing on GitHub is changed.">
                         <div class="u-stack">
@@ -339,6 +370,8 @@
     private GitHubConnectionStatus? _github;
     /// <summary>This admin's own GitHub account link - a precondition of connecting, not a detail of it.</summary>
     private GitHubLinkStatus? _myGitHub;
+    /// <summary>What the organisation's repository standards amount to, or null when nothing is set up (#628).</summary>
+    private string? _standardsSummary;
     private ConfirmDialog? _confirmDisconnect;
 
     /// <summary>
@@ -381,6 +414,7 @@
         _allowAzureDevOps = allowed.Contains(RepositoryProvider.AzureDevOps);
         _github = await GitHub.GetStatusAsync();
         _myGitHub = await GitHubAccess.GetLinkStatusAsync();
+        _standardsSummary = await Standards.GetSummaryAsync();
     }
 
     private async Task SaveAsync()

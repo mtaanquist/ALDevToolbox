@@ -32,6 +32,13 @@ public abstract class JobQueue<TJob>
 
     public ChannelReader<TJob> Reader => _channel.Reader;
 
+    /// <summary>
+    /// The write half, for the rare caller that must not block when the channel
+    /// is full - a request thread answering an external caller that will retry,
+    /// rather than a sweep that can afford to wait.
+    /// </summary>
+    protected ChannelWriter<TJob> Writer => _channel.Writer;
+
     /// <summary>Queues <paramref name="job"/>, waiting if the channel is full.</summary>
     public ValueTask EnqueueAsync(TJob job, CancellationToken ct = default) =>
         _channel.Writer.WriteAsync(job, ct);

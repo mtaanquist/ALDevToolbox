@@ -366,6 +366,137 @@ public sealed class RecipeDownloadTests : IDisposable
         downloads.Single(d => d.CustomerName == "Some Other Customer").Project.Should().BeNull();
     }
 
+    [Fact]
+    public async Task RecordRepositoryApply_records_the_repository_and_the_matched_project()
+    {
+        // The apply is a download that also names a place, so a later fix knows
+        // which repositories to open a pull request against. #626
+        var projectId = await SeedProjectAsync("CRONUS A/S");
+        var recipeId = await SeedRecipeAsync();
+        var userId = await SeedUserAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordRepositoryApplyAsync(
+                recipeId, "  cronus-dk/solution-a  ", "  cronus a/s  ", userId);
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.RecipeDownloads.SingleAsync(d => d.RecipeId == recipeId);
+        row.Source.Should().Be(RecipeUseSource.Repository);
+        row.Repository.Should().Be("cronus-dk/solution-a", "the repository is trimmed");
+        row.CustomerName.Should().Be("cronus a/s");
+        row.ProjectId.Should().Be(projectId);
+        row.DownloadedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task RecordRepositoryApply_accepts_no_customer()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordRepositoryApplyAsync(recipeId, "cronus-dk/solution-a", null, userId: null);
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.RecipeDownloads.SingleAsync(d => d.RecipeId == recipeId);
+        row.CustomerName.Should().BeNull();
+        row.ProjectId.Should().BeNull();
+        row.Repository.Should().Be("cronus-dk/solution-a");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RecordRepositoryApply_rejects_a_missing_repository(string repository)
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).RecordRepositoryApplyAsync(recipeId, repository, null, userId: null));
+        ex.Errors.Should().ContainKey("GitHubRepository");
+    }
+
+    [Fact]
+    public async Task RecordRepositoryApply_rejects_an_oversized_repository()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).RecordRepositoryApplyAsync(
+                recipeId, new string('x', RecipeService.MaxRepositoryLength + 1), null, userId: null));
+        ex.Errors.Should().ContainKey("GitHubRepository");
+    }
+
+    [Fact]
+    public async Task RecordRepositoryApply_rejects_an_oversized_customer_name()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).RecordRepositoryApplyAsync(
+                recipeId, "cronus-dk/solution-a",
+                new string('x', RecipeService.MaxCustomerNameLength + 1), userId: null));
+        ex.Errors.Should().ContainKey("CustomerName");
+    }
+
+    [Fact]
+    public async Task RecordRepositoryApply_rejects_unknown_recipe()
+    {
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).RecordRepositoryApplyAsync(9999, "cronus-dk/solution-a", null, userId: null));
+        ex.Errors.Should().ContainKey("Id");
+    }
+
+    [Fact]
+    public async Task GetAppliedRepositories_returns_each_repository_once_most_recent_first()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            await svc.RecordRepositoryApplyAsync(recipeId, "cronus-dk/first", null, userId: null);
+            await svc.RecordRepositoryApplyAsync(recipeId, "cronus-dk/second", null, userId: null);
+            // Applying again moves the first one back to the front of the list.
+            await svc.RecordRepositoryApplyAsync(recipeId, "cronus-dk/first", null, userId: null);
+            // Downloads and copies name no place, so they contribute nothing.
+            await svc.RecordDownloadAsync(recipeId, "CRONUS A/S", userId: null);
+            await svc.RecordCopyAsync(recipeId, userId: null);
+        }
+
+        await using var read = _db.NewContext();
+        var repositories = await NewService(read).GetAppliedRepositoriesAsync(recipeId);
+        repositories.Should().Equal("cronus-dk/first", "cronus-dk/second");
+    }
+
+    [Fact]
+    public async Task GetAppliedRepositories_is_empty_for_a_recipe_nobody_has_applied()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordDownloadAsync(recipeId, "CRONUS A/S", userId: null);
+        }
+
+        await using var read = _db.NewContext();
+        (await NewService(read).GetAppliedRepositoriesAsync(recipeId)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAppliedRepositories_does_not_cross_organisations()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordRepositoryApplyAsync(recipeId, "cronus-dk/first", null, userId: null);
+        }
+
+        _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
+        await using var read = _db.NewContext();
+        (await NewService(read).GetAppliedRepositoriesAsync(recipeId)).Should().BeEmpty();
+    }
+
     private RecipeService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
         new(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
 }

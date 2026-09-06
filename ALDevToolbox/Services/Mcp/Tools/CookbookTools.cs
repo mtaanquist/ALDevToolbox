@@ -3,6 +3,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.GitHub;
 using ALDevToolbox.Services.Mcp.Dtos;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,7 @@ public sealed class CookbookTools
     private readonly IOrganizationContext _orgContext;
     private readonly IDataProtector _guidanceProtector;
     private readonly TimeProvider _clock;
+    private readonly GitHubRecipeDeliveryService _delivery;
 
     public CookbookTools(
         RecipeService recipes,
@@ -55,7 +57,8 @@ public sealed class CookbookTools
         RecipeSuggestionService suggestions,
         IOrganizationContext orgContext,
         IDataProtectionProvider protectionProvider,
-        TimeProvider clock)
+        TimeProvider clock,
+        GitHubRecipeDeliveryService delivery)
     {
         _recipes = recipes;
         _db = db;
@@ -63,6 +66,7 @@ public sealed class CookbookTools
         _orgContext = orgContext;
         _guidanceProtector = protectionProvider.CreateProtector(GuidanceTokenProtectionPurpose);
         _clock = clock;
+        _delivery = delivery;
     }
 
     /// <summary>
@@ -272,6 +276,52 @@ public sealed class CookbookTools
         catch (PlanValidationException ex)
         {
             throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+    }
+
+    [McpServerTool(Name = "apply_recipe", ReadOnly = false, Idempotent = false)]
+    [Description(
+        "Puts a recipe's files into one of your organisation's GitHub repositories and opens a pull request " +
+        "for them. The commit goes out in your name, onto a branch of its own - never onto the repository's " +
+        "default branch - so nothing changes there until somebody merges it. Applying the same recipe again " +
+        "while its pull request is still open adds a commit to that pull request instead of opening a second " +
+        "one. The recipe's files are written as they stand in the Cookbook: a file the repository has changed " +
+        "since is replaced rather than merged, and the diff shows what would change. " +
+        "Only repositories in the GitHub organisation your organisation has connected, and that you can open " +
+        "on GitHub yourself, are accepted; anything else is refused, as is a call from an account that has not " +
+        "connected its GitHub account. Optionally name the customer this is for, which records the apply " +
+        "against that Solution, exactly as the download does.")]
+    public async Task<RepositoryDeliveryResult> ApplyRecipeAsync(
+        [Description("Recipe id from search_recipes.")] int recipeId,
+        [Description("The repository as 'owner/name'. It must be in the GitHub organisation your organisation has connected, and one you can open on GitHub yourself.")] string repository,
+        [Description("Optional. The customer this recipe is being applied for; a name that matches one of your organisation's Solutions is recorded against it.")] string? customer = null,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            // Routed through the same service the Cookbook page uses, so the
+            // access rule is inherited rather than restated here - see
+            // "Keeping MCP parity with the web UI" in PROJECT.md.
+            var delivered = await _delivery.ApplyAsync(recipeId, (repository ?? string.Empty).Trim(), customer, ct);
+            return new RepositoryDeliveryResult(
+                delivered.Repository.FullName,
+                delivered.PullRequest.HeadBranch,
+                delivered.Repository.DefaultBranch,
+                delivered.PullRequest.Number,
+                delivered.PullRequest.HtmlUrl,
+                delivered.IsNewPullRequest);
+        }
+        catch (PlanValidationException ex)
+        {
+            throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+        catch (GitHubApiException ex)
+        {
+            throw new McpException("GitHub refused the request: " + ex.Message);
+        }
+        catch (GitHubAppNotConfiguredException ex)
+        {
+            throw new McpException(ex.Message);
         }
     }
 

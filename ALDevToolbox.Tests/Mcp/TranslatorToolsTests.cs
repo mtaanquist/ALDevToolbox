@@ -60,7 +60,10 @@ public sealed class TranslatorToolsTests : IDisposable
         return userId;
     }
 
-    private async Task<long> SeedEntryAsync(int organizationId = TestDb.DefaultOrgId)
+    private async Task<long> SeedEntryAsync(
+        int organizationId = TestDb.DefaultOrgId,
+        string? sourceRepository = null,
+        string? sourcePath = null)
     {
         await using var ctx = _db.NewContext();
         var entry = new TranslationMemoryEntry
@@ -74,6 +77,8 @@ public sealed class TranslatorToolsTests : IDisposable
             TargetHash = Guid.NewGuid().ToString("N"),
             Kind = "caption",
             Origin = "CRONUS Core",
+            SourceRepository = sourceRepository,
+            SourcePath = sourcePath,
             HitCount = 1,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -202,6 +207,37 @@ public sealed class TranslatorToolsTests : IDisposable
         await using var ctx = _db.NewContext();
         await FluentActions.Awaiting(() => NewTools(ctx).VoteTranslationAsync(entryId, direction))
             .Should().ThrowAsync<McpException>();
+    }
+
+    [Fact]
+    public async Task A_hit_learned_from_a_repository_names_the_file_it_came_from()
+    {
+        // The agent-facing half of #631: an entry the ingest learned carries the
+        // repository and path, so an agent can go and read the translation in
+        // context rather than trusting the free-text origin.
+        await SeedUserAsync(9107, UserRole.Editor);
+        await SeedEntryAsync(sourceRepository: "cronus-dk/customer-app",
+            sourcePath: "PaymentImport/Translations/PaymentImport.da-DK.xlf");
+
+        await using var ctx = _db.NewContext();
+        var hits = await NewTools(ctx).SearchTranslationMemoryAsync("Posting Date");
+
+        hits.Should().ContainSingle();
+        hits[0].SourceRepository.Should().Be("cronus-dk/customer-app");
+        hits[0].SourcePath.Should().Be("PaymentImport/Translations/PaymentImport.da-DK.xlf");
+    }
+
+    [Fact]
+    public async Task A_hit_that_came_from_an_upload_names_no_repository()
+    {
+        await SeedUserAsync(9108, UserRole.Editor);
+        await SeedEntryAsync();
+
+        await using var ctx = _db.NewContext();
+        var hits = await NewTools(ctx).SearchTranslationMemoryAsync("Posting Date");
+
+        hits[0].SourceRepository.Should().BeNull();
+        hits[0].SourcePath.Should().BeNull();
     }
 
     [Fact]

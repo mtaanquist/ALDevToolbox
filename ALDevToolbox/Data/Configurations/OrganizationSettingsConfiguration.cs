@@ -1,6 +1,9 @@
+using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace ALDevToolbox.Data.Configurations;
 
@@ -9,6 +12,11 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
 
     public void Configure(EntityTypeBuilder<OrganizationSettings> entity)
     {
+        var jsonOptions = PersistenceJson.Options;
+        var rulesetConverter = new ValueConverter<GitHubRepositoryRuleset?, string?>(
+            v => v == null ? null : JsonSerializer.Serialize(v, jsonOptions),
+            v => v == null ? null : JsonSerializer.Deserialize<GitHubRepositoryRuleset>(v, jsonOptions));
+
         entity.ToTable("organization_settings");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
@@ -75,6 +83,14 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.GitHubInstallationPermissions)
             .HasColumnName("github_installation_permissions").HasColumnType("jsonb");
         entity.Property(e => e.GitHubConnectedAt).HasColumnName("github_connected_at");
+        // Repository standards, the ruleset half (#628). Same jsonb + value
+        // converter shape as defaults_json on runtime_templates; nullable
+        // because "no ruleset configured" has to stay distinguishable from an
+        // empty one.
+        entity.Property(e => e.GitHubRepositoryRuleset)
+            .HasColumnName("github_repository_ruleset_json")
+            .HasColumnType("jsonb")
+            .HasConversion(rulesetConverter);
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

@@ -42,6 +42,167 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
 
     protected override string Describe(ReleaseImportJob job) => $"ReleaseId={job.ReleaseId}";
 
+    /// <summary>
+    /// Publishes the finished build as a GitHub Release when its pipeline names a
+    /// repository to publish to. Runs inside the job's own DI scope and organisation
+    /// identity, and swallows everything: the <c>.app</c> files are already built and
+    /// downloadable, so nothing GitHub says is allowed to turn a successful build into
+    /// a failed one. The reason lands on the build row and in its log instead. See
+    /// <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    private async Task PublishReleaseAsync(IServiceProvider services, int releaseId, CancellationToken ct)
+    {
+        try
+        {
+            var db = services.GetRequiredService<AppDbContext>();
+            var buildId = await db.OeProjectBuilds.AsNoTracking()
+                .Where(b => b.ReleaseId == releaseId)
+                .Select(b => (int?)b.Id)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (buildId is not { } id) return;
+
+            var releases = services.GetRequiredService<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
+            await releases.PublishBuildAsync(id, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // Shutdown, not a publish failure.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Publishing release {ReleaseId}'s build to GitHub failed.", releaseId);
+        }
+    }
+
+    /// <summary>
+    /// Runs one pull-request build end to end and completes its check run.
+    ///
+    /// <para>The build's own failures are captured on the build row exactly as a
+    /// manual build's are - <see cref="GitHubCheckRunService.CompleteAsync"/> then
+    /// reads that row and says <c>failure</c> or <c>neutral</c> accordingly - so
+    /// this method swallows them rather than letting them reach the base class's
+    /// last-resort net, which would leave the check run stuck <c>in_progress</c>
+    /// forever.</para>
+    /// </summary>
+    private async Task RunPullRequestBuildAsync(
+        AsyncServiceScope scope,
+        ReleaseImportService importer,
+        ReleaseImportJob job,
+        ReleaseImportSource.PullRequestBuild source,
+        List<Stream> openedStreams,
+        CancellationToken ct)
+    {
+        var buildService = scope.ServiceProvider.GetRequiredService<ProjectBuildService>();
+        var checks = scope.ServiceProvider.GetRequiredService<GitHub.GitHubCheckRunService>();
+        var github = scope.ServiceProvider.GetRequiredService<GitHub.GitHubAppClient>();
+        var webhookQueue = scope.ServiceProvider.GetRequiredService<GitHub.GitHubWebhookQueue>();
+
+        var key = new GitHub.GitHubPullRequestJob(
+            source.InstallationId, source.RepositoryFullName, string.Empty,
+            source.PullRequestNumber, source.HeadSha, string.Empty, string.Empty, string.Empty).Key;
+
+        // Linked, not replacing: shutdown still cancels the build, and so now does
+        // a newer head for the same pull request.
+        using var superseded = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        webhookQueue.BeginBuild(key, superseded);
+        var buildCt = superseded.Token;
+        try
+        {
+            // A newer head can be announced between the job being queued and this
+            // registration being made, and its cancellation would then have found
+            // nothing to cancel. So the question is asked once more now that the
+            // token is registered: from here on Announce reaches us.
+            if (!webhookQueue.IsLatest(key, source.HeadSha))
+            {
+                const string Message = "Superseded by a newer commit on the same pull request.";
+                _logger.LogInformation(
+                    "Pull-request build for release {ReleaseId} was superseded before it started.", job.ReleaseId);
+                await importer.MarkFailedAsync(job.ReleaseId, Message, CancellationToken.None).ConfigureAwait(false);
+                await buildService.MarkBuildFailedAsync(job.ReleaseId, Message, CancellationToken.None).ConfigureAwait(false);
+                // Nothing is said on GitHub: the newer job owns its own check run,
+                // and this stale head's run is completed by whichever build the
+                // reviewer is actually waiting on.
+                return;
+            }
+
+            string? installationToken = null;
+            try
+            {
+                installationToken = await github.GetInstallationTokenAsync(source.InstallationId, buildCt).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is GitHub.GitHubApiException or GitHub.GitHubAppNotConfiguredException or HttpRequestException)
+            {
+                // Without a token nothing can be cloned, and saying so on the build
+                // is more useful than a clone failure per repository.
+                const string Message = "The toolbox could not get permission from GitHub to read the repository.";
+                _logger.LogWarning(ex, "Pull-request build for release {ReleaseId}: no installation token.", job.ReleaseId);
+                await importer.MarkFailedAsync(job.ReleaseId, Message, ct).ConfigureAwait(false);
+                await buildService.MarkBuildFailedAsync(job.ReleaseId, Message, ct).ConfigureAwait(false);
+                // Still complete the run: a check left in_progress forever is worse
+                // than one that says the build could not be started. It will most
+                // likely fail too - the same credential writes both - but the
+                // attempt costs nothing and its refusal is logged, not thrown.
+                await checks.CompleteAsync(source.InstallationId, source.RepositoryFullName, job.ReleaseId, ct)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            var options = new ProjectBuildOptions(
+                RepositoryId: source.RepositoryId,
+                HeadSha: source.HeadSha,
+                InstallationToken: installationToken);
+            try
+            {
+                var outcome = await buildService.BuildAsync(source.ProjectId, job.ReleaseId, options, buildCt).ConfigureAwait(false);
+                foreach (var upload in outcome.Uploads) openedStreams.Add(upload.AppStream);
+                await buildService.PersistResultsAsync(job.ReleaseId, outcome.Results, ct).ConfigureAwait(false);
+
+                if (outcome.Uploads.Count == 0)
+                {
+                    const string Message = "No extensions compiled successfully. See the build report on the release.";
+                    await importer.MarkFailedAsync(job.ReleaseId, Message, ct).ConfigureAwait(false);
+                    await buildService.MarkBuildFailedAsync(job.ReleaseId, Message, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await importer.ProcessReleaseAsync(job.ReleaseId, outcome.Uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);
+                    await buildService.MarkCompiledResultsIngestedAsync(job.ReleaseId, ct).ConfigureAwait(false);
+                    await buildService.MarkBuildReadyAsync(job.ReleaseId, outcome.BcVersion, ct).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (superseded.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                // A newer commit landed on the same pull request. The build we were
+                // running is about a commit nobody is reviewing now, and the newer
+                // job carries its own check run, so this one is recorded as
+                // superseded rather than as a failure.
+                const string Message = "Superseded by a newer commit on the same pull request.";
+                _logger.LogInformation("Pull-request build for release {ReleaseId} was superseded.", job.ReleaseId);
+                await importer.MarkFailedAsync(job.ReleaseId, Message, CancellationToken.None).ConfigureAwait(false);
+                await buildService.MarkBuildFailedAsync(job.ReleaseId, Message, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // Shutdown, not a failure — see #483.
+            }
+            catch (Exception ex)
+            {
+                var message = FriendlyMessage(ex);
+                _logger.LogError(ex, "Release {ReleaseId} pull-request build failed.", job.ReleaseId);
+                await importer.MarkFailedAsync(job.ReleaseId, message, ct).ConfigureAwait(false);
+                await buildService.MarkBuildFailedAsync(job.ReleaseId, message, ct).ConfigureAwait(false);
+            }
+
+            await checks.CompleteAsync(source.InstallationId, source.RepositoryFullName, job.ReleaseId, ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            webhookQueue.EndBuild(key, superseded, source.HeadSha);
+        }
+    }
+
     protected override async Task RunJobAsync(ReleaseImportJob job, CancellationToken ct)
     {
         using var orgScope = AmbientOrganizationScope.Enter(job.Identity);
@@ -138,12 +299,27 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
             // uploads in memory and the per-app build report. Partial success
             // (≥1 app compiled) still flips the release to ready; a build that
             // compiled nothing is a failure with the report explaining why.
+            // A pull-request build (#627) is the same clone/compile/ingest with three
+            // differences, all of which come from there being no user behind it: the
+            // repository under review is checked out at the head commit GitHub named,
+            // every clone authenticates as the app's installation, and the outcome is
+            // reported back as a check run. It also honours supersession - a newer
+            // push to the same pull request cancels this build through a linked token,
+            // because compiling a commit nobody is looking at any more is work spent
+            // on the wrong answer.
+            if (job.Source is ReleaseImportSource.PullRequestBuild pullRequest)
+            {
+                await RunPullRequestBuildAsync(scope, importer, job, pullRequest, openedStreams, ct).ConfigureAwait(false);
+                jobSucceeded = true;
+                return;
+            }
+
             if (job.Source is ReleaseImportSource.ProjectBuild projectBuild)
             {
                 var buildService = scope.ServiceProvider.GetRequiredService<ProjectBuildService>();
                 try
                 {
-                    var outcome = await buildService.BuildAsync(projectBuild.ProjectId, job.ReleaseId, ct).ConfigureAwait(false);
+                    var outcome = await buildService.BuildAsync(projectBuild.ProjectId, job.ReleaseId, ct: ct).ConfigureAwait(false);
                     foreach (var upload in outcome.Uploads) openedStreams.Add(upload.AppStream);
                     await buildService.PersistResultsAsync(job.ReleaseId, outcome.Results, ct).ConfigureAwait(false);
 
@@ -159,6 +335,11 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
                     await buildService.MarkCompiledResultsIngestedAsync(job.ReleaseId, ct).ConfigureAwait(false);
                     // Flip the first-class build row ready alongside the Release.
                     await buildService.MarkBuildReadyAsync(job.ReleaseId, outcome.BcVersion, ct).ConfigureAwait(false);
+                    // The build is final at this point, so publishing it to GitHub can
+                    // only ever add to it: a pipeline that names a repository gets a
+                    // Release, and every refusal is recorded on the build rather than
+                    // failing it (issue #632).
+                    await PublishReleaseAsync(scope.ServiceProvider, job.ReleaseId, ct).ConfigureAwait(false);
                     jobSucceeded = true;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)

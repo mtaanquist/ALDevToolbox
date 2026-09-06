@@ -15,11 +15,15 @@ public static class GitHubPermissionLabels
     private static readonly IReadOnlyDictionary<string, (string Read, string Write)> Known =
         new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
         {
-            ["administration"] = ("See repository settings", "Create new repositories"),
-            ["contents"] = ("Read files in repositories", "Read and write files in repositories"),
+            ["administration"] = ("See repository settings", "Create new repositories, and set their branch rules"),
+            ["contents"] = ("Read files in repositories", "Read and write files, and publish releases, in repositories"),
             ["metadata"] = ("See repository names and descriptions", "See repository names and descriptions"),
             ["members"] = ("See who is in the organisation", "Manage who is in the organisation"),
             ["pull_requests"] = ("Read pull requests", "Open and update pull requests"),
+            // The compile gate (#627) posts its result as a check run, which only
+            // an app may write - so this grant is what turns the pull-request
+            // build on for an organisation.
+            ["checks"] = ("See build results on pull requests", "Report build results on pull requests"),
             ["issues"] = ("Read issues", "Open and update issues"),
             ["workflows"] = ("Read workflow files", "Write workflow files"),
         };

@@ -35,11 +35,12 @@ public static class McpToolCatalog
     public const string Cookbook = "Cookbook";
     public const string Translator = "Translator";
     public const string Projects = "Projects and pipelines";
+    public const string Repositories = "GitHub repositories";
     public const string BcQuality = "Quality guidance";
 
     /// <summary>Group order for the docs table — the order the tools appear in the sidebar.</summary>
     public static readonly IReadOnlyList<string> Groups =
-        new[] { Generation, ObjectExplorer, Cookbook, Translator, Projects, BcQuality };
+        new[] { Generation, ObjectExplorer, Cookbook, Translator, Projects, Repositories, BcQuality };
 
     public static readonly IReadOnlyList<McpToolDescriptor> All = new[]
     {
@@ -100,6 +101,8 @@ public static class McpToolCatalog
             "Revises a suggestion the assistant already submitted.", true),
         new McpToolDescriptor("update_recipe", Cookbook,
             "Edits a published recipe. Needs the Editor role.", true),
+        new McpToolDescriptor("apply_recipe", Cookbook,
+            "Puts a recipe into one of your GitHub repositories as a pull request, in your name.", true),
 
         // ---- Translator ----
         new McpToolDescriptor("list_translation_languages", Translator,
@@ -134,6 +137,24 @@ public static class McpToolCatalog
             "Lists what has been published, when, and whether it landed.", false),
         new McpToolDescriptor("publish_build", Projects,
             "Publishes a build to a Business Central environment.", true),
+        new McpToolDescriptor("list_github_releases", Projects,
+            "Lists the GitHub releases a release pipeline can install.", false),
+        new McpToolDescriptor("stage_github_release", Projects,
+            "Fetches the app files from a GitHub release so they can be published.", true),
+
+        // ---- GitHub repositories ----
+        new McpToolDescriptor("list_repositories", Repositories,
+            "Lists the GitHub repositories you can work on, and says what to connect when there "
+            + "are none yet.", false),
+        new McpToolDescriptor("create_repository", Repositories,
+            "Creates a repository in your GitHub organisation with a new workspace in it.", true),
+        new McpToolDescriptor("add_extension_to_repository", Repositories,
+            "Adds a new extension to one of your repositories as a pull request, in your name.", true),
+        new McpToolDescriptor("list_translation_files", Repositories,
+            "Lists the translation files in one of your repositories.", false),
+        new McpToolDescriptor("open_translation_pr", Repositories,
+            "Writes translations into a file in one of your repositories and opens a pull request "
+            + "for them.", true),
 
         // ---- Quality guidance ----
         new McpToolDescriptor("search_bcquality", BcQuality,

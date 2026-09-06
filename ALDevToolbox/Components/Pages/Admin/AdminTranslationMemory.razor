@@ -2,7 +2,10 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @using ALDevToolbox.Services.Translation
+@using ALDevToolbox.Services.GitHub
 @inject TranslationMemoryService Memory
+@inject TranslationMemoryIngestService Ingest
+@inject GitHubRepositoryService Repositories
 @inject ILogger<AdminTranslationMemory> Log
 
 @*
@@ -20,12 +23,27 @@
             <h1 class="page-head__title">Translation memory</h1>
             <p class="page-head__sub">
                 Every source→target pair your organisation has learned (from Object Explorer imports,
-                the Translator, and imported XLIFF files). Vote good translations up and bad ones down to
-                steer suggestion ranking, or remove a bad pair so it stops being suggested. Removals are
-                recoverable.
+                the Translator, imported XLIFF files, and the translation files in your own repositories).
+                Vote good translations up and bad ones down to steer suggestion ranking, or remove a bad
+                pair so it stops being suggested. Removals are recoverable.
             </p>
         </div>
         <div class="page-head__actions">
+            @if (_canRefreshFromRepositories)
+            {
+                <button type="button" class="btn btn--sm" disabled="@_refreshing" @onclick="RefreshFromRepositoriesAsync">
+                    @if (_refreshing)
+                    {
+                        <span class="spinner"></span>
+                        <span>Reading your repositories...</span>
+                    }
+                    else
+                    {
+                        <Icon Name="refresh-cw" Width="14" Height="14" />
+                        <span>Read from repositories</span>
+                    }
+                </button>
+            }
             <a class="btn btn--sm" href="/admin/translation-memory/import">
                 <Icon Name="upload" Width="14" Height="14" />
                 <span>Import XLIFF</span>
@@ -36,6 +54,18 @@
             </a>
         </div>
     </header>
+
+    @if (_refreshMessage is not null)
+    {
+        <p class="alert @(_refreshFailed ? "alert--warn" : "alert--success") tr-mem-refresh" role="status">
+            <Icon Name="@(_refreshFailed ? "circle-alert" : "check")" Width="16" Height="16" />
+            <span>@_refreshMessage</span>
+            <button type="button" class="btn btn--sm btn--ghost tr-mem-refresh__dismiss"
+                    aria-label="Dismiss" @onclick="() => _refreshMessage = null">
+                <Icon Name="x" Width="14" Height="14" />
+            </button>
+        </p>
+    }
 
     <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
         <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
@@ -69,19 +99,46 @@
     }
     else if (_result.Items.Count == 0)
     {
+        @* Two different situations, and only one of them is about the filters:
+           a memory that has never been filled needs the ways to fill it, a
+           search that found nothing needs a way back to everything. *@
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
-                <span class="empty-state__title">Nothing matches</span>
-                <span class="empty-state__text">
-                    Memory builds up as you import XLIFF files and translate in the
-                    Translator. Widen the search, or import a language file to seed it.
-                </span>
-                <a class="btn empty-state__action" href="/admin/translation-memory/import">
-                    <Icon Name="upload" Width="14" Height="14" />
-                    <span>Import XLIFF</span>
-                </a>
-            </div>
+            @if (HasFilters)
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">Nothing matches</span>
+                    <span class="empty-state__text">No entry matches what you searched for.</span>
+                    <button type="button" class="btn empty-state__action" @onclick="ClearFiltersAsync">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear filters</span>
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No translations learned yet</span>
+                    <span class="empty-state__text">
+                        Memory fills up as you translate and import language files.
+                    </span>
+                    <span class="empty-state__action u-row">
+                        <a class="btn" href="/admin/translation-memory/import">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Import XLIFF</span>
+                        </a>
+                        @if (_canRefreshFromRepositories)
+                        {
+                            <button type="button" class="btn" disabled="@_refreshing"
+                                    @onclick="RefreshFromRepositoriesAsync">
+                                <Icon Name="refresh-cw" Width="14" Height="14" />
+                                <span>Read translations from repositories</span>
+                            </button>
+                        }
+                    </span>
+                </div>
+            }
         </div>
     }
     else
@@ -94,6 +151,7 @@
                     <th>Target</th>
                     <th>Kind</th>
                     <th>Origin</th>
+                    <th>Repository</th>
                     <th class="tr-mem-num">Score</th>
                     <th class="tr-mem-num">Hits</th>
                     <th></th>
@@ -107,6 +165,20 @@
                         <td>@e.TargetText<span class="tr-mem-lang">@e.TargetLanguage</span></td>
                         <td><span class="tr-mem-kind">@e.Kind</span></td>
                         <td class="u-muted">@(e.Origin ?? "—")</td>
+                        <td class="u-muted tr-mem-from">
+                            @if (e.SourceRepository is not null && e.SourcePath is not null)
+                            {
+                                <a href="@FileUrl(e.SourceRepository, e.SourcePath)" target="_blank" rel="noopener noreferrer"
+                                   title="@($"{e.SourceRepository} - {e.SourcePath}")">
+                                    <Icon Name="external-link" Width="12" Height="12" />
+                                    <span>@e.SourceRepository</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
                         <td class="tr-mem-num">
                             <div class="tr-vote">
                                 <button class="tr-vbtn @(e.MyVote > 0 ? "on" : "")" title="Vote up"
@@ -169,10 +241,112 @@
     private MemorySearchResult? _result;
     private ConfirmDialog? _confirm;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private bool _canRefreshFromRepositories;
+    private bool _refreshing;
+    private bool _refreshFailed;
+    private string? _refreshMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        // Offered only once the organisation has connected GitHub. The read acts
+        // as the organisation, so it needs no link of the viewer's own - but with
+        // nothing connected there is nothing to read, and a button that can only
+        // report that is worse than no button.
+        try
+        {
+            var access = await Repositories.GetAccessAsync();
+            _canRefreshFromRepositories = access.Readiness
+                is GitHubRepositoryReadiness.NotLinked
+                or GitHubRepositoryReadiness.LinkNeedsRepair
+                or GitHubRepositoryReadiness.Ready;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Could not tell whether GitHub is connected; the refresh button stays hidden.");
+        }
+    }
+
+    /// <summary>
+    /// Reads the translation files in the organisation's repositories and learns
+    /// from the ones that have changed. It never fails the page: a repository
+    /// that could not be read is counted and reported.
+    /// </summary>
+    private async Task RefreshFromRepositoriesAsync()
+    {
+        _refreshing = true;
+        _refreshFailed = false;
+        _refreshMessage = null;
+        try
+        {
+            var summary = await Ingest.IngestCurrentOrganisationAsync();
+            _refreshFailed = summary.RepositoriesFailed > 0;
+            _refreshMessage = Describe(summary);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Refreshing the translation memory from repositories failed.");
+            _refreshFailed = true;
+            _refreshMessage = "GitHub could not be reached just now, so nothing was read. Try again in a moment.";
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    /// <summary>What the refresh did, in the words someone curating the memory would use.</summary>
+    private static string Describe(TranslationMemoryIngestSummary s)
+    {
+        if (s.FoundNothingToScan)
+        {
+            return "None of your solutions point at a repository in your connected GitHub organisation yet, "
+                + "so there was nothing to read.";
+        }
+
+        var parts = new List<string>
+        {
+            $"Read {Count(s.FilesRead, "translation file", "translation files")} "
+                + $"in {Count(s.RepositoriesScanned, "repository", "repositories")}.",
+            s.PairsLearned == 0
+                ? "Nothing new to learn - every translation in them was already in the memory."
+                : $"Learned {Count(s.PairsLearned, "new translation", "new translations")}.",
+        };
+        if (s.FilesUnchanged > 0)
+        {
+            parts.Add($"{Count(s.FilesUnchanged, "file", "files")} had not changed since last time.");
+        }
+        if (s.RepositoriesFailed > 0)
+        {
+            parts.Add($"{Count(s.RepositoriesFailed, "repository", "repositories")} could not be read.");
+        }
+        return string.Join(" ", parts);
+    }
+
+    private static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+
+    /// <summary>
+    /// The file on GitHub. The ref is HEAD, which GitHub resolves to whatever
+    /// the repository's default branch is called today, so the link survives a
+    /// rename without a column to keep in step.
+    /// </summary>
+    private static string FileUrl(string repository, string path) =>
+        $"https://github.com/{repository}/blob/HEAD/{path}";
+
+    /// <summary>True when the list is narrowed, so an empty result is the search's doing.</summary>
+    private bool HasFilters =>
+        _text.Length > 0 || _targetLang.Length > 0 || _kind.Length > 0 || _origin.Length > 0;
 
     private async Task SearchAsync()
     {
+        _skip = 0;
+        await LoadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _text = _targetLang = _kind = _origin = string.Empty;
         _skip = 0;
         await LoadAsync();
     }

@@ -61,7 +61,7 @@
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Target health</span></th>
                 <th>Release pipeline</th><th>Solution</th><th>Target environment</th>
-                <th>Build pipeline</th><th>When installs run</th>
+                <th>Releases from</th><th>When installs run</th>
                 <th class="data-table__actions"></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
@@ -112,7 +112,7 @@
                     <th scope="col">Release pipeline</th>
                     <th scope="col">Solution</th>
                     <th scope="col">Target environment</th>
-                    <th scope="col">Build pipeline</th>
+                    <th scope="col">Releases from</th>
                     <th scope="col">When installs run</th>
                     <th scope="col" class="data-table__actions"></th>
                 </tr>
@@ -153,7 +153,7 @@
                                 }
                             </span>
                         </td>
-                        <td class="u-muted">@r.BuildPipelineName</td>
+                        <td class="u-muted">@SourceName(r)</td>
                         <td class="u-muted">@DeliveryModeDisplay.Schedule(r.DeploymentSchedule)</td>
                         <td class="data-table__actions">
                             <span class="ra">
@@ -204,6 +204,12 @@
     /// </summary>
     private static bool IsProduction(ReleasePipelineRow r) =>
         r.EnvironmentType.Equals("Production", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>What a release pipeline draws from: its build pipeline, or the repository whose releases it installs (#632).</summary>
+    private static string SourceName(ReleasePipelineRow r) =>
+        r.ArtifactSource == ALDevToolbox.Domain.ValueObjects.ObjectExplorer.ReleaseArtifactSource.GithubRelease
+            ? r.GithubReleaseRepositoryName ?? "a GitHub repository"
+            : r.BuildPipelineName;
 
     protected override async Task OnInitializedAsync() => await ReloadAsync();
 

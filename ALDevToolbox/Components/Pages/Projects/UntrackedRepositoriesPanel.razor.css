@@ -1,0 +1,97 @@
+/* The untracked-repositories panel above the Solutions list. Everything
+   structural comes from the design system - .card, .btn, .field, .input,
+   .loading-block, .alert - so what is local here is only the row geometry a
+   short offer list needs and that none of those carry. */
+
+.untracked-repos {
+    display: grid;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.untracked-repos__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.untracked-repos__title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: var(--fw-semibold);
+    color: var(--ink);
+}
+
+.untracked-repos__sub,
+.untracked-repos__none {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+}
+
+.untracked-repos__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+}
+
+.untracked-repos__row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: var(--space-2) 0;
+    border-top: 1px solid var(--border);
+}
+
+.untracked-repos__repo {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.untracked-repos__name {
+    font-weight: var(--fw-medium);
+}
+
+.untracked-repos__app {
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+.untracked-repos__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* The confirm step sits in the row it belongs to rather than in a dialog: it is
+   two fields, and moving them into an overlay would hide the repository they
+   are about. */
+.untracked-repos__form {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 260px;
+}
+
+/* The re-check button and the line saying it also happens on its own. */
+.untracked-repos__check {
+    display: grid;
+    justify-items: end;
+    gap: 2px;
+}
+
+/* "{repo} hidden. Undo" - a line that replaces the row it undoes, so it sits
+   where the row was rather than as a banner at the top of the panel. */
+.untracked-repos__hidden {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+}

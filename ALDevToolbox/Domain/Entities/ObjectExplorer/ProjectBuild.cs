@@ -53,8 +53,35 @@ public class ProjectBuild
     public int? ReleaseId { get; set; }
     public Release? Release { get; set; }
 
-    /// <summary>The branch built (provenance label). Default branch / HEAD for now — see "Out of scope" in the design doc.</summary>
+    /// <summary>
+    /// The branch built (provenance label). A manual build clones the default
+    /// branch and leaves this null; a pull-request build stamps the head ref.
+    /// </summary>
     public string? Branch { get; set; }
+
+    /// <summary>
+    /// What asked for this build: <c>manual</c> (a person pressed Build) or
+    /// <c>pull_request</c> (GitHub told us a pull request moved). See
+    /// <see cref="ProjectBuildTrigger"/>. Existing rows are <c>manual</c>, which
+    /// is what they were.
+    /// </summary>
+    public string Trigger { get; set; } = ProjectBuildTrigger.Manual;
+
+    /// <summary>The pull request this build is about, for a <c>pull_request</c> build; null otherwise.</summary>
+    public int? PullRequestNumber { get; set; }
+
+    /// <summary>
+    /// The exact commit built. Set for a pull-request build, where the head is
+    /// the whole point and moves under the branch name; null for a manual build,
+    /// whose per-repository commits are recorded as <see cref="RepoCommits"/>.
+    /// </summary>
+    public string? HeadSha { get; set; }
+
+    /// <summary>
+    /// The GitHub check run this build reports into, so the worker can complete
+    /// the run it opened. Null for every build that is not reporting to GitHub.
+    /// </summary>
+    public long? CheckRunId { get; set; }
 
     /// <summary>One of <c>queued</c>, <c>building</c>, <c>ready</c>, <c>failed</c>. See <see cref="ProjectBuildStatus"/>.</summary>
     public string Status { get; set; } = ProjectBuildStatus.Queued;
@@ -75,6 +102,26 @@ public class ProjectBuild
     /// </summary>
     public string? RequestedAppIdsJson { get; set; }
 
+    /// <summary>
+    /// The GitHub Release tag this build was published as (<c>v1.2.3.0</c>), when the
+    /// pipeline names a repository to publish to. It doubles as the marker of a
+    /// <em>staged</em> build: a build with a tag and no pipeline was not compiled here
+    /// at all but downloaded from a Release so it could be deployed. Null when nothing
+    /// was published. See <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    public string? GithubReleaseTag { get; set; }
+
+    /// <summary>The published Release's page on GitHub, for the link on the build card. Null when nothing was published.</summary>
+    public string? GithubReleaseUrl { get; set; }
+
+    /// <summary>
+    /// Why the build was not published as a Release - GitHub's own refusal, or "the apps
+    /// have different versions". A publish failure is never a build failure: the
+    /// <c>.app</c> files exist and download regardless, so this is a note on a build
+    /// that is still <c>ready</c>.
+    /// </summary>
+    public string? GithubReleaseError { get; set; }
+
     public DateTime StartedAt { get; set; }
 
     /// <summary>When the build reached a terminal state (<c>ready</c> / <c>failed</c>); null while in flight.</summary>
@@ -84,6 +131,21 @@ public class ProjectBuild
     public ICollection<ProjectBuildCommit> Changelog { get; set; } = new List<ProjectBuildCommit>();
     public ICollection<ProjectBuildArtifact> Artifacts { get; set; } = new List<ProjectBuildArtifact>();
     public ICollection<ProjectBuildLog> Logs { get; set; } = new List<ProjectBuildLog>();
+    public ICollection<ProjectBuildDiagnostic> Diagnostics { get; set; } = new List<ProjectBuildDiagnostic>();
+}
+
+/// <summary>What asked for a <see cref="ProjectBuild"/>.</summary>
+public static class ProjectBuildTrigger
+{
+    /// <summary>A person pressed Build on a pipeline. The clone uses their own repository token.</summary>
+    public const string Manual = "manual";
+
+    /// <summary>
+    /// GitHub told us a pull request opened, reopened or gained a commit. There is
+    /// no user behind it, so the clone and the check run both act as the app. See
+    /// <c>.design/github-integration-phase2.md</c> (#627).
+    /// </summary>
+    public const string PullRequest = "pull_request";
 }
 
 /// <summary>The lifecycle states a <see cref="ProjectBuild"/> moves through.</summary>

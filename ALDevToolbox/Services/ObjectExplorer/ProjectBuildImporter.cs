@@ -28,6 +28,7 @@ public sealed class ProjectBuildImporter
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ProjectAccess _access;
+    private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildImporter> _logger;
 
     public ProjectBuildImporter(
@@ -37,6 +38,7 @@ public sealed class ProjectBuildImporter
         AppDbContext db,
         IOrganizationContext orgContext,
         ProjectAccess access,
+        TimeProvider clock,
         ILogger<ProjectBuildImporter> logger)
     {
         _importer = importer;
@@ -45,6 +47,7 @@ public sealed class ProjectBuildImporter
         _db = db;
         _orgContext = orgContext;
         _access = access;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -132,5 +135,88 @@ public sealed class ProjectBuildImporter
             "Queued project build for {Project} (pipeline {PipelineId}, project {ProjectId}, release {ReleaseId}).",
             pipeline.ProjectName, pipelineId, pipeline.ProjectId, releaseId);
         return releaseId;
+    }
+
+    /// <summary>
+    /// Creates an ingesting project Release for a pull-request build and queues
+    /// it. Returns the release id and the build row's id, the latter so the caller
+    /// can tie the GitHub check run it opened to the build that will complete it.
+    ///
+    /// <para>The differences from <see cref="StartBuildAsync"/> are all
+    /// consequences of there being <em>no user and no pipeline</em>: no access
+    /// check (GitHub's signed delivery plus the organisation having tracked this
+    /// repository is the authority - see
+    /// <c>.design/github-integration-phase2.md</c>), no
+    /// <see cref="ProjectBuild.StartedByUserId"/>, no
+    /// <see cref="ProjectBuild.PipelineId"/>, and no selection, so every extension
+    /// the repositories hold is compiled. The clone credential is the
+    /// installation token, which the worker resolves.</para>
+    ///
+    /// <para>Nor is a durable <c>oe_import_jobs</c> row written. A pull-request
+    /// build is deliberately not resumed across a restart: by the time the process
+    /// is back the head may have moved, and re-running would complete a check run
+    /// about a commit nobody is looking at any more. The next push - or GitHub's
+    /// own redelivery - is the recovery.</para>
+    /// </summary>
+    public async Task<(int ReleaseId, int BuildId)> StartPullRequestBuildAsync(
+        int projectId,
+        int repositoryId,
+        string repositoryFullName,
+        long installationId,
+        string headSha,
+        string headRef,
+        int pullRequestNumber,
+        long? checkRunId,
+        CancellationToken ct = default)
+    {
+        var project = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.Id == projectId && p.DeletedAt == null)
+            .Select(p => new { p.Id, p.Name })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Project"] = "This solution no longer exists.",
+            });
+
+        var metadata = new ReleaseImportMetadata(
+            Label: project.Name,
+            Kind: "project",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            ProjectName: project.Name);
+        var releaseId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+
+        var orgId = _orgContext.CurrentOrganizationId
+            ?? throw new InvalidOperationException("No organization in scope when queuing a pull-request build.");
+        var build = new ProjectBuild
+        {
+            OrganizationId = orgId,
+            ProjectId = projectId,
+            PipelineId = null,
+            StartedByUserId = null,
+            ReleaseId = releaseId,
+            Status = ProjectBuildStatus.Queued,
+            RequestedAppIdsJson = null,
+            Trigger = ProjectBuildTrigger.PullRequest,
+            Branch = headRef,
+            PullRequestNumber = pullRequestNumber,
+            HeadSha = headSha,
+            CheckRunId = checkRunId,
+            StartedAt = _clock.GetUtcNow().UtcDateTime,
+        };
+        _db.OeProjectBuilds.Add(build);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "queuing a pull-request build");
+        var source = new ReleaseImportSource.PullRequestBuild(
+            projectId, repositoryId, headSha, installationId, repositoryFullName, pullRequestNumber);
+        await _queue.EnqueueAsync(
+            new ReleaseImportJob(releaseId, identity, source, StoreSymbolReference: false, JobRowId: 0), ct)
+            .ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Queued pull-request build for {Project} ({Repository}#{Number} at {HeadSha}, release {ReleaseId}, build {BuildId}).",
+            project.Name, repositoryFullName, pullRequestNumber, headSha, releaseId, build.Id);
+        return (releaseId, build.Id);
     }
 }

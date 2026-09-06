@@ -59,6 +59,7 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
         entity.Property(e => e.GitHubClientId).HasColumnName("github_client_id").HasMaxLength(120);
         entity.Property(e => e.GitHubClientSecretEncrypted).HasColumnName("github_client_secret_encrypted");
         entity.Property(e => e.GitHubPrivateKeyEncrypted).HasColumnName("github_private_key_encrypted");
+        entity.Property(e => e.GitHubWebhookSecretEncrypted).HasColumnName("github_webhook_secret_encrypted");
         entity.Property(e => e.SignupEmailDomainAllowlist).HasColumnName("signup_email_domain_allowlist");
         entity.Property(e => e.ReleaseDownloadDomainAllowlist).HasColumnName("release_download_domain_allowlist");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();

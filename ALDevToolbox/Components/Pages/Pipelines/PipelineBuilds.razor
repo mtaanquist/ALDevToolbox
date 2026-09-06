@@ -197,6 +197,18 @@
                                 <span class="pb-topline__meta pb-topline__when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
                             </div>
 
+                            @* What the compiler said, as a count rather than as a log to
+                               read. Only shown once the build has something to count -
+                               a queued build has said nothing yet, and "0 errors" before
+                               anything compiled would be a claim, not a fact. *@
+                            @if (_latestDetail is { } counted && (counted.ErrorCount > 0 || counted.WarningCount > 0))
+                            {
+                                <p class="pb-note">
+                                    The compiler reported @counted.ErrorCount error@(counted.ErrorCount == 1 ? "" : "s")
+                                    and @counted.WarningCount warning@(counted.WarningCount == 1 ? "" : "s"). The build log below has each one.
+                                </p>
+                            }
+
                             @* The live-update note is about *this* build, so it asks
                                about this build's status. _inFlight is pipeline-scoped
                                (any queued/building build keeps the poll alive, including
@@ -245,6 +257,24 @@
                             else
                             {
                                 <p class="pb-note">This build produced no downloadable files.</p>
+                            }
+
+                            @* Where the customer can get these files themselves. A build
+                               that could not be published says why, without ever reading
+                               as a failed build - the files above downloaded fine (#632). *@
+                            @if (_latest.GitHubReleaseUrl is { Length: > 0 } releaseUrl)
+                            {
+                                <p class="pb-note">
+                                    Published as
+                                    <a href="@releaseUrl" target="_blank" rel="noopener noreferrer">@(_latest.GitHubReleaseTag ?? "a GitHub release")</a>.
+                                </p>
+                            }
+                            else if (_latest.GitHubReleaseError is { Length: > 0 } releaseError)
+                            {
+                                <p class="alert alert--warn" role="status">
+                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                    <span>Not published to GitHub: @(releaseError.TrimEnd('.')). The .app files above are unaffected; fix this and run the pipeline again to publish.</span>
+                                </p>
                             }
 
                             @if (_latestDetail?.ReleaseId is { } relId)
@@ -644,7 +674,7 @@
         if (pipeline is null || _editor is null) return;
         await _editor.OpenForEditAsync(
             pipeline.Id, pipeline.ProjectId, pipeline.Project?.Name ?? _header?.ProjectName ?? "",
-            pipeline.Name, pipeline.RequestedAppIdsJson);
+            pipeline.Name, pipeline.RequestedAppIdsJson, pipeline.GithubReleaseRepositoryId);
     }
 
     private async Task OnPipelineSavedAsync(int _)

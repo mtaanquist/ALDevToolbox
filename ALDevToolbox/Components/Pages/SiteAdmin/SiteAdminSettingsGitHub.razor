@@ -5,6 +5,7 @@
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 @inject NavigationManager Nav
+@inject ALDevToolbox.Endpoints.PublicOrigin Origin
 @inject ILogger<SiteAdminSettingsGitHub> Log
 
 @*
@@ -80,13 +81,17 @@
 
                     <div class="step">
                         <span class="step__n">2</span>
-                        <span class="step__head"><span class="step__title">Give it the two web addresses below</span></span>
+                        <span class="step__head"><span class="step__title">Give it the three web addresses below</span></span>
                         <span class="step__text">
-                            Copy the Setup URL and the Callback URL from the first two fields
-                            below into the app's own boxes of the same names. One is where
-                            GitHub sends an admin back to after they install the app; the other
-                            is where it sends anyone who connects their own GitHub account.
-                            Nothing works without both.
+                            Copy the Setup URL, the Callback URL and the Webhook URL from the
+                            first three fields below into the app's own boxes of the same
+                            names. The first is where GitHub sends an admin back to after they
+                            install the app, the second is where it sends anyone who connects
+                            their own GitHub account, and the third is where it tells the
+                            toolbox that a pull request has changed. Make up a webhook secret
+                            of your own, paste the same text into GitHub's Webhook secret box
+                            and into the Webhook secret field below. Tick "Active" beside the
+                            webhook on GitHub.
                         </span>
                     </div>
 
@@ -105,21 +110,37 @@
                         <span class="step__head"><span class="step__title">Tick the access it needs</span></span>
                         <span class="step__text">
                             Under Repository permissions and Organization permissions, allow the
-                            app to: create new repositories, read and write files in
-                            repositories, see repository names and descriptions, open and update
-                            pull requests, and see who is in the organisation. Anything you
-                            leave out simply turns off the part of the toolbox that needs it.
+                            app to: create new repositories (Administration), read and write
+                            files in repositories (Contents), see repository names and
+                            descriptions (Metadata), open and update pull requests (Pull
+                            requests), report build results on pull requests (Checks), and see
+                            who is in the organisation (Members). The name in brackets is what
+                            GitHub calls the permission on its own page. Anything you leave out
+                            simply turns off the part of the toolbox that needs it.
                         </span>
                     </div>
 
                     <div class="step">
                         <span class="step__n">5</span>
+                        <span class="step__head"><span class="step__title">Subscribe it to pull requests</span></span>
+                        <span class="step__text">
+                            Further down the same page, under "Subscribe to events", tick
+                            "Pull request". That is what lets the toolbox build a branch when
+                            somebody opens a pull request and post the result back on it.
+                            Leave it unticked and nothing else changes - the toolbox simply
+                            never hears about pull requests.
+                        </span>
+                    </div>
+
+                    <div class="step">
+                        <span class="step__n">6</span>
                         <span class="step__head"><span class="step__title">Generate a private key, then fill in the form</span></span>
                         <span class="step__text">
                             At the bottom of the app's settings, generate a private key. GitHub
                             downloads the file there and then and will never show it again - if
                             you lose it, you generate a new one. Then copy the App ID, the app's
-                            name, the Client ID and a new client secret into the fields below.
+                            name, the Client ID and a new client secret into the fields below,
+                            and the webhook secret you made up in step 2.
                             While you are there, tick "Expire user authorization tokens" - it is
                             on by default, and the toolbox renews them for people quietly.
                         </span>
@@ -140,6 +161,20 @@
                                 Hint="On GitHub, put this in the app's Callback URL box. It is where someone lands after connecting their own GitHub account, and without it nobody on this site can do that.">
                         <input class="input input--ro" type="text" value="@CallbackUrl" readonly
                                aria-label="Callback URL to copy into GitHub" />
+                    </SettingRow>
+
+                    <SettingRow Name="Webhook URL"
+                                Hint="On GitHub, put this in the app's Webhook URL box and tick Active. It is how GitHub tells the toolbox a pull request has changed, so it can build the branch and report back.">
+                        <input class="input input--ro" type="text" value="@WebhookUrl" readonly
+                               aria-label="Webhook URL to copy into GitHub" />
+                        @if (!Origin.IsConfigured)
+                        {
+                            <small class="field__hint">
+                                This is a guess from the address you're using right now. GitHub reaches it
+                                from the internet, so if the toolbox sits behind a reverse proxy, ask whoever
+                                runs the server to set the public address.
+                            </small>
+                        }
                     </SettingRow>
 
                     @* required + pattern mirror SaveGitHubAppAsync's own rules, from
@@ -197,6 +232,21 @@
                             </label>
                         }
                     </SettingRow>
+
+                    <SettingRow Name="Webhook secret"
+                                Hint="Stored encrypted. Make one up, and paste the same text into the app's Webhook secret box on GitHub. It is how the toolbox knows a message really came from GitHub - without it, nothing GitHub sends is accepted. Leave blank to keep the one already saved.">
+                        <input class="input" type="password" name="GitHubWebhookSecret" value=""
+                               autocomplete="new-password"
+                               placeholder="@(_view.HasWebhookSecret ? "Unchanged" : "Not set")" />
+                        @if (_view.HasWebhookSecret)
+                        {
+                            <label class="check">
+                                <input type="checkbox" name="ClearGitHubWebhookSecret" value="true" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>Forget the saved webhook secret</span>
+                            </label>
+                        }
+                    </SettingRow>
                 </div>
             </form>
 
@@ -205,7 +255,7 @@
                 <div class="setting-list">
                     <SettingRow Name="Remove the GitHub app" Danger="true"
                                 Lock="Asks for confirmation and is written to the audit log"
-                                Hint="Forgets the App ID, the app's name, the private key and the client secret. Every organisation on this site loses GitHub until an app is set up again. Nothing on GitHub is deleted.">
+                                Hint="Forgets the App ID, the app's name, the private key, the client secret and the webhook secret. Every organisation on this site loses GitHub until an app is set up again. Nothing on GitHub is deleted.">
                         <div class="u-row">
                             <button type="button" class="btn btn--danger" @onclick="RemoveAsync" disabled="@_removing">
                                 <Icon Name="circle-minus" Width="16" Height="16" />
@@ -238,7 +288,7 @@
                     <span>
                         @(IsConfigured
                             ? "Set up. Organisations can now connect their own GitHub organisation."
-                            : "Not set up yet. Follow the five steps, then fill in the form - organisations can connect once the App ID, the app's name and the private key are saved.")
+                            : "Not set up yet. Follow the steps above, then fill in the form - organisations can connect once the App ID, the app's name and the private key are saved.")
                     </span>
                 </p>
             }
@@ -282,6 +332,17 @@
     /// </summary>
     private string CallbackUrl => Nav.BaseUri.TrimEnd('/') + Endpoints.GitHubAppEndpoints.LinkCallbackPath;
 
+    /// <summary>
+    /// Where GitHub posts a pull-request event. Unlike the other two this is read
+    /// from the deployment's configured public address when there is one: GitHub
+    /// reaches it from the internet rather than from the operator's own browser,
+    /// so the host this page happens to be open on can be the wrong answer behind
+    /// a reverse proxy. With nothing configured the request host is still the best
+    /// guess we have, which is what the other two addresses use.
+    /// </summary>
+    private string WebhookUrl =>
+        (Origin.Configured ?? Nav.BaseUri.TrimEnd('/')) + Endpoints.GitHubWebhookEndpoints.WebhookPath;
+
     protected override async Task OnInitializedAsync() => await ReloadAsync();
 
     private async Task ReloadAsync()
@@ -310,7 +371,8 @@
             await Settings.SaveGitHubAppAsync(new GitHubAppInput(
                 AppId: null, AppSlug: null, ClientId: null,
                 ClientSecret: null, ClearClientSecret: true,
-                PrivateKeyPem: null, ClearPrivateKey: true));
+                PrivateKeyPem: null, ClearPrivateKey: true,
+                WebhookSecret: null, ClearWebhookSecret: true));
             Nav.NavigateTo("/site-admin/settings/github?ok=removed", forceLoad: true);
         }
         catch (Exception ex)

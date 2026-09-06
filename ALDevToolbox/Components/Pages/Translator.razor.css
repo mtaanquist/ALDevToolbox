@@ -366,6 +366,11 @@
 .tr-smeta { display: flex; align-items: center; gap: var(--space-2); }
 .tr-sorigin { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-2xs); color: var(--ink-4); }
 .tr-sorigin > ::deep svg { flex: none; }
+/* A suggestion learned from a file in one of the organisation's own repositories
+   links to that file (#631). A link people can see is a link: dotted at rest,
+   solid on hover, so the repository does not read as a caption nobody clicks. */
+.tr-sorigin--link { color: var(--primary-ink); text-decoration: underline dotted; text-underline-offset: 2px; }
+.tr-sorigin--link:hover { color: var(--primary-ink); text-decoration: underline; }
 .tr-sugg__side { display: grid; justify-items: end; gap: var(--space-1); }
 
 .tr-ssim {

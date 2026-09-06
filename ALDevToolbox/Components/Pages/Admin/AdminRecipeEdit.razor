@@ -6,8 +6,11 @@
 @inject ApplicationVersionService ApplicationVersions
 @inject NavigationManager Nav
 @inject ILogger<AdminRecipeEdit> Log
+@inject GitHubRepositoryService Repositories
+@inject GitHubRecipeDeliveryService RecipeDelivery
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.GitHub
 
 <PageTitle>@(IsEdit ? "Edit recipe" : "New recipe") · Admin · AL Dev Toolbox</PageTitle>
 
@@ -169,9 +172,9 @@
                     <div>
                         <h2 class="card__title">Where this recipe has been used</h2>
                         <p class="card__sub">
-                            Downloads and copies are both recorded, so a bug found here can be
-                            traced to who has it. A blank customer means the person had none to
-                            give, not that the use went unrecorded.
+                            Downloads, copies and repositories are all recorded, so a bug found
+                            here can be traced to who has it. A blank customer means the person
+                            had none to give, not that the use went unrecorded.
                         </p>
                     </div>
                 </div>
@@ -185,14 +188,14 @@
                 {
                     <div class="empty-state empty-state--quiet">
                         <span class="empty-state__title">Not used yet</span>
-                        <span class="empty-state__text">Downloads and copies show up here as people take it.</span>
+                        <span class="empty-state__text">Uses show up here as people take it.</span>
                     </div>
                 }
                 else
                 {
                     <table class="data-table">
                         <thead>
-                            <tr><th>Customer</th><th>How</th><th>By</th><th>When</th></tr>
+                            <tr><th>Customer</th><th>How</th><th>Repository</th><th>By</th><th>When</th></tr>
                         </thead>
                         <tbody>
                             @foreach (var d in _downloads)
@@ -215,7 +218,18 @@
                                             @d.CustomerName
                                         }
                                     </td>
-                                    <td>@(d.Source == RecipeUseSource.Copy ? "Copied" : "Downloaded")</td>
+                                    <td>@DescribeUse(d.Source)</td>
+                                    <td>
+                                        @if (string.IsNullOrEmpty(d.Repository))
+                                        {
+                                            <span class="u-muted">—</span>
+                                        }
+                                        else
+                                        {
+                                            <a href="@($"https://github.com/{d.Repository}")"
+                                               target="_blank" rel="noopener">@d.Repository</a>
+                                        }
+                                    </td>
                                     <td>@(d.DownloadedByUser?.Email ?? "—")</td>
                                     <td>@d.DownloadedAt.ToString("yyyy-MM-dd HH:mm")</td>
                                 </tr>
@@ -224,6 +238,100 @@
                     </table>
                 }
             </section>
+
+            @* The card that turns the history above into an action (issue #626).
+               It appears only when it can act - the recipe has landed in at
+               least one repository, and this admin's own GitHub account is
+               connected - because a button that would only ever refuse is worse
+               than no button. Named user: an admin who has just fixed a bug in
+               this recipe and wants the fix everywhere it went. *@
+            @if (_appliedRepositories is { Count: > 0 } applied)
+            {
+                <section class="card">
+                    <div class="card__head">
+                        <div>
+                            <h2 class="card__title">Update the repositories that use this recipe</h2>
+                            <p class="card__sub">
+                                Each of these opens a pull request with the recipe as it stands now,
+                                in your name - nothing changes in a repository until somebody there
+                                merges it.
+                            </p>
+                        </div>
+                        @if (_repoReady)
+                        {
+                            <button type="button" class="btn btn--sm"
+                                    disabled="@(_updatingAll || IsDirty)"
+                                    title="@(IsDirty ? "Save your changes to enable" : null)"
+                                    @onclick="ConfirmUpdateAllAsync">
+                                <Icon Name="git-branch" Width="14" Height="14" />
+                                <span>@(_updatingAll ? "Opening pull requests..." : "Open a pull request in each")</span>
+                            </button>
+                        }
+                    </div>
+                    @if (!_repoReady)
+                    {
+                        <div class="card__body">
+                            <p class="u-muted">
+                                Connect your GitHub account on your account page to open pull requests from here.
+                            </p>
+                        </div>
+                    }
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Repository</th><th>Result</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var repo in applied)
+                            {
+                                <tr>
+                                    <td>
+                                        <a href="@($"https://github.com/{repo}")" target="_blank" rel="noopener">@repo</a>
+                                    </td>
+                                    <td>
+                                        @if (_updateOutcomes.TryGetValue(repo, out var outcome))
+                                        {
+                                            @if (outcome.PullRequestUrl is { } url)
+                                            {
+                                                <a href="@url" target="_blank" rel="noopener">@outcome.Message</a>
+                                            }
+                                            else
+                                            {
+                                                <span class="field-error">@outcome.Message</span>
+                                            }
+                                        }
+                                        else if (_updatingRepository == repo)
+                                        {
+                                            <span class="u-muted">Opening pull request...</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="u-muted">No update sent</span>
+                                        }
+                                    </td>
+                                    <td class="data-table__actions">
+                                        @if (_repoReady)
+                                        {
+                                            <button type="button" class="btn btn--sm"
+                                                    disabled="@(_updatingAll || _updatingRepository is not null || IsDirty)"
+                                                    title="@(IsDirty ? "Save your changes to enable" : null)"
+                                                    @onclick="() => UpdateRepositoryAsync(repo)">
+                                                Open pull request
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+
+        @if (_okMessage is not null)
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
 
         @if (_lastError is not null)
@@ -234,6 +342,8 @@
         }
     }
 </div>
+
+<ConfirmDialog @ref="_confirmUpdateAll" />
 
 @code {
     [Parameter] public int? Id { get; set; }
@@ -252,10 +362,43 @@
     private List<RecipeFileEditor.EditableFile> _files = new() { new RecipeFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
     private string? _lastError;
+    private string? _okMessage;
     private bool _busy;
     private bool _loadFailed;
 
-    protected override async Task OnInitializedAsync()
+    // The repositories this recipe has been applied to, and what happened the
+    // last time each was asked for an update (issue #626).
+    private List<string>? _appliedRepositories;
+    private readonly Dictionary<string, UpdateOutcome> _updateOutcomes = new(StringComparer.OrdinalIgnoreCase);
+    private bool _repoReady;
+    private bool _updatingAll;
+    private string? _updatingRepository;
+    private ConfirmDialog? _confirmUpdateAll;
+
+    // What was loaded, so the card can refuse to send a pull request that would
+    // carry the recipe as it is saved rather than as it is on screen.
+    private string _loadedSnapshot = string.Empty;
+
+    private string Snapshot() => string.Join("", new[]
+    {
+        _title, _description, _keywords, _type.ToString(), _deprecated ? "1" : "0",
+        _instructions, _minimumApplicationVersionId, _estimatedValueHours?.ToString() ?? "",
+    }.Concat(_files.Select(f => $"{f.RelativePath}/{f.FileName}{f.Content}")));
+
+    /// <summary>True while the form holds edits the repositories would not get.</summary>
+    private bool IsDirty => Snapshot() != _loadedSnapshot;
+
+    /// <summary>One repository's result: the words to show, and a link when there is a pull request.</summary>
+    private sealed record UpdateOutcome(string Message, string? PullRequestUrl);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    /// <summary>
+    /// Fills the form from the stored recipe and takes the snapshot the dirty
+    /// check compares against. Called again after a save, so the page a person
+    /// stays on is the recipe as it now is.
+    /// </summary>
+    private async Task LoadAsync()
     {
         _applicationVersions = await ApplicationVersions.GetActiveAsync();
         if (Id is null) return;
@@ -274,6 +417,10 @@
         _minimumApplicationVersionId = existing.MinimumApplicationVersionId?.ToString() ?? string.Empty;
         _estimatedValueHours = existing.EstimatedValueHours;
         _downloads = await Recipes.GetDownloadsAsync(Id.Value);
+        _appliedRepositories = await Recipes.GetAppliedRepositoriesAsync(Id.Value);
+        // Answered from the database alone, so the card decides whether to
+        // appear without waiting on GitHub.
+        _repoReady = (await Repositories.GetAccessAsync()).IsReady;
         // If the recipe points at a deprecated or soft-deleted catalogue row
         // the active-only list wouldn't include it; surface the existing
         // navigation entity as a synthetic option so the dropdown stays
@@ -296,6 +443,100 @@
         {
             _files.Add(new RecipeFileEditor.EditableFile());
         }
+        _loadedSnapshot = Snapshot();
+    }
+
+    /// <summary>How a use is described in the history table.</summary>
+    private static string DescribeUse(RecipeUseSource source) => source switch
+    {
+        RecipeUseSource.Copy => "Copied",
+        RecipeUseSource.Repository => "Pull request",
+        _ => "Downloaded",
+    };
+
+    /// <summary>
+    /// Asks first: every repository on the list gets a pull request, and each
+    /// one notifies the people watching it - a click that reaches other teams
+    /// is worth a confirmation.
+    /// </summary>
+    private async Task ConfirmUpdateAllAsync()
+    {
+        if (_updatingAll || IsDirty || _confirmUpdateAll is null) return;
+        var count = _appliedRepositories?.Count ?? 0;
+        if (count == 0) return;
+        var confirmed = await _confirmUpdateAll.OpenAsync(
+            "Open a pull request in each repository?",
+            $"Open a pull request in all {count} repositories? Each one notifies whoever watches that repository.",
+            "Open pull requests",
+            "btn--primary",
+            "git-branch");
+        if (confirmed) await UpdateAllRepositoriesAsync();
+    }
+
+    private async Task UpdateAllRepositoriesAsync()
+    {
+        if (_updatingAll) return;
+        _updatingAll = true;
+        try
+        {
+            foreach (var repo in _appliedRepositories ?? [])
+            {
+                await ApplyToAsync(repo);
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _updatingAll = false;
+        }
+    }
+
+    private async Task UpdateRepositoryAsync(string repository)
+    {
+        if (_updatingRepository is not null || _updatingAll) return;
+        _updatingRepository = repository;
+        try
+        {
+            await ApplyToAsync(repository);
+        }
+        finally
+        {
+            _updatingRepository = null;
+        }
+    }
+
+    /// <summary>
+    /// One repository's turn. Every failure is recorded rather than thrown, so
+    /// the caller above can keep going and each row says for itself what
+    /// happened.
+    /// </summary>
+    private async Task ApplyToAsync(string repository)
+    {
+        if (Id is null) return;
+        try
+        {
+            var delivery = await RecipeDelivery.ApplyAsync(Id.Value, repository);
+            _updateOutcomes[repository] = new UpdateOutcome(
+                delivery.IsNewPullRequest
+                    ? $"Pull request #{delivery.PullRequest.Number} opened"
+                    : $"Added to pull request #{delivery.PullRequest.Number}",
+                delivery.PullRequest.HtmlUrl);
+        }
+        catch (PlanValidationException ex)
+        {
+            _updateOutcomes[repository] = new UpdateOutcome(string.Join(" ", ex.Errors.Values), null);
+        }
+        catch (GitHubApiException ex)
+        {
+            Log.LogWarning(ex, "GitHub refused the update pull request on {RepoFullName}.", repository);
+            _updateOutcomes[repository] = new UpdateOutcome($"GitHub would not do that: {ex.Message}", null);
+        }
+        catch (Exception ex) when (ex is GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
+        {
+            Log.LogWarning(ex, "Could not reach GitHub to update {RepoFullName}.", repository);
+            _updateOutcomes[repository] = new UpdateOutcome(
+                "The toolbox could not reach GitHub just now, so nothing was committed. Try again in a minute.", null);
+        }
     }
 
     private async Task SaveAsync()
@@ -304,6 +545,7 @@
         _busy = true;
         _errors = null;
         _lastError = null;
+        _okMessage = null;
         try
         {
             var input = new RecipeInput(
@@ -324,7 +566,11 @@
             else
             {
                 await Recipes.UpdateAsync(Id.Value, input);
-                Nav.NavigateTo("/admin/cookbook");
+                // Stay here. The card below only offers to open pull requests
+                // once the form is saved, and navigating away the moment it is
+                // meant the person could never act on that.
+                await LoadAsync();
+                _okMessage = "Saved.";
             }
         }
         catch (PlanValidationException ex)

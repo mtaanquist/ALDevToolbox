@@ -120,7 +120,8 @@ public sealed class GitHubRepositoryService
         if (installationId is null) return [];
 
         var token = await _github.GetInstallationTokenAsync(installationId.Value, ct);
-        var all = await _github.ListInstallationRepositoriesAsync(token, ct);
+        var listing = await _github.ListInstallationRepositoriesAsync(token, ct);
+        var all = listing.Repositories;
         var visible = await _access.FilterAccessibleAsync(userId, all.Select(r => r.FullName), ct);
         var allowed = visible.ToHashSet(StringComparer.OrdinalIgnoreCase);
 

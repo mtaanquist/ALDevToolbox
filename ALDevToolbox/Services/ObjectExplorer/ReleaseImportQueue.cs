@@ -74,6 +74,27 @@ public abstract record ReleaseImportSource
     /// </summary>
     public sealed record ProjectBuild(int ProjectId) : ReleaseImportSource;
 
+    /// <summary>
+    /// The same compile as <see cref="ProjectBuild"/>, asked for by GitHub rather
+    /// than by a person: one repository of the project is checked out at
+    /// <paramref name="HeadSha"/> instead of its default branch, every clone
+    /// authenticates as the app's installation rather than as a user (there is no
+    /// user), and the result is reported back as a check run on the pull request.
+    ///
+    /// <para>It rides the same queue and the same worker branch as a manual build
+    /// on purpose: symbol resolution, the parent-release import and the Object
+    /// Explorer ingest are exactly what a reviewer wants a pull request measured
+    /// against, and a second code path would drift from the first. See
+    /// <c>.design/github-integration-phase2.md</c> (#627).</para>
+    /// </summary>
+    public sealed record PullRequestBuild(
+        int ProjectId,
+        int RepositoryId,
+        string HeadSha,
+        long InstallationId,
+        string RepositoryFullName,
+        int PullRequestNumber) : ReleaseImportSource;
+
     /// <summary>Open a ZIP already staged to a temp file. <paramref name="IsDvd"/> selects the DVD-subset walk vs the whole-archive walk.</summary>
     public sealed record StagedZip(string TempPath, bool IsDvd) : ReleaseImportSource;
 

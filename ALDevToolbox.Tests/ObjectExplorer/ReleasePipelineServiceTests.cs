@@ -266,6 +266,89 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         row.EnvironmentMissing.Should().BeFalse();
     }
 
+    // ── Artifact source (#632) ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_release_pipeline_can_draw_from_a_repositorys_github_releases_instead_of_a_build_pipeline()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var repositoryId = await SeedRepositoryAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
+
+        var id = await NewService(ctx).CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "CRONUS -> Production", 0, envId,
+            BcDeploymentSchedule.Immediate, BcSyncMode.Add,
+            ReleaseArtifactSource.GithubRelease, repositoryId));
+
+        await using var read = _db.NewContext();
+        var rp = await read.OeReleasePipelines.SingleAsync(r => r.Id == id);
+        rp.ArtifactSource.Should().Be(ReleaseArtifactSource.GithubRelease);
+        rp.GithubReleaseRepositoryId.Should().Be(repositoryId);
+        // Exactly one source: naming both would leave "what does this install" with two answers.
+        rp.BuildPipelineId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_release_sourced_pipeline_needs_a_repository_of_its_own_solution()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var otherProject = await SeedProjectAsync(ctx);
+        var otherRepository = await SeedRepositoryAsync(ctx, otherProject);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
+        var svc = NewService(ctx);
+
+        var missing = () => svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", 0, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add,
+            ReleaseArtifactSource.GithubRelease, null));
+        (await missing.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("GithubReleaseRepositoryId");
+
+        var elsewhere = () => svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", 0, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add,
+            ReleaseArtifactSource.GithubRelease, otherRepository));
+        (await elsewhere.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("GithubReleaseRepositoryId");
+    }
+
+    [Fact]
+    public async Task Switching_a_pipeline_to_github_releases_clears_the_build_pipeline_it_used_to_draw_from()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        var repositoryId = await SeedRepositoryAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
+        var svc = NewService(ctx);
+
+        var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+        await svc.UpdateReleasePipelineAsync(id, new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add,
+            ReleaseArtifactSource.GithubRelease, repositoryId));
+
+        await using var read = _db.NewContext();
+        var rp = await read.OeReleasePipelines.SingleAsync(r => r.Id == id);
+        rp.BuildPipelineId.Should().BeNull();
+        rp.GithubReleaseRepositoryId.Should().Be(repositoryId);
+    }
+
+    private static async Task<int> SeedRepositoryAsync(AppDbContext ctx, int projectId)
+    {
+        var repository = new ProjectRepository
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = projectId,
+            Provider = RepositoryProvider.GitHub,
+            Url = "https://github.com/cronus-dk/cronus-" + Guid.NewGuid().ToString("N") + ".git",
+            DisplayName = "cronus-customer",
+        };
+        ctx.OeProjectRepositories.Add(repository);
+        await ctx.SaveChangesAsync();
+        return repository.Id;
+    }
+
     private ReleasePipelineService NewService(AppDbContext ctx) =>
         new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleasePipelineService>.Instance);
 

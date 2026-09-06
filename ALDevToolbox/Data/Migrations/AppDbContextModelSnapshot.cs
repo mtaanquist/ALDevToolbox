@@ -408,6 +408,189 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("bcquality_ingest_state", (string)null);
                 });
 
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryCandidate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AppId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("app_id");
+
+                    b.Property<string>("AppJsonPath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("app_json_path");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("app_name");
+
+                    b.Property<string>("CloneUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("clone_url");
+
+                    b.Property<string>("DefaultBranch")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("default_branch");
+
+                    b.Property<DateTime>("DiscoveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("discovered_at");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("full_name");
+
+                    b.Property<string>("HtmlUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("html_url");
+
+                    b.Property<DateTime?>("IgnoredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ignored_at");
+
+                    b.Property<int?>("IgnoredByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("ignored_by_user_id");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "FullName")
+                        .IsUnique()
+                        .HasDatabaseName("ux_github_repository_candidates_org_full_name");
+
+                    b.ToTable("github_repository_candidates", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryDrift", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Current")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("current");
+
+                    b.Property<DateTime>("DetectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("detected_at");
+
+                    b.Property<string>("Field")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("field");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("path");
+
+                    b.Property<string>("Proposed")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("proposed");
+
+                    b.Property<int>("ReleaseId")
+                        .HasColumnType("integer")
+                        .HasColumnName("release_id");
+
+                    b.Property<string>("Repository")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReleaseId");
+
+                    b.HasIndex("OrganizationId", "Repository", "Path", "Field")
+                        .IsUnique()
+                        .HasDatabaseName("ux_github_repository_drift_org_repo_path_field");
+
+                    b.ToTable("github_repository_drift", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryStandardFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<int>("Ordering")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordering");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("path");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Ordering");
+
+                    b.HasIndex("OrganizationId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("github_repository_standard_files", (string)null);
+                });
+
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.Invite", b =>
                 {
                     b.Property<int>("Id")
@@ -1717,6 +1900,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<int?>("GithubReleaseRepositoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("github_release_repository_id");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1742,6 +1929,8 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("GithubReleaseRepositoryId");
 
                     b.HasIndex("OrganizationId");
 
@@ -1868,6 +2057,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("character varying(250)")
                         .HasColumnName("branch");
 
+                    b.Property<long?>("CheckRunId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("check_run_id");
+
                     b.Property<string>("FailureMessage")
                         .HasColumnType("text")
                         .HasColumnName("failure_message");
@@ -1875,6 +2068,26 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("finished_at");
+
+                    b.Property<string>("GithubReleaseError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("github_release_error");
+
+                    b.Property<string>("GithubReleaseTag")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("github_release_tag");
+
+                    b.Property<string>("GithubReleaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("github_release_url");
+
+                    b.Property<string>("HeadSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("head_sha");
 
                     b.Property<int>("OrganizationId")
                         .HasColumnType("integer")
@@ -1887,6 +2100,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("ProjectId")
                         .HasColumnType("integer")
                         .HasColumnName("project_id");
+
+                    b.Property<int?>("PullRequestNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_request_number");
 
                     b.Property<int?>("ReleaseId")
                         .HasColumnType("integer")
@@ -1909,6 +2126,14 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("manual")
+                        .HasColumnName("trigger");
 
                     b.HasKey("Id");
 
@@ -2047,6 +2272,74 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("ProjectRepositoryId");
 
                     b.ToTable("oe_project_build_commits", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildDiagnostic", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code");
+
+                    b.Property<int>("Column")
+                        .HasColumnType("integer")
+                        .HasColumnName("column");
+
+                    b.Property<int>("Line")
+                        .HasColumnType("integer")
+                        .HasColumnName("line");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<int>("Ordering")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordering");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("path");
+
+                    b.Property<int>("ProjectBuildId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_build_id");
+
+                    b.Property<int?>("ProjectRepositoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_repository_id");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ProjectRepositoryId");
+
+                    b.HasIndex("ProjectBuildId", "Ordering")
+                        .HasDatabaseName("ix_oe_project_build_diagnostics_build_ordering");
+
+                    b.ToTable("oe_project_build_diagnostics", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog", b =>
@@ -2830,7 +3123,13 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("BuildPipelineId")
+                    b.Property<string>("ArtifactSource")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("artifact_source");
+
+                    b.Property<int?>("BuildPipelineId")
                         .HasColumnType("integer")
                         .HasColumnName("build_pipeline_id");
 
@@ -2851,6 +3150,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("deployment_schedule");
+
+                    b.Property<int?>("GithubReleaseRepositoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("github_release_repository_id");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -2886,6 +3189,8 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_release_pipelines_build_pipeline");
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("GithubReleaseRepositoryId");
 
                     b.HasIndex("OrganizationId");
 
@@ -3205,6 +3510,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)")
                         .HasColumnName("github_org_login");
+
+                    b.Property<string>("GitHubRepositoryRuleset")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("github_repository_ruleset_json");
 
                     b.Property<string>("LocalLoginPolicy")
                         .IsRequired()
@@ -3617,6 +3926,11 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("RecipeId")
                         .HasColumnType("integer")
                         .HasColumnName("recipe_id");
+
+                    b.Property<string>("Repository")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository");
 
                     b.Property<string>("Source")
                         .IsRequired()
@@ -4115,6 +4429,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("github_private_key_encrypted");
 
+                    b.Property<string>("GitHubWebhookSecretEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("github_webhook_secret_encrypted");
+
                     b.Property<decimal>("IndexSizeMultiplier")
                         .HasColumnType("numeric(6,3)")
                         .HasColumnName("index_size_multiplier");
@@ -4348,6 +4666,16 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_language");
 
+                    b.Property<string>("SourcePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("source_path");
+
+                    b.Property<string>("SourceRepository")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("source_repository");
+
                     b.Property<string>("SourceText")
                         .IsRequired()
                         .HasColumnType("text")
@@ -4398,6 +4726,54 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ux_translation_memory_pair");
 
                     b.ToTable("translation_memory", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.TranslationMemorySource", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BlobSha")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("blob_sha");
+
+                    b.Property<DateTime>("LastIngestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_ingested_at");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("path");
+
+                    b.Property<string>("Repository")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository");
+
+                    b.Property<int>("UnitCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("unit_count");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Repository", "Path")
+                        .IsUnique()
+                        .HasDatabaseName("ux_translation_memory_sources_file");
+
+                    b.ToTable("translation_memory_sources", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.TranslationMemoryVote", b =>
@@ -5349,6 +5725,47 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Article");
                 });
 
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryCandidate", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryDrift", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                        .WithMany()
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Release");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryStandardFile", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.Invite", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "InvitedByUser")
@@ -5762,6 +6179,11 @@ namespace ALDevToolbox.Data.Migrations
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "GithubReleaseRepository")
+                        .WithMany()
+                        .HasForeignKey("GithubReleaseRepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
                         .HasForeignKey("OrganizationId")
@@ -5775,6 +6197,8 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("CreatedByUser");
+
+                    b.Navigation("GithubReleaseRepository");
 
                     b.Navigation("Organization");
 
@@ -5868,6 +6292,32 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
                         .WithMany("Changelog")
+                        .HasForeignKey("ProjectBuildId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                        .WithMany()
+                        .HasForeignKey("ProjectRepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("ProjectBuild");
+
+                    b.Navigation("ProjectRepository");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildDiagnostic", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                        .WithMany("Diagnostics")
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -6130,12 +6580,16 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", "BuildPipeline")
                         .WithMany()
                         .HasForeignKey("BuildPipelineId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "GithubReleaseRepository")
+                        .WithMany()
+                        .HasForeignKey("GithubReleaseRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
@@ -6159,6 +6613,8 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("BuildPipeline");
 
                     b.Navigation("CreatedByUser");
+
+                    b.Navigation("GithubReleaseRepository");
 
                     b.Navigation("Organization");
 
@@ -6521,6 +6977,17 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.TranslationMemorySource", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.TranslationMemoryVote", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.TranslationMemoryEntry", "Entry")
@@ -6770,6 +7237,8 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Artifacts");
 
                     b.Navigation("Changelog");
+
+                    b.Navigation("Diagnostics");
 
                     b.Navigation("Logs");
 

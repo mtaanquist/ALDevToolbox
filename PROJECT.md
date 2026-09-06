@@ -27,7 +27,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
 | `Services/OAuth/`            | The MCP OAuth surface: client resolution, claims transformation, bearer policy. |
 | `Services/Offsite/`          | `IOffsiteStorageProvider` and its S3 / Azure Blob implementations.            |
-| `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST, the App JWT and the user-to-server token exchange), `GitHubConnectionService` (the per-organisation connection), `GitHubAccessService` (the per-user account link and the access checks every feature asks), `GitHubRepositoryService` (the shared repository resolver every caller routes through). |
+| `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST, the App JWT and the user-to-server token exchange), `GitHubConnectionService` (the per-organisation connection), `GitHubAccessService` (the per-user account link and the access checks every feature asks), `GitHubRepositoryService` (the shared repository resolver every caller routes through); phase 2 adds the feature services on top - `GitHubRecipeDeliveryService`, `GitHubReleaseService`, `GitHubRepositoryStandardsService`, `RepositoryDiscoveryService` (+ scheduler), `DependencyDriftService`, and the pull-request compile gate (`GitHubWebhookQueue`, `GitHubPullRequestBuildWorker`, `GitHubCheckRunService`) - with `GitHubAppClient` split into per-feature partial files. |
 | `Services/Configuration/`    | Deployment configuration read once at startup (`BackupOptions`, `SmtpFallbackOptions`, `AlCompilerOptions`) and passed to the services that need it, rather than each service reaching into the process environment. The env var names stay the operator-facing interface. |
 | `Services/BcQuality/`, `Services/Cookbook/`, `Services/Diff/`, `Services/SingleTenant/`, `Services/Tools/` | One folder per remaining tool or cross-cutting concern. |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
@@ -74,6 +74,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `ui-design.md` — page layout, copy, components to factor out.
 - `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
 - `github-integration.md` — the GitHub App: which credential acts (installation vs the user's link), the schema, and the four features built on them.
+- `github-integration-phase2.md` — phase 2 of the GitHub integration (#626-#633): repository discovery, repository standards, recipe delivery, Releases, the pull-request compile gate, translation-memory ingest, dependency drift, and the MCP twins.
 - `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
 - `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
 

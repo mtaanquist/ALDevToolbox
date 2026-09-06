@@ -43,6 +43,17 @@ public class Pipeline
     /// </summary>
     public string? RequestedAppIdsJson { get; set; }
 
+    /// <summary>
+    /// The solution repository each successful build is published to as a GitHub
+    /// Release. Null (the default) means builds are not published anywhere; non-null
+    /// means "publish every successful build there", tagged <c>v&lt;version&gt;</c>.
+    /// Nullable FK with <c>ON DELETE SET NULL</c>, so removing a repository from the
+    /// solution turns publishing off rather than deleting the pipeline. See
+    /// <c>.design/github-integration-phase2.md</c> (#632).
+    /// </summary>
+    public int? GithubReleaseRepositoryId { get; set; }
+    public ProjectRepository? GithubReleaseRepository { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

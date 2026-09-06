@@ -38,7 +38,7 @@ public sealed class TranslatorTools
     }
 
     [McpServerTool(Name = "search_translation_memory", ReadOnly = true)]
-    [Description("Searches the organisation's translation memory — the accumulated source→target pairs that back the Translator's suggestions. Returns each entry's id (for vote_translation / remove_translation), languages, source + target text, kind, provenance (origin), net vote score and hit count, ranked by score then frequency.")]
+    [Description("Searches the organisation's translation memory — the accumulated source→target pairs that back the Translator's suggestions. Returns each entry's id (for vote_translation / remove_translation), languages, source + target text, kind, provenance (origin), net vote score and hit count, ranked by score then frequency. A pair learned from one of the organisation's own GitHub repositories also names that repository and the file inside it, so you can go and read the translation in context.")]
     public async Task<IReadOnlyList<TranslationMemoryHit>> SearchTranslationMemoryAsync(
         [Description("Free-text substring matched against source OR target text. Null/empty returns the top-ranked entries.")] string? query = null,
         [Description("Optional source-language filter (BCP-47, e.g. 'en-US').")] string? sourceLanguage = null,
@@ -55,7 +55,8 @@ public sealed class TranslatorTools
             origin, includeRemoved, 0, Math.Clamp(maxResults, 1, 100)), ct);
         return res.Items.Select(e => new TranslationMemoryHit(
             e.Id, e.SourceLanguage, e.TargetLanguage, e.SourceText, e.TargetText,
-            e.Kind, e.Origin, e.Score, e.HitCount, e.IsDeleted)).ToList();
+            e.Kind, e.Origin, e.Score, e.HitCount, e.IsDeleted,
+            e.SourceRepository, e.SourcePath)).ToList();
     }
 
     [McpServerTool(Name = "machine_translate", ReadOnly = true)]
@@ -146,7 +147,12 @@ public sealed class TranslatorTools
     }
 }
 
-/// <summary>One translation memory entry as returned by <c>search_translation_memory</c>.</summary>
+/// <summary>
+/// One translation memory entry as returned by <c>search_translation_memory</c>.
+/// <c>SourceRepository</c> (<c>owner/name</c>) and <c>SourcePath</c> are set for
+/// pairs learned from a file in one of the organisation's own repositories, and
+/// null for everything else.
+/// </summary>
 public sealed record TranslationMemoryHit(
     long EntryId,
     string SourceLanguage,
@@ -157,7 +163,9 @@ public sealed record TranslationMemoryHit(
     string? Origin,
     int Score,
     int HitCount,
-    bool Removed);
+    bool Removed,
+    string? SourceRepository = null,
+    string? SourcePath = null);
 
 /// <summary>Result of <c>machine_translate</c>.</summary>
 public sealed record MachineTranslationResult(string TargetText, string Provider, string? DetectedSourceLanguage);

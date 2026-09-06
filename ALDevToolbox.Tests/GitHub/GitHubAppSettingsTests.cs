@@ -37,8 +37,11 @@ public sealed class GitHubAppSettingsTests : IDisposable
         string? clientSecret = null,
         bool clearClientSecret = false,
         string? privateKey = null,
-        bool clearPrivateKey = false) =>
-        new(appId, slug, clientId, clientSecret, clearClientSecret, privateKey, clearPrivateKey);
+        bool clearPrivateKey = false,
+        string? webhookSecret = null,
+        bool clearWebhookSecret = false) =>
+        new(appId, slug, clientId, clientSecret, clearClientSecret, privateKey, clearPrivateKey,
+            webhookSecret, clearWebhookSecret);
 
     // --- Validation ---------------------------------------------------------
 
@@ -108,6 +111,17 @@ public sealed class GitHubAppSettingsTests : IDisposable
     public async Task Save_rejects_a_private_key_without_an_app_id()
     {
         Func<Task> act = () => NewService().SaveGitHubAppAsync(Valid(appId: null, privateKey: NewPrivateKey()));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("GitHubAppId");
+    }
+
+    [Fact]
+    public async Task Save_rejects_a_webhook_secret_without_an_app_id()
+    {
+        // The webhook secret belongs to the app registration; storing one with no
+        // app would leave a secret nothing could ever verify against (#627).
+        Func<Task> act = () => NewService().SaveGitHubAppAsync(Valid(appId: null, slug: null, webhookSecret: "swordfish"));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("GitHubAppId");
@@ -190,6 +204,86 @@ public sealed class GitHubAppSettingsTests : IDisposable
         view.HasClientSecret.Should().BeFalse();
         view.HasPrivateKey.Should().BeFalse("none of it means anything without the app it belongs to");
         view.IsConfigured.Should().BeFalse();
+    }
+
+    // --- Webhook secret (#627) ---------------------------------------------
+
+    [Fact]
+    public async Task Save_stores_the_webhook_secret_encrypted_and_resolves_it_back()
+    {
+        await NewService().SaveGitHubAppAsync(Valid(webhookSecret: "swordfish"));
+
+        await using var read = _db.NewContext();
+        var row = await read.SystemSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
+        row.GitHubWebhookSecretEncrypted.Should().NotBeNullOrEmpty().And.NotBe("swordfish",
+            "the column holds Data-Protection ciphertext, never the secret itself");
+        _db.DataProtectionProvider
+            .CreateProtector(SystemSettingsService.GitHubWebhookSecretProtectionPurpose)
+            .Unprotect(row.GitHubWebhookSecretEncrypted!).Should().Be("swordfish");
+
+        (await NewService().ResolveGitHubWebhookSecretAsync()).Should().Be("swordfish");
+        (await NewService().GetGitHubAppViewAsync()).HasWebhookSecret.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Resolving_the_webhook_secret_when_none_is_stored_is_a_no_rather_than_a_throw()
+    {
+        // Null here means every delivery is refused, which is the safe direction:
+        // the endpoint must never treat "we could not check" as "it checked out".
+        await NewService().SaveGitHubAppAsync(Valid());
+
+        (await NewService().ResolveGitHubWebhookSecretAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Save_with_a_blank_webhook_secret_keeps_the_stored_one()
+    {
+        await NewService().SaveGitHubAppAsync(Valid(webhookSecret: "swordfish"));
+
+        await NewService().SaveGitHubAppAsync(Valid(appId: "999"));
+
+        (await NewService().ResolveGitHubWebhookSecretAsync()).Should().Be("swordfish");
+    }
+
+    [Fact]
+    public async Task Save_with_the_clear_flag_forgets_only_the_webhook_secret()
+    {
+        await NewService().SaveGitHubAppAsync(Valid(
+            clientId: "Iv1.abc", clientSecret: "gh-secret", privateKey: NewPrivateKey(), webhookSecret: "swordfish"));
+
+        await NewService().SaveGitHubAppAsync(Valid(clientId: "Iv1.abc", clearWebhookSecret: true));
+
+        var view = await NewService().GetGitHubAppViewAsync();
+        view.HasWebhookSecret.Should().BeFalse();
+        view.HasClientSecret.Should().BeTrue("only the webhook secret was cleared");
+        view.HasPrivateKey.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Clearing_the_app_id_forgets_the_webhook_secret_too()
+    {
+        await NewService().SaveGitHubAppAsync(Valid(webhookSecret: "swordfish"));
+
+        await NewService().SaveGitHubAppAsync(Valid(appId: null, slug: null));
+
+        (await NewService().GetGitHubAppViewAsync()).HasWebhookSecret.Should().BeFalse();
+        (await NewService().ResolveGitHubWebhookSecretAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_webhook_secret_has_its_own_protector_purpose()
+    {
+        // Purposes are what stop ciphertext minted for one field being read as
+        // another. Proving they differ is proving the fields are separated.
+        await NewService().SaveGitHubAppAsync(Valid(clientId: "Iv1.abc", clientSecret: "gh-secret", webhookSecret: "swordfish"));
+
+        await using var read = _db.NewContext();
+        var row = await read.SystemSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
+        var wrongProtector = _db.DataProtectionProvider
+            .CreateProtector(SystemSettingsService.GitHubClientSecretProtectionPurpose);
+
+        var act = () => wrongProtector.Unprotect(row.GitHubWebhookSecretEncrypted!);
+        act.Should().Throw<System.Security.Cryptography.CryptographicException>();
     }
 
     [Fact]

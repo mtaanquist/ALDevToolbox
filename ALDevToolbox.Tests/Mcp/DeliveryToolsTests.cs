@@ -5,6 +5,7 @@ using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using ALDevToolbox.Services.Mcp.Tools;
+using ALDevToolbox.Tests.GitHub;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -32,13 +33,23 @@ public sealed class DeliveryToolsTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private DeliveryTools NewTools(AppDbContext ctx) =>
+    private DeliveryTools NewTools(AppDbContext ctx, HttpMessageHandler? api = null) =>
         new(new DeliveryService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
                 new ThrowingTokenSource(), new ThrowingAppManagementClient(), new ThrowingAdminClient(), _queue,
                 new ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache(TimeProvider.System),
                 NullLogger<DeliveryService>.Instance),
             new ReleasePipelineService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
-                NullLogger<ReleasePipelineService>.Instance));
+                NullLogger<ReleasePipelineService>.Instance),
+            _db.NewGitHubReleaseService(ctx, _db.NewGitHubAppClient(ctx, api ?? new UnreachableGitHub()),
+                _db.NewGitHubAccessService(ctx, _db.NewGitHubAppClient(ctx, api ?? new UnreachableGitHub()))),
+            new ArtifactService(ctx, new ProjectAccess(ctx, _db.OrgContext)));
+
+    /// <summary>Stands in for a GitHub nothing in these tests is meant to reach.</summary>
+    private sealed class UnreachableGitHub : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new HttpRequestException("GitHub is not reachable from this test.");
+    }
 
     [Fact]
     public async Task List_release_pipelines_returns_the_orgs_pipelines()
@@ -137,6 +148,96 @@ public sealed class DeliveryToolsTests : IDisposable
         rows[0].Apps.Should().ContainSingle(a => a.AppName == "CRONUS Core");
     }
 
+    // ── GitHub releases as an artifact source (#632) ──────────────────────
+
+    [Fact]
+    public async Task List_github_releases_is_refused_for_a_pipeline_that_releases_builds()
+    {
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+        }
+
+        await using var read = _db.NewContext();
+        var act = () => NewTools(read).ListGitHubReleasesAsync(seed.ReleasePipelineId);
+
+        (await act.Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("build pipeline");
+    }
+
+    [Fact]
+    public async Task Stage_github_release_hands_back_a_build_publish_build_can_take()
+    {
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+            await MakeReleaseSourcedAsync(ctx, seed.ReleasePipelineId);
+        }
+        await ConnectOrganisationAsync();
+
+        BuildRow staged;
+        await using (var read = _db.NewContext())
+        {
+            staged = await NewTools(read, GitHubWithOneRelease()).StageGitHubReleaseAsync(seed.ReleasePipelineId, "v1.0.0.0");
+        }
+
+        staged.Status.Should().Be(ProjectBuildStatus.Ready);
+        staged.GitHubReleaseTag.Should().Be("v1.0.0.0");
+        staged.ArtifactCount.Should().Be(1);
+
+        // The whole point of staging: the ordinary publish takes it from here.
+        await using var publish = _db.NewContext();
+        var result = await NewTools(publish, GitHubWithOneRelease()).PublishBuildAsync(seed.ReleasePipelineId, staged.Id);
+        result.DeliveryId.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Stage_github_release_says_so_when_the_tag_is_gone()
+    {
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+            await MakeReleaseSourcedAsync(ctx, seed.ReleasePipelineId);
+        }
+        await ConnectOrganisationAsync();
+
+        await using var read = _db.NewContext();
+        var act = () => NewTools(read, GitHubWithOneRelease()).StageGitHubReleaseAsync(seed.ReleasePipelineId, "v9.9.9.9");
+
+        (await act.Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("no release tagged");
+    }
+
+    [Fact]
+    public async Task Both_release_tools_say_so_plainly_when_the_deployment_has_no_GitHub_app()
+    {
+        // Nothing is configured, so there is no App to act as. An agent gets the
+        // sentence a person would see rather than an unhandled exception.
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+            await MakeReleaseSourcedAsync(ctx, seed.ReleasePipelineId);
+            ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                GitHubInstallationId = InstallationId,
+                GitHubOrgLogin = OrgLogin,
+                GitHubConnectedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var list = () => NewTools(read).ListGitHubReleasesAsync(seed.ReleasePipelineId);
+        var stage = () => NewTools(read).StageGitHubReleaseAsync(seed.ReleasePipelineId, "v1.0.0.0");
+
+        await list.Should().ThrowAsync<McpException>();
+        await stage.Should().ThrowAsync<McpException>();
+    }
+
     // ── Project visibility (slice 3) ─────────────────────────────────────
 
     /// <summary>
@@ -217,6 +318,62 @@ public sealed class DeliveryToolsTests : IDisposable
     }
 
     // ── Seeding (a project → build pipeline → environment → release pipeline → build) ──
+
+    private const long InstallationId = 42;
+    private const string OrgLogin = "cronus-dk";
+    private const string GitHubRepo = OrgLogin + "/cronus-customer";
+
+    /// <summary>A GitHub with one installable release on the solution's repository.</summary>
+    private static FakeGitHubApi GitHubWithOneRelease() =>
+        new FakeGitHubApi()
+            .On(HttpMethod.Post, $"/app/installations/{InstallationId}/access_tokens",
+                System.Net.HttpStatusCode.Created, FakeGitHubApi.InstallationTokenJson("ghs_installation"))
+            .On(HttpMethod.Get, $"/repos/{GitHubRepo}/releases/tags/v1.0.0.0", System.Net.HttpStatusCode.OK,
+                FakeGitHubApi.ReleaseJson(GitHubRepo, "v1.0.0.0", 900, assets: (5501, "CRONUS Core_1.0.0.0.app")))
+            .On(HttpMethod.Get, $"/repos/{GitHubRepo}/releases/tags/", System.Net.HttpStatusCode.NotFound)
+            .OnRedirect(HttpMethod.Get, $"/repos/{GitHubRepo}/releases/assets/5501",
+                "https://objects.githubusercontent.com/app-bytes")
+            .OnBytes(HttpMethod.Get, "/app-bytes", new byte[] { 1, 2, 3 });
+
+    /// <summary>Points the seeded release pipeline at the solution's GitHub repository.</summary>
+    private static async Task MakeReleaseSourcedAsync(AppDbContext ctx, int releasePipelineId)
+    {
+        var rp = await ctx.OeReleasePipelines.SingleAsync(r => r.Id == releasePipelineId);
+        var repository = new ProjectRepository
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = rp.ProjectId,
+            Provider = RepositoryProvider.GitHub, Url = $"https://github.com/{GitHubRepo}.git",
+            DisplayName = "cronus-customer",
+        };
+        ctx.OeProjectRepositories.Add(repository);
+        await ctx.SaveChangesAsync();
+
+        rp.ArtifactSource = ReleaseArtifactSource.GithubRelease;
+        rp.BuildPipelineId = null;
+        rp.GithubReleaseRepositoryId = repository.Id;
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task ConnectOrganisationAsync()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(
+            new ALDevToolbox.Services.GitHubAppInput(
+                AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+                ClientSecret: "s3cr3t", ClearClientSecret: false,
+                PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
+
+        await using var ctx = _db.NewContext();
+        ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            GitHubInstallationId = InstallationId,
+            GitHubOrgLogin = OrgLogin,
+            GitHubConnectedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
 
     private sealed record Seed(int ProjectId, int ReleasePipelineId, int BuildId);
 
