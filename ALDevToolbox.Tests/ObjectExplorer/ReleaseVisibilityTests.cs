@@ -87,8 +87,12 @@ public sealed class ReleaseVisibilityTests : IDisposable
     private ObjectExplorerService Explorer(AppDbContext ctx) =>
         new(ctx, References(ctx), Access(ctx), NullLogger<ObjectExplorerService>.Instance);
 
+    private SourceVisibility Visibility(AppDbContext ctx) => new(ctx, Access(ctx));
+
     private SourceViewerService Viewer(AppDbContext ctx) =>
-        new(ctx, References(ctx), Access(ctx));
+        new(ctx, References(ctx), Visibility(ctx));
+
+    private ExplorerTreeService Tree(AppDbContext ctx) => new(ctx, Visibility(ctx));
 
     private ReleaseComparisonService Comparison(AppDbContext ctx) =>
         new(ctx, Access(ctx), NullLogger<ReleaseComparisonService>.Instance);
@@ -380,8 +384,8 @@ public sealed class ReleaseVisibilityTests : IDisposable
 
             (await Viewer(ctx).GetFileAsync(seeded.FileId)).Should().BeNull();
             (await Viewer(ctx).GetFileHeaderAsync(seeded.FileId)).Should().BeNull();
-            (await Viewer(ctx).ListModuleFilesAsync(seeded.ModuleId)).Should().BeEmpty();
-            (await Viewer(ctx).SearchTreeAsync(seeded.ReleaseId, "Loyalty")).Should().BeEmpty();
+            (await Tree(ctx).ListModuleFilesAsync(seeded.ModuleId)).Should().BeEmpty();
+            (await Tree(ctx).SearchTreeAsync(seeded.ReleaseId, "Loyalty")).Should().BeEmpty();
 
             // Both sides of a comparison, in both directions: knowing one side
             // must not buy you the other's contents.

@@ -269,8 +269,9 @@ all gated as of slice 3:
   `ListLatestPipelineBuildReleasesAsync` (the Releases browser's one deliberate
   leak of a project build). `ListReleasesAsync` needs the predicate only with
   `includeProjectBuilds: true` — it excludes project releases otherwise.
-- `SourceViewerService` — every file-, module-, and symbol-keyed entry point,
-  resolving the owning release first.
+- `SourceViewerService` and `ExplorerTreeService` — every file-, module-, and
+  symbol-keyed entry point, resolving the owning release first through the
+  `SourceVisibility` fence they share.
 - `ReleaseComparisonService` — **both** sides of a comparison, plus the
   "compare with release" picker.
 - `Endpoints/ObjectExplorerViewerEndpoints.cs` — the JSON endpoints inherit the
