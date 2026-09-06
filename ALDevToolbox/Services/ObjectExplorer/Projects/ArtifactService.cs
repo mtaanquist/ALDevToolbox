@@ -300,7 +300,7 @@ public sealed class ArtifactService
         return rows.FirstOrDefault();
     }
 
-    private async Task<List<BuildRow>> ListBuildsCoreAsync(IQueryable<ProjectBuild> filtered, CancellationToken ct)
+    private async Task<List<BuildRow>> ListBuildsCoreAsync(IQueryable<OeProjectBuild> filtered, CancellationToken ct)
     {
         var builds = await filtered
             .OrderByDescending(b => b.StartedAt)

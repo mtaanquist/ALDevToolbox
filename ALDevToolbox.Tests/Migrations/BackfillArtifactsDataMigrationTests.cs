@@ -48,14 +48,14 @@ public sealed class BackfillArtifactsDataMigrationTests : IDisposable
 
             // An ownerless project (created_by_user_id null) with two repos on
             // different providers.
-            var project = new Project
+            var project = new OeProject
             {
                 OrganizationId = org, Name = "CRONUS A/S", CreatedByUserId = null,
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
                 Repositories =
                 {
-                    new ProjectRepository { OrganizationId = org, Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub, Url = "https://github.com/cronus/core", DisplayName = "core" },
-                    new ProjectRepository { OrganizationId = org, Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.AzureDevOps, Url = "https://dev.azure.com/cronus/bc/_git/exts", DisplayName = "exts" },
+                    new OeProjectRepository { OrganizationId = org, Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub, Url = "https://github.com/cronus/core", DisplayName = "core" },
+                    new OeProjectRepository { OrganizationId = org, Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.AzureDevOps, Url = "https://dev.azure.com/cronus/bc/_git/exts", DisplayName = "exts" },
                 },
             };
             seed.OeProjects.Add(project);
@@ -63,7 +63,7 @@ public sealed class BackfillArtifactsDataMigrationTests : IDisposable
             projectId = project.Id;
 
             // A project-kind release this project produced, reachable via an import job.
-            var release = new Release
+            var release = new OeRelease
             {
                 OrganizationId = org, Label = "CRONUS A/S on BC 26.0", Kind = "project", Status = "ready",
                 BcVersion = "26.0", ImportedAt = new DateTime(2026, 6, 20, 9, 0, 0, DateTimeKind.Utc),
@@ -73,7 +73,7 @@ public sealed class BackfillArtifactsDataMigrationTests : IDisposable
             await seed.SaveChangesAsync();
             releaseId = release.Id;
 
-            seed.OeImportJobs.Add(new ImportJob
+            seed.OeImportJobs.Add(new OeImportJob
             {
                 OrganizationId = org, ReleaseId = releaseId, ProjectId = projectId,
                 Kind = "project_build", Status = "completed", CreatedAt = DateTime.UtcNow,
@@ -81,13 +81,13 @@ public sealed class BackfillArtifactsDataMigrationTests : IDisposable
             // The legacy per-app build report carrying source provenance — two apps
             // from the same repo+commit collapse to one commit row.
             seed.OeProjectBuildResults.AddRange(
-                new ProjectBuildResult
+                new OeProjectBuildResult
                 {
                     OrganizationId = org, ReleaseId = releaseId, AppName = "Core", AppId = Guid.NewGuid().ToString(),
                     Status = ProjectBuildResultStatus.Ingested, RepoUrl = "https://github.com/cronus/core.git",
                     CommitSha = "9a1f2b3c4d5e", CommitDate = new DateTime(2026, 6, 20, 8, 0, 0, DateTimeKind.Utc), CreatedAt = DateTime.UtcNow,
                 },
-                new ProjectBuildResult
+                new OeProjectBuildResult
                 {
                     OrganizationId = org, ReleaseId = releaseId, AppName = "Extra", AppId = Guid.NewGuid().ToString(),
                     Status = ProjectBuildResultStatus.Ingested, RepoUrl = "https://github.com/cronus/core.git",

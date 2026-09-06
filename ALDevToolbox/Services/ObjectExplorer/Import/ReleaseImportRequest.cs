@@ -3,7 +3,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Import;
 /// <summary>
 /// One Release-import operation in its entirety: the label / kind / parent the
 /// admin chose on the upload form, plus the list of <c>.app</c> files to ingest
-/// into the new <see cref="Domain.Entities.ObjectExplorer.Release"/>. Each
+/// into the new <see cref="Domain.Entities.ObjectExplorer.OeRelease"/>. Each
 /// upload optionally carries a paired <c>.Source.zip</c> for when the <c>.app</c>
 /// doesn't embed source.
 /// </summary>

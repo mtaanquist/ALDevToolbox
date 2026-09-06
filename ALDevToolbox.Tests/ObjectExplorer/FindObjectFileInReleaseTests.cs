@@ -5,7 +5,6 @@ using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -98,7 +97,7 @@ public sealed class FindObjectFileInReleaseTests : IDisposable
         string label, string kind, int? objectId, string name, bool withFile = true)
     {
         await using var write = _db.NewContext();
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = label,
@@ -130,14 +129,14 @@ public sealed class FindObjectFileInReleaseTests : IDisposable
         {
             var content = $"{kind} {objectId?.ToString() ?? ""} \"{name}\"";
             var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash,
                 Content = content,
                 ContentLength = content.Length,
                 LineCount = 1,
             });
-            var file = new ModuleFile
+            var file = new OeModuleFile
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -150,7 +149,7 @@ public sealed class FindObjectFileInReleaseTests : IDisposable
             fileId = file.Id;
         }
 
-        write.OeModuleObjects.Add(new ModuleObject
+        write.OeModuleObjects.Add(new OeModuleObject
         {
             OrganizationId = TestDb.DefaultOrgId,
             ModuleId = module.Id,

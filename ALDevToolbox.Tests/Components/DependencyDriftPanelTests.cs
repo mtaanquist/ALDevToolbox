@@ -208,7 +208,7 @@ public sealed class DependencyDriftPanelTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        var release = new ALDevToolbox.Domain.Entities.ObjectExplorer.Release
+        var release = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "Business Central 28.2 (DK)",
@@ -219,7 +219,7 @@ public sealed class DependencyDriftPanelTests : IDisposable
             UpdatedAt = now,
         };
         ctx.OeReleases.Add(release);
-        ctx.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+        ctx.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS A/S payments",
@@ -229,7 +229,7 @@ public sealed class DependencyDriftPanelTests : IDisposable
             UpdatedAt = now,
             Repositories =
             [
-                new ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository
+                new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository
                 {
                     OrganizationId = TestDb.DefaultOrgId,
                     Provider = RepositoryProvider.GitHub,

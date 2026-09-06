@@ -7,9 +7,9 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 
 /// <summary>
-/// CRUD over <see cref="Pipeline"/> — the named build configurations that belong to
-/// a <see cref="Project"/>. A pipeline owns the extension selection a build runs
-/// (<see cref="Pipeline.RequestedAppIdsJson"/>); a project has many. Management
+/// CRUD over <see cref="OePipeline"/> — the named build configurations that belong to
+/// a <see cref="OeProject"/>. A pipeline owns the extension selection a build runs
+/// (<see cref="OePipeline.RequestedAppIdsJson"/>); a project has many. Management
 /// rights come from the parent project's owner via <see cref="ProjectAccess"/>.
 /// Org-scoped via the EF query filter; mutations run inside an authenticated request.
 /// Validation throws <see cref="PlanValidationException"/> with field-keyed errors.
@@ -51,7 +51,7 @@ public sealed class PipelineService
     /// Active pipelines the current user may see, optionally scoped to one project,
     /// ordered by name. A pipeline inherits its project's visibility.
     /// </summary>
-    public async Task<List<Pipeline>> ListPipelinesAsync(int? projectId = null, CancellationToken ct = default)
+    public async Task<List<OePipeline>> ListPipelinesAsync(int? projectId = null, CancellationToken ct = default)
     {
         var query = _db.OePipelines.AsNoTracking().Where(p => p.DeletedAt == null);
         if (projectId is { } pid)
@@ -72,7 +72,7 @@ public sealed class PipelineService
     /// org. Throws <see cref="ProjectAccessDeniedException"/> when its project is
     /// Private and the caller has no grant on it.
     /// </summary>
-    public async Task<Pipeline?> GetPipelineAsync(int id, CancellationToken ct = default)
+    public async Task<OePipeline?> GetPipelineAsync(int id, CancellationToken ct = default)
     {
         await EnsureCanViewPipelineAsync(id, ct);
         return await _db.OePipelines.AsNoTracking()
@@ -88,7 +88,7 @@ public sealed class PipelineService
         var (name, selectionJson, releaseRepositoryId) = await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = orgId,
             ProjectId = input.ProjectId,

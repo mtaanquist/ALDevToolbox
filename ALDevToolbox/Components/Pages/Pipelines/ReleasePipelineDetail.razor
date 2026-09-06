@@ -279,7 +279,7 @@
     [Parameter] public int Id { get; set; }
 
     private bool _loading = true;
-    private ReleasePipeline? _rp;
+    private OeReleasePipeline? _rp;
     private bool _canManage;
     private bool _isProduction;
     private List<DeliveryHistoryRow> _deliveries = new();

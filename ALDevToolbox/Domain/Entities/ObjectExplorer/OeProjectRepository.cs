@@ -3,7 +3,7 @@ using ALDevToolbox.Domain.ValueObjects;
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One Git repository belonging to a <see cref="Project"/>. A child table rather
+/// One Git repository belonging to a <see cref="OeProject"/>. A child table rather
 /// than a JSON column because repos are listed, validated (per-provider URL
 /// shape), and managed individually. <see cref="OrganizationId"/> is denormalised
 /// from the parent so the row carries its own tenant key — consistent with the
@@ -11,7 +11,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// org PAT matching <see cref="Provider"/> to clone. See
 /// <c>.design/object-explorer-project-builds.md</c>.
 /// </summary>
-public class ProjectRepository
+public class OeProjectRepository
 {
     public int Id { get; set; }
 
@@ -20,7 +20,7 @@ public class ProjectRepository
     public Organization? Organization { get; set; }
 
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>The Git host this repo lives on; selects which org PAT clones it. Persisted as a string discriminator.</summary>
     public RepositoryProvider Provider { get; set; }

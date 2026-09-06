@@ -1,7 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 namespace ALDevToolbox.Data.Configurations;
 

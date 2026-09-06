@@ -8,7 +8,6 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -162,7 +161,7 @@ public sealed class ReleaseCompareFilesFlatTests : IDisposable
         {
             if (!await ctx.OeFileContents.AnyAsync(c => c.ContentHash == hash))
             {
-                ctx.OeFileContents.Add(new FileContent
+                ctx.OeFileContents.Add(new OeFileContent
                 {
                     ContentHash = hash,
                     Content = "// " + hash,
@@ -173,7 +172,7 @@ public sealed class ReleaseCompareFilesFlatTests : IDisposable
         }
         await ctx.SaveChangesAsync();
 
-        var files = new List<ModuleFile>();
+        var files = new List<OeModuleFile>();
 
         for (var i = 0; i < changedModuleCount; i++)
         {
@@ -211,7 +210,7 @@ public sealed class ReleaseCompareFilesFlatTests : IDisposable
         return (left.Id, right.Id);
     }
 
-    private static Release NewRelease(string label) => new()
+    private static OeRelease NewRelease(string label) => new()
     {
         OrganizationId = TestDb.DefaultOrgId,
         Label = label,
@@ -233,7 +232,7 @@ public sealed class ReleaseCompareFilesFlatTests : IDisposable
         CreatedAt = DateTime.UtcNow,
     };
 
-    private static ModuleFile NewFile(long moduleId, string path, string hash) => new()
+    private static OeModuleFile NewFile(long moduleId, string path, string hash) => new()
     {
         OrganizationId = TestDb.DefaultOrgId,
         ModuleId = moduleId,

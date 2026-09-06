@@ -8,7 +8,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// failed while others made it into the Release. See
 /// <c>.design/object-explorer-project-builds.md</c>.
 /// </summary>
-public class ProjectBuildResult
+public class OeProjectBuildResult
 {
     public int Id { get; set; }
 
@@ -16,9 +16,9 @@ public class ProjectBuildResult
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
 
-    /// <summary>The project <see cref="Release"/> this build produced. Rows are reaped with the release.</summary>
+    /// <summary>The project <see cref="OeRelease"/> this build produced. Rows are reaped with the release.</summary>
     public int ReleaseId { get; set; }
-    public Release? Release { get; set; }
+    public OeRelease? Release { get; set; }
 
     /// <summary>The extension's app.json <c>name</c> (best-effort label for the report).</summary>
     public string AppName { get; set; } = string.Empty;
@@ -44,7 +44,7 @@ public class ProjectBuildResult
     public DateTime CreatedAt { get; set; }
 }
 
-/// <summary>The lifecycle states a <see cref="ProjectBuildResult"/> row can hold.</summary>
+/// <summary>The lifecycle states a <see cref="OeProjectBuildResult"/> row can hold.</summary>
 public static class ProjectBuildResultStatus
 {
     /// <summary>The app compiled to a <c>.app</c> but ingest hasn't been confirmed (transient).</summary>
@@ -53,6 +53,6 @@ public static class ProjectBuildResultStatus
     /// <summary>The app compiled and its <c>.app</c> was handed to the Release importer.</summary>
     public const string Ingested = "ingested";
 
-    /// <summary>The app could not be cloned, resolved, or compiled. <see cref="ProjectBuildResult.Message"/> says why.</summary>
+    /// <summary>The app could not be cloned, resolved, or compiled. <see cref="OeProjectBuildResult.Message"/> says why.</summary>
     public const string Failed = "failed";
 }

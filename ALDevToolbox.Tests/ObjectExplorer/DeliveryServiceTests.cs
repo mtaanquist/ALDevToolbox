@@ -583,12 +583,12 @@ public sealed class DeliveryServiceTests : IDisposable
         string? schemaSyncMode = null)
     {
         var now = DateTime.UtcNow;
-        var project = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS " + Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
+        var project = new OeProject { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS " + Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
         var pipelineId = await SeedPipelineAsync(ctx, project.Id);
-        var env = new ProjectEnvironment
+        var env = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Production", Type = "Production",
             FetchedAt = now,
@@ -596,7 +596,7 @@ public sealed class DeliveryServiceTests : IDisposable
         ctx.OeProjectEnvironments.Add(env);
         await ctx.SaveChangesAsync();
 
-        var releasePipeline = new ReleasePipeline
+        var releasePipeline = new OeReleasePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "CRONUS App → Production",
             BuildPipelineId = pipelineId, ProjectEnvironmentId = env.Id,
@@ -615,7 +615,7 @@ public sealed class DeliveryServiceTests : IDisposable
     private static async Task MakeReleaseSourcedAsync(AppDbContext ctx, int releasePipelineId)
     {
         var rp = await ctx.OeReleasePipelines.SingleAsync(r => r.Id == releasePipelineId);
-        var repository = new ProjectRepository
+        var repository = new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = rp.ProjectId,
             Provider = RepositoryProvider.GitHub, Url = "https://github.com/cronus-dk/cronus-customer.git",
@@ -634,7 +634,7 @@ public sealed class DeliveryServiceTests : IDisposable
     private static async Task<int> SeedStagedBuildAsync(AppDbContext ctx, int projectId, string tag, string[] appNames)
     {
         var now = DateTime.UtcNow;
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = null,
             Status = ProjectBuildStatus.Ready, GithubReleaseTag = tag,
@@ -646,7 +646,7 @@ public sealed class DeliveryServiceTests : IDisposable
 
         foreach (var name in appNames)
         {
-            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
                 FileName = $"{name}_1.0.0.0.app", AppName = name, AppVersion = "1.0.0.0",
@@ -659,7 +659,7 @@ public sealed class DeliveryServiceTests : IDisposable
 
     private static async Task<int> SeedPipelineAsync(AppDbContext ctx, int projectId)
     {
-        var p = new Pipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build " + Guid.NewGuid().ToString("N"), CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+        var p = new OePipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build " + Guid.NewGuid().ToString("N"), CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
         ctx.OePipelines.Add(p);
         await ctx.SaveChangesAsync();
         return p.Id;
@@ -668,7 +668,7 @@ public sealed class DeliveryServiceTests : IDisposable
     private static async Task<int> SeedBuildAsync(AppDbContext ctx, int projectId, int pipelineId, string status, string[] appNames)
     {
         var now = DateTime.UtcNow;
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = pipelineId,
             Status = status, StartedAt = now,
@@ -679,7 +679,7 @@ public sealed class DeliveryServiceTests : IDisposable
         // Artifacts inserted in dependency order (the build's TopologicalOrder), preserved by id.
         for (var i = 0; i < appNames.Length; i++)
         {
-            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
                 FileName = $"{appNames[i]}_1.0.{i}.0.app", AppName = appNames[i], AppVersion = $"1.0.{i}.0",

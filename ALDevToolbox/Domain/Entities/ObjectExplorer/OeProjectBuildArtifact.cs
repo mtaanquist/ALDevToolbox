@@ -1,13 +1,13 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One downloadable deliverable from a <see cref="ProjectBuild"/> — a compiled
+/// One downloadable deliverable from a <see cref="OeProjectBuild"/> — a compiled
 /// <c>.app</c> whose bytes are <em>retained</em> (unlike the old flow, where
 /// uploads streamed into ingest and weren't kept). <c>*.dep.app</c> packaging
 /// artifacts are excluded at build time, so they never appear as a download.
 /// Served by <c>ArtifactEndpoints</c>. See <c>.design/artifacts.md</c>.
 /// </summary>
-public class ProjectBuildArtifact
+public class OeProjectBuildArtifact
 {
     public int Id { get; set; }
 
@@ -16,7 +16,7 @@ public class ProjectBuildArtifact
     public Organization? Organization { get; set; }
 
     public int ProjectBuildId { get; set; }
-    public ProjectBuild? ProjectBuild { get; set; }
+    public OeProjectBuild? ProjectBuild { get; set; }
 
     /// <summary>The deliverable's file name, e.g. <c>CRONUS_My Extension_1.2.3.0.app</c>.</summary>
     public string FileName { get; set; } = string.Empty;

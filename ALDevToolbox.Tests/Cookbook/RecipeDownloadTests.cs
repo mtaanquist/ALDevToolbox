@@ -57,7 +57,7 @@ public sealed class RecipeDownloadTests : IDisposable
     private async Task<int> SeedProjectAsync(string name, bool deleted = false)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,
@@ -328,7 +328,7 @@ public sealed class RecipeDownloadTests : IDisposable
         // The EF query filter is the only thing scoping the lookup -- prove it.
         await using (var seed = _db.NewContext())
         {
-            seed.OeProjects.Add(new Project
+            seed.OeProjects.Add(new OeProject
             {
                 OrganizationId = TestDb.OtherOrgId,
                 Name = "CRONUS A/S",

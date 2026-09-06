@@ -27,11 +27,11 @@ public class EnvironmentUpgradeAction
 
     /// <summary>The customer. Denormalised from the environment so the worker resolves credentials without a join, and so the feed can name the customer.</summary>
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>The environment this acts on. The feed is keyed by it.</summary>
     public int EnvironmentId { get; set; }
-    public ProjectEnvironment? Environment { get; set; }
+    public OeProjectEnvironment? Environment { get; set; }
 
     /// <summary>Which of the two moves this is.</summary>
     public UpgradeActionKind Kind { get; set; }

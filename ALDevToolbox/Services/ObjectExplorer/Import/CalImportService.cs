@@ -3,13 +3,7 @@ using System.Text;
 using ALDevToolbox.Data;
 using ALDevToolbox.Services.Cal;
 using Microsoft.EntityFrameworkCore;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
-using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
-using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
-using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
-using OeModuleSystemReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference;
-using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
-using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Import;

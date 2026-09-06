@@ -142,7 +142,7 @@ public sealed class ProjectsBrowserTests : IDisposable
         await db.SaveChangesAsync();
 
         project.Visibility = ProjectVisibility.Private;
-        db.OeProjectTeams.Add(new ProjectTeam
+        db.OeProjectTeams.Add(new OeProjectTeam
         {
             OrganizationId = project.OrganizationId,
             ProjectId = project.Id,
@@ -155,7 +155,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     private async Task SeedProjectAsync(string name, string? status, string? bcVersion)
     {
         await using var db = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = _db.OrgContext.CurrentOrganizationId!.Value,
             Name = name,
@@ -167,7 +167,7 @@ public sealed class ProjectsBrowserTests : IDisposable
 
         if (status is not null)
         {
-            db.OeProjectBuilds.Add(new ProjectBuild
+            db.OeProjectBuilds.Add(new OeProjectBuild
             {
                 OrganizationId = project.OrganizationId,
                 ProjectId = project.Id,

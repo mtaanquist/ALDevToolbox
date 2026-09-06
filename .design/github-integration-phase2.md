@@ -369,8 +369,8 @@ Releases page, and who sometimes has to redeploy a version the toolbox did not b
   `artifact_source` (`build` | `github_release`) and `github_release_repository_id`;
   `build_pipeline_id` becomes nullable and is required exactly when the source is
   `build`. Choosing a tag downloads the `.app` assets and **stages them as a
-  `ProjectBuild` row** (status `ready`, no pipeline, `github_release_tag` set) with
-  `ProjectBuildArtifact` rows, so `DeliveryService` and every downstream reader work
+  `OeProjectBuild` row** (status `ready`, no pipeline, `github_release_tag` set) with
+  `OeProjectBuildArtifact` rows, so `DeliveryService` and every downstream reader work
   unchanged. `ScheduleDeliveryAsync` accepts a staged build for a Release-sourced
   pipeline in place of the build-pipeline check.
 - **Asset downloads follow the redirect by hand.** The typed client does not follow
@@ -505,7 +505,7 @@ on every pull request, inline in the Files tab.
   `http.extraHeader` shape as a PAT). A webhook has no user, and the check runs as the
   App - the honest model the issue names. Manual builds keep the user's PAT; nothing
   about them changes.
-- **A PR build is a `ProjectBuild`** with `trigger = pull_request`, `Branch` = head ref,
+- **A PR build is an `OeProjectBuild`** with `trigger = pull_request`, `Branch` = head ref,
   `pull_request_number`, `head_sha`, `check_run_id`, no pipeline and no user, all apps
   selected. It rides the existing `ReleaseImportQueue` through a new
   `ReleaseImportSource.PullRequestBuild` case so its symbols resolve and its Release
@@ -1013,6 +1013,6 @@ click, three-way merges of recipe files, multi-file translation batches, editing
 existing extension in a repository, and any MCP surface for the webhook flow.
 
 Open item, deliberately not solved here: **pull-request builds are never pruned.** Every
-push to an open pull request leaves a Release and a `ProjectBuild` row behind, so a busy
+push to an open pull request leaves a Release and an `OeProjectBuild` row behind, so a busy
 repository accumulates them indefinitely; retention for those rows wants a policy an admin
 can see and set, which is its own piece of work rather than a number picked here.

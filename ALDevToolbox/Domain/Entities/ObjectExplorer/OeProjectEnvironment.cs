@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// A Business Central SaaS environment belonging to a <see cref="Project"/>
+/// A Business Central SaaS environment belonging to a <see cref="OeProject"/>
 /// (customer), fetched from the BC Admin Center API and cached so release
 /// pipelines can target it without re-typing a name. Refresh is a <em>stable
 /// upsert</em> keyed by <c>(ProjectId, Name)</c> — the row id survives a refresh, and
@@ -11,7 +11,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <see cref="MissingSince"/> and surfaced as "no longer present". Org-scoped.
 /// See <c>.design/saas-delivery.md</c>.
 /// </summary>
-public class ProjectEnvironment
+public class OeProjectEnvironment
 {
     public int Id { get; set; }
 
@@ -20,7 +20,7 @@ public class ProjectEnvironment
     public Organization? Organization { get; set; }
 
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>The environment name (e.g. <c>Production</c>) — keys the automation API URL and, with <see cref="ProjectId"/>, identifies the row across refreshes.</summary>
     public string Name { get; set; } = string.Empty;
@@ -94,7 +94,7 @@ public class ProjectEnvironment
     /// <summary>
     /// Start of the recurring daily <em>delivery window</em> — the time of day this
     /// environment prefers to receive <em>our</em> deliveries, in the project's
-    /// <see cref="Project.BcTimeZone"/>. A commercial arrangement with the customer,
+    /// <see cref="OeProject.BcTimeZone"/>. A commercial arrangement with the customer,
     /// enforced by our own worker. <c>null</c> (with <see cref="UpdateWindowEnd"/>) means
     /// "no window — deliver any time" (the normal Sandbox case). It is a
     /// <strong>default, not a lock</strong>: it seeds the prefilled schedule time; the

@@ -42,7 +42,7 @@ public sealed class PersistedImportJobs
         bool storeSymbolReference,
         CancellationToken ct = default)
     {
-        var row = new ImportJob
+        var row = new OeImportJob
         {
             OrganizationId = identity.OrganizationId,
             ReleaseId = releaseId,
@@ -251,7 +251,7 @@ public sealed class PersistedImportJobs
     /// Returns the most recent import job for a Release (org-scoped via the EF
     /// query filter), or <see langword="null"/> when none exists. The retry path
     /// uses it to reuse the original source: a <c>url</c> job's
-    /// <see cref="ImportJob.DownloadUrl"/> lets a retry re-run without the admin
+    /// <see cref="OeImportJob.DownloadUrl"/> lets a retry re-run without the admin
     /// re-pasting the link, and the kind / DVD flag tell the UI whether a
     /// re-upload is required (the staged-zip / cal-txt temp file is gone).
     /// </summary>
@@ -301,7 +301,7 @@ public sealed class PersistedImportJobs
 
 /// <summary>
 /// The reusable origin of a Release's most recent import — its source
-/// <see cref="ImportJob.Kind"/> (<c>url</c> / <c>staged_zip</c> / <c>cal_txt</c>
+/// <see cref="OeImportJob.Kind"/> (<c>url</c> / <c>staged_zip</c> / <c>cal_txt</c>
 /// / <c>backfill_system_references</c>), the download URL when it was a URL
 /// import, the DVD-subset flag for staged zips, and the store-symbol-reference
 /// choice. Drives the retry endpoint's source reuse and the manage page's

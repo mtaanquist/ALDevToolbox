@@ -55,7 +55,7 @@ public sealed class ProjectBuildImporter
     /// <summary>
     /// Creates an ingesting project Release for the pipeline <paramref name="pipelineId"/>
     /// and queues its build. The build compiles the pipeline's saved extension
-    /// selection — copied onto the <see cref="ProjectBuild"/> row as a run-time
+    /// selection — copied onto the <see cref="OeProjectBuild"/> row as a run-time
     /// snapshot, so the worker (and a restart-resumed job) compile the same subset
     /// even if the pipeline is later edited. Throws <see cref="PlanValidationException"/>
     /// when the pipeline/project is gone (or the project has no repositories) so the
@@ -113,7 +113,7 @@ public sealed class ProjectBuildImporter
         var orgId = _orgContext.CurrentOrganizationId
             ?? throw new InvalidOperationException("No organization in scope when queuing a project build.");
         var now = DateTime.UtcNow;
-        _db.OeProjectBuilds.Add(new ProjectBuild
+        _db.OeProjectBuilds.Add(new OeProjectBuild
         {
             OrganizationId = orgId,
             ProjectId = pipeline.ProjectId,
@@ -148,8 +148,8 @@ public sealed class ProjectBuildImporter
     /// check (GitHub's signed delivery plus the organisation having tracked this
     /// repository is the authority - see
     /// <c>.design/github-integration-phase2.md</c>), no
-    /// <see cref="ProjectBuild.StartedByUserId"/>, no
-    /// <see cref="ProjectBuild.PipelineId"/>, and no selection, so every extension
+    /// <see cref="OeProjectBuild.StartedByUserId"/>, no
+    /// <see cref="OeProjectBuild.PipelineId"/>, and no selection, so every extension
     /// the repositories hold is compiled. The clone credential is the
     /// installation token, which the worker resolves.</para>
     ///
@@ -190,7 +190,7 @@ public sealed class ProjectBuildImporter
 
         var orgId = _orgContext.CurrentOrganizationId
             ?? throw new InvalidOperationException("No organization in scope when queuing a pull-request build.");
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = orgId,
             ProjectId = projectId,

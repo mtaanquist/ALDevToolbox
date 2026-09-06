@@ -441,7 +441,7 @@ public sealed class RepositoryDiscoveryServiceTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        ctx.OeProjects.Add(new Project
+        ctx.OeProjects.Add(new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "Someone else's customer",
@@ -452,7 +452,7 @@ public sealed class RepositoryDiscoveryServiceTests : IDisposable
             UpdatedAt = now,
             Repositories =
             [
-                new ProjectRepository
+                new OeProjectRepository
                 {
                     OrganizationId = TestDb.DefaultOrgId,
                     Provider = RepositoryProvider.GitHub,

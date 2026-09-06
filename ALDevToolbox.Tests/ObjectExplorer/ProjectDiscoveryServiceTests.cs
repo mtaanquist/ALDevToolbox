@@ -49,7 +49,7 @@ public sealed class ProjectDiscoveryServiceTests : IDisposable
     private async Task<int> SeedProjectAsync(int? ownerId = OwnerUserId, string? discoveredJson = null, DateTime? discoveredAt = null, string? error = null)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS A/S " + Guid.NewGuid().ToString("N"),

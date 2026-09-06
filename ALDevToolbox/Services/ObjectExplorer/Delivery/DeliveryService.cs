@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 
 /// <summary>
-/// Creates and runs <see cref="ProjectDelivery"/> runs — the publish side of SaaS
+/// Creates and runs <see cref="OeProjectDelivery"/> runs — the publish side of SaaS
 /// delivery. A release of a successful build to a release pipeline's target is created
 /// here (access-gated, target snapshotted) and enqueued to <see cref="DeliveryQueue"/>;
 /// <see cref="DeliveryWorker"/> then calls <see cref="RunDeliveryAsync"/>, which claims
@@ -193,7 +193,7 @@ public sealed class DeliveryService
             && !UpdateWindow.IsWithin(rp.WindowStart, rp.WindowEnd, tz, scheduledForUtc);
 
         var now = DateTime.UtcNow;
-        var delivery = new ProjectDelivery
+        var delivery = new OeProjectDelivery
         {
             OrganizationId = orgId,
             ProjectId = rp.ProjectId,
@@ -211,7 +211,7 @@ public sealed class DeliveryService
         };
         for (var i = 0; i < artifacts.Count; i++)
         {
-            delivery.Results.Add(new ProjectDeliveryResult
+            delivery.Results.Add(new OeProjectDeliveryResult
             {
                 OrganizationId = orgId,
                 Ordering = i,
@@ -324,7 +324,7 @@ public sealed class DeliveryService
 
     /// <summary>
     /// Enqueues every <c>scheduled</c> delivery in the current org whose time has come
-    /// (<see cref="ProjectDelivery.ScheduledFor"/> ≤ <paramref name="nowUtc"/>). Org-scoped
+    /// (<see cref="OeProjectDelivery.ScheduledFor"/> ≤ <paramref name="nowUtc"/>). Org-scoped
     /// via the query filter (the scheduler sets the ambient org). Re-enqueuing a row the
     /// worker hasn't claimed yet is a no-op (the queue dedupes by id). Returns the count.
     /// </summary>
@@ -436,7 +436,7 @@ public sealed class DeliveryService
     /// one is handed to Business Central and the delivery ends at
     /// <see cref="ProjectDeliveryStatus.HandedOff"/>.
     /// </summary>
-    private async Task PublishAsync(ProjectDelivery delivery, StringBuilder log, CancellationToken ct)
+    private async Task PublishAsync(OeProjectDelivery delivery, StringBuilder log, CancellationToken ct)
     {
         BcDeliveryContext bc;
         try
@@ -669,7 +669,7 @@ public sealed class DeliveryService
     /// status is written back to the environment row so the project page doesn't keep
     /// showing the stale one the delivery just contradicted.
     /// </summary>
-    private async Task<string?> EnvironmentBlockedAsync(ProjectDelivery delivery, string token, CancellationToken ct)
+    private async Task<string?> EnvironmentBlockedAsync(OeProjectDelivery delivery, string token, CancellationToken ct)
     {
         var env = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.ProjectId == delivery.ProjectId && e.Name == delivery.EnvironmentName)
@@ -718,7 +718,7 @@ public sealed class DeliveryService
     /// for each other.
     /// </summary>
     private async Task<DeploymentOutcome> PollUntilTerminalAsync(
-        BcDeliveryContext bc, string family, ProjectDelivery delivery, BcAppOperation started, CancellationToken ct)
+        BcDeliveryContext bc, string family, OeProjectDelivery delivery, BcAppOperation started, CancellationToken ct)
     {
         if (started.AppId is not { } appId)
         {
@@ -779,7 +779,7 @@ public sealed class DeliveryService
     // ── Reads (for delivery history) ──────────────────────────────────────────
 
     /// <summary>A release pipeline's deliveries, newest first, without the per-app rows or blobs.</summary>
-    public async Task<List<ProjectDelivery>> ListDeliveriesAsync(int releasePipelineId, CancellationToken ct = default)
+    public async Task<List<OeProjectDelivery>> ListDeliveriesAsync(int releasePipelineId, CancellationToken ct = default)
     {
         await EnsureCanViewReleasePipelineAsync(releasePipelineId, ct);
         return await _db.OeProjectDeliveries.AsNoTracking()
@@ -833,13 +833,13 @@ public sealed class DeliveryService
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private async Task SaveResultAsync(ProjectDelivery delivery, StringBuilder log, CancellationToken ct)
+    private async Task SaveResultAsync(OeProjectDelivery delivery, StringBuilder log, CancellationToken ct)
     {
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task FailAsync(ProjectDelivery delivery, StringBuilder log, string message, CancellationToken ct)
+    private async Task FailAsync(OeProjectDelivery delivery, StringBuilder log, string message, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
         delivery.Status = ProjectDeliveryStatus.Failed;

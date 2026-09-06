@@ -40,11 +40,11 @@ internal sealed class OeFactTableForeignKeyIndexConvention : ForeignKeyIndexConv
 {
     private static readonly HashSet<Type> FactTables =
     [
-        typeof(ModuleObject),
-        typeof(ModuleReference),
-        typeof(ModuleSymbol),
-        typeof(ModuleVariable),
-        typeof(ModuleSystemReference),
+        typeof(OeModuleObject),
+        typeof(OeModuleReference),
+        typeof(OeModuleSymbol),
+        typeof(OeModuleVariable),
+        typeof(OeModuleSystemReference),
     ];
 
     public OeFactTableForeignKeyIndexConvention(ProviderConventionSetBuilderDependencies dependencies)

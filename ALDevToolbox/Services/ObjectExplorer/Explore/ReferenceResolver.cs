@@ -258,7 +258,7 @@ public sealed class ReferenceResolver
 /// <summary>
 /// Input shape for <see cref="ReferenceResolver.ResolveAsync"/>. Caller
 /// has already located the file (<see cref="FileId"/>,
-/// <see cref="ReleaseId"/>, <see cref="FileContent"/>) and inspected
+/// <see cref="ReleaseId"/>, <see cref="OeFileContent"/>) and inspected
 /// the click for the word + left-context (qualifier + operator) via
 /// <see cref="AlGoToDefinitionLocator"/>.
 /// </summary>

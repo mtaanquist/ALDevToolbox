@@ -121,7 +121,7 @@
     [Parameter] public IReadOnlyDictionary<string, string>? Errors { get; set; }
 
     /// <summary>The loaded solution, for the audit trail. Null while creating.</summary>
-    [Parameter] public Project? LoadedProject { get; set; }
+    [Parameter] public OeProject? LoadedProject { get; set; }
 
     /// <summary>Who created the solution, for the audit trail.</summary>
     [Parameter] public string? OwnerName { get; set; }

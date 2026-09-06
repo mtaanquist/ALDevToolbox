@@ -4,7 +4,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

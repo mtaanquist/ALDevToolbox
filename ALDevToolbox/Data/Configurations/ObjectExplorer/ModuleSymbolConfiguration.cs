@@ -5,9 +5,9 @@ using ALDevToolbox.Services.ObjectExplorer.Explore;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ModuleSymbolConfiguration : IEntityTypeConfiguration<ModuleSymbol>
+internal sealed class ModuleSymbolConfiguration : IEntityTypeConfiguration<OeModuleSymbol>
 {
-    public void Configure(EntityTypeBuilder<ModuleSymbol> entity)
+    public void Configure(EntityTypeBuilder<OeModuleSymbol> entity)
     {
         entity.ToTable("oe_module_symbols");
         entity.HasKey(e => e.Id);

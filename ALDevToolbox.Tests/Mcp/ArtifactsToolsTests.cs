@@ -58,7 +58,7 @@ public sealed class ArtifactsToolsTests : IDisposable
         {
             var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
             buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", artifacts: 1);
-            ctx.OeProjectBuildLogs.Add(new ProjectBuildLog
+            ctx.OeProjectBuildLogs.Add(new OeProjectBuildLog
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId,
                 Section = "Build", Content = "ok", Ordering = 0, CreatedAt = DateTime.UtcNow,
@@ -164,7 +164,7 @@ public sealed class ArtifactsToolsTests : IDisposable
         int projectId, teamId, buildId;
         await using (var ctx = _db.NewContext())
         {
-            var project = new Project
+            var project = new OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId, Name = name, CreatedByUserId = OwnerUserId,
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
@@ -322,7 +322,7 @@ public sealed class ArtifactsToolsTests : IDisposable
 
     private static async Task<int> SeedProjectAsync(Data.AppDbContext ctx, string name)
     {
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId, Name = name, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
         };
@@ -333,7 +333,7 @@ public sealed class ArtifactsToolsTests : IDisposable
 
     private static async Task<int> SeedReleaseAsync(Data.AppDbContext ctx)
     {
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId, Label = "build", Kind = "project", Status = "ready",
             ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
@@ -347,7 +347,7 @@ public sealed class ArtifactsToolsTests : IDisposable
         Data.AppDbContext ctx, int projectId, string status, DateTime startedAt,
         string? bcVersion = null, int artifacts = 0, int? releaseId = null)
     {
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Status = status, BcVersion = bcVersion,
             StartedAt = startedAt, ReleaseId = releaseId,
@@ -356,7 +356,7 @@ public sealed class ArtifactsToolsTests : IDisposable
         await ctx.SaveChangesAsync();
         for (var i = 0; i < artifacts; i++)
         {
-            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
                 FileName = $"app{i}.app", AppName = $"App {i}", AppVersion = "1.0.0.0",

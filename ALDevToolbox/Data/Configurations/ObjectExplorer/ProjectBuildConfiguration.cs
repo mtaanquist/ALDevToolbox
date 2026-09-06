@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<ProjectBuild>
+internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<OeProjectBuild>
 {
-    public void Configure(EntityTypeBuilder<ProjectBuild> entity)
+    public void Configure(EntityTypeBuilder<OeProjectBuild> entity)
     {
         entity.ToTable("oe_project_builds");
         entity.HasKey(e => e.Id);

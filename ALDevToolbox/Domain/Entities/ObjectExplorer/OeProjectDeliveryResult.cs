@@ -1,13 +1,13 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// The outcome of publishing one <c>.app</c> within a <see cref="ProjectDelivery"/> —
-/// the per-app analogue of <see cref="ProjectBuildResult"/>. Records the app's
+/// The outcome of publishing one <c>.app</c> within a <see cref="OeProjectDelivery"/> —
+/// the per-app analogue of <see cref="OeProjectBuildResult"/>. Records the app's
 /// identity, the BC <c>extensionUpload</c> id the run created for it, the deployment
 /// result, and a short secret-free message. Org-scoped (denormalised from the parent
 /// delivery). See <c>.design/saas-delivery.md</c> ("Delivery").
 /// </summary>
-public class ProjectDeliveryResult
+public class OeProjectDeliveryResult
 {
     public int Id { get; set; }
 
@@ -16,7 +16,7 @@ public class ProjectDeliveryResult
     public Organization? Organization { get; set; }
 
     public int ProjectDeliveryId { get; set; }
-    public ProjectDelivery? ProjectDelivery { get; set; }
+    public OeProjectDelivery? ProjectDelivery { get; set; }
 
     /// <summary>Publish order (dependency order), 0-based — so the history reads in the order the apps were sent.</summary>
     public int Ordering { get; set; }

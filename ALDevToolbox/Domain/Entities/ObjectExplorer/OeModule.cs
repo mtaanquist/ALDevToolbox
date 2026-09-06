@@ -1,17 +1,17 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One <c>.app</c> file inside a <see cref="Release"/>. The AppId / Name / Publisher / Version
+/// One <c>.app</c> file inside a <see cref="OeRelease"/>. The AppId / Name / Publisher / Version
 /// triplet identifies a specific compiled module across the entire BC ecosystem; the same AppId
 /// at different Versions across two Releases is how cross-Release evolution queries hang
 /// together. Reference targets resolve to this row at query time via the recursive CTE on
-/// <see cref="Release.ParentReleaseId"/>.
+/// <see cref="OeRelease.ParentReleaseId"/>.
 ///
 /// Name-collision note: <c>ALDevToolbox.Domain.Entities.Module</c> (the template-catalogue
-/// module) is a different entity. C# distinguishes them by namespace; in files that touch
-/// both, use a <c>using OeModule = ...ObjectExplorer.Module;</c> alias.
+/// module) is a different entity. This one carries the <c>Oe</c> prefix precisely so the two
+/// never collide in a file that touches both.
 /// </summary>
-public class Module
+public class OeModule
 {
     public long Id { get; set; }
 
@@ -19,7 +19,7 @@ public class Module
     public Organization? Organization { get; set; }
 
     public int ReleaseId { get; set; }
-    public Release? Release { get; set; }
+    public OeRelease? Release { get; set; }
 
     /// <summary>The <c>App.Id</c> attribute from <c>NavxManifest.xml</c> — stable across versions.</summary>
     public Guid AppId { get; set; }
@@ -55,7 +55,7 @@ public class Module
 
     /// <summary>
     /// Translation-only app (e.g. <c>"Danish language (Denmark)"</c>). Ingested as a bare row
-    /// so the dependency graph is closed; no <see cref="ModuleObject"/>s extracted.
+    /// so the dependency graph is closed; no <see cref="OeModuleObject"/>s extracted.
     /// </summary>
     public bool IsLanguagePack { get; set; }
 
@@ -78,7 +78,7 @@ public class Module
     public string? AppFileHash { get; set; }
 
     /// <summary>
-    /// FK into the shared <see cref="FileContent"/> store holding this module's
+    /// FK into the shared <see cref="OeFileContent"/> store holding this module's
     /// raw <c>SymbolReference.json</c>, or <see langword="null"/> when it wasn't
     /// captured (the per-import "store symbol reference" option was off, or the
     /// app shipped no symbol file). Opt-in because a base-app symbol file is
@@ -88,13 +88,13 @@ public class Module
     public string? SymbolReferenceContentHash { get; set; }
 
     /// <summary>Navigation to the stored <c>SymbolReference.json</c> text; null when not captured.</summary>
-    public FileContent? SymbolReferenceContent { get; set; }
+    public OeFileContent? SymbolReferenceContent { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
-    public ICollection<ModuleFile> Files { get; set; } = new List<ModuleFile>();
-    public ICollection<ModuleObject> Objects { get; set; } = new List<ModuleObject>();
-    public ICollection<ModuleSymbol> Symbols { get; set; } = new List<ModuleSymbol>();
-    public ICollection<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
-    public ICollection<ModuleReference> References { get; set; } = new List<ModuleReference>();
+    public ICollection<OeModuleFile> Files { get; set; } = new List<OeModuleFile>();
+    public ICollection<OeModuleObject> Objects { get; set; } = new List<OeModuleObject>();
+    public ICollection<OeModuleSymbol> Symbols { get; set; } = new List<OeModuleSymbol>();
+    public ICollection<OeModuleVariable> Variables { get; set; } = new List<OeModuleVariable>();
+    public ICollection<OeModuleReference> References { get; set; } = new List<OeModuleReference>();
 }

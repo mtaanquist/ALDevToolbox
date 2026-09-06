@@ -209,7 +209,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// access check of its own. Callers decide the gate and whether the round-trip counts
     /// as a verification of the connection.
     /// </summary>
-    private async Task<BcConnectionTestResult> RefreshEnvironmentsCoreAsync(Project project, bool markVerified, CancellationToken ct)
+    private async Task<BcConnectionTestResult> RefreshEnvironmentsCoreAsync(OeProject project, bool markVerified, CancellationToken ct)
     {
         var projectId = project.Id;
         var creds = ResolveCredentials(project);
@@ -958,12 +958,12 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
     /// <summary>
     /// Stable upsert of the fetched environments onto the project's tracked
-    /// <see cref="Project.Environments"/>: match by name (preserving each row's id and
+    /// <see cref="OeProject.Environments"/>: match by name (preserving each row's id and
     /// picked company), add new ones, and stamp <c>MissingSince</c> on any that the
     /// fetch no longer returns rather than deleting them — so a release pipeline's FK
     /// never dangles. Assumes the caller saves.
     /// </summary>
-    private async Task UpsertEnvironmentsAsync(Project project, IReadOnlyList<BcEnvironment> fetched, CancellationToken ct)
+    private async Task UpsertEnvironmentsAsync(OeProject project, IReadOnlyList<BcEnvironment> fetched, CancellationToken ct)
     {
         var existing = await _db.OeProjectEnvironments
             .Where(e => e.ProjectId == project.Id)
@@ -982,7 +982,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             }
             else
             {
-                var row2 = new ProjectEnvironment
+                var row2 = new OeProjectEnvironment
                 {
                     OrganizationId = project.OrganizationId,
                     ProjectId = project.Id,
@@ -1022,7 +1022,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// read still leaves a freshly-read window.
     /// </para>
     /// </summary>
-    private async Task MirrorBcEnvironmentDetailsAsync(Project project, string token, CancellationToken ct)
+    private async Task MirrorBcEnvironmentDetailsAsync(OeProject project, string token, CancellationToken ct)
     {
         var rows = await _db.OeProjectEnvironments
             .Where(e => e.ProjectId == project.Id && e.MissingSince == null)
@@ -1111,7 +1111,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// list is a successful read that says "nothing is scheduled", which is a different
     /// fact from "we never asked".
     /// </summary>
-    private static void ApplyNextUpdate(ProjectEnvironment row, BcEnvironmentUpdate? update)
+    private static void ApplyNextUpdate(OeProjectEnvironment row, BcEnvironmentUpdate? update)
     {
         row.BcNextUpdateVersion = update?.TargetVersion;
         row.BcNextUpdateType = update?.TargetVersionType;
@@ -1128,7 +1128,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// survive a refresh. <c>geoName</c> is absent from the by-name
     /// response, so a null there leaves the cached value in place rather than erasing it.
     /// </summary>
-    private static void ApplyFetched(ProjectEnvironment row, BcEnvironment env, DateTime now)
+    private static void ApplyFetched(OeProjectEnvironment row, BcEnvironment env, DateTime now)
     {
         row.Type = env.Type;
         row.FriendlyName = env.FriendlyName;
@@ -1152,7 +1152,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>Decrypts the stored credentials, or null when not fully configured / the key ring can't decrypt the secret.</summary>
-    private (Guid TenantId, string ClientId, string Secret)? ResolveCredentials(Project project)
+    private (Guid TenantId, string ClientId, string Secret)? ResolveCredentials(OeProject project)
     {
         if (project.BcTenantId is null || project.BcTenantId == Guid.Empty) return null;
         if (string.IsNullOrEmpty(project.BcClientId)) return null;

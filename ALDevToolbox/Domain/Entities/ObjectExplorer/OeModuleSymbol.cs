@@ -1,13 +1,13 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One declaration inside a <see cref="ModuleObject"/> — a procedure, trigger, event publisher,
+/// One declaration inside a <see cref="OeModuleObject"/> — a procedure, trigger, event publisher,
 /// event subscriber, or table field. Public/internal methods come from the symbol package's
 /// <c>Methods</c> array; locals come from source extraction. Fields come from the table's
 /// <c>Fields</c> array. Overloads are separate rows distinguished by line number and
 /// signature; the find-references query merges them by name.
 /// </summary>
-public class ModuleSymbol
+public class OeModuleSymbol
 {
     public long Id { get; set; }
 
@@ -16,10 +16,10 @@ public class ModuleSymbol
 
     /// <summary>Denormalised from the parent object so the find-references query doesn't join through Object.</summary>
     public long ModuleId { get; set; }
-    public Module? Module { get; set; }
+    public OeModule? Module { get; set; }
 
     public long ObjectId { get; set; }
-    public ModuleObject? Object { get; set; }
+    public OeModuleObject? Object { get; set; }
 
     /// <summary>
     /// The disambiguated symbol kind. One of: <c>procedure</c>,

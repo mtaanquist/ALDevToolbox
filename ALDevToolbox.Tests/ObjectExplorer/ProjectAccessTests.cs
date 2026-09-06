@@ -86,7 +86,7 @@ public sealed class ProjectAccessTests : IDisposable
     private async Task<int> SeedProjectAsync(string name = "CRONUS Denmark", int? ownerId = OwnerUserId)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,

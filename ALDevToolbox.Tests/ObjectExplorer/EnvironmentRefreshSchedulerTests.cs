@@ -39,7 +39,7 @@ public sealed class EnvironmentRefreshSchedulerTests : IDisposable
         string name, Guid? tenant, string? clientId, string? secret, DateTime? deletedAt = null)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,

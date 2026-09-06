@@ -209,7 +209,7 @@ public sealed class ProjectAccess
     /// <para>Compose it <em>alongside</em> <see cref="VisibleProjectPredicate"/>, not
     /// instead of it: this axis answers "may act", never "may see".</para>
     /// </summary>
-    public static Expression<Func<Project, bool>> UpdateOpsProjectPredicate(AccessSnapshot snapshot)
+    public static Expression<Func<OeProject, bool>> UpdateOpsProjectPredicate(AccessSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.IsSiteAdmin || snapshot.IsOrgAdmin) return _ => true;
@@ -300,7 +300,7 @@ public sealed class ProjectAccess
     /// <c>Project</c> instead of checking row by row. Returns "everything" when the
     /// snapshot bypasses visibility, so the caller doesn't have to special-case it.
     /// </summary>
-    public static Expression<Func<Project, bool>> VisibleProjectPredicate(AccessSnapshot snapshot)
+    public static Expression<Func<OeProject, bool>> VisibleProjectPredicate(AccessSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.BypassesVisibility) return _ => true;
@@ -318,7 +318,7 @@ public sealed class ProjectAccess
     /// rather than negated at the call site so both halves of the split read the
     /// same way and a reader can check them against each other.
     /// </summary>
-    public static Expression<Func<Project, bool>> LockedProjectPredicate(AccessSnapshot snapshot)
+    public static Expression<Func<OeProject, bool>> LockedProjectPredicate(AccessSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.BypassesVisibility) return _ => false;
@@ -380,7 +380,7 @@ public sealed class ProjectAccess
     /// to reach <c>oe_import_jobs</c>, which no navigation property on
     /// <c>Release</c> exposes.</para>
     /// </summary>
-    public Expression<Func<Release, bool>> VisibleReleasePredicate(AccessSnapshot snapshot)
+    public Expression<Func<OeRelease, bool>> VisibleReleasePredicate(AccessSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.BypassesVisibility) return _ => true;
@@ -405,7 +405,7 @@ public sealed class ProjectAccess
     /// <see cref="IsReleaseVisibleAsync"/> and, in inlined form, by
     /// <see cref="VisibleReleasePredicate"/>.
     /// </summary>
-    private static Expression<Func<Project, bool>> LinkedToRelease(AppDbContext db, int releaseId)
+    private static Expression<Func<OeProject, bool>> LinkedToRelease(AppDbContext db, int releaseId)
         => p => p.Builds.Any(b => b.ReleaseId == releaseId)
                 || db.OeImportJobs.Any(j => j.ProjectId == p.Id && j.ReleaseId == releaseId);
 

@@ -3,12 +3,12 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
 /// One imported snapshot of a Business Central application surface — a DVD-style upload that
-/// holds many <see cref="Module"/> rows (one per <c>.app</c> file). The Object Explorer's
+/// holds many <see cref="OeModule"/> rows (one per <c>.app</c> file). The Object Explorer's
 /// version picker shows Releases; <c>ParentReleaseId</c> lets a third-party Release sit on
 /// top of a first-party one so its references resolve up the chain. See
 /// <c>.design/object-explorer.md</c> for the full model.
 /// </summary>
-public class Release
+public class OeRelease
 {
     public int Id { get; set; }
 
@@ -69,7 +69,7 @@ public class Release
     /// removed while a child still references it.
     /// </summary>
     public int? ParentReleaseId { get; set; }
-    public Release? ParentRelease { get; set; }
+    public OeRelease? ParentRelease { get; set; }
 
     /// <summary>
     /// Optional link to the <c>ApplicationVersion</c> catalogue row matching this BC release
@@ -110,5 +110,5 @@ public class Release
     /// <summary>Soft-delete marker. Null = active.</summary>
     public DateTime? DeletedAt { get; set; }
 
-    public ICollection<Module> Modules { get; set; } = new List<Module>();
+    public ICollection<OeModule> Modules { get; set; } = new List<OeModule>();
 }

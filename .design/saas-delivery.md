@@ -3,9 +3,9 @@
 > **Status: shipped.** The delivery pipeline is built and running. Implementation lives in
 > `Services/ObjectExplorer/Delivery/DeliveryService.cs`, `DeliveryScheduler.cs`, `DeliveryWorker.cs`,
 > `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC API clients under
-> `Services/ObjectExplorer/Bc/`. The entities are `ProjectDelivery`, `ProjectDeliveryResult`, and
-> `ReleasePipeline`; the maintenance-window math is the `UpdateWindow` value object; MCP tools
-> expose the surface to agents. It extends `Project` (the customer) and `Pipeline` (the build
+> `Services/ObjectExplorer/Bc/`. The entities are `OeProjectDelivery`, `OeProjectDeliveryResult`, and
+> `OeReleasePipeline`; the maintenance-window math is the `UpdateWindow` value object; MCP tools
+> expose the surface to agents. It extends `OeProject` (the customer) and `OePipeline` (the build
 > config) so a successful build can be published straight to a Business Central SaaS environment via
 > the **Admin Center API's App Management surface**, on a schedule that avoids the customer's working
 > hours. The automation API that published v1 is gone: Microsoft is removing its upload surface, and
@@ -43,7 +43,7 @@ surface bound to `companies({id})`, and it was dropped when publishing moved.
 4. **Release:** once a build is **successful**, "Release" (on the release pipeline) or "Release to…"
    (on the successful build row) → the dialog resolves the **target** (= a release pipeline, carrying
    the environment + modes), defaults to the **latest successful build** (older ones selectable), and
-   you pick the **date+time**. → enqueues a scheduled `ProjectDelivery`.
+   you pick the **date+time**. → enqueues a scheduled `OeProjectDelivery`.
 5. **Run:** at the scheduled time the background worker **claims** the delivery (after which it's no
    longer cancellable) and runs upload → install → poll; status flows
    `scheduled → claimed → uploading → installing → deployed | failed`.
@@ -83,7 +83,7 @@ untouched) apply as always.
 like *"Release Contoso App on Production"* is really a release concern, and a partner usually wants to
 **build once and deploy that same build to several environments** (test in Sandbox, then promote the
 identical artifact to Production). Fusing build + delivery onto one entity can't express that without
-rebuilding. So instead of a `kind` discriminator on `Pipeline` (which would mean many
+rebuilding. So instead of a `kind` discriminator on `OePipeline` (which would mean many
 nullable-by-kind columns, since build and release fields barely overlap), model them as two entities:
 
 ```
@@ -94,14 +94,14 @@ Project (customer)
 ```
 
 A Release pipeline references **one** Build pipeline as its artifact source and **one** environment
-as its target; a Build pipeline can feed several Release pipelines. The existing `Pipeline` (shipped
-in 7.1.0) keeps its meaning untouched — we add `ReleasePipeline` alongside it. (Alternative if you'd
-rather not add an entity: a `kind` column on `Pipeline` — noted in open questions.)
+as its target; a Build pipeline can feed several Release pipelines. The existing `OePipeline` (shipped
+in 7.1.0) keeps its meaning untouched — we add `OeReleasePipeline` alongside it. (Alternative if you'd
+rather not add an entity: a `kind` column on `OePipeline` — noted in open questions.)
 
 ### 1. Project = the customer connection (the tenant + credentials)
 
 A customer has one Entra tenant and one set of S2S credentials shared across all their environments,
-so these live on `Project` (new columns on `oe_projects`, snake_case):
+so these live on `OeProject` (new columns on `oe_projects`, snake_case):
 
 | Column | Type | Why |
 |---|---|---|
@@ -120,12 +120,12 @@ is first-class — the Project connection card warns when a secret is within ~N 
 delivery scheduled past the expiry is flagged at scheduling time.
 
 **Environments (fetched, persisted).** Release pipelines reference an environment, so persist the
-customer's environments as a child `ProjectEnvironment` (`oe_project_environments`: `name`, `type`
+customer's environments as a child `OeProjectEnvironment` (`oe_project_environments`: `name`, `type`
 Production/Sandbox, `status`, `fetched_at`, and the rest of the fetched record), populated by Test
 connection / a Refresh — the same fetch-and-cache shape as the discovery cache. Release pipelines then
-point at a `ProjectEnvironment` rather than re-typing a name.
+point at an `OeProjectEnvironment` rather than re-typing a name.
 
-Each `ProjectEnvironment` also carries a recurring **update window** (see below), so the time-of-day
+Each `OeProjectEnvironment` also carries a recurring **update window** (see below), so the time-of-day
 defaulting is per-environment, not per-release-pipeline.
 
 **As built — the whole environment record is kept, not just name and type.** The environments call
@@ -161,7 +161,7 @@ separate columns, separate prose, and separate columns on screen.
 
 | | **Delivery window** (ours) | **Business Central updates** (Microsoft's) |
 |---|---|---|
-| Where | `update_window_start` / `_end` on `ProjectEnvironment`, in `Project.BcTimeZone` | `bc_update_window_*`, mirrored from `settings/upgrade` |
+| Where | `update_window_start` / `_end` on `OeProjectEnvironment`, in `OeProject.BcTimeZone` | `bc_update_window_*`, mirrored from `settings/upgrade` |
 | What it means | the commercial slot agreed with the customer for *our* installs | when Microsoft patches the environment |
 | Who enforces it | our scheduler and worker — a delivery holds until the slot opens | Microsoft |
 | Editable | yes, by the consultant | read-only mirror (the API can write it, but that is a separate, explicit action) |
@@ -225,7 +225,7 @@ than erasing it.
 
 Every BC SaaS environment already *has* an update window in the admin center — a recurring daily
 time range during which Microsoft applies platform/app updates — so BC admins reach for exactly this
-model. We mirror it: two nullable columns on `ProjectEnvironment`, interpreted in the project's
+model. We mirror it: two nullable columns on `OeProjectEnvironment`, interpreted in the project's
 `bc_time_zone`:
 
 | Column | Type | Why |
@@ -244,11 +244,11 @@ later, but one project-level tz is the v1 simplification consistent with the res
 a delivery — "next time this environment's window opens." The user can override it to run now, or at
 any other time; the consultant is the one in control, not the platform. Overriding the window (or
 delivering to an environment that has one set, outside it) is **audited** — recorded on the
-`ProjectDelivery` and surfaced in history — so the safe default protects you and the opt-out is a
+`OeProjectDelivery` and surfaced in history — so the safe default protects you and the opt-out is a
 deliberate, traceable act. Production targets, which already get an extra confirm, are the case this
 most matters for.
 
-This **supersedes `ReleasePipeline.default_publish_time`** as the source of the schedule prefill: the
+This **supersedes `OeReleasePipeline.default_publish_time`** as the source of the schedule prefill: the
 window lives on the environment (where it's reused across every release pipeline targeting it and
 matches the BC mental model), rather than being re-entered per release pipeline. Keep
 `default_publish_time` only if a pipeline ever needs to differ from its environment's window;
@@ -269,17 +269,17 @@ Everything else about that feature — the selection rule, the nightly sweep, th
 that move an update's date, the `oe_environment_upgrade_actions` table that is both the
 action queue and the activity feed, and the `/upgrades` page itself — is its own tool and
 lives in **[`environment-updates.md`](./environment-updates.md)**. It shares this document's
-`ProjectEnvironment` row and its Admin Center client, and nothing else: the delivery slot and
+`OeProjectEnvironment` row and its Admin Center client, and nothing else: the delivery slot and
 Microsoft's update window stay the two separate things the table above says they are, and
 Upgrades acts only on Microsoft's.
 
-### 2. Build pipeline (`Pipeline`) — unchanged
+### 2. Build pipeline (`OePipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to
-`Build`s (`ProjectBuild`) and artifacts. No new columns. It's now explicitly the *build* half of the
+`Build`s (`OeProjectBuild`) and artifacts. No new columns. It's now explicitly the *build* half of the
 split; releases draw from its builds.
 
-### 3. Release pipeline (`ReleasePipeline`) — new
+### 3. Release pipeline (`OeReleasePipeline`) — new
 
 The reusable "where + how" of a deploy: a named, listable config (`oe_release_pipelines`) that draws
 from one Build pipeline and targets one environment. This is the *"Release Contoso App on Production"*
@@ -287,7 +287,7 @@ the naming suggested.
 
 | Column | Type | Why |
 |---|---|---|
-| `id` / `organization_id` / `project_id` / `created_by_user_id` / `deleted_at` | | Standard, org-scoped, soft-deletable, owner-managed (same as `Pipeline`). |
+| `id` / `organization_id` / `project_id` / `created_by_user_id` / `deleted_at` | | Standard, org-scoped, soft-deletable, owner-managed (same as `OePipeline`). |
 | `name` | `text` | e.g. `Contoso App → Production`. |
 | `artifact_source` | `text` | Where the apps come from: `build` (the default) or `github_release`. Added by #632, when "redeploy a version the toolbox did not build" stopped being a hole in the model. |
 | `build_pipeline_id` | FK → `oe_pipelines`, **nullable** | The artifact source when `artifact_source = build` — releases publish *this* build pipeline's builds. Null (and unused) for a Release-sourced pipeline. |
@@ -295,15 +295,15 @@ the naming suggested.
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
 | `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate`. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Only three are offered in the picker — see *Deployment schedules* below. |
 | `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
-| `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`ProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
+| `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`OeProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
 
-### 4. Delivery = one run of a release pipeline (the analogue of `ProjectBuild`)
+### 4. Delivery = one run of a release pipeline (the analogue of `OeProjectBuild`)
 
-New entity `ProjectDelivery` (`oe_project_deliveries`), created when the user schedules a release of a
-specific build. Mirrors how `ProjectBuild` records a build run:
+New entity `OeProjectDelivery` (`oe_project_deliveries`), created when the user schedules a release of a
+specific build. Mirrors how `OeProjectBuild` records a build run:
 
 - FKs: `release_pipeline_id`, `project_build_id` (the chosen build's `.app` blobs — already persisted
-  as `ProjectBuildArtifact`), `organization_id`, `triggered_by_user_id`.
+  as `OeProjectBuildArtifact`), `organization_id`, `triggered_by_user_id`.
 - **Snapshot** at creation (so later edits to the release pipeline don't rewrite history):
   `environment_name`, `deployment_schedule`, `schema_sync_mode`.
 - Schedule: `scheduled_for` (the UTC instant the user picked), `claimed_at`, `started_at`, `finished_at`.
@@ -317,14 +317,14 @@ specific build. Mirrors how `ProjectBuild` records a build run:
     finds the row already `cancelled` does nothing; a cancel that finds it already `claimed` is
     refused with "already started". This is the "cancellable until a worker picks it up" guarantee,
     enforced in the DB rather than with a lock.
-- Per-app rows (`oe_project_delivery_results`, like `ProjectBuildResult`): app name/id, the BC
+- Per-app rows (`oe_project_delivery_results`, like `OeProjectBuildResult`): app name/id, the BC
   install `operation_id`, the operation's result, message.
 - `failure_message`, and a log section for the raw API responses (secret-free).
 
 **As built (#632):** a delivery can also publish a build the toolbox never compiled. Choosing a
 tag on a Release-sourced pipeline downloads that Release's `.app` assets and **stages them as an
-ordinary `ProjectBuild`** — status `ready`, no `pipeline_id`, `github_release_tag` set — so
-`ProjectDelivery` and every downstream reader are unchanged; `ScheduleDeliveryAsync` accepts such a
+ordinary `OeProjectBuild`** — status `ready`, no `pipeline_id`, `github_release_tag` set — so
+`OeProjectDelivery` and every downstream reader are unchanged; `ScheduleDeliveryAsync` accepts such a
 build in place of its build-pipeline check. `oe_project_builds` gained `github_release_tag`,
 `github_release_url` and `github_release_error` for both halves of that traffic: a build the toolbox
 compiled records where it was *published*, and a staged build records where it came *from*.
@@ -473,8 +473,8 @@ code is Microsoft's prose and is treated as opaque, the same rule the install pa
 
 #### What is audited, and what is only logged
 
-`ProjectEnvironment` joins the audit map **column-scoped**, the same shape as
-`ProjectConnectionColumns` on `Project`: only `update_window_start`, `update_window_end`
+`OeProjectEnvironment` joins the audit map **column-scoped**, the same shape as
+`ProjectConnectionColumns` on `OeProject`: only `update_window_start`, `update_window_end`
 and `app_source_apps_update_cadence` — the columns a person changes on purpose. Everything
 else on that entity is fetched cache that a Refresh rewrites wholesale, and auditing it
 would put a row per environment per click into the log and bury the changes that matter.
@@ -592,9 +592,9 @@ the message through only as display text.
 - **`BcTokenService`** — singleton, in-memory token cache + client-credentials flow.
 - **`ProjectConnectionService`** — writes/reads the connection config; owns the secret (encrypt on
   write, never return it), the Test-connection action, the environment fetch. Access-gated.
-- **`ReleasePipelineService`** — CRUD over `ReleasePipeline` (name, source build pipeline, target
+- **`ReleasePipelineService`** — CRUD over `OeReleasePipeline` (name, source build pipeline, target
   environment, version/sync modes, default time). Access-gated like `PipelineService`.
-- **`DeliveryService`** — creates a `ProjectDelivery` when the user schedules a release of a chosen
+- **`DeliveryService`** — creates an `OeProjectDelivery` when the user schedules a release of a chosen
   build (no auto-on-build in v1); converts the picked local date+time to a UTC `scheduled_for` using
   the project's timezone; owns the atomic cancel/claim transitions. **As built:** the engine slice
   ships `ReleaseBuildNowAsync` (immediate run, `scheduled_for = now`) + `RunDeliveryAsync` (claim →
@@ -627,12 +627,12 @@ the message through only as display text.
   the source Build pipeline has a *successful* build. It defaults to the **latest successful build**
   (with the option to pick an older one), then "pick the date+time" (prefilled to the **next opening
   of the target environment's update window**, or now if it has none) → creates a scheduled
-  `ProjectDelivery`. The user can override the prefill to run now or any other time; doing so outside a
+  `OeProjectDelivery`. The user can override the prefill to run now or any other time; doing so outside a
   set window is recorded on the delivery. Failed/in-progress builds aren't
   releasable. Production targets get an extra confirm; scheduling past secret expiry warns but allows.
   A "Release to…" shortcut on a successful build row in the Build pipeline's history can open this same
   dialog as a convenience, but the canonical action is on the release pipeline.
-- **Delivery history:** per release pipeline, the `ProjectDelivery` runs with status,
+- **Delivery history:** per release pipeline, the `OeProjectDelivery` runs with status,
   scheduled/started times, per-app results, and **Cancel** (only while `scheduled`) / **Reschedule**.
 
 ## Security & tenant isolation
@@ -664,7 +664,7 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
 1. **Connection + auth + Test** (Project columns incl. secret-expiry, secret handling,
    `BcTokenService`, `IBcAdminClient` list-environments with GDAP-missing detection, Test-connection,
    expiry warning). No publishing yet — just prove the creds.
-2. **Release pipelines + manual publish** (`ProjectEnvironment` fetch, `ReleasePipeline` CRUD,
+2. **Release pipelines + manual publish** (`OeProjectEnvironment` fetch, `OeReleasePipeline` CRUD,
    "Release this build now" running the full upload→install→poll in-worker, no scheduling yet).
 3. **Scheduling** (pick a concrete date+time per delivery, `DeliveryScheduler`/`Queue`/`Worker`, the
    atomic claim/cancel transition, cancellable-until-claimed, restart-resume, delivery history UI).
@@ -673,7 +673,7 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
    **As built:** partial-failure reporting + Production/Force-Sync confirms shipped in phases 2–3.
    **Phase 4a** adds the secret-expiry-vs-schedule guard (a warn-but-allow note in the release dialog
    and reschedule modal when the picked time is past the secret's expiry — the run's hard-fail stays
-   the backstop) and audit-log entries: `ReleasePipeline` (create/edit/delete) and `Project` are now
+   the backstop) and audit-log entries: `OeReleasePipeline` (create/edit/delete) and `OeProject` are now
    audited, the latter **column-scoped** to BC connection/secret changes so the background discovery
    worker's cache writes and name edits don't flood the log. Deliveries keep their richer
    self-history rather than the entity-granularity interceptor (which would miss the `ExecuteUpdate`
@@ -682,11 +682,11 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
 **As built (phases 1–3 are in `main`):**
 - Phase 1 = #462; phase 2 = #465 (CRUD) + #468 (publish engine) + #469 (UI).
 - **Phase 3 (scheduling):** the per-environment update window (`update_window_start`/`update_window_end`
-  on `ProjectEnvironment`, edited on the project's BC page), the schedule picker (prefilled to the
+  on `OeProjectEnvironment`, edited on the project's BC page), the schedule picker (prefilled to the
   next window opening in the project tz), `DeliveryService.ScheduleDeliveryAsync` / `CancelDeliveryAsync`
   / `RescheduleDeliveryAsync`, a `DeliveryScheduler` poller, and Cancel/Reschedule + an "outside window"
   badge in delivery history. Overriding the window is audited via
-  `ProjectDelivery.ScheduledOutsideWindow`.
+  `OeProjectDelivery.ScheduledOutsideWindow`.
   - **Scheduler tenant scope — deliberate divergence from `ReleaseAutoImportScheduler`:** the delivery
     scheduler enumerates **all non-pending orgs *including the system org*** (org enumeration only —
     per-org work stays filtered; the orgs table carries no filter, so no bypass is needed). It must *not* skip
@@ -701,12 +701,12 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
 
 ## Decisions (resolved)
 
-- **Build vs Release:** two distinct concepts, as a **separate `ReleasePipeline` entity** (not a
-  `kind` column on `Pipeline`). `Pipeline` (build) stays as shipped; `ReleasePipeline` draws from one
+- **Build vs Release:** two distinct concepts, as a **separate `OeReleasePipeline` entity** (not a
+  `kind` column on `OePipeline`). `OePipeline` (build) stays as shipped; `OeReleasePipeline` draws from one
   build pipeline and targets one environment. Build-once-deploy-many falls out for free (one build
   pipeline → several release pipelines).
 - **One environment per release pipeline** (1:1). Naming reads *"Release Contoso App on Production."*
-- **Environments are persisted** as a `ProjectEnvironment` child (fetched + refreshable), so the
+- **Environments are persisted** as an `OeProjectEnvironment` child (fetched + refreshable), so the
   picker and release pipelines share one row — its id, its update window and its last-known status —
   rather than each release pipeline inlining an environment name.
 - **Release trigger:** the "Release" action is on the **Release pipeline**, enabled once its source
@@ -722,14 +722,14 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
 - **Version mode:** all three offered; default **`Current version`**.
 - **Trigger model:** no auto-publish in v1. The user explicitly schedules a delivery for a concrete
   date+time; it then runs automatically at that time, and is **cancellable until a worker claims it**.
-- **Per-environment update window (revised):** each `ProjectEnvironment` carries a recurring daily
+- **Per-environment update window (revised):** each `OeProjectEnvironment` carries a recurring daily
   update window (start/end time in `bc_time_zone`, nullable = any time), mirroring BC's admin-center
   environment update window — the model BC admins already know. It is a **default, not a lock**:
   scheduling prefills `scheduled_for` to the next window opening, and the user can override to run now
   or any time, with overrides recorded on the delivery. This **revises** the earlier framing that the
   schedule was "not a recurring window"; the *execution* model is unchanged (a concrete per-delivery
   `scheduled_for`), but the **default** that seeds it is now a per-environment recurring window rather
-  than `ReleasePipeline.default_publish_time` (which this supersedes and likely retires).
+  than `OeReleasePipeline.default_publish_time` (which this supersedes and likely retires).
 - **Expired-secret behaviour:** warn-but-allow at scheduling; the run hard-fails with a clear "secret
   expired — rotate it" message if it's actually lapsed when the worker fires.
 

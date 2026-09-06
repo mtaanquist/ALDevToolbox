@@ -14,7 +14,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// upstream index JSON is small enough to re-fetch per org. There is no stored
 /// "imported" flag — whether a version is already in the catalogue is derived
 /// at render time by matching the computed release label, which avoids the
-/// cache drifting out of sync with <see cref="Release"/>.
+/// cache drifting out of sync with <see cref="OeRelease"/>.
 /// </para>
 ///
 /// <para>
@@ -24,7 +24,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// needs the application-artifact URL. See <c>.design/object-explorer.md</c>.
 /// </para>
 /// </summary>
-public class BcArtifactVersion
+public class OeArtifactVersion
 {
     public int Id { get; set; }
 

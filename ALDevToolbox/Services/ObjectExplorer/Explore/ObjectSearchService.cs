@@ -171,7 +171,7 @@ public sealed class ObjectSearchService
     /// tokens. Returns the query plus the positive token texts the ranker
     /// scores (empty when there's no search term).
     /// </summary>
-    private IQueryable<ModuleObject> BuildFilteredQuery(
+    private IQueryable<OeModuleObject> BuildFilteredQuery(
         int releaseId, ObjectListFilter filter, long? moduleId, string? namespacePrefix,
         IReadOnlyList<long>? winningModuleIds,
         out IReadOnlyList<string> tokens)
@@ -220,10 +220,10 @@ public sealed class ObjectSearchService
     /// stable <c>Id</c> tiebreaker so offset paging can't skip or duplicate
     /// rows that tie on the sort key.
     /// </summary>
-    private static IOrderedQueryable<ModuleObject> ApplySort(
-        IQueryable<ModuleObject> q, ObjectSortColumn column, bool descending)
+    private static IOrderedQueryable<OeModuleObject> ApplySort(
+        IQueryable<OeModuleObject> q, ObjectSortColumn column, bool descending)
     {
-        IOrderedQueryable<ModuleObject> ordered = (column, descending) switch
+        IOrderedQueryable<OeModuleObject> ordered = (column, descending) switch
         {
             (ObjectSortColumn.Default, _)       => q.OrderBy(o => o.Kind).ThenBy(o => o.ObjectId).ThenBy(o => o.Module!.DependencyCount).ThenBy(o => o.Module!.Name),
             (ObjectSortColumn.Id, false)        => q.OrderBy(o => o.ObjectId),

@@ -4,8 +4,8 @@ using ALDevToolbox.Services.ObjectExplorer.Delivery;
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One run of a <see cref="ReleasePipeline"/> — the analogue of a
-/// <see cref="ProjectBuild"/> for the publish side. Created when a user releases a
+/// One run of a <see cref="OeReleasePipeline"/> — the analogue of a
+/// <see cref="OeProjectBuild"/> for the publish side. Created when a user releases a
 /// specific build to the release pipeline's target environment; the worker then
 /// uploads, installs, and polls each app via the BC automation API. The target
 /// details (environment, company, modes) are <em>snapshotted</em> at creation so
@@ -14,7 +14,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// a later slice; in this slice a delivery is created and enqueued to run
 /// immediately. See <c>.design/saas-delivery.md</c> ("Delivery").
 /// </summary>
-public class ProjectDelivery
+public class OeProjectDelivery
 {
     public int Id { get; set; }
 
@@ -24,15 +24,15 @@ public class ProjectDelivery
 
     /// <summary>The project (customer) — denormalised from the release pipeline so the worker can resolve the BC credentials without a join. Rides the project's lifecycle.</summary>
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>The release pipeline this is a run of (target + modes source).</summary>
     public int ReleasePipelineId { get; set; }
-    public ReleasePipeline? ReleasePipeline { get; set; }
+    public OeReleasePipeline? ReleasePipeline { get; set; }
 
     /// <summary>The build whose <c>.app</c> artifacts are published. Restricted: a build that's been released can't be hard-removed out from under its delivery history.</summary>
     public int ProjectBuildId { get; set; }
-    public ProjectBuild? ProjectBuild { get; set; }
+    public OeProjectBuild? ProjectBuild { get; set; }
 
     /// <summary>
     /// The user who triggered the release. The worker runs under this user's captured
@@ -92,11 +92,11 @@ public class ProjectDelivery
     public DateTime UpdatedAt { get; set; }
 
     /// <summary>Per-app outcomes, in publish order.</summary>
-    public ICollection<ProjectDeliveryResult> Results { get; set; } = new List<ProjectDeliveryResult>();
+    public ICollection<OeProjectDeliveryResult> Results { get; set; } = new List<OeProjectDeliveryResult>();
 }
 
 /// <summary>
-/// The lifecycle states a <see cref="ProjectDelivery"/> moves through:
+/// The lifecycle states a <see cref="OeProjectDelivery"/> moves through:
 /// <c>scheduled → claimed → uploading → installing → deployed | failed</c>, plus
 /// <c>scheduled → cancelled</c>. The transitions out of <c>scheduled</c> are atomic
 /// compare-and-set so a claim and a cancel can't both win (the cancel surface is a
@@ -119,7 +119,7 @@ public static class ProjectDeliveryStatus
     /// <summary>Every app installed successfully.</summary>
     public const string Deployed = "deployed";
 
-    /// <summary>The delivery failed. <see cref="ProjectDelivery.FailureMessage"/> says why.</summary>
+    /// <summary>The delivery failed. <see cref="OeProjectDelivery.FailureMessage"/> says why.</summary>
     public const string Failed = "failed";
 
     /// <summary>Cancelled before a worker claimed it.</summary>

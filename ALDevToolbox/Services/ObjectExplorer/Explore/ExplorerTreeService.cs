@@ -309,7 +309,7 @@ public sealed class ExplorerTreeService
             ct);
 
     private static async Task<Dictionary<long, FilePrimaryObject>> MapPrimaryObjectsAsync(
-        IQueryable<ModuleObject> query, CancellationToken ct)
+        IQueryable<OeModuleObject> query, CancellationToken ct)
     {
         var rows = await query
             .OrderBy(o => o.SourceFileId).ThenBy(o => o.LineNumber)

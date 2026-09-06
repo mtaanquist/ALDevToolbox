@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One compiler message from a <see cref="ProjectBuild"/>, parsed out of the AL
+/// One compiler message from a <see cref="OeProjectBuild"/>, parsed out of the AL
 /// compiler's output into a row.
 ///
 /// <para>The build log has always carried the same text, but only as text: a
@@ -12,7 +12,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// pull-request, because a count on the build page is worth having either way.
 /// See <c>.design/github-integration-phase2.md</c> (#627).</para>
 /// </summary>
-public class ProjectBuildDiagnostic
+public class OeProjectBuildDiagnostic
 {
     public int Id { get; set; }
 
@@ -21,11 +21,11 @@ public class ProjectBuildDiagnostic
     public Organization? Organization { get; set; }
 
     public int ProjectBuildId { get; set; }
-    public ProjectBuild? ProjectBuild { get; set; }
+    public OeProjectBuild? ProjectBuild { get; set; }
 
     /// <summary>The repository the file belongs to, when the clone it came from is still identifiable; null otherwise.</summary>
     public int? ProjectRepositoryId { get; set; }
-    public ProjectRepository? ProjectRepository { get; set; }
+    public OeProjectRepository? ProjectRepository { get; set; }
 
     /// <summary>
     /// The file, relative to the repository root and with forward slashes. The

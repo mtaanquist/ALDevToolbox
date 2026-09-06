@@ -13,8 +13,8 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
 /// Drives <see cref="ProjectBuildImporter.StartBuildAsync"/> against the shared
-/// <see cref="TestDb"/> fixture: a build is a run of a <see cref="Pipeline"/>, so the
-/// pipeline's extension selection is snapshotted onto the <see cref="ProjectBuild"/>
+/// <see cref="TestDb"/> fixture: a build is a run of a <see cref="OePipeline"/>, so the
+/// pipeline's extension selection is snapshotted onto the <see cref="OeProjectBuild"/>
 /// row (and the build is linked to both pipeline and project). The clone/compile path
 /// the build then runs is exercised by the staging smoke, not here.
 /// </summary>
@@ -226,7 +226,7 @@ public sealed class ProjectBuildImporterTests : IDisposable
 
     private static async Task<int> SeedProjectAsync(Data.AppDbContext ctx)
     {
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS " + Guid.NewGuid().ToString("N"),
@@ -241,7 +241,7 @@ public sealed class ProjectBuildImporterTests : IDisposable
     private static async Task<int> SeedProjectWithRepoAsync(Data.AppDbContext ctx)
     {
         var projectId = await SeedProjectAsync(ctx);
-        ctx.OeProjectRepositories.Add(new ProjectRepository
+        ctx.OeProjectRepositories.Add(new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -255,7 +255,7 @@ public sealed class ProjectBuildImporterTests : IDisposable
 
     private static async Task<int> SeedPipelineAsync(Data.AppDbContext ctx, int projectId, string name, string? requestedAppIdsJson)
     {
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

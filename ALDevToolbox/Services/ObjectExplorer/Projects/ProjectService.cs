@@ -8,7 +8,7 @@ using ModelContextProtocol;
 namespace ALDevToolbox.Services.ObjectExplorer.Projects;
 
 /// <summary>
-/// CRUD over <see cref="Project"/> and its <see cref="ProjectRepository"/>
+/// CRUD over <see cref="OeProject"/> and its <see cref="OeProjectRepository"/>
 /// children — the admin surface that defines what the project-build pipeline
 /// clones and compiles. Org-scoped via the EF query filter; mutations run inside
 /// an authenticated request (<see cref="RequireOrganizationId"/> throws
@@ -63,7 +63,7 @@ public sealed class ProjectService
     /// locked-name row lives in <see cref="ArtifactService.ListProjectsAsync"/>,
     /// which is what <c>/projects</c> renders.
     /// </summary>
-    public async Task<List<Project>> ListProjectsAsync(CancellationToken ct = default)
+    public async Task<List<OeProject>> ListProjectsAsync(CancellationToken ct = default)
     {
         var snapshot = await _access.GetSnapshotAsync(ct);
         return await _db.OeProjects
@@ -81,7 +81,7 @@ public sealed class ProjectService
     /// Private and the caller has no grant on it; the detail page renders that as
     /// its not-found state.
     /// </summary>
-    public async Task<Project?> GetProjectAsync(int id, CancellationToken ct = default)
+    public async Task<OeProject?> GetProjectAsync(int id, CancellationToken ct = default)
     {
         await _access.EnsureCanViewAsync(id, ct);
         return await _db.OeProjects
@@ -93,7 +93,7 @@ public sealed class ProjectService
 
     /// <summary>
     /// The releases this project's builds produced, newest first — linked via the
-    /// import job's <see cref="ImportJob.ProjectId"/> (a project Release carries
+    /// import job's <see cref="OeImportJob.ProjectId"/> (a project Release carries
     /// no FK back to the project, only a name). Drives the project detail page's
     /// build history.
     /// </summary>
@@ -122,7 +122,7 @@ public sealed class ProjectService
         var (name, country, repos) = await ValidateAsync(input, existingId: null, orgId, ct);
 
         var now = DateTime.UtcNow;
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = orgId,
             Name = name,
@@ -132,7 +132,7 @@ public sealed class ProjectService
             CreatedByUserId = _orgContext.CurrentUserId,
             CreatedAt = now,
             UpdatedAt = now,
-            Repositories = repos.Select(r => new ProjectRepository
+            Repositories = repos.Select(r => new OeProjectRepository
             {
                 OrganizationId = orgId,
                 Provider = r.Provider,
@@ -204,14 +204,14 @@ public sealed class ProjectService
     /// set no longer names is deleted, which is the one case where a pipeline
     /// losing its Release repository is what the user asked for.</para>
     /// </summary>
-    private void ReconcileRepositories(Project project, IReadOnlyList<ProjectRepositoryInput> repos, int orgId)
+    private void ReconcileRepositories(OeProject project, IReadOnlyList<ProjectRepositoryInput> repos, int orgId)
     {
         static string Key(RepositoryProvider provider, string url) =>
             $"{provider}|{GitHubPullRequestBuildWorker.NormaliseRepositoryUrl(url)}";
 
         var existing = project.Repositories.ToList();
         var kept = new HashSet<int>();
-        var wanted = new List<ProjectRepository>(repos.Count);
+        var wanted = new List<OeProjectRepository>(repos.Count);
 
         foreach (var repo in repos)
         {
@@ -228,7 +228,7 @@ public sealed class ProjectService
                 continue;
             }
 
-            var added = new ProjectRepository
+            var added = new OeProjectRepository
             {
                 OrganizationId = orgId,
                 ProjectId = project.Id,
@@ -355,7 +355,7 @@ public sealed class ProjectService
         var now = DateTime.UtcNow;
         foreach (var teamId in wanted.Where(id => existing.All(t => t.TeamId != id)))
         {
-            _db.OeProjectTeams.Add(new ProjectTeam
+            _db.OeProjectTeams.Add(new OeProjectTeam
             {
                 OrganizationId = orgId,
                 ProjectId = projectId,
@@ -451,7 +451,7 @@ public sealed class ProjectService
         var now = DateTime.UtcNow;
         foreach (var (name, content) in staged)
         {
-            _db.OeProjectSymbols.Add(new ProjectSymbol
+            _db.OeProjectSymbols.Add(new OeProjectSymbol
             {
                 OrganizationId = orgId,
                 ProjectId = projectId,
