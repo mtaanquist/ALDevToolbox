@@ -30,12 +30,29 @@ public static class DatabaseRegistration
         // INSERT that never enters an EF batch. What is left on the EF ingest path is
         // narrow, high-volume rows (oe_module_references / _symbols / _variables /
         // _objects), where the cap only multiplied the round-trips by ten. See #688.
-        services.AddDbContext<AppDbContext>((sp, options) =>
+
+        // Registered as a *factory* rather than a plain AddDbContext (#741).
+        // AddDbContextFactory also TryAdds AppDbContext itself as a scoped
+        // service, so every existing constructor injection keeps the one
+        // per-circuit context it has always had. The factory exists for the
+        // read-only audit reads behind <AuditHistoryPanel>, which run
+        // concurrently with the page's own save: a DbContext allows a single
+        // operation at a time, so sharing the circuit's context between the
+        // panel's load and the form's UpdateAsync threw "A second operation was
+        // started on this context instance". AuditService opens its own
+        // short-lived context per read instead; see Services/AuditService.cs.
+        //
+        // The lifetime must be Scoped: AppDbContext's constructor takes the
+        // scoped IOrganizationContext (the tenant fence), and the options lambda
+        // resolves the scoped AuditInterceptor. A singleton factory could
+        // resolve neither.
+        services.AddDbContextFactory<AppDbContext>((sp, options) =>
             options
                 .UseNpgsql(connectionString, npgsql => npgsql
                     .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
                 .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
-                .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
+                .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()),
+            ServiceLifetime.Scoped);
         return services;
     }
 }
