@@ -58,6 +58,17 @@ public sealed class TranslationMemoryIngestService
     private readonly TimeProvider _clock;
     private readonly ILogger<TranslationMemoryIngestService> _logger;
 
+    /// <summary>
+    /// The widths of the columns a file's provenance is recorded in
+    /// (<c>translation_memory_sources</c> and the memory entries themselves).
+    /// A value past them would fail the whole sweep on one file, so the file is
+    /// skipped instead.
+    /// </summary>
+    private const int MaxPathLength = 1000;
+
+    /// <inheritdoc cref="MaxPathLength"/>
+    private const int MaxRepositoryNameLength = 300;
+
     public TranslationMemoryIngestService(
         AppDbContext db,
         GitHubConnectionService connection,
@@ -175,6 +186,25 @@ public sealed class TranslationMemoryIngestService
             // translations, so reading one costs a call and teaches nothing.
             .Where(e => !TranslationFileRules.Describe(e.Path).IsSource)
             .ToList();
+
+        // A path longer than the column that records it would throw mid-sweep and
+        // lose every repository after this one. Nobody nests an AL project that
+        // deep, so skipping the file and saying so is the honest answer.
+        var tooLong = candidates.Where(e => e.Path.Length > MaxPathLength).ToList();
+        if (repository.FullName.Length > MaxRepositoryNameLength)
+        {
+            _logger.LogWarning(
+                "The repository name {RepoFullName} is longer than the ingest can record; it is skipped.",
+                repository.FullName);
+            return new TranslationMemoryIngestSummary(1, 0, 0, 0, 1);
+        }
+        if (tooLong.Count > 0)
+        {
+            _logger.LogWarning(
+                "{Count} translation file(s) in {RepoFullName} have a path longer than the ingest can record; they are skipped.",
+                tooLong.Count, repository.FullName);
+            candidates = candidates.Except(tooLong).ToList();
+        }
 
         var known = await _db.TranslationMemorySources
             .Where(s => s.Repository == repository.FullName)

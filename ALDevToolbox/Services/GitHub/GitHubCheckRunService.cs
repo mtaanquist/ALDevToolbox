@@ -88,6 +88,44 @@ public sealed class GitHubCheckRunService
     }
 
     /// <summary>
+    /// Completes an open check run as <c>neutral</c> when the build behind it never
+    /// started, so the pull request is not left with a tick spinning forever.
+    ///
+    /// <para><c>neutral</c> rather than <c>failure</c> for the same reason as
+    /// everywhere else here: nothing was learned about the code. Best-effort, like
+    /// the rest of this service - if GitHub refuses this too, the log is where the
+    /// reason lives.</para>
+    /// </summary>
+    public async Task AbandonAsync(
+        long installationId,
+        string repositoryFullName,
+        long checkRunId,
+        string reason,
+        CancellationToken ct = default)
+    {
+        var parts = repositoryFullName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2) return;
+
+        try
+        {
+            var token = await _github.GetInstallationTokenAsync(installationId, ct);
+            await _github.UpdateCheckRunAsync(
+                token, parts[0], parts[1], checkRunId,
+                status: "completed",
+                conclusion: GitHubCheckConclusion.Neutral,
+                title: "The build could not be started",
+                summary: reason,
+                ct: ct);
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException)
+        {
+            _logger.LogWarning(ex,
+                "Could not close the abandoned check run {CheckRunId} on {Repository}.",
+                checkRunId, repositoryFullName);
+        }
+    }
+
+    /// <summary>
     /// Completes the check run the build carries, reading the build's own state and
     /// its compiler diagnostics to decide what to say.
     ///
@@ -119,7 +157,7 @@ public sealed class GitHubCheckRunService
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (build?.CheckRunId is not long checkRunId) return;
 
-        var diagnostics = await _db.OeProjectBuildDiagnostics.AsNoTracking()
+        var allDiagnostics = await _db.OeProjectBuildDiagnostics.AsNoTracking()
             .Where(d => d.ProjectBuildId == build.Id)
             .OrderBy(d => d.Ordering)
             .ToListAsync(ct).ConfigureAwait(false);
@@ -127,6 +165,34 @@ public sealed class GitHubCheckRunService
             .Where(r => r.ReleaseId == releaseId)
             .Select(r => new { r.AppName, r.Status, r.Message })
             .ToListAsync(ct).ConfigureAwait(false);
+
+        // A solution can list several repositories, and a pull request is about
+        // exactly one of them. Annotating another repository's file would put a
+        // marker on a line the reviewer's pull request does not contain (GitHub
+        // drops it silently), and failing the run for an error the pull request
+        // did not introduce would block a change that is fine. So the run is
+        // decided on this repository's diagnostics; the rest are counted in the
+        // summary so nothing disappears.
+        var repositoryIds = await _db.OeProjectRepositories.AsNoTracking()
+            .Where(r => r.ProjectId == build.ProjectId)
+            .Select(r => new { r.Id, r.Url })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var wanted = GitHubPullRequestBuildWorker.NormaliseRepositoryUrl($"https://github.com/{repositoryFullName}");
+        var underReview = repositoryIds
+            .Where(r => GitHubPullRequestBuildWorker.NormaliseRepositoryUrl(r.Url) == wanted)
+            .Select(r => r.Id)
+            .ToHashSet();
+
+        // A diagnostic with no repository is one the build could not attribute
+        // (an inner-loop failure before any clone). It rides with the repository
+        // under review rather than being hidden.
+        var diagnostics = underReview.Count == 0
+            ? allDiagnostics
+            : allDiagnostics
+                .Where(d => d.ProjectRepositoryId is null || underReview.Contains(d.ProjectRepositoryId.Value))
+                .ToList();
+        var elsewhereErrors = allDiagnostics.Count(d => d.Severity == ProjectBuildDiagnosticSeverity.Error)
+            - diagnostics.Count(d => d.Severity == ProjectBuildDiagnosticSeverity.Error);
 
         var errors = diagnostics.Count(d => d.Severity == ProjectBuildDiagnosticSeverity.Error);
         var warnings = diagnostics.Count(d => d.Severity == ProjectBuildDiagnosticSeverity.Warning);
@@ -149,12 +215,17 @@ public sealed class GitHubCheckRunService
             title = "The build could not run";
         }
 
+        var annotated = diagnostics
+            .Where(d => d.Path.Length > 0 && d.Line > 0)
+            .ToList();
+        var omitted = Math.Max(0, annotated.Count - MaxAnnotations);
+
         var summary = BuildSummary(
-            conclusion, build.FailureMessage, build.BcVersion, errors, warnings,
+            conclusion, build.FailureMessage, build.BcVersion, errors, warnings, elsewhereErrors, omitted,
             results.Select(r => (r.AppName, r.Status, r.Message)).ToList());
 
-        var annotations = diagnostics
-            .Where(d => d.Path.Length > 0 && d.Line > 0)
+        var annotations = annotated
+            .Take(MaxAnnotations)
             .Select(d => new GitHubCheckAnnotation(
                 Path: d.Path,
                 StartLine: d.Line,
@@ -200,6 +271,8 @@ public sealed class GitHubCheckRunService
         string? bcVersion,
         int errors,
         int warnings,
+        int errorsElsewhere,
+        int omittedAnnotations,
         IReadOnlyList<(string AppName, string Status, string? Message)> results)
     {
         var lines = new List<string>();
@@ -222,6 +295,20 @@ public sealed class GitHubCheckRunService
             lines.Add($"{Count(errors, "error")} and {Count(warnings, "warning")}.");
         }
 
+        if (errorsElsewhere > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"{Count(errorsElsewhere, "error")} in other repositories of this solution. "
+                + "They are not this pull request's, so they do not fail this check.");
+        }
+
+        if (omittedAnnotations > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"Only the first {MaxAnnotations} are marked in the Files tab; "
+                + $"{omittedAnnotations} more are in the build report in the toolbox.");
+        }
+
         if (results.Count > 0)
         {
             lines.Add(string.Empty);
@@ -234,6 +321,14 @@ public sealed class GitHubCheckRunService
 
         return string.Join('\n', lines);
     }
+
+    /// <summary>
+    /// How many inline markers one check run carries at most: four of GitHub's
+    /// batches of fifty. Past that the Files tab is unreadable anyway, and every
+    /// batch is another call on the organisation's rate limit - the summary says
+    /// how many were left out and where to read them.
+    /// </summary>
+    private const int MaxAnnotations = 200;
 
     /// <summary>"3 errors" / "1 warning". A person reads this on the pull request, so it reads like a sentence.</summary>
     private static string Count(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";

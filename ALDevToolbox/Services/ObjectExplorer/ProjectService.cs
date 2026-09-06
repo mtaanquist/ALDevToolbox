@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.GitHub;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
 
@@ -153,8 +154,16 @@ public sealed class ProjectService
     }
 
     /// <summary>
-    /// Updates a project's name/country and replaces its repository set with the
-    /// posted one (the form owns the whole list, so a save is a full replace).
+    /// Updates a project's name/country and reconciles its repository set with the
+    /// posted one (the form owns the whole list).
+    ///
+    /// <para>Reconciled in place rather than replaced wholesale: a pipeline that
+    /// publishes to a repository points at that <c>oe_project_repositories</c> row
+    /// by id, and the foreign key is <c>ON DELETE SET NULL</c>. Dropping and
+    /// re-adding every row would therefore quietly unset the Release repository of
+    /// every pipeline in the solution each time somebody renamed it. Only a
+    /// repository the user actually removed is deleted, and that one nulling the
+    /// pipelines is the intended answer.</para>
     /// </summary>
     public async Task UpdateProjectAsync(int id, ProjectInput input, CancellationToken ct = default)
     {
@@ -174,17 +183,7 @@ public sealed class ProjectService
         project.DefaultArtifactCountry = country;
         project.UpdatedAt = DateTime.UtcNow;
 
-        // Full replace: drop the old rows, add the posted set. Repos are cheap and
-        // identity-free from the form's perspective, so we don't diff in place.
-        _db.OeProjectRepositories.RemoveRange(project.Repositories);
-        project.Repositories = repos.Select(r => new ProjectRepository
-        {
-            OrganizationId = orgId,
-            ProjectId = project.Id,
-            Provider = r.Provider,
-            Url = r.Url,
-            DisplayName = r.DisplayName,
-        }).ToList();
+        ReconcileRepositories(project, repos, orgId);
 
         await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated project {ProjectId} ({Name}); now {RepoCount} repo(s).",
@@ -193,6 +192,64 @@ public sealed class ProjectService
         // The repo set may have changed — re-warm the discovery cache in the
         // background so the pipeline editor reflects it. Best-effort.
         if (project.Repositories.Count > 0) await WarmDiscoveryAsync(project.Id, ct);
+    }
+
+    /// <summary>
+    /// Brings <paramref name="project"/>'s repository rows in line with the posted
+    /// set, keeping the id of every repository that is still there.
+    ///
+    /// <para>Identity is provider plus normalised URL - the same repository is
+    /// typed with and without the <c>.git</c> suffix and in either case, and a row
+    /// that only had its display name edited must keep its id. Anything the posted
+    /// set no longer names is deleted, which is the one case where a pipeline
+    /// losing its Release repository is what the user asked for.</para>
+    /// </summary>
+    private void ReconcileRepositories(Project project, IReadOnlyList<ProjectRepositoryInput> repos, int orgId)
+    {
+        static string Key(RepositoryProvider provider, string url) =>
+            $"{provider}|{GitHubPullRequestBuildWorker.NormaliseRepositoryUrl(url)}";
+
+        var existing = project.Repositories.ToList();
+        var kept = new HashSet<int>();
+        var wanted = new List<ProjectRepository>(repos.Count);
+
+        foreach (var repo in repos)
+        {
+            var key = Key(repo.Provider, repo.Url);
+            var match = existing.FirstOrDefault(e => !kept.Contains(e.Id) && Key(e.Provider, e.Url) == key);
+            if (match is not null)
+            {
+                kept.Add(match.Id);
+                // The URL is re-stamped so a cosmetic re-spelling (a .git suffix
+                // dropped, say) is saved, without the row changing identity.
+                match.Url = repo.Url;
+                match.DisplayName = repo.DisplayName;
+                wanted.Add(match);
+                continue;
+            }
+
+            var added = new ProjectRepository
+            {
+                OrganizationId = orgId,
+                ProjectId = project.Id,
+                Provider = repo.Provider,
+                Url = repo.Url,
+                DisplayName = repo.DisplayName,
+            };
+            project.Repositories.Add(added);
+            wanted.Add(added);
+        }
+
+        var removed = existing.Where(e => !kept.Contains(e.Id)).ToList();
+        if (removed.Count > 0)
+        {
+            _db.OeProjectRepositories.RemoveRange(removed);
+            foreach (var row in removed) project.Repositories.Remove(row);
+        }
+
+        _logger.LogInformation(
+            "Reconciled repositories on project {ProjectId}: {KeptCount} kept, {AddedCount} added, {RemovedCount} removed.",
+            project.Id, kept.Count, wanted.Count - kept.Count, removed.Count);
     }
 
     /// <summary>
@@ -480,7 +537,7 @@ public sealed class ProjectService
                                && c.Name.ToLower() == name.ToLower(), ct);
             if (clash)
             {
-                errors["Name"] = "Another project already uses this name.";
+                errors["Name"] = "Another solution already uses this name.";
             }
         }
 
@@ -560,7 +617,7 @@ public sealed class ProjectService
         }
         catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
         {
-            throw Validation("Name", "Another project already uses this name.");
+            throw Validation("Name", "Another solution already uses this name.");
         }
     }
 

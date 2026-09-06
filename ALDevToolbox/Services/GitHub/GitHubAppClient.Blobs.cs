@@ -46,7 +46,7 @@ public sealed partial class GitHubAppClient
         request.Headers.Accept.Clear();
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue(RawBlobMediaType));
 
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             _logger.LogDebug("GitHub has no blob {Sha} in {Owner}/{Repo}.", sha, owner, repo);

@@ -56,7 +56,10 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         string action = "opened",
         long installationId = 42,
         int number = 7,
-        string headSha = "abc123") => $$"""
+        string headSha = "abc1234",
+        string headRef = "feature/vat",
+        string headRepository = "cronus-dk/customer-app",
+        bool headIsFork = false) => $$"""
         {
           "action": "{{action}}",
           "installation": { "id": {{installationId}} },
@@ -66,7 +69,11 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
           },
           "pull_request": {
             "number": {{number}},
-            "head": { "sha": "{{headSha}}", "ref": "feature/vat" },
+            "head": {
+              "sha": "{{headSha}}",
+              "ref": "{{headRef}}",
+              "repo": { "full_name": "{{headRepository}}", "fork": {{(headIsFork ? "true" : "false")}} }
+            },
             "base": { "ref": "main" }
           }
         }
@@ -128,7 +135,7 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         job!.InstallationId.Should().Be(42);
         job.RepositoryFullName.Should().Be("cronus-dk/customer-app");
         job.PullRequestNumber.Should().Be(7);
-        job.HeadSha.Should().Be("abc123");
+        job.HeadSha.Should().Be("abc1234");
         job.HeadRef.Should().Be("feature/vat");
         job.BaseRef.Should().Be("main");
         job.DeliveryId.Should().Be("11111111-2222-3333-4444-555555555555");
@@ -259,6 +266,109 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         _factory.Services.GetRequiredService<GitHubWebhookQueue>()
             .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    // --- Fork pull requests, and what may reach git (#627 review) ----------
+
+    [Fact]
+    public async Task A_pull_request_from_a_fork_is_not_built()
+    {
+        // Anybody on GitHub can fork a public repository and open a pull request
+        // against it. Building one would clone and compile a stranger's code on
+        // the customer's own installation token, so it is answered and dropped.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            PullRequestPayload(headRepository: "stranger/customer-app", headIsFork: true), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_head_repository_with_another_name_is_not_built_even_when_it_is_not_flagged_as_a_fork()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            PullRequestPayload(headRepository: "stranger/customer-app", headIsFork: false), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_branch_pull_request_from_the_repository_itself_is_built()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            PullRequestPayload(headRepository: "CRONUS-dk/Customer-App"), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted,
+            "GitHub repository names are case-insensitive, so a differently-cased head is the same repository");
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("--upload-pack=touch /tmp/pwned")]
+    [InlineData("not-hex-at-all")]
+    [InlineData("abc")]
+    public async Task A_head_sha_that_is_not_a_git_object_name_is_refused(string headSha)
+    {
+        // The SHA goes on a git command line. Anything that is not hex of the
+        // right length never gets there.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(PullRequestPayload(headSha: headSha), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("--force")]
+    [InlineData("feature/vat; rm -rf /")]
+    [InlineData("feature\\vat")]
+    public async Task A_head_branch_name_git_could_not_be_asked_for_is_refused(string headRef)
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(PullRequestPayload(headRef: headRef), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>()
+            .Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_full_queue_is_answered_with_a_retryable_503_and_nothing_is_announced()
+    {
+        // The request thread is GitHub's, and GitHub redelivers a 5xx. Waiting on
+        // a full channel would hold that request open behind a build backlog.
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+        var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
+
+        // Fill the channel: the endpoint's own capacity, written directly.
+        var filler = new GitHubPullRequestJob(1, "a/b", "https://github.com/a/b.git", 1, "abc1234", "x", "main", "d");
+        while (queue.TryEnqueue(filler)) { }
+
+        using var response = await client.SendAsync(Delivery(PullRequestPayload(headSha: "deadbee"), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("retry");
+        queue.IsLatest("42:cronus-dk/customer-app:7", "something-else").Should().BeTrue(
+            "a delivery that was never queued must not cancel the build that is running");
     }
 
     [Fact]

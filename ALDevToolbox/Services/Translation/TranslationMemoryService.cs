@@ -165,13 +165,15 @@ public sealed class TranslationMemoryService
                     row.HitCount += 1;
                     row.LastSeenAt = now;
                     row.UpdatedAt = now;
-                    // Most recent file wins. A pair that appears in two files
-                    // would otherwise keep whichever one happened to be read
-                    // first, and "where did this come from" would point at a
-                    // file that may no longer say it.
-                    row.Origin = c.Origin;
-                    row.SourceRepository = c.SourceRepository;
-                    row.SourcePath = c.SourcePath;
+                    // Most recent file wins - but only when the writer knows
+                    // where the pair came from. A release import upserts the same
+                    // pairs with no attribution at all, and letting its nulls
+                    // through would erase the repository and path the repository
+                    // sweep had recorded, leaving "where did this come from"
+                    // blank for entries it can answer for.
+                    if (c.Origin is not null) row.Origin = c.Origin;
+                    if (c.SourceRepository is not null) row.SourceRepository = c.SourceRepository;
+                    if (c.SourcePath is not null) row.SourcePath = c.SourcePath;
                     if (row.DeletedAt is not null) row.DeletedAt = null; // resurrect
                     continue;
                 }

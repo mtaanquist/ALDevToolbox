@@ -134,7 +134,7 @@ public sealed partial class GitHubAppClient
     {
         using var request = NewRequest(
             HttpMethod.Delete, $"{RepoPath(owner, repo)}/releases/assets/{assetId}", credential);
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct);
         if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
         {
             _logger.LogInformation("Removed release asset {AssetId} from {Owner}/{Repo}.", assetId, owner, repo);
@@ -163,12 +163,24 @@ public sealed partial class GitHubAppClient
     public async Task<GitHubReleaseAsset> UploadReleaseAssetAsync(
         string credential, string uploadUrl, string fileName, byte[] content, CancellationToken ct = default)
     {
+        // The upload host arrives in GitHub's own answer, so it is checked before
+        // the installation token is attached to a request going there. A relative
+        // or empty address would otherwise resolve against the client's base URI
+        // and post an organisation's build - with its credential - somewhere
+        // nobody chose.
         var target = $"{StripUriTemplate(uploadUrl)}?name={Uri.EscapeDataString(fileName)}";
+        if (!IsGitHubUploadTarget(target))
+        {
+            _logger.LogWarning("Refused to upload {FileName}: GitHub named an upload address we do not trust.", fileName);
+            throw new GitHubApiException(
+                HttpStatusCode.BadGateway, "GitHub did not say where to upload the release file.");
+        }
+
         using var request = NewRequest(HttpMethod.Post, target, credential);
         request.Content = new ByteArrayContent(content);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct, TransferDeadline);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
         {
@@ -207,7 +219,7 @@ public sealed partial class GitHubAppClient
         request.Headers.Accept.Clear();
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
 
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await SendRawAsync(request, ct, TransferDeadline);
         if (response.IsSuccessStatusCode)
         {
             return await response.Content.ReadAsByteArrayAsync(ct);
@@ -218,7 +230,7 @@ public sealed partial class GitHubAppClient
             using var follow = new HttpRequestMessage(HttpMethod.Get, location);
             follow.Headers.Accept.Clear();
             follow.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
-            using var stored = await _http.SendAsync(follow, ct);
+            using var stored = await SendRawAsync(follow, ct, TransferDeadline);
             if (!stored.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
@@ -251,6 +263,19 @@ public sealed partial class GitHubAppClient
     {
         var brace = url.IndexOf('{');
         return brace < 0 ? url : url[..brace];
+    }
+
+    /// <summary>
+    /// Whether <paramref name="target"/> is an absolute https address on GitHub's
+    /// own upload host. An empty <c>upload_url</c> strips to nothing, which would
+    /// otherwise be a relative URI resolved against <c>api.github.com</c>.
+    /// </summary>
+    private static bool IsGitHubUploadTarget(string target)
+    {
+        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttps) return false;
+        var host = uri.Host.ToLowerInvariant();
+        return host == "uploads.github.com" || host == "github.com" || host.EndsWith(".github.com", StringComparison.Ordinal);
     }
 
     private static GitHubRelease? ReadRelease(JsonElement element)

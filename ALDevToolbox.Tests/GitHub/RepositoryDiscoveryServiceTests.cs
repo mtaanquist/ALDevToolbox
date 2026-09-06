@@ -285,7 +285,7 @@ public sealed class RepositoryDiscoveryServiceTests : IDisposable
         await ReadyAsync();
         await SeedCandidatesAsync();
         var candidateId = await CandidateIdAsync(RepoA);
-        var (service, ctx) = NewService(SweepableApi());
+        var (service, ctx) = NewService(VisibleToUserApi(RepoA));
         await using var _ = ctx;
 
         var projectId = await service.TrackAsync(candidateId, "CRONUS A/S payments", "dk");
@@ -308,7 +308,7 @@ public sealed class RepositoryDiscoveryServiceTests : IDisposable
         await ReadyAsync();
         await SeedCandidatesAsync();
         var candidateId = await CandidateIdAsync(RepoA);
-        var (service, ctx) = NewService(SweepableApi());
+        var (service, ctx) = NewService(VisibleToUserApi(RepoA));
         await using var _ = ctx;
 
         var act = () => service.TrackAsync(candidateId, "CRONUS A/S payments", " ");
@@ -317,6 +317,27 @@ public sealed class RepositoryDiscoveryServiceTests : IDisposable
             .Which.Errors.Should().ContainKey("DefaultArtifactCountry");
         await using var read = _db.NewContext();
         (await read.OeProjects.CountAsync()).Should().Be(0);
+        (await read.GitHubRepositoryCandidates.AnyAsync(c => c.Id == candidateId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Tracking_a_repository_the_person_can_no_longer_open_is_refused()
+    {
+        // The list was narrowed to what this person can see when it was rendered,
+        // but the id posted back is the client's and access can have gone since.
+        // The answer is GitHub's, asked again, not the list's.
+        await ReadyAsync();
+        await SeedCandidatesAsync();
+        var candidateId = await CandidateIdAsync(RepoA);
+        var (service, ctx) = NewService(VisibleToUserApi(RepoB));
+        await using var _ = ctx;
+
+        var act = () => service.TrackAsync(candidateId, "CRONUS A/S payments", "dk");
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Name");
+        await using var read = _db.NewContext();
+        (await read.OeProjects.CountAsync()).Should().Be(0, "nothing is created for a repository the person cannot read");
         (await read.GitHubRepositoryCandidates.AnyAsync(c => c.Id == candidateId)).Should().BeTrue();
     }
 

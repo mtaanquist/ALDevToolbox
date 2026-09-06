@@ -109,14 +109,47 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         resolved.Should().BeNull();
     }
 
+    [Fact]
+    public async Task A_delivery_that_arrives_during_a_restore_is_put_back_rather_than_built()
+    {
+        // The webhook route stays open through maintenance on purpose - GitHub
+        // disables a hook whose deliveries keep failing - so the worker is what
+        // has to keep the build off a database being rewritten under it.
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+
+        var queue = new GitHubWebhookQueue();
+        var maintenance = new MaintenanceModeState();
+        maintenance.Enter("Restoring a backup");
+        var worker = NewWorker(queue, maintenance);
+        var job = NewJob();
+
+        await worker.RunOneAsync(job, CancellationToken.None);
+
+        queue.Reader.TryRead(out var again).Should().BeTrue("the delivery is offered again, not dropped");
+        again.Should().Be(job, "the same head is built once the restore is over");
+    }
+
     // --- Fixture -----------------------------------------------------------
+
+    private static GitHubPullRequestJob NewJob() => new(
+        InstallationId: ConnectedInstallation,
+        RepositoryFullName: "cronus-dk/customer-app",
+        CloneUrl: "https://github.com/cronus-dk/customer-app.git",
+        PullRequestNumber: 7,
+        HeadSha: "abc1234",
+        HeadRef: "feature/vat",
+        BaseRef: "main",
+        DeliveryId: "delivery-1");
+
 
     /// <summary>
     /// A worker over a service provider that hands out a fresh scope per
     /// organisation, exactly as the hosted worker's own does - the point of the
     /// test is that each read happens under its own tenant filter.
     /// </summary>
-    private GitHubPullRequestBuildWorker NewWorker()
+    private GitHubPullRequestBuildWorker NewWorker(
+        GitHubWebhookQueue? queue = null, MaintenanceModeState? maintenance = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IOrganizationContext>(_db.OrgContext);
@@ -134,9 +167,13 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
 
         var provider = services.BuildServiceProvider();
         return new GitHubPullRequestBuildWorker(
-            new GitHubWebhookQueue(), provider,
+            queue ?? new GitHubWebhookQueue(), provider,
+            maintenance ?? new MaintenanceModeState(),
             NullLogger<GitHubPullRequestBuildWorker>.Instance,
-            new ALDevToolbox.Services.WorkerHeartbeatRegistry(TimeProvider.System));
+            new ALDevToolbox.Services.WorkerHeartbeatRegistry(TimeProvider.System))
+        {
+            MaintenanceRetryDelay = TimeSpan.Zero,
+        };
     }
 
     private async Task ConfigureDeploymentAsync()

@@ -31,11 +31,19 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
 {
     private readonly GitHubWebhookQueue _queue;
     private readonly IServiceProvider _services;
+    private readonly MaintenanceModeState _maintenance;
     private readonly ILogger<GitHubPullRequestBuildWorker> _logger;
+
+    /// <summary>
+    /// How long a delivery waits before being offered again while a restore is in
+    /// flight. Settable for tests, which cannot afford to wait half a minute.
+    /// </summary>
+    internal TimeSpan MaintenanceRetryDelay { get; set; } = TimeSpan.FromSeconds(30);
 
     public GitHubPullRequestBuildWorker(
         GitHubWebhookQueue queue,
         IServiceProvider services,
+        MaintenanceModeState maintenance,
         ILogger<GitHubPullRequestBuildWorker> logger,
         WorkerHeartbeatRegistry heartbeats)
         // Routing only - the build itself is the release-import worker's active
@@ -45,14 +53,38 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
     {
         _queue = queue;
         _services = services;
+        _maintenance = maintenance;
         _logger = logger;
     }
+
+    /// <summary>Runs one job as the drain loop would. Test seam.</summary>
+    internal Task RunOneAsync(GitHubPullRequestJob job, CancellationToken ct) => RunJobAsync(job, ct);
 
     protected override string Describe(GitHubPullRequestJob job) =>
         $"{job.RepositoryFullName}#{job.PullRequestNumber}@{job.HeadSha}";
 
     protected override async Task RunJobAsync(GitHubPullRequestJob job, CancellationToken ct)
     {
+        // A restore is rewriting the database underneath us. The delivery was
+        // accepted (the webhook route stays open through maintenance on purpose,
+        // because GitHub disables a hook whose deliveries keep failing), but the
+        // build behind it reads and writes tables that are being replaced. So the
+        // job goes back on the queue rather than into the database.
+        if (_maintenance.IsActive)
+        {
+            _logger.LogInformation(
+                "Holding a pull-request build for {Job}: maintenance mode is active ({Reason}).",
+                Describe(job), _maintenance.Reason);
+            await Task.Delay(MaintenanceRetryDelay, ct).ConfigureAwait(false);
+            if (!_queue.TryEnqueue(job))
+            {
+                _logger.LogWarning(
+                    "Dropped a pull-request build for {Job}: the queue was full while maintenance mode was active.",
+                    Describe(job));
+            }
+            return;
+        }
+
         // Superseded before we even reached it: a newer push to the same pull
         // request arrived while this one waited. Building it would spend a
         // compile on a commit no reviewer is looking at, and would then complete
@@ -112,9 +144,10 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
 
         foreach (var match in matches)
         {
+            long? checkRunId = null;
             try
             {
-                var checkRunId = await checks.OpenAsync(
+                checkRunId = await checks.OpenAsync(
                     job.InstallationId, job.RepositoryFullName, match.ProjectName, job.HeadSha, match.ProjectId, ct)
                     .ConfigureAwait(false);
 
@@ -132,9 +165,20 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
             catch (Exception ex)
             {
                 // One solution's failure is not the others'. The pull request
-                // simply gets one fewer check run, and the reason is here.
+                // simply gets one fewer answer, and the reason is here.
                 _logger.LogError(ex,
                     "Could not start a pull-request build of solution {ProjectId} for {Job}.", match.ProjectId, Describe(job));
+
+                // The run was opened before the build was queued, so a failure
+                // between the two would leave it spinning on the pull request
+                // until somebody pushed again. Close it instead, saying why.
+                if (checkRunId is long openRun)
+                {
+                    await checks.AbandonAsync(
+                        job.InstallationId, job.RepositoryFullName, openRun,
+                        "The toolbox could not start this build. Push again, or look at the solution in the toolbox.",
+                        ct).ConfigureAwait(false);
+                }
             }
         }
     }

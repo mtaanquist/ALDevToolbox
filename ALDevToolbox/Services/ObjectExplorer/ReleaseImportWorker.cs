@@ -108,6 +108,23 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
         var buildCt = superseded.Token;
         try
         {
+            // A newer head can be announced between the job being queued and this
+            // registration being made, and its cancellation would then have found
+            // nothing to cancel. So the question is asked once more now that the
+            // token is registered: from here on Announce reaches us.
+            if (!webhookQueue.IsLatest(key, source.HeadSha))
+            {
+                const string Message = "Superseded by a newer commit on the same pull request.";
+                _logger.LogInformation(
+                    "Pull-request build for release {ReleaseId} was superseded before it started.", job.ReleaseId);
+                await importer.MarkFailedAsync(job.ReleaseId, Message, CancellationToken.None).ConfigureAwait(false);
+                await buildService.MarkBuildFailedAsync(job.ReleaseId, Message, CancellationToken.None).ConfigureAwait(false);
+                // Nothing is said on GitHub: the newer job owns its own check run,
+                // and this stale head's run is completed by whichever build the
+                // reviewer is actually waiting on.
+                return;
+            }
+
             string? installationToken = null;
             try
             {
@@ -182,7 +199,7 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
         }
         finally
         {
-            webhookQueue.EndBuild(key, superseded);
+            webhookQueue.EndBuild(key, superseded, source.HeadSha);
         }
     }
 

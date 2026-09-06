@@ -125,6 +125,34 @@ public sealed class AdminRecipeUpdateRepositoriesTests : IDisposable
     }
 
     [Fact]
+    public async Task Saving_an_existing_recipe_stays_on_the_page_so_the_update_buttons_can_be_used()
+    {
+        // "Save your changes to enable" was unfollowable: saving navigated away
+        // to the Cookbook list, so nobody could ever reach the buttons it was
+        // pointing at.
+        var recipeId = await SeedRecipeAsync();
+        await ApplyToAsync(recipeId, FirstRepo);
+        await ReadyAsync();
+        var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        var before = nav.Uri;
+
+        var cut = _ctx.Render<AdminRecipeEdit>(p => p.Add(c => c.Id, recipeId));
+        // The card only renders once the whole load has finished; clicking Save
+        // before then would run a second query on the page's own DbContext.
+        cut.WaitForElement("button:contains('Open pull request')");
+        await cut.Find("button.btn--primary").ClickAsync(new());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Saved.");
+            cut.Find("#recipe-title").Should().NotBeNull("the person is still on the recipe they saved");
+            cut.Find("button:contains('Open pull request')").HasAttribute("disabled").Should().BeFalse(
+                "the form matches the saved recipe, so the update can be sent from here");
+        });
+        nav.Uri.Should().Be(before, "saving an existing recipe does not navigate away");
+    }
+
+    [Fact]
     public async Task One_row_opens_one_pull_request_and_says_which()
     {
         var recipeId = await SeedRecipeAsync();

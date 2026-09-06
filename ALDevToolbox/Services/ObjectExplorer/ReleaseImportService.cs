@@ -1576,14 +1576,6 @@ public class ReleaseImportService
     // ── BC version inference ────────────────────────────────────────────
 
     /// <summary>
-    /// Picks a stable platform/application version label from the Modules just
-    /// imported. Microsoft's Base Application carries the canonical version
-    /// stamp; when it's present we use that. Otherwise leave null and let the
-    /// admin set <see cref="ReleaseImportRequest.ApplicationVersionId"/> by
-    /// hand on retry. Reads from the DB rather than tracker state because
-    /// per-module SaveChanges has cleared the tracker by now.
-    /// </summary>
-    /// <summary>
     /// Asks the drift scan which tracked GitHub repositories are now behind, for
     /// a first-party Release that has just gone <c>ready</c>. Anything else - a
     /// pipeline build, a partner upload, a C/AL export - is not a Business
@@ -1613,6 +1605,14 @@ public class ReleaseImportService
         }
     }
 
+    /// <summary>
+    /// Picks a stable platform/application version label from the Modules just
+    /// imported. Microsoft's Base Application carries the canonical version
+    /// stamp; when it's present we use that. Otherwise leave null and let the
+    /// admin set <see cref="ReleaseImportRequest.ApplicationVersionId"/> by
+    /// hand on retry. Reads from the DB rather than tracker state because
+    /// per-module SaveChanges has cleared the tracker by now.
+    /// </summary>
     private async Task<string?> InferBcVersionAsync(int releaseId, CancellationToken ct)
     {
         var baseApp = await _db.OeModules.AsNoTracking()

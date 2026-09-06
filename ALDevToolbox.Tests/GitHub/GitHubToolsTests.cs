@@ -348,6 +348,28 @@ public sealed class GitHubToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task The_same_string_edited_twice_is_refused_by_name()
+    {
+        // Two edits for one id would silently drop one of them and the agent
+        // would be told the write succeeded.
+        await ReadyAsync();
+        var api = WritableApi();
+        var (tools, ctx) = NewTools(api);
+        await using var _ = ctx;
+
+        var act = () => tools.OpenTranslationPullRequestAsync(
+            Repo, FilePath, "da-DK",
+            [
+                new TranslationUnitEditInput(AmountId, "Beloeb"),
+                new TranslationUnitEditInput(AmountId, "Belob"),
+            ]);
+
+        (await act.Should().ThrowAsync<McpException>())
+            .Which.Message.Should().Contain(AmountId).And.Contain("more than once");
+        api.Calls.Should().NotContain(c => c.StartsWith("PUT", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task No_edits_at_all_is_refused_before_github_is_asked_anything()
     {
         await ReadyAsync();

@@ -95,6 +95,7 @@ public sealed class RepositoryDiscoveryScheduler : PolledScheduler
         var found = 0;
         foreach (var (orgId, isSystem) in orgs)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 using var ambient = AmbientOrganizationScope.Enter(
@@ -102,6 +103,12 @@ public sealed class RepositoryDiscoveryScheduler : PolledScheduler
                 await using var scope = _services.CreateAsyncScope();
                 var discovery = scope.ServiceProvider.GetRequiredService<RepositoryDiscoveryService>();
                 found += await discovery.SweepCurrentOrganisationAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Shutdown, not one organisation's failure: stop the sweep rather
+                // than logging an error per remaining organisation.
+                throw;
             }
             catch (Exception ex)
             {

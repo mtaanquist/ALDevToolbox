@@ -275,6 +275,18 @@ public sealed class GitHubReleaseService
             release = await _github.UpdateReleaseAsync(token, owner, name, existing.Id, existing.Name ?? tag, body, ct);
         }
 
+        // Without an upload address there is nowhere to put the files, and a
+        // Release with no .app on it is not something to report as published.
+        if (string.IsNullOrWhiteSpace(release.UploadUrl))
+        {
+            _logger.LogWarning(
+                "GitHub created the release {Tag} on {Owner}/{Repo} but said nothing about where to upload its files.",
+                tag, owner, name);
+            return new GitHubReleasePublishResult(
+                false, tag, release.HtmlUrl,
+                "GitHub did not say where to upload the app files, so the release has none. Try publishing again.");
+        }
+
         foreach (var artifact in artifacts)
         {
             await _github.UploadReleaseAssetAsync(token, release.UploadUrl, artifact.FileName, artifact.Content, ct);
@@ -474,9 +486,17 @@ public sealed class GitHubReleaseService
 
         await _access.EnsureCanManageAsync(rp.ProjectId, rp.OwnerId, ct);
 
-        if (rp.ArtifactSource != ReleaseArtifactSource.GithubRelease || rp.GithubReleaseRepositoryId is null)
+        if (rp.ArtifactSource != ReleaseArtifactSource.GithubRelease)
         {
             throw Validation("ArtifactSource", "This release pipeline releases builds from a build pipeline, not GitHub releases.");
+        }
+        // The repository row can go while the pipeline still draws from Releases:
+        // removing a repository from the solution nulls it. Saying the pipeline is
+        // fed from a build pipeline would send the user looking in the wrong place.
+        if (rp.GithubReleaseRepositoryId is null)
+        {
+            throw Validation("GithubReleaseRepositoryId",
+                "This release pipeline no longer names a repository; pick one on the release pipeline.");
         }
         if (rp.RepositoryProvider != RepositoryProvider.GitHub
             || !TryParseRepository(rp.RepositoryUrl, out var owner, out var name))

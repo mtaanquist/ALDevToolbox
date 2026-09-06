@@ -63,6 +63,60 @@ public sealed class TranslationMemoryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task An_upsert_that_names_no_source_does_not_erase_the_one_already_recorded()
+    {
+        // The repository sweep records which repository and file a pair came
+        // from; a release import upserts the same pairs with no attribution at
+        // all. Letting its nulls through left "where did this come from" blank
+        // for entries the toolbox could answer for.
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync([new TranslationMemoryUpsert(
+                "en-US", "da-DK", "Posting Date", "Bogføringsdato", "caption",
+                "Payment Import", "cronus-dk/payment-import", "App/Translations/da-DK.xlf")]);
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync([new TranslationMemoryUpsert(
+                "en-US", "da-DK", "Posting Date", "Bogføringsdato", "caption", Origin: null)]);
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.TranslationMemory.SingleAsync(e => e.SourceText == "Posting Date");
+        row.Origin.Should().Be("Payment Import");
+        row.SourceRepository.Should().Be("cronus-dk/payment-import");
+        row.SourcePath.Should().Be("App/Translations/da-DK.xlf");
+        row.HitCount.Should().Be(2, "it is still the same pair seen twice");
+    }
+
+    [Fact]
+    public async Task An_upsert_that_does_name_a_source_replaces_the_older_one()
+    {
+        // The most recent file still wins when there is one to name: a pair that
+        // appears in two files must not point at the one that no longer says it.
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync([new TranslationMemoryUpsert(
+                "en-US", "da-DK", "Quantity", "Antal", "caption",
+                "Old App", "cronus-dk/old", "App/Translations/da-DK.xlf")]);
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync([new TranslationMemoryUpsert(
+                "en-US", "da-DK", "Quantity", "Antal", "caption",
+                "New App", "cronus-dk/new", "Ext/Translations/da-DK.xlf")]);
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.TranslationMemory.SingleAsync(e => e.SourceText == "Quantity");
+        row.Origin.Should().Be("New App");
+        row.SourceRepository.Should().Be("cronus-dk/new");
+        row.SourcePath.Should().Be("Ext/Translations/da-DK.xlf");
+    }
+
+    [Fact]
     public async Task Suggest_returns_fuzzy_match_above_threshold()
     {
         await using (var ctx = _db.NewContext())

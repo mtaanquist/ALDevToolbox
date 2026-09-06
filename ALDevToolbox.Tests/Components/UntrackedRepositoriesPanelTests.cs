@@ -166,7 +166,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
         await cut.Find("button:contains('Create a solution')").ClickAsync(new());
         await cut.Find("button:contains('Create solution')").ClickAsync(new());
 
-        cut.Markup.Should().Contain("Another project already uses this name");
+        cut.Markup.Should().Contain("Another solution already uses this name");
         await using var read = _db.NewContext();
         (await read.OeProjects.CountAsync()).Should().Be(1, "the refused one was not created");
     }

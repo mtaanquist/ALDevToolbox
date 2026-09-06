@@ -209,6 +209,35 @@ public sealed class DeliveryToolsTests : IDisposable
         (await act.Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("no release tagged");
     }
 
+    [Fact]
+    public async Task Both_release_tools_say_so_plainly_when_the_deployment_has_no_GitHub_app()
+    {
+        // Nothing is configured, so there is no App to act as. An agent gets the
+        // sentence a person would see rather than an unhandled exception.
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+            await MakeReleaseSourcedAsync(ctx, seed.ReleasePipelineId);
+            ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                GitHubInstallationId = InstallationId,
+                GitHubOrgLogin = OrgLogin,
+                GitHubConnectedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var list = () => NewTools(read).ListGitHubReleasesAsync(seed.ReleasePipelineId);
+        var stage = () => NewTools(read).StageGitHubReleaseAsync(seed.ReleasePipelineId, "v1.0.0.0");
+
+        await list.Should().ThrowAsync<McpException>();
+        await stage.Should().ThrowAsync<McpException>();
+    }
+
     // ── Project visibility (slice 3) ─────────────────────────────────────
 
     /// <summary>

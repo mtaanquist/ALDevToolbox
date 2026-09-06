@@ -100,11 +100,22 @@ public static class GitHubWebhookEndpoints
             var job = TryReadPullRequest(body, deliveryId, log);
             if (job is null) return Results.NoContent();
 
-            // Announce before enqueuing, so a build already running for an older
-            // head of this pull request learns it is superseded now rather than
-            // when the worker eventually reaches the new job.
+            // A full channel means the toolbox is already behind on builds.
+            // Waiting here would hold GitHub's request open behind that backlog;
+            // saying so lets GitHub redeliver, which is what it does with a 5xx.
+            if (!queue.TryEnqueue(job))
+            {
+                log.LogWarning(
+                    "Refused a pull-request delivery for {Repository}#{Number}: the build queue is full.",
+                    job.RepositoryFullName, job.PullRequestNumber);
+                return Results.Text("Busy; GitHub will retry.", "text/plain", statusCode: 503);
+            }
+
+            // Announced only once the job is really queued. Announcing first would
+            // cancel the build running for the previous head on the strength of a
+            // job that then never arrived, leaving the pull request with no answer
+            // at all.
             queue.Announce(job.Key, job.HeadSha);
-            await queue.EnqueueAsync(job, ct);
 
             log.LogInformation(
                 "Queued a pull-request build for {Repository}#{Number} at {HeadSha} (installation {InstallationId}, delivery {DeliveryId}).",
@@ -218,6 +229,39 @@ public static class GitHubWebhookEndpoints
                 return null;
             }
 
+            // A pull request from a fork is not built. Building it would clone and
+            // compile a stranger's code on the customer's own installation token,
+            // on a machine holding that organisation's symbols - anybody on GitHub
+            // can open such a pull request. So the head repository has to be the
+            // repository the delivery is about.
+            var headRepository = head.ValueKind == JsonValueKind.Object
+                && head.TryGetProperty("repo", out var repoElement)
+                    ? repoElement : default;
+            var headFullName = Text(headRepository, "full_name");
+            var isFork = headRepository.ValueKind == JsonValueKind.Object
+                && headRepository.TryGetProperty("fork", out var forkFlag)
+                && forkFlag.ValueKind == JsonValueKind.True;
+            if (headFullName is null
+                || isFork
+                || !string.Equals(headFullName, fullName, StringComparison.OrdinalIgnoreCase))
+            {
+                log.LogInformation(
+                    "A pull request on {Repository} ({DeliveryId}) comes from a fork ({HeadRepository}); not built.",
+                    fullName, deliveryId, headFullName ?? "unknown");
+                return null;
+            }
+
+            // The SHA and the branch name go on a git command line, so they are
+            // checked against what git can name before they get there rather than
+            // trusted because GitHub sent them.
+            if (!HeadShaRegex.IsMatch(headSha) || !IsSafeRef(headRef))
+            {
+                log.LogWarning(
+                    "A pull_request delivery ({DeliveryId}) named a commit or branch git could not be asked for.",
+                    deliveryId);
+                return null;
+            }
+
             return new GitHubPullRequestJob(
                 InstallationId: installationIdValue,
                 RepositoryFullName: fullName,
@@ -234,6 +278,21 @@ public static class GitHubWebhookEndpoints
             return null;
         }
     }
+
+    /// <summary>A git object name: hex, and between an abbreviated and a full SHA-1.</summary>
+    private static readonly System.Text.RegularExpressions.Regex HeadShaRegex =
+        new("^[0-9a-fA-F]{7,40}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Whether <paramref name="headRef"/> is a branch name safe to hand to git.
+    /// Deliberately narrower than git's own rules: anything outside
+    /// <c>A-Z a-z 0-9 . _ / -</c>, and any name starting with a dash (which git
+    /// would read as an option), is refused rather than escaped.
+    /// </summary>
+    private static bool IsSafeRef(string headRef) =>
+        headRef.Length > 0
+        && headRef[0] != '-'
+        && headRef.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '/' or '-');
 
     private static string? Text(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object

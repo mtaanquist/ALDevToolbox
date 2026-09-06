@@ -229,6 +229,22 @@ public sealed class GitHubTools
                 throw new McpException($"Could not read '{filePath}' as XLIFF v1.2: {ex.Message}");
             }
 
+            // Two edits for one id would silently drop one of them in the map
+            // below, and the agent would be told the write succeeded. Say which
+            // ids came twice instead.
+            var duplicates = edits
+                .GroupBy(e => e.Id ?? string.Empty, StringComparer.Ordinal)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+            if (duplicates.Count > 0)
+            {
+                throw new McpException(
+                    "These string ids appear more than once, so nothing was written: "
+                    + string.Join(", ", duplicates.Select(id => $"'{id}'"))
+                    + ". Send one edit per id.");
+            }
+
             var known = parsed.Units.Select(u => u.Id).ToHashSet(StringComparer.Ordinal);
             var unknown = edits
                 .Select(e => e.Id ?? string.Empty)

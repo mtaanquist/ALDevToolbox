@@ -206,8 +206,8 @@ public sealed class DependencyDriftService
         }
 
         var token = await _github.GetInstallationTokenAsync(installationId, ct);
-        var installed = (await _github.ListInstallationRepositoriesAsync(token, ct))
-            .ToDictionary(r => r.FullName, StringComparer.OrdinalIgnoreCase);
+        var listing = await _github.ListInstallationRepositoriesAsync(token, ct);
+        var installed = listing.Repositories.ToDictionary(r => r.FullName, StringComparer.OrdinalIgnoreCase);
 
         var findings = new List<GitHubRepositoryDrift>();
         foreach (var fullName in tracked)
@@ -215,9 +215,20 @@ public sealed class DependencyDriftService
             ct.ThrowIfCancellationRequested();
             if (!installed.TryGetValue(fullName, out var repo))
             {
-                _logger.LogInformation(
-                    "{RepoFullName} is tracked by a solution but is not one the GitHub App can read, so it is left out of the drift scan.",
-                    fullName);
+                // Two different reasons, and they read differently to whoever is
+                // wondering why a repository is missing from the panel.
+                if (listing.Truncated)
+                {
+                    _logger.LogWarning(
+                        "The installation shares more than 1000 repositories, so {RepoFullName} was not among the ones read; it is left out of the drift scan.",
+                        fullName);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "{RepoFullName} is tracked by a solution but is not one the GitHub App can read, so it is left out of the drift scan.",
+                        fullName);
+                }
                 continue;
             }
 
@@ -234,12 +245,12 @@ public sealed class DependencyDriftService
             }
         }
 
-        await ReplaceFindingsAsync(findings, releaseId, ct);
+        var stored = await ReplaceFindingsAsync(findings, releaseId, ct);
         _logger.LogInformation(
             "Dependency drift for organisation {OrgId} against release {ReleaseId} ({BcVersion}): {FindingCount} findings across {RepositoryCount} repositories.",
-            orgId, releaseId, release.BcVersion, findings.Count,
+            orgId, releaseId, release.BcVersion, stored,
             findings.Select(f => f.Repository).Distinct(StringComparer.OrdinalIgnoreCase).Count());
-        return findings.Count;
+        return stored;
     }
 
     /// <summary>
@@ -387,16 +398,88 @@ public sealed class DependencyDriftService
     /// release that has since been superseded is not something anyone should be
     /// offered a pull request for.
     /// </summary>
-    private async Task ReplaceFindingsAsync(
+    private async Task<int> ReplaceFindingsAsync(
         IReadOnlyList<GitHubRepositoryDrift> findings, int releaseId, CancellationToken ct)
     {
+        // One row per (repository, file, field) - the unique index says so, and a
+        // manifest can name the same dependency twice: "id" and "appId" are both
+        // read, and an app.json carrying both for one extension yields the same
+        // finding twice. Without this the whole organisation's scan would fail on
+        // one repository's spelling.
+        var deduped = findings
+            .GroupBy(f => (f.Repository.ToLowerInvariant(), f.Path, f.Field), TupleComparer)
+            .Select(g => g.First())
+            .ToList();
+        if (deduped.Count != findings.Count)
+        {
+            _logger.LogInformation(
+                "Dropped {DuplicateCount} duplicate drift finding(s) before saving.", findings.Count - deduped.Count);
+        }
+
         var existing = await _db.GitHubRepositoryDrift.ToListAsync(ct);
         if (existing.Count > 0) _db.GitHubRepositoryDrift.RemoveRange(existing);
-        if (findings.Count > 0) _db.GitHubRepositoryDrift.AddRange(findings);
-        await _db.SaveChangesAsync(ct);
+        if (deduped.Count > 0) _db.GitHubRepositoryDrift.AddRange(deduped);
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // One repository's rows must not cost the organisation the whole
+            // scan. Start again with the deletions alone, then add each
+            // repository's findings on its own, so the ones that are fine land.
+            _logger.LogWarning(ex, "Saving the drift findings failed; retrying one repository at a time.");
+            return await SaveFindingsPerRepositoryAsync(deduped, ct);
+        }
+
         _logger.LogInformation(
             "Replaced {OldCount} drift findings with {NewCount} from release {ReleaseId}.",
-            existing.Count, findings.Count, releaseId);
+            existing.Count, deduped.Count, releaseId);
+        return deduped.Count;
+    }
+
+    /// <summary>Compares the (repository, path, field) triples a finding is identified by.</summary>
+    private static readonly IEqualityComparer<(string Repository, string Path, string Field)> TupleComparer =
+        EqualityComparer<(string Repository, string Path, string Field)>.Default;
+
+    /// <summary>
+    /// The fallback for a batch save that failed: clear the tracked graph, delete
+    /// what is there, then add one repository's findings per save. A repository
+    /// the database refuses is logged and skipped; the rest are stored.
+    /// </summary>
+    private async Task<int> SaveFindingsPerRepositoryAsync(
+        IReadOnlyList<GitHubRepositoryDrift> findings, CancellationToken ct)
+    {
+        _db.ChangeTracker.Clear();
+        var existing = await _db.GitHubRepositoryDrift.ToListAsync(ct);
+        if (existing.Count > 0)
+        {
+            _db.GitHubRepositoryDrift.RemoveRange(existing);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var stored = 0;
+        foreach (var group in findings.GroupBy(f => f.Repository, StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                _db.GitHubRepositoryDrift.AddRange(group);
+                await _db.SaveChangesAsync(ct);
+                stored += group.Count();
+            }
+            catch (DbUpdateException ex)
+            {
+                _db.ChangeTracker.Clear();
+                _logger.LogWarning(ex,
+                    "Could not store the drift findings for {RepoFullName}; the other repositories are unaffected.",
+                    group.Key);
+            }
+        }
+
+        _logger.LogInformation("Stored {StoredCount} of {FindingCount} drift findings one repository at a time.",
+            stored, findings.Count);
+        return stored;
     }
 
     /// <summary>

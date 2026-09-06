@@ -118,6 +118,12 @@ public sealed class DeliveryTools
         {
             throw new McpException("GitHub refused to list the releases: " + ex.Message);
         }
+        catch (GitHubAppNotConfiguredException ex)
+        {
+            // No GitHub App on this deployment. An agent gets the same sentence a
+            // person sees, rather than a stack trace it can do nothing with.
+            throw new McpException(ex.Message);
+        }
     }
 
     [McpServerTool(Name = "stage_github_release", ReadOnly = false, Idempotent = true)]
@@ -145,6 +151,10 @@ public sealed class DeliveryTools
         catch (GitHubApiException ex)
         {
             throw new McpException("GitHub refused: " + ex.Message);
+        }
+        catch (GitHubAppNotConfiguredException ex)
+        {
+            throw new McpException(ex.Message);
         }
     }
 }

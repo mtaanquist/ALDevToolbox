@@ -63,6 +63,17 @@ public sealed class GitHubWebhookQueue : JobQueue<GitHubPullRequestJob>
     public GitHubWebhookQueue() : base(capacity: 128) { }
 
     /// <summary>
+    /// Queues <paramref name="job"/> if there is room, and answers false when
+    /// there is not.
+    ///
+    /// <para>The webhook endpoint runs on a request thread that GitHub is timing.
+    /// Waiting on a full channel would hold that request open behind a backlog of
+    /// builds and eventually have GitHub give up on us anyway; refusing is both
+    /// honest and cheaper, because GitHub redelivers a failed webhook.</para>
+    /// </summary>
+    public bool TryEnqueue(GitHubPullRequestJob job) => Writer.TryWrite(job);
+
+    /// <summary>
     /// Records <paramref name="headSha"/> as the newest head for
     /// <paramref name="key"/> and cancels any build still running for an older
     /// one. Called at enqueue time, before the job reaches the worker, so the
@@ -103,10 +114,32 @@ public sealed class GitHubWebhookQueue : JobQueue<GitHubPullRequestJob>
     /// </summary>
     public void BeginBuild(string key, CancellationTokenSource cts) => _running[key] = cts;
 
-    /// <summary>Clears the in-flight registration for <paramref name="key"/> if <paramref name="cts"/> is still the one held.</summary>
-    public void EndBuild(string key, CancellationTokenSource cts) =>
+    /// <summary>
+    /// Clears the in-flight registration for <paramref name="key"/> if
+    /// <paramref name="cts"/> is still the one held, and forgets the newest-head
+    /// record when <paramref name="headSha"/> is still that head.
+    ///
+    /// <para>The second half is what keeps the map from growing for the life of
+    /// the process: every pull request the toolbox ever built would otherwise
+    /// leave an entry behind. It is only safe when the head just built is still
+    /// the newest one - a newer head announced mid-build owns the entry, and
+    /// dropping it would make the superseded build look current again.</para>
+    /// </summary>
+    public void EndBuild(string key, CancellationTokenSource cts, string? headSha = null)
+    {
         ((ICollection<KeyValuePair<string, CancellationTokenSource>>)_running)
             .Remove(new KeyValuePair<string, CancellationTokenSource>(key, cts));
+        if (headSha is null) return;
+        if (_latestSha.TryGetValue(key, out var latest)
+            && string.Equals(latest, headSha, StringComparison.OrdinalIgnoreCase))
+        {
+            ((ICollection<KeyValuePair<string, string>>)_latestSha)
+                .Remove(new KeyValuePair<string, string>(key, latest));
+        }
+    }
+
+    /// <summary>How many pull requests this queue is still holding a newest-head record for. Test seam.</summary>
+    internal int TrackedHeadCount => _latestSha.Count;
 
     /// <summary>Forgets the newest-head record for <paramref name="key"/>. Test seam.</summary>
     internal void Forget(string key)

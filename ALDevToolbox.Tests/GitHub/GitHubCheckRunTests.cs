@@ -137,6 +137,62 @@ public sealed class GitHubCheckRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Absent_optional_fields_are_left_out_rather_than_sent_as_null()
+    {
+        // GitHub's check-run schema tells "absent" from "null" and answers 422
+        // for the second. A deployment that has not been told its own address
+        // has no details URL, and a diagnostic with no code has no annotation
+        // title - on a default install that is every check run there is.
+        var api = ApiWithChecks();
+        await ConfigureDeploymentAsync();
+        await using var ctx = _db.NewContext();
+        var client = _db.NewGitHubAppClient(ctx, api);
+        var token = await client.GetInstallationTokenAsync(InstallationId);
+
+        await client.CreateCheckRunAsync(
+            token, "cronus-dk", "customer-app",
+            name: "AL Dev Toolbox / CRONUS Retail",
+            headSha: "abc123",
+            status: "in_progress",
+            detailsUrl: null,
+            externalId: null);
+        await client.UpdateCheckRunAsync(
+            token, "cronus-dk", "customer-app", checkRunId: 555,
+            status: "in_progress",
+            conclusion: null,
+            title: "Building",
+            summary: "The build is running.",
+            annotations: [new GitHubCheckAnnotation("App/My.al", 12, 12, GitHubCheckAnnotationLevel.Warning, "msg", null)]);
+
+        var bodies = api.Bodies.Where(b => b.Call.Contains("/check-runs")).ToList();
+        bodies.Should().HaveCount(2);
+        foreach (var (call, body) in bodies)
+        {
+            HasNull(JsonDocument.Parse(body).RootElement).Should().BeFalse(
+                "GitHub answers 422 for an explicit null, and {0} carried one", call);
+        }
+
+        var created = JsonDocument.Parse(bodies[0].Body).RootElement;
+        created.TryGetProperty("details_url", out _).Should().BeFalse();
+        created.TryGetProperty("external_id", out _).Should().BeFalse();
+
+        var patched = JsonDocument.Parse(bodies[1].Body).RootElement;
+        patched.TryGetProperty("conclusion", out _).Should().BeFalse();
+        patched.TryGetProperty("completed_at", out _).Should().BeFalse();
+        patched.GetProperty("output").GetProperty("annotations")[0]
+            .TryGetProperty("title", out _).Should().BeFalse();
+    }
+
+    /// <summary>True when any property anywhere in the body was written as a JSON null.</summary>
+    private static bool HasNull(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Null => true,
+        JsonValueKind.Object => element.EnumerateObject().Any(p => HasNull(p.Value)),
+        JsonValueKind.Array => element.EnumerateArray().Any(HasNull),
+        _ => false,
+    };
+
+    [Fact]
     public async Task A_refused_check_run_surfaces_GitHubs_own_message()
     {
         // The commonest refusal is the organisation not having granted the app

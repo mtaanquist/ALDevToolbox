@@ -374,6 +374,21 @@ public sealed class TestDb : IDisposable
             new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
             clock ?? TimeProvider.System,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubReleaseService>.Instance);
+    /// A <see cref="ALDevToolbox.Services.ObjectExplorer.ProjectService"/> on this
+    /// fixture's context, with the discovery queue nobody drains here.
+    /// </summary>
+    public ALDevToolbox.Services.ObjectExplorer.ProjectService NewProjectService(AppDbContext ctx)
+    {
+        var projectAccess = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext);
+        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService(
+            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue(),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>.Instance);
+        return new ALDevToolbox.Services.ObjectExplorer.ProjectService(
+            ctx, OrgContext, projectAccess, extensionDiscovery,
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectService>.Instance);
+    }
+
+    /// <summary>
     /// Repository discovery (#629): the organisation-wide sweep, the panel's
     /// narrowed read, and Track / Ignore. Builds its own ProjectService chain,
     /// because tracking a repository creates a solution.

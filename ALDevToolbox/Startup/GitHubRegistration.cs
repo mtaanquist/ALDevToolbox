@@ -55,7 +55,11 @@ public static class GitHubRegistration
         services.AddHttpClient<GitHubAppClient>(client =>
         {
             client.BaseAddress = new Uri(GitHubAppClient.ApiBaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(30);
+            // No client-wide timeout: it would apply to a Release asset transfer
+            // as well as to a metadata read. GitHubAppClient sets a deadline per
+            // call instead - thirty seconds for an ordinary call, longer for the
+            // two that move a file.
+            client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.Accept.Add(
                 new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             // GitHub rejects requests without a User-Agent, and pins API

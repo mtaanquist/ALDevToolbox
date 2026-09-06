@@ -272,13 +272,21 @@
     // there is no GitHub connection, and then the source choice isn't offered at all.
     private IReadOnlyList<GitHubReleaseRepositoryOption>? _releaseRepositories;
 
+    /// <summary>
+    /// True when the repository list could not be read at all, as opposed to
+    /// there being none. A pipeline that draws from GitHub cannot be saved while
+    /// this stands: the picker would be empty for a reason that has nothing to do
+    /// with the solution.
+    /// </summary>
+    private bool _repositoriesFailed;
+
     /// <summary>The Save button is live once the required fields are chosen and any Force-Sync acknowledgement is given.</summary>
     private bool CanSave =>
         !_saving && !_loading
         && _environments is { Count: > 0 }
         && !string.IsNullOrWhiteSpace(_name)
         && (_artifactSource == ReleaseArtifactSource.GithubRelease
-            ? _releaseRepositoryId != 0
+            ? _releaseRepositoryId != 0 && !_repositoriesFailed
             : _buildPipelines is { Count: > 0 } && _buildPipelineId != 0)
         && _environmentId != 0
         && (_schemaSyncMode != BcSyncMode.ForceSync || _forceSyncAck);
@@ -378,6 +386,7 @@
     {
         _loading = true;
         _saveError = null;
+        _repositoriesFailed = false;
         StateHasChanged();
         try
         {
@@ -392,6 +401,11 @@
             {
                 Log.LogError(ex, "Reading the solution's GitHub repositories failed for solution {ProjectId}.", _projectId);
                 _releaseRepositories = null;
+                // Saying nothing here would leave somebody editing a pipeline that
+                // already draws from GitHub staring at an empty picker with no
+                // reason given - and Save is refused below while this stands.
+                _repositoriesFailed = true;
+                _saveError = "The repositories on GitHub could not be read just now. Close this and try again.";
             }
             var envs = await Connections.ListEnvironmentsAsync(_projectId);
             // Every environment still present is a valid target - an extension installs

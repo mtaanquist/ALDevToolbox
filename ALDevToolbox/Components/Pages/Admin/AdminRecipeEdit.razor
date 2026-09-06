@@ -327,6 +327,13 @@
             }
         }
 
+        @if (_okMessage is not null)
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
+        }
+
         @if (_lastError is not null)
         {
             <p class="alert alert--danger" role="alert">
@@ -355,6 +362,7 @@
     private List<RecipeFileEditor.EditableFile> _files = new() { new RecipeFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
     private string? _lastError;
+    private string? _okMessage;
     private bool _busy;
     private bool _loadFailed;
 
@@ -383,7 +391,14 @@
     /// <summary>One repository's result: the words to show, and a link when there is a pull request.</summary>
     private sealed record UpdateOutcome(string Message, string? PullRequestUrl);
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    /// <summary>
+    /// Fills the form from the stored recipe and takes the snapshot the dirty
+    /// check compares against. Called again after a save, so the page a person
+    /// stays on is the recipe as it now is.
+    /// </summary>
+    private async Task LoadAsync()
     {
         _applicationVersions = await ApplicationVersions.GetActiveAsync();
         if (Id is null) return;
@@ -439,12 +454,6 @@
         _ => "Downloaded",
     };
 
-    /// <summary>
-    /// Opens one update pull request per repository, one after another. A
-    /// refusal on one is recorded against that row and the rest still go: an
-    /// admin fixing a bug wants the fix as far as it will reach, not a run that
-    /// stops at the first repository somebody has since archived.
-    /// </summary>
     /// <summary>
     /// Asks first: every repository on the list gets a pull request, and each
     /// one notifies the people watching it - a click that reaches other teams
@@ -536,6 +545,7 @@
         _busy = true;
         _errors = null;
         _lastError = null;
+        _okMessage = null;
         try
         {
             var input = new RecipeInput(
@@ -556,7 +566,11 @@
             else
             {
                 await Recipes.UpdateAsync(Id.Value, input);
-                Nav.NavigateTo("/admin/cookbook");
+                // Stay here. The card below only offers to open pull requests
+                // once the form is saved, and navigating away the moment it is
+                // meant the person could never act on that.
+                await LoadAsync();
+                _okMessage = "Saved.";
             }
         }
         catch (PlanValidationException ex)

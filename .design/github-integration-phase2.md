@@ -449,6 +449,34 @@ Releases page, and who sometimes has to redeploy a version the toolbox did not b
   template (the tag is `v<version>`), draft or pre-release Releases, and any retro-fitting
   of Releases for builds that finished before this shipped.
 
+**Review fixes.** Three things the first cut got wrong, all about the upload half:
+
+- **The upload host is checked before the credential is attached.** `upload_url` arrives
+  inside GitHub's own answer, and an empty one used to strip to a relative address that
+  resolved against `api.github.com` - so a build, with the organisation's installation
+  token, went somewhere nobody chose. The client now refuses anything that is not an
+  absolute `https` address on a `*.github.com` host, and `GitHubReleaseService` says so in
+  words when a created Release comes back without one rather than reporting a publish with
+  no files as a success.
+- **A file transfer is not a metadata read.** The typed client's 30-second `Timeout`
+  applied to a Release asset as well, which is a few megabytes on a slow link. The client
+  now has no timeout of its own; every call carries a linked deadline instead - 30 seconds
+  by default, ten minutes for the upload and the download.
+- **Saving a solution no longer unsets the Release repository.** `oe_pipelines` and
+  `oe_release_pipelines` point at an `oe_project_repositories` row with `ON DELETE SET
+  NULL`, and `ProjectService.UpdateProjectAsync` used to drop every repository row and
+  re-add it - so renaming a solution silently left every Release-sourced pipeline in it
+  with `artifact_source = github_release` and no repository. Repositories are reconciled in
+  place now, matched on provider plus normalised URL, and only a repository the user
+  actually removed is deleted. That case still nulls the pipelines, which is what was
+  asked for, and `GitHubReleaseService` words the resulting state honestly ("This release
+  pipeline no longer names a repository; pick one on the release pipeline.") rather than
+  claiming the pipeline draws from a build pipeline.
+- **GitHub rewrites some asset filenames** (spaces become dots, for one). The toolbox
+  reads the assets back by the name GitHub reports, not by the name it sent, so this costs
+  nothing today - but a future feature that matches on the uploaded name has to read the
+  name back rather than assume it.
+
 ## #627 Compile a pull-request branch and post the result as a check run
 
 Named user: a team with no CI of its own that wants "does this still compile?" answered
@@ -592,6 +620,49 @@ on every pull request, inline in the Files tab.
   page - there is no route for one, and a pull-request build has no pipeline whose
   page it could use. It is omitted entirely when `PUBLIC_BASE_URL` is unset, since a
   link to `localhost` is worse than none.
+
+**Review fixes.** The gate as first written would have failed on a default deployment,
+and it accepted work it should not have. What changed:
+
+- **A null is not an absent field.** Request bodies are serialised with
+  `DefaultIgnoreCondition = WhenWritingNull`, so a check run with no details URL and an
+  annotation with no code leave the property out rather than sending `null` - GitHub's
+  check-run schema answers 422 to the second, which on a deployment that has not been told
+  its own public address is every check run there is.
+- **Fork pull requests are not built.** Anyone on GitHub can fork a public repository and
+  open a pull request against it; building one would clone and compile a stranger's code
+  on the customer's own installation token, on a machine holding that organisation's
+  symbols. The webhook parser reads `pull_request.head.repo` and answers 204 when the head
+  repository is not the repository the delivery is about (or is flagged as a fork), logging
+  it at Information. There is no opt-in - a team that wants fork builds needs a review step
+  this design does not have.
+- **What reaches git is checked before it gets there.** The head SHA must match
+  `^[0-9a-f]{7,40}$` and the head ref may only contain `A-Za-z0-9._/-` and may not start
+  with a dash; `git fetch` gets a `--` before the revision. `git checkout` deliberately
+  does not - a `--` there turns the revision into a pathspec and git refuses it - so the
+  same SHA check is repeated in `ProjectBuildService` at the boundary that actually runs
+  git.
+- **Supersession has no window.** The worker re-asks `IsLatest` immediately after
+  registering its cancellation source, because a newer head announced between the enqueue
+  and that registration would have found nothing to cancel; the stale build is recorded as
+  superseded and says nothing on GitHub, since the newer job owns its own check run. The
+  endpoint announces only after a successful enqueue, so a delivery that was refused cannot
+  cancel the build that is running. `EndBuild` evicts the newest-head entry when the head
+  just built is still the newest, so the map does not grow for the life of the process.
+- **The queue refuses rather than waits.** The webhook runs on a request thread GitHub is
+  timing, so a full channel is answered with 503 and a body ("Busy; GitHub will retry")
+  instead of blocking - GitHub redelivers a 5xx.
+- **A check run is never left spinning.** The run is opened before the build is queued, so
+  a failure between the two completes it as `neutral` with the reason; and a delivery that
+  arrives while a restore is in flight is held and re-queued rather than reaching the
+  database (the webhook route stays open through maintenance on purpose, because GitHub
+  disables a hook whose deliveries keep failing).
+- **The run is decided on the repository under review.** A solution can track several
+  repositories and a pull request is about one of them: diagnostics are filtered to the
+  `oe_project_repositories` row whose normalised clone URL matches the delivery, the
+  conclusion is that repository's, and the others are counted in the summary as "N errors
+  in other repositories of this solution" without failing the run. Annotations are capped
+  at 200 (four of GitHub's batches) and the summary says how many were left out.
 
 ## #631 Translation memory from every .xlf in the organisation's repositories
 
@@ -896,3 +967,8 @@ surfaces.
 Retro-fitting standards onto existing repositories, auto-creating solutions without a
 click, three-way merges of recipe files, multi-file translation batches, editing an
 existing extension in a repository, and any MCP surface for the webhook flow.
+
+Open item, deliberately not solved here: **pull-request builds are never pruned.** Every
+push to an open pull request leaves a Release and a `ProjectBuild` row behind, so a busy
+repository accumulates them indefinitely; retention for those rows wants a policy an admin
+can see and set, which is its own piece of work rather than a number picked here.

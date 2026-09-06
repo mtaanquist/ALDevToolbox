@@ -28,6 +28,7 @@ public sealed class ProjectBuildImporter
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ProjectAccess _access;
+    private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildImporter> _logger;
 
     public ProjectBuildImporter(
@@ -37,6 +38,7 @@ public sealed class ProjectBuildImporter
         AppDbContext db,
         IOrganizationContext orgContext,
         ProjectAccess access,
+        TimeProvider clock,
         ILogger<ProjectBuildImporter> logger)
     {
         _importer = importer;
@@ -45,6 +47,7 @@ public sealed class ProjectBuildImporter
         _db = db;
         _orgContext = orgContext;
         _access = access;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -199,7 +202,7 @@ public sealed class ProjectBuildImporter
             PullRequestNumber = pullRequestNumber,
             HeadSha = headSha,
             CheckRunId = checkRunId,
-            StartedAt = DateTime.UtcNow,
+            StartedAt = _clock.GetUtcNow().UtcDateTime,
         };
         _db.OeProjectBuilds.Add(build);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);

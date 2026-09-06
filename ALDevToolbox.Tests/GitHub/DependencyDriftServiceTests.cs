@@ -57,6 +57,38 @@ public sealed class DependencyDriftServiceTests : IDisposable
         }
         """;
 
+    /// <summary>
+    /// The same dependency twice, once under the modern <c>id</c> and once under
+    /// the old <c>appId</c>. Real app.json files carry this after a merge, and it
+    /// used to produce two findings for one field - a unique-index violation that
+    /// took the whole organisation's scan down with it.
+    /// </summary>
+    private const string DuplicateDependencyManifest = """
+        {
+          "id": "1c0ffee0-0000-4000-8000-000000000003",
+          "name": "Payment Import",
+          "publisher": "CRONUS",
+          "version": "1.0.0.0",
+          "application": "27.0.0.0",
+          "platform": "27.0.0.0",
+          "dependencies": [
+            {
+              "id": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+              "name": "System Application",
+              "publisher": "Microsoft",
+              "version": "27.0.0.0"
+            },
+            {
+              "appId": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+              "name": "System Application",
+              "publisher": "Microsoft",
+              "version": "27.0.0.0"
+            }
+          ],
+          "idRanges": [ { "from": 50000, "to": 50099 } ]
+        }
+        """;
+
     private const string CurrentManifest = """
         {"id":"1c0ffee0-0000-4000-8000-000000000002","name":"Warehouse Extras","publisher":"CRONUS",
          "version":"2.0.0.0","application":"28.2.0.0","platform":"28.0.0.0"}
@@ -85,6 +117,33 @@ public sealed class DependencyDriftServiceTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     // ── The scan ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_dependency_named_twice_in_one_manifest_is_recorded_once()
+    {
+        // One row per (repository, file, field) is what the unique index says.
+        // Before the dedupe this threw on save and lost every other repository's
+        // findings with it.
+        await ReadyAsync();
+        await SeedCatalogueAsync("28.2.0.0");
+        await SeedSolutionAsync(RepoA);
+        var releaseId = await SeedReleaseAsync();
+        var api = BaseApi()
+            .On(HttpMethod.Get, "/installation/repositories", HttpStatusCode.OK,
+                FakeGitHubApi.InstallationRepositoriesJson(RepoA))
+            .On(HttpMethod.Get, $"/repos/{RepoA}/git/trees/main", HttpStatusCode.OK, TreeJson(("app.json", "blob")))
+            .On(HttpMethod.Get, $"/repos/{RepoA}/contents/app.json", HttpStatusCode.OK,
+                FakeGitHubApi.FileContentsJson("app.json", DuplicateDependencyManifest));
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var found = await service.ScanForReleaseAsync(releaseId);
+
+        found.Should().Be(3, "application, platform, and the dependency once");
+        await using var read = _db.NewContext();
+        var rows = await read.GitHubRepositoryDrift.AsNoTracking().ToListAsync();
+        rows.Select(r => r.Field).Should().OnlyHaveUniqueItems();
+    }
 
     [Fact]
     public async Task The_application_the_platform_and_a_behind_dependency_are_all_recorded()

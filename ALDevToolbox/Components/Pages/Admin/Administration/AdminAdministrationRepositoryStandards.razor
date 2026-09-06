@@ -300,12 +300,19 @@
     private bool IsDirty => Snapshot() != _baseline;
 
     /// <summary>
-    /// True while the editor below holds a file that has not been put on the
+    /// True while the editor below holds a change that has not been put on the
     /// list. Saving then would drop it silently, so saving waits - deliberately
     /// outside <see cref="Snapshot"/>, which is only about what would be saved.
+    ///
+    /// <para>Opening a file to read it is not a change. Comparing against the row
+    /// being edited, rather than asking whether the editor has anything in it, is
+    /// what keeps Save available to somebody who only clicked a file to look at
+    /// it.</para>
     /// </summary>
     private bool HasUnappliedEdit =>
-        _editPath.Length > 0 || _editContent.Length > 0;
+        _editing is null
+            ? _editPath.Trim().Length > 0 || _editContent.Length > 0
+            : _editPath.Trim() != _editing.Path || _editContent != _editing.Content;
 
     protected override async Task OnInitializedAsync()
     {

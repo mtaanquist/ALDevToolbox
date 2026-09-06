@@ -218,7 +218,7 @@ public sealed class ProjectBuildImporterTests : IDisposable
         var persistedJobs = new PersistedImportJobs(ctx, TimeProvider.System);
         var access = new ProjectAccess(ctx, _db.OrgContext);
         return new ProjectBuildImporter(
-            importer, queue, persistedJobs, ctx, _db.OrgContext, access,
+            importer, queue, persistedJobs, ctx, _db.OrgContext, access, TimeProvider.System,
             NullLogger<ProjectBuildImporter>.Instance);
     }
 

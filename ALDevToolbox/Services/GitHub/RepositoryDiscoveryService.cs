@@ -131,7 +131,17 @@ public sealed class RepositoryDiscoveryService
         }
 
         var token = await _github.GetInstallationTokenAsync(installationId, ct);
-        var repositories = await _github.ListInstallationRepositoriesAsync(token, ct);
+        var listing = await _github.ListInstallationRepositoriesAsync(token, ct);
+        var repositories = listing.Repositories;
+        if (listing.Truncated)
+        {
+            // Not the same as "the App cannot read them": there are simply more
+            // than one sweep reads, and saying so is better than a repository
+            // quietly never being offered.
+            _logger.LogWarning(
+                "Organisation {OrgId} shares more than 1000 repositories with the app; some were not checked in this sweep.",
+                orgId);
+        }
 
         var found = new List<(GitHubRepositorySummary Repo, string Path, AppJsonManifest Manifest)>();
         foreach (var repo in repositories)
@@ -364,12 +374,25 @@ public sealed class RepositoryDiscoveryService
     public async Task<int> TrackAsync(int candidateId, string name, string? country, CancellationToken ct = default)
     {
         RequireOrganizationId();
+        var userId = RequireUserId();
         var candidate = await _db.GitHubRepositoryCandidates
             .FirstOrDefaultAsync(c => c.Id == candidateId, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
                 ["Name"] = "This repository is no longer on the list. Check GitHub again to refresh it.",
             });
+
+        // The list was filtered to what this person can see on GitHub when it was
+        // rendered, but the id posted back is the client's, and access can have
+        // gone since. Asking GitHub again is what keeps someone from turning a
+        // repository they cannot read into a solution they own.
+        if (!await _access.CanAccessRepoAsync(userId, candidate.FullName, ct))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Name"] = "You no longer have access to this repository on GitHub.",
+            });
+        }
 
         var projectId = await _projects.CreateProjectAsync(new ProjectInput(
             name,

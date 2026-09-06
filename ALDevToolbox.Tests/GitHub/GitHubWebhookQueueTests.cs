@@ -37,6 +37,57 @@ public sealed class GitHubWebhookQueueTests
         Job("abc", number: 7).Key.Should().NotBe(Job("abc", number: 8).Key);
 
     [Fact]
+    public void Finishing_the_latest_head_forgets_it_so_the_map_does_not_grow_forever()
+    {
+        // Every pull request the toolbox ever built would otherwise leave an
+        // entry behind for the life of the process.
+        var queue = new GitHubWebhookQueue();
+        var job = Job("aaa");
+        using var cts = new CancellationTokenSource();
+
+        queue.Announce(job.Key, "aaa");
+        queue.BeginBuild(job.Key, cts);
+        queue.TrackedHeadCount.Should().Be(1);
+
+        queue.EndBuild(job.Key, cts, "aaa");
+
+        queue.TrackedHeadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void Finishing_a_superseded_head_leaves_the_newer_one_recorded()
+    {
+        // The newer head owns the entry. Dropping it here would make the build
+        // that has just been superseded look current again.
+        var queue = new GitHubWebhookQueue();
+        var job = Job("aaa");
+        using var cts = new CancellationTokenSource();
+
+        queue.Announce(job.Key, "aaa");
+        queue.BeginBuild(job.Key, cts);
+        queue.Announce(job.Key, "bbb");
+
+        queue.EndBuild(job.Key, cts, "aaa");
+
+        queue.TrackedHeadCount.Should().Be(1);
+        queue.IsLatest(job.Key, "aaa").Should().BeFalse();
+        queue.IsLatest(job.Key, "bbb").Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_full_queue_refuses_rather_than_waiting()
+    {
+        // The webhook endpoint runs on a request thread GitHub is timing, so a
+        // full channel has to be an answer rather than a wait.
+        var queue = new GitHubWebhookQueue();
+        var written = 0;
+        while (queue.TryEnqueue(Job("aaa", number: written + 1))) written++;
+
+        written.Should().BeGreaterThan(0);
+        queue.TryEnqueue(Job("zzz")).Should().BeFalse();
+    }
+
+    [Fact]
     public void An_unknown_key_is_treated_as_current()
     {
         // A restart drops the bookkeeping. Refusing to build a job we have no

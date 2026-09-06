@@ -894,8 +894,25 @@ public sealed class ProjectBuildService
         string gitPath, string cloneDir, string commitSha, Dictionary<string, string> env, string pat,
         ProjectRepository repo, List<PendingLog> logs, List<BuildAppResult> results, CancellationToken ct)
     {
+        // The commit reaches this method from a GitHub webhook, so it is checked
+        // against what a git object name can be before it goes on a command line.
+        // The webhook parser refuses anything else too; this is the guard at the
+        // boundary that actually runs git, and it is the one that has to hold if a
+        // second caller ever arrives.
+        if (!CommitShaRegex.IsMatch(commitSha))
+        {
+            results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
+                "The pull request did not name a commit that could be checked out.", RepoUrl: repo.Url));
+            logs.Add(new PendingLog(repo.Id, repo.DisplayName, "Refused a commit name that is not a git object id."));
+            _logger.LogWarning(
+                "Pull-request build: refused a commit name that is not a git object id in {Repo}.", repo.DisplayName);
+            return false;
+        }
+
         var outcome = await _processRunner.RunAsync(new ProcessRunRequest(
-            gitPath, new[] { "-C", cloneDir, "fetch", "--depth", "1", "origin", commitSha }, cloneDir, env, BuildCloneTimeout()), ct)
+            // "--" ends git's option parsing, so a revision beginning with a dash
+            // can never be read as a switch.
+            gitPath, new[] { "-C", cloneDir, "fetch", "--depth", "1", "origin", "--", commitSha }, cloneDir, env, BuildCloneTimeout()), ct)
             .ConfigureAwait(false);
         if (outcome.Succeeded)
         {
@@ -917,6 +934,17 @@ public sealed class ProjectBuildService
         _logger.LogWarning("Pull-request build: could not check out {CommitSha} in {Repo}.", commitSha, repo.DisplayName);
         return false;
     }
+
+    /// <summary>
+    /// A git object name: hex, and between an abbreviated and a full SHA-1.
+    ///
+    /// <para><c>git checkout</c> cannot take a <c>--</c> before a revision - that
+    /// turns the revision into a pathspec and git refuses it - so this, not an
+    /// end-of-options marker, is what keeps a hostile name off that command line.
+    /// <c>git fetch</c> does take one, and gets it.</para>
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex CommitShaRegex =
+        new("^[0-9a-fA-F]{7,40}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
     /// Reads the cloned repo's pinned commit — full SHA + committer date (UTC) —
