@@ -341,7 +341,7 @@ public sealed class DeliveryToolsTests : IDisposable
     private static async Task MakeReleaseSourcedAsync(AppDbContext ctx, int releasePipelineId)
     {
         var rp = await ctx.OeReleasePipelines.SingleAsync(r => r.Id == releasePipelineId);
-        var repository = new ProjectRepository
+        var repository = new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = rp.ProjectId,
             Provider = RepositoryProvider.GitHub, Url = $"https://github.com/{GitHubRepo}.git",
@@ -382,15 +382,15 @@ public sealed class DeliveryToolsTests : IDisposable
     private static async Task<Seed> SeedAsync(AppDbContext ctx, string[] appNames, string buildStatus = ProjectBuildStatus.Ready)
     {
         var now = DateTime.UtcNow;
-        var project = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS " + Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
+        var project = new OeProject { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS " + Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
-        var pipeline = new Pipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Build", CreatedAt = now, UpdatedAt = now };
+        var pipeline = new OePipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Build", CreatedAt = now, UpdatedAt = now };
         ctx.OePipelines.Add(pipeline);
         await ctx.SaveChangesAsync();
 
-        var env = new ProjectEnvironment
+        var env = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Production", Type = "Production",
             FetchedAt = now,
@@ -398,7 +398,7 @@ public sealed class DeliveryToolsTests : IDisposable
         ctx.OeProjectEnvironments.Add(env);
         await ctx.SaveChangesAsync();
 
-        var releasePipeline = new ReleasePipeline
+        var releasePipeline = new OeReleasePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "CRONUS App → Production",
             BuildPipelineId = pipeline.Id, ProjectEnvironmentId = env.Id,
@@ -408,7 +408,7 @@ public sealed class DeliveryToolsTests : IDisposable
         ctx.OeReleasePipelines.Add(releasePipeline);
         await ctx.SaveChangesAsync();
 
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, PipelineId = pipeline.Id,
             Status = buildStatus, StartedAt = now, FinishedAt = now,
@@ -418,7 +418,7 @@ public sealed class DeliveryToolsTests : IDisposable
 
         for (var i = 0; i < appNames.Length; i++)
         {
-            ctx.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
                 FileName = appNames[i] + ".app", AppName = appNames[i], AppVersion = "1.0.0.0",

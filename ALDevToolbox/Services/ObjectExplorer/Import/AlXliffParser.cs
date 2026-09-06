@@ -404,7 +404,7 @@ public static class AlXliffParser
     }
 
     /// <summary>
-    /// Buckets the AL property name into the coarse <see cref="ModuleTranslation"/>
+    /// Buckets the AL property name into the coarse <see cref="OeModuleTranslation"/>
     /// kind enum so the MCP tool's kind filter has a small vocabulary.
     /// Trans-units without a hint, or with neither a property nor a
     /// recognised sub-kind, fall through as <c>other</c>.

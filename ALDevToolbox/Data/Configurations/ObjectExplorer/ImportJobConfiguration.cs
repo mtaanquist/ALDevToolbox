@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ImportJobConfiguration : IEntityTypeConfiguration<ImportJob>
+internal sealed class ImportJobConfiguration : IEntityTypeConfiguration<OeImportJob>
 {
-    public void Configure(EntityTypeBuilder<ImportJob> entity)
+    public void Configure(EntityTypeBuilder<OeImportJob> entity)
     {
         entity.ToTable("oe_import_jobs");
         entity.HasKey(e => e.Id);
@@ -36,7 +36,7 @@ internal sealed class ImportJobConfiguration : IEntityTypeConfiguration<ImportJo
         // Job row mirrors the release lifecycle 1:1; cascading the release
         // delete also reaps its job history (audit value is gone with the
         // release anyway).
-        entity.HasOne<Release>()
+        entity.HasOne<OeRelease>()
             .WithMany()
             .HasForeignKey(e => e.ReleaseId)
             .OnDelete(DeleteBehavior.Cascade);

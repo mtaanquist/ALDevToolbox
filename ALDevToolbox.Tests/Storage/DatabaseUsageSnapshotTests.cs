@@ -3,7 +3,6 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.Storage;
 
@@ -148,7 +147,7 @@ public sealed class DatabaseUsageSnapshotTests : IDisposable
     /// <summary>Seeds <paramref name="count"/> modules (under one release) for an org; returns their ids.</summary>
     private static async Task<List<long>> SeedModulesAsync(AppDbContext ctx, int orgId, int count)
     {
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = orgId,
             Label = $"Release {orgId}",

@@ -229,7 +229,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
     private async Task SeedSolutionTrackingTheRepositoryAsync()
     {
         await using var ctx = _db.NewContext();
-        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS Customer App",
@@ -238,7 +238,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
-        ctx.OeProjectRepositories.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository
+        ctx.OeProjectRepositories.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = project.Id,

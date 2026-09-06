@@ -1,6 +1,6 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
-using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
@@ -117,7 +117,7 @@ public sealed class DashboardServiceTests : IDisposable
                 DepName = "Theirs", DepPublisher = "Microsoft", DepVersionDefault = "26.0.0.0",
                 CreatedAt = Now, UpdatedAt = Now,
             });
-            seed.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+            seed.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
             {
                 OrganizationId = other, Name = "Their project",
                 CreatedAt = Now, UpdatedAt = Now,
@@ -365,12 +365,12 @@ public sealed class DashboardServiceTests : IDisposable
                 Release("BC 24 failed", "failed", Now),
                 build);
 
-            var liveProject = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+            var liveProject = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS Sales Extension",
                 CreatedAt = Now, UpdatedAt = Now,
             };
-            var goneProject = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+            var goneProject = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId, Name = "Retired",
                 CreatedAt = Now, UpdatedAt = Now, DeletedAt = Now,

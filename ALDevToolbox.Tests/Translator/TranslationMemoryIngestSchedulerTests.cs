@@ -156,7 +156,7 @@ public sealed class TranslationMemoryIngestSchedulerTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = organizationId,
             Name = $"CRONUS {Guid.NewGuid():N}",
@@ -167,7 +167,7 @@ public sealed class TranslationMemoryIngestSchedulerTests : IDisposable
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
-        ctx.OeProjectRepositories.Add(new ProjectRepository
+        ctx.OeProjectRepositories.Add(new OeProjectRepository
         {
             OrganizationId = organizationId,
             ProjectId = project.Id,

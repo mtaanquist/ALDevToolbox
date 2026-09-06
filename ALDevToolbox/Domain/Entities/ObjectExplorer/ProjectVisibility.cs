@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// How visible a <see cref="Project"/> is to people outside the teams assigned to
+/// How visible a <see cref="OeProject"/> is to people outside the teams assigned to
 /// it. One level for the whole project — its pipelines, builds, deliveries, and
 /// releases all inherit it. Stored as text (<c>HasConversion&lt;string&gt;()</c>)
 /// so the column reads plainly in the database and a new level doesn't renumber

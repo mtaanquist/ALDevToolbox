@@ -5,18 +5,18 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <c>SetRange</c>, <c>Validate</c>, …) on a resolved AL object — the rows the
 /// normal reference extractor deliberately <em>drops</em> (see
 /// <c>AlBuiltinMethods.IsBuiltin</c>). They live in their own table, separate
-/// from <see cref="ModuleReference"/>, because they're an order of magnitude
+/// from <see cref="OeModuleReference"/>, because they're an order of magnitude
 /// more numerous: keeping them out of <c>oe_module_references</c> keeps the
 /// main find-references query and its indexes lean. Surfaced only through the
 /// dedicated "Find System References" action / <c>find_system_references</c>
 /// MCP tool. See issue #279.
 ///
-/// Like <see cref="ModuleReference"/>, the target is the qualified
+/// Like <see cref="OeModuleReference"/>, the target is the qualified
 /// <c>(target_app_id, target_object_kind, target_object_id, target_object_name)</c>
 /// receiver triplet — resolved at query time via the recursive release-chain CTE,
 /// not a hard FK — so retargeting a release re-resolves every row.
 /// </summary>
-public class ModuleSystemReference
+public class OeModuleSystemReference
 {
     public long Id { get; set; }
 
@@ -25,11 +25,11 @@ public class ModuleSystemReference
 
     /// <summary>Denormalised from the source object so the resolution query doesn't join twice.</summary>
     public long ModuleId { get; set; }
-    public Module? Module { get; set; }
+    public OeModule? Module { get; set; }
 
     /// <summary>The object whose body makes the system call.</summary>
     public long SourceObjectId { get; set; }
-    public ModuleObject? SourceObject { get; set; }
+    public OeModuleObject? SourceObject { get; set; }
 
     /// <summary>AppId of the module declaring the receiver object.</summary>
     public Guid TargetAppId { get; set; }
@@ -57,9 +57,9 @@ public class ModuleSystemReference
 
     /// <summary>
     /// Optional FK to the enclosing procedure / trigger
-    /// <see cref="ModuleSymbol"/>, so the panel can show which member each
+    /// <see cref="OeModuleSymbol"/>, so the panel can show which member each
     /// system call sits in. Null for object-scope contexts.
     /// </summary>
     public long? SourceSymbolId { get; set; }
-    public ModuleSymbol? SourceSymbol { get; set; }
+    public OeModuleSymbol? SourceSymbol { get; set; }
 }

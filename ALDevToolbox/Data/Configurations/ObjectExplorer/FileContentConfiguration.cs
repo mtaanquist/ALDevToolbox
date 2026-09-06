@@ -5,9 +5,9 @@ using ALDevToolbox.Services.ObjectExplorer.Explore;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class FileContentConfiguration : IEntityTypeConfiguration<FileContent>
+internal sealed class FileContentConfiguration : IEntityTypeConfiguration<OeFileContent>
 {
-    public void Configure(EntityTypeBuilder<FileContent> entity)
+    public void Configure(EntityTypeBuilder<OeFileContent> entity)
     {
         entity.ToTable("oe_file_contents");
 

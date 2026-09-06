@@ -162,7 +162,7 @@ public sealed class ReleaseImportDriftHookTests : IDisposable
     private async Task<int> SeedReleaseAsync(string kind)
     {
         await using var ctx = _db.NewContext();
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "Business Central 28.2 (DK)",
@@ -175,7 +175,7 @@ public sealed class ReleaseImportDriftHookTests : IDisposable
         ctx.OeReleases.Add(release);
         await ctx.SaveChangesAsync();
 
-        ctx.OeModules.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.Module
+        ctx.OeModules.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule
         {
             OrganizationId = TestDb.DefaultOrgId,
             ReleaseId = release.Id,
@@ -192,7 +192,7 @@ public sealed class ReleaseImportDriftHookTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        ctx.OeProjects.Add(new Project
+        ctx.OeProjects.Add(new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS A/S payments",
@@ -202,7 +202,7 @@ public sealed class ReleaseImportDriftHookTests : IDisposable
             UpdatedAt = now,
             Repositories =
             [
-                new ProjectRepository
+                new OeProjectRepository
                 {
                     OrganizationId = TestDb.DefaultOrgId,
                     Provider = RepositoryProvider.GitHub,

@@ -2,7 +2,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
 /// One <c>&lt;trans-unit&gt;</c> from an XLIFF translation file attached to a
-/// <see cref="Module"/>. Rows arrive either from the .app archive's
+/// <see cref="OeModule"/>. Rows arrive either from the .app archive's
 /// <c>Translations/</c> folder during the initial Release import, or from an
 /// admin's manual single-file / per-release ZIP upload against an already
 /// ingested Release (see GitHub issue #151). Re-uploading the same
@@ -16,11 +16,11 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <see cref="PropertyName"/> so the MCP search tool can return "Table
 /// AppSetup field Activate Assembly On Service caption" directly.
 /// <see cref="SymbolId"/> is best-effort resolved to a row in
-/// <see cref="ModuleSymbol"/> for kinds we already symbolise (fields,
+/// <see cref="OeModuleSymbol"/> for kinds we already symbolise (fields,
 /// labels, procedures); page-control and enum-value navigation is deferred
 /// to issue #151's v2.
 /// </summary>
-public class ModuleTranslation
+public class OeModuleTranslation
 {
     public long Id { get; set; }
 
@@ -28,7 +28,7 @@ public class ModuleTranslation
     public Organization? Organization { get; set; }
 
     public long ModuleId { get; set; }
-    public Module? Module { get; set; }
+    public OeModule? Module { get; set; }
 
     /// <summary>BCP-47 target locale taken from <c>&lt;file target-language="..."&gt;</c>, e.g. <c>da-DK</c>.</summary>
     public string LanguageCode { get; set; } = string.Empty;
@@ -70,13 +70,13 @@ public class ModuleTranslation
     public string? DeveloperNote { get; set; }
 
     /// <summary>
-    /// Best-effort link into <see cref="ModuleSymbol"/> when the lookup hint
+    /// Best-effort link into <see cref="OeModuleSymbol"/> when the lookup hint
     /// resolves to a kind we symbolise (fields, labels, procedures). Page
     /// controls, page actions and enum values are intentionally left null in
     /// v1 — see issue #151.
     /// </summary>
     public long? SymbolId { get; set; }
-    public ModuleSymbol? Symbol { get; set; }
+    public OeModuleSymbol? Symbol { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }

@@ -325,7 +325,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
     private async Task<int> SeedProjectAsync(string? existingRepoUrl = null)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS Denmark",
@@ -339,7 +339,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
 
         if (existingRepoUrl is not null)
         {
-            ctx.OeProjectRepositories.Add(new ProjectRepository
+            ctx.OeProjectRepositories.Add(new OeProjectRepository
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ProjectId = project.Id,

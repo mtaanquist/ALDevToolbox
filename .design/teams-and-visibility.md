@@ -160,14 +160,14 @@ Two levels, deliberately different:
 ### Slice 3 — the release axis (shipped)
 
 `IsReleaseVisibleAsync(releaseId)` / `VisibleReleasePredicate(snapshot)`. A
-`Release` has no `ProjectId`, so a release is hidden iff it is linked — via
+`OeRelease` has no `ProjectId`, so a release is hidden iff it is linked — via
 `oe_project_builds.release_id` or `oe_import_jobs.project_id` — to a Private
 project the caller cannot view. Unlinked releases stay governed by the org filter
 alone. Both shapes say the same thing as `LockedProjectPredicate`, reached through
 those two links; a change to one belongs in the other.
 
 `VisibleReleasePredicate` is an instance method rather than a static one, because
-its subquery has to reach `oe_import_jobs` and no navigation property on `Release`
+its subquery has to reach `oe_import_jobs` and no navigation property on `OeRelease`
 exposes it. `IsReleaseVisibleAsync` caches its answers for the DI scope, for the
 same reason the snapshot is cached: the source viewer asks the same question four
 or five times while rendering one page.
@@ -306,7 +306,7 @@ by a view gate), `/site-admin/*`, and Public / Read-only reads.
 
 `AuditEntityType.Team` and `AuditEntityType.TeamMember` (slice 1), plus
 `AuditEntityType.ProjectTeam` and a `Visibility` entry in the `OeProject` column
-gate (slice 2). A `ProjectTeam` row stays unnamed like every other join row; the
+gate (slice 2). An `OeProjectTeam` row stays unnamed like every other join row; the
 snapshot carries the project and team ids.
 
 Team and membership changes are audited in full rather than behind a column gate:

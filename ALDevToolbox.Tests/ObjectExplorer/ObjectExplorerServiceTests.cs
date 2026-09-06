@@ -6,7 +6,6 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -202,7 +201,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     /// <summary>Inserts a bare project-kind Release (no modules) and returns its id.</summary>
     private static async Task<int> SeedProjectReleaseAsync(Data.AppDbContext ctx, string label)
     {
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = label,
@@ -218,7 +217,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         return release.Id;
     }
 
-    private static ProjectBuildResult NewBuildResult(int releaseId, string appName, string status, string commitSha, DateTime commitDate) =>
+    private static OeProjectBuildResult NewBuildResult(int releaseId, string appName, string status, string commitSha, DateTime commitDate) =>
         new()
         {
             OrganizationId = TestDb.DefaultOrgId,
@@ -462,7 +461,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         int releaseId;
         await using (var write = _db.NewContext())
         {
-            var release = new Release
+            var release = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "Dep-sort fixture",
@@ -501,7 +500,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModules.AddRange(baseApp, partner);
             await write.SaveChangesAsync();
 
-            write.OeModuleObjects.Add(new ModuleObject
+            write.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = partner.Id,
@@ -510,7 +509,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                 Name = "Customer (extended)",
                 LineNumber = 1,
             });
-            write.OeModuleObjects.Add(new ModuleObject
+            write.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = baseApp.Id,
@@ -637,7 +636,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .FirstAsync();
         foreach (var (name, objectId) in objects)
         {
-            write.OeModuleObjects.Add(new ModuleObject
+            write.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = moduleId,
@@ -791,7 +790,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         {
             var moduleId = await write.OeModules
                 .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
-            write.OeModuleObjects.Add(new ModuleObject
+            write.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = moduleId,
@@ -824,7 +823,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         {
             var moduleId = await write.OeModules
                 .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
-            write.OeModuleObjects.Add(new ModuleObject
+            write.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = moduleId,
@@ -856,7 +855,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         {
             moduleId = await write.OeModules
                 .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
-            write.OeModuleObjects.Add(new ModuleObject
+            write.OeModuleObjects.Add(new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = moduleId,
@@ -1039,7 +1038,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         long fileId;
         await using (var write = _db.NewContext())
         {
-            var release = new Release
+            var release = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "Multi-object fixture",
@@ -1073,14 +1072,14 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             contentLines[49] = "codeunit 50001 \"Obj B\"";
             var content = string.Join("\n", contentLines);
             const string hash = "ABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABC";
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash,
                 Content = content,
                 ContentLength = content.Length,
                 LineCount = contentLines.Length,
             });
-            var file = new ModuleFile
+            var file = new OeModuleFile
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1092,7 +1091,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             await write.SaveChangesAsync();
             fileId = file.Id;
 
-            var objA = new ModuleObject
+            var objA = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1102,7 +1101,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                 LineNumber = 1,
                 SourceFileId = file.Id,
             };
-            var objB = new ModuleObject
+            var objB = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1115,7 +1114,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleObjects.AddRange(objA, objB);
             await write.SaveChangesAsync();
 
-            write.OeModuleSymbols.Add(new ModuleSymbol
+            write.OeModuleSymbols.Add(new OeModuleSymbol
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1167,7 +1166,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private async Task<(long FileId, int TableLine, int CodeunitLine, int ExtensionLine)> SeedSameNameKindsAsync()
     {
         await using var write = _db.NewContext();
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = "Same-name kinds",
@@ -1194,17 +1193,17 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         write.OeModules.Add(module);
         await write.SaveChangesAsync();
 
-        async Task<ModuleFile> AddFileAsync(string path, string[] lines, string hash)
+        async Task<OeModuleFile> AddFileAsync(string path, string[] lines, string hash)
         {
             var text = string.Join("\n", lines);
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash,
                 Content = text,
                 ContentLength = text.Length,
                 LineCount = lines.Length,
             });
-            var f = new ModuleFile
+            var f = new OeModuleFile
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1243,28 +1242,28 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }, new string('B', 64));
 
         write.OeModuleObjects.AddRange(
-            new ModuleObject
+            new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
                 Kind = "table", ObjectId = 2000000120, Name = "User",
                 LineNumber = 1, SourceFileId = targetsFile.Id,
             },
-            new ModuleObject
+            new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
                 Kind = "tableextension", ObjectId = 50010, Name = "User",
                 LineNumber = 4, SourceFileId = targetsFile.Id,
             },
-            new ModuleObject
+            new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
                 Kind = "codeunit", ObjectId = 418, Name = "User",
                 LineNumber = 7, SourceFileId = targetsFile.Id,
             },
-            new ModuleObject
+            new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1724,7 +1723,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         int releaseId;
         await using (var write = _db.NewContext())
         {
-            var release = new Release
+            var release = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "CRLF snippet fixture",
@@ -1755,14 +1754,14 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             // Windows line endings on purpose.
             var content = "codeunit 50000 \"Caller\"\r\n    Message('hi');\r\n}\r\n";
             const string hash = "CRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLF00";
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash,
                 Content = content,
                 ContentLength = content.Length,
                 LineCount = 3,
             });
-            var file = new ModuleFile
+            var file = new OeModuleFile
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1773,7 +1772,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleFiles.Add(file);
             await write.SaveChangesAsync();
 
-            var caller = new ModuleObject
+            var caller = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1786,7 +1785,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleObjects.Add(caller);
             await write.SaveChangesAsync();
 
-            write.OeModuleReferences.Add(new ModuleReference
+            write.OeModuleReferences.Add(new OeModuleReference
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1827,7 +1826,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                 .Select(m => new { m.Id, m.AppId })
                 .FirstAsync();
             appId = module.AppId;
-            var caller = new ModuleObject
+            var caller = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -1839,7 +1838,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleObjects.Add(caller);
             await write.SaveChangesAsync();
 
-            write.OeModuleSystemReferences.Add(new ModuleSystemReference
+            write.OeModuleSystemReferences.Add(new OeModuleSystemReference
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ModuleId = module.Id,
@@ -2421,7 +2420,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             // a vendor patch. Content lives in the shared store now, so insert
             // the blob first (the content_hash FK requires it to exist).
             const string patchedHash = "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF";
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = patchedHash,
                 Content = "// patched by test\n",
@@ -2563,7 +2562,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             // Line" and its Priority field. Microsoft + a foundational name so
             // it's implicitly visible to the child (AL never declares a
             // dependency on the base apps — they're implicit).
-            var parent = new Release
+            var parent = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "BC base", Kind = "first_party", Status = "ready",
@@ -2581,7 +2580,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModules.Add(baseApp);
             await write.SaveChangesAsync();
 
-            var baseTable = new ModuleObject
+            var baseTable = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = baseApp.Id,
                 Kind = "table", ObjectId = 5406, Name = "Prod. Order Line", LineNumber = 1,
@@ -2589,7 +2588,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleObjects.Add(baseTable);
             await write.SaveChangesAsync();
 
-            write.OeModuleSymbols.Add(new ModuleSymbol
+            write.OeModuleSymbols.Add(new OeModuleSymbol
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = baseApp.Id,
                 ObjectId = baseTable.Id, Kind = "table_field", Name = "Priority",
@@ -2599,7 +2598,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             // Child: a project extension anchored to the parent, with a
             // tableextension on Prod. Order Line whose code reads Rec.Priority.
-            var child = new Release
+            var child = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "Acme on BC base", Kind = "project", Status = "ready",
@@ -2632,11 +2631,11 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             };
             var content = string.Join("\n", lines);
             const string hash = "BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF1";
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash, Content = content, ContentLength = content.Length, LineCount = lines.Length,
             });
-            var file = new ModuleFile
+            var file = new OeModuleFile
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = ext.Id,
                 Path = "src/ProdOrderLineExt.TableExt.al", ContentHash = hash, LineCount = lines.Length,
@@ -2644,7 +2643,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleFiles.Add(file);
             await write.SaveChangesAsync();
 
-            var extObject = new ModuleObject
+            var extObject = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = ext.Id,
                 Kind = "tableextension", ObjectId = 50000, Name = "ProdOrderLineExt",
@@ -2654,7 +2653,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleObjects.Add(extObject);
             await write.SaveChangesAsync();
 
-            write.OeModuleSymbols.Add(new ModuleSymbol
+            write.OeModuleSymbols.Add(new OeModuleSymbol
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = ext.Id,
                 ObjectId = extObject.Id, Kind = "procedure", Name = "CheckPriority",
@@ -2704,7 +2703,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         int releaseId;
         await using (var write = _db.NewContext())
         {
-            var release = new Release
+            var release = new OeRelease
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "CRONUS release", Kind = "project", Status = "ready",
@@ -2738,11 +2737,11 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             };
             var content = string.Join("\n", lines);
             const string hash = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE1";
-            write.OeFileContents.Add(new FileContent
+            write.OeFileContents.Add(new OeFileContent
             {
                 ContentHash = hash, Content = content, ContentLength = content.Length, LineCount = lines.Length,
             });
-            var file = new ModuleFile
+            var file = new OeModuleFile
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
                 Path = "src/Greeter.Codeunit.al", ContentHash = hash, LineCount = lines.Length,
@@ -2750,7 +2749,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleFiles.Add(file);
             await write.SaveChangesAsync();
 
-            var obj = new ModuleObject
+            var obj = new OeModuleObject
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
                 Kind = "codeunit", ObjectId = 50000, Name = "CRONUS Greeter",
@@ -2759,7 +2758,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             write.OeModuleObjects.Add(obj);
             await write.SaveChangesAsync();
 
-            write.OeModuleSymbols.Add(new ModuleSymbol
+            write.OeModuleSymbols.Add(new OeModuleSymbol
             {
                 OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
                 ObjectId = obj.Id, Kind = "procedure", Name = "Greet", LineNumber = 6,

@@ -108,7 +108,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
         int projectId, teamId;
         await using (var ctx = _db.NewContext())
         {
-            var project = new Project
+            var project = new OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Name = name,
@@ -158,7 +158,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
     private async Task<SeededRelease> SeedReleaseAsync(string label, string kind = "project")
     {
         await using var ctx = _db.NewContext();
-        var release = new Release
+        var release = new OeRelease
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = label,
@@ -171,7 +171,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
         ctx.OeReleases.Add(release);
         await ctx.SaveChangesAsync();
 
-        var module = new ALDevToolbox.Domain.Entities.ObjectExplorer.Module
+        var module = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule
         {
             OrganizationId = TestDb.DefaultOrgId,
             ReleaseId = release.Id,
@@ -187,14 +187,14 @@ public sealed class ReleaseVisibilityTests : IDisposable
 
         const string content = "table 50100 \"Loyalty Card\"\n{\n}\n";
         var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-        ctx.OeFileContents.Add(new FileContent
+        ctx.OeFileContents.Add(new OeFileContent
         {
             ContentHash = hash,
             Content = content,
             ContentLength = content.Length,
             LineCount = 3,
         });
-        var file = new ModuleFile
+        var file = new OeModuleFile
         {
             OrganizationId = TestDb.DefaultOrgId,
             ModuleId = module.Id,
@@ -205,7 +205,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
         ctx.OeModuleFiles.Add(file);
         await ctx.SaveChangesAsync();
 
-        var obj = new ModuleObject
+        var obj = new OeModuleObject
         {
             OrganizationId = TestDb.DefaultOrgId,
             ModuleId = module.Id,
@@ -227,7 +227,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
     private async Task LinkByBuildAsync(int projectId, int releaseId)
     {
         await using var ctx = _db.NewContext();
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -238,7 +238,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
         ctx.OePipelines.Add(pipeline);
         await ctx.SaveChangesAsync();
 
-        ctx.OeProjectBuilds.Add(new ProjectBuild
+        ctx.OeProjectBuilds.Add(new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -254,7 +254,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
     private async Task LinkByImportJobAsync(int projectId, int releaseId)
     {
         await using var ctx = _db.NewContext();
-        ctx.OeImportJobs.Add(new ImportJob
+        ctx.OeImportJobs.Add(new OeImportJob
         {
             OrganizationId = TestDb.DefaultOrgId,
             ReleaseId = releaseId,
@@ -486,7 +486,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
         int buildId, artifactId;
         await using (var ctx = _db.NewContext())
         {
-            var build = new ProjectBuild
+            var build = new OeProjectBuild
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ProjectId = projectId,
@@ -497,7 +497,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
             await ctx.SaveChangesAsync();
             buildId = build.Id;
 
-            var artifact = new ProjectBuildArtifact
+            var artifact = new OeProjectBuildArtifact
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ProjectBuildId = buildId,
@@ -509,7 +509,7 @@ public sealed class ReleaseVisibilityTests : IDisposable
                 CreatedAt = DateTime.UtcNow,
             };
             ctx.OeProjectBuildArtifacts.Add(artifact);
-            ctx.OeProjectBuildLogs.Add(new ProjectBuildLog
+            ctx.OeProjectBuildLogs.Add(new OeProjectBuildLog
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId,
                 Section = "Build", Content = "ok", Ordering = 0, CreatedAt = DateTime.UtcNow,

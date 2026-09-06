@@ -101,7 +101,7 @@ public sealed class BcArtifactService
     /// removing rows for that country that are no longer offered. Returns the
     /// refreshed rows newest-first.
     /// </summary>
-    public async Task<IReadOnlyList<BcArtifactVersion>> RefreshIndexAsync(string country, CancellationToken ct = default)
+    public async Task<IReadOnlyList<OeArtifactVersion>> RefreshIndexAsync(string country, CancellationToken ct = default)
     {
         var normalized = country.Trim().ToLowerInvariant();
         var versions = await ListAvailableVersionsAsync(normalized, ct).ConfigureAwait(false);
@@ -124,7 +124,7 @@ public sealed class BcArtifactService
             }
             else
             {
-                _db.OeArtifactVersions.Add(new BcArtifactVersion
+                _db.OeArtifactVersions.Add(new OeArtifactVersion
                 {
                     OrganizationId = orgId,
                     Country = normalized,
@@ -152,7 +152,7 @@ public sealed class BcArtifactService
     }
 
     /// <summary>Reads the cached artifact versions for the current org + country, newest first.</summary>
-    public async Task<IReadOnlyList<BcArtifactVersion>> GetCachedVersionsAsync(string country, CancellationToken ct = default)
+    public async Task<IReadOnlyList<OeArtifactVersion>> GetCachedVersionsAsync(string country, CancellationToken ct = default)
     {
         var normalized = country.Trim().ToLowerInvariant();
         var rows = await _db.OeArtifactVersions

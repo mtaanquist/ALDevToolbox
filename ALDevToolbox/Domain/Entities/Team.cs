@@ -13,7 +13,7 @@ namespace ALDevToolbox.Domain.Entities;
 /// exposes a private project. Membership rows cascade with the team.</para>
 ///
 /// <para>A team is assigned to a project through
-/// <see cref="ObjectExplorer.ProjectTeam"/>, which is what grants its members view
+/// <see cref="ObjectExplorer.OeProjectTeam"/>, which is what grants its members view
 /// and manage rights on that project. A team that is the last one on a non-Public
 /// project cannot be deleted until that project gets another team or goes
 /// public.</para>

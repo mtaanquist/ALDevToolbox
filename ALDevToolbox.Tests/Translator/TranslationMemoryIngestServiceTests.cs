@@ -400,7 +400,7 @@ public sealed class TranslationMemoryIngestServiceTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = $"CRONUS {Guid.NewGuid():N}",
@@ -412,7 +412,7 @@ public sealed class TranslationMemoryIngestServiceTests : IDisposable
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
-        ctx.OeProjectRepositories.Add(new ProjectRepository
+        ctx.OeProjectRepositories.Add(new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = project.Id,

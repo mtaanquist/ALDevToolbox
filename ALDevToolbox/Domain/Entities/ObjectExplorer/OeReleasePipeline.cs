@@ -4,8 +4,8 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
 /// A reusable "where + how" of a deploy: a named release configuration that draws a
-/// <see cref="Pipeline"/> (build) pipeline's artifacts and targets one
-/// <see cref="ProjectEnvironment"/>. The deliberate counterpart to the build half of
+/// <see cref="OePipeline"/> (build) pipeline's artifacts and targets one
+/// <see cref="OeProjectEnvironment"/>. The deliberate counterpart to the build half of
 /// the split — a build pipeline can feed several release pipelines, so the same build
 /// is deployed to several environments (test in Sandbox, promote the identical
 /// artifact to Production). Reads as <em>"Release Contoso App on Production."</em>
@@ -14,7 +14,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// a chosen build (and the publish flow itself) lands in a later slice — this entity
 /// is the config it reads. See <c>.design/saas-delivery.md</c>.
 /// </summary>
-public class ReleasePipeline
+public class OeReleasePipeline
 {
     public int Id { get; set; }
 
@@ -24,7 +24,7 @@ public class ReleasePipeline
 
     /// <summary>The project (customer) this release pipeline belongs to.</summary>
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>
     /// The user who created it — its owner of record. Nullable
@@ -52,7 +52,7 @@ public class ReleasePipeline
     /// which draws its apps from a repository's Releases instead.
     /// </summary>
     public int? BuildPipelineId { get; set; }
-    public Pipeline? BuildPipeline { get; set; }
+    public OePipeline? BuildPipeline { get; set; }
 
     /// <summary>
     /// The solution repository whose GitHub Releases this pipeline publishes from.
@@ -62,11 +62,11 @@ public class ReleasePipeline
     /// the pipeline's history intact.
     /// </summary>
     public int? GithubReleaseRepositoryId { get; set; }
-    public ProjectRepository? GithubReleaseRepository { get; set; }
+    public OeProjectRepository? GithubReleaseRepository { get; set; }
 
     /// <summary>The target environment (carries the chosen company and the Production/Sandbox type).</summary>
     public int ProjectEnvironmentId { get; set; }
-    public ProjectEnvironment? ProjectEnvironment { get; set; }
+    public OeProjectEnvironment? ProjectEnvironment { get; set; }
 
     /// <summary>
     /// When Business Central installs the uploaded package, sent verbatim as the App

@@ -61,7 +61,7 @@ public sealed record GitHubReleaseOption(
 /// attached.</description></item>
 /// <item><description><strong>In.</strong> A release pipeline can draw from a
 /// repository's Releases instead of from a build pipeline. Choosing a tag downloads
-/// its <c>.app</c> files and stages them as an ordinary <see cref="ProjectBuild"/>,
+/// its <c>.app</c> files and stages them as an ordinary <see cref="OeProjectBuild"/>,
 /// so delivery and every downstream reader work unchanged.</description></item>
 /// </list>
 ///
@@ -320,7 +320,7 @@ public sealed class GitHubReleaseService
             .Select(l => (int?)l.Ordering)
             .MaxAsync(ct) ?? -1;
 
-        _db.OeProjectBuildLogs.Add(new ProjectBuildLog
+        _db.OeProjectBuildLogs.Add(new OeProjectBuildLog
         {
             OrganizationId = build.OrganizationId,
             ProjectBuildId = projectBuildId,
@@ -377,7 +377,7 @@ public sealed class GitHubReleaseService
 
     /// <summary>
     /// Downloads the <c>.app</c> files attached to <paramref name="tag"/> and stages
-    /// them as a <see cref="ProjectBuild"/> — status <c>ready</c>, no pipeline, the tag
+    /// them as a <see cref="OeProjectBuild"/> — status <c>ready</c>, no pipeline, the tag
     /// recorded — so the ordinary delivery flow can publish them to Business Central.
     /// Returns the staged build's id.
     ///
@@ -421,7 +421,7 @@ public sealed class GitHubReleaseService
         }
 
         var now = _clock.GetUtcNow().UtcDateTime;
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = orgId,
             ProjectId = source.ProjectId,
@@ -439,7 +439,7 @@ public sealed class GitHubReleaseService
         {
             var content = await _github.DownloadReleaseAssetAsync(token, source.Owner, source.Name, asset.Id, ct);
             var (appName, appVersion) = ReadAppIdentity(asset.Name, content);
-            build.Artifacts.Add(new ProjectBuildArtifact
+            build.Artifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = orgId,
                 FileName = asset.Name,

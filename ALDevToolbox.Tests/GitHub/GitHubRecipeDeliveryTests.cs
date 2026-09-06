@@ -368,7 +368,7 @@ public sealed class GitHubRecipeDeliveryTests : IDisposable
     private async Task<int> SeedProjectAsync(string name)
     {
         await using var ctx = _db.NewContext();
-        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,

@@ -12,7 +12,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// <c>.design/saas-delivery.md</c> and issue #657.
 ///
 /// <para>
-/// <b>The join is the guard.</b> <see cref="ProjectEnvironment"/> has no visibility rule
+/// <b>The join is the guard.</b> <see cref="OeProjectEnvironment"/> has no visibility rule
 /// of its own — it inherits its project's. Every query here therefore reaches the
 /// environments table <em>through</em>
 /// <see cref="ProjectAccess.VisibleProjectPredicate"/>, and a future query that lists
@@ -44,7 +44,7 @@ public sealed class UpgradeFleetService
 
     /// <summary>
     /// Every environment of every visible project that Business Central still reports
-    /// (<see cref="ProjectEnvironment.MissingSince"/> null), with the mirrored next
+    /// (<see cref="OeProjectEnvironment.MissingSince"/> null), with the mirrored next
     /// update and whether this caller may act on it.
     ///
     /// <para>The "may act" answer is computed as part of the same query — a subquery

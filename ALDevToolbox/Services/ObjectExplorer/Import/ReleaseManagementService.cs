@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services.ObjectExplorer.Import;
 
 /// <summary>
-/// Write-path operations on an existing <see cref="Domain.Entities.ObjectExplorer.Release"/>.
+/// Write-path operations on an existing <see cref="Domain.Entities.ObjectExplorer.OeRelease"/>.
 /// Soft-delete is the default — reversible, sets <c>deleted_at</c>, hides the
 /// Release from the public picker. Hard-delete drops the Release row and
 /// cascades through every dependent <c>oe_modules</c> / <c>oe_module_*</c>

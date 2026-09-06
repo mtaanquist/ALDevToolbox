@@ -7,7 +7,7 @@ using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Explore;
 using ALDevToolbox.Services.ObjectExplorer.Import;
 using Microsoft.EntityFrameworkCore;
-using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 namespace ALDevToolbox.Services.GitHub;
 

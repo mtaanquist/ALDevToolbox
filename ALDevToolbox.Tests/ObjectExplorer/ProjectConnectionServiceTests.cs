@@ -221,7 +221,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private async Task<int> SeedProjectAsync()
     {
         await using var ctx = _db.NewContext();
-        var p = new Project
+        var p = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS A/S",
@@ -468,14 +468,14 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         int prodId;
         await using (var seed = _db.NewContext())
         {
-            var prod = new ProjectEnvironment
+            var prod = new OeProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Production",
                 Type = "Production", FetchedAt = DateTime.UtcNow.AddDays(-1),
                 UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
             };
             seed.OeProjectEnvironments.Add(prod);
-            seed.OeProjectEnvironments.Add(new ProjectEnvironment
+            seed.OeProjectEnvironments.Add(new OeProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "OldSandbox",
                 Type = "Sandbox", FetchedAt = DateTime.UtcNow.AddDays(-1),
@@ -516,7 +516,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         await using (var seed = _db.NewContext())
         {
-            seed.OeProjectEnvironments.Add(new ProjectEnvironment
+            seed.OeProjectEnvironments.Add(new OeProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "PROD", Type = "Production",
                 UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
@@ -628,7 +628,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         => new(version, available, selected, status, type, selectedAt, latest, ignoresWindow,
             RolloutStatus: "Released", ExpectedMonth: null, ExpectedYear: null);
 
-    private async Task<ProjectEnvironment> RefreshAndReadRowAsync(int projectId, FakeAdminClient admin)
+    private async Task<OeProjectEnvironment> RefreshAndReadRowAsync(int projectId, FakeAdminClient admin)
     {
         await using (var ctx = _db.NewContext())
             await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(projectId);
@@ -786,7 +786,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
 
         await using var seed = _db.NewContext();
-        var env = new ProjectEnvironment
+        var env = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = name,
             Type = "Production", ApplicationFamily = "BusinessCentral", FetchedAt = DateTime.UtcNow,
@@ -1020,7 +1020,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private async Task SeedDeliveredAppAsync(int projectId, string environmentName, Guid appId)
     {
         await using var ctx = _db.NewContext();
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build " + Guid.NewGuid().ToString("N"),
             CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
@@ -1028,7 +1028,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         ctx.OePipelines.Add(pipeline);
         await ctx.SaveChangesAsync();
 
-        var build = new ProjectBuild
+        var build = new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = pipeline.Id,
             Status = ProjectBuildStatus.Ready, StartedAt = DateTime.UtcNow,
@@ -1036,7 +1036,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         ctx.OeProjectBuilds.Add(build);
 
         var env = await ctx.OeProjectEnvironments.FirstAsync(e => e.ProjectId == projectId && e.Name == environmentName);
-        var releasePipeline = new ReleasePipeline
+        var releasePipeline = new OeReleasePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Rel " + Guid.NewGuid().ToString("N"),
             BuildPipelineId = pipeline.Id, ProjectEnvironmentId = env.Id,
@@ -1045,14 +1045,14 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         ctx.OeReleasePipelines.Add(releasePipeline);
         await ctx.SaveChangesAsync();
 
-        var delivery = new ProjectDelivery
+        var delivery = new OeProjectDelivery
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId,
             ReleasePipelineId = releasePipeline.Id, ProjectBuildId = build.Id,
             EnvironmentName = environmentName, ScheduledFor = DateTime.UtcNow,
             Status = ProjectDeliveryStatus.HandedOff, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
         };
-        delivery.Results.Add(new ProjectDeliveryResult
+        delivery.Results.Add(new OeProjectDeliveryResult
         {
             OrganizationId = TestDb.DefaultOrgId, Ordering = 0, AppName = "CRONUS Toolbox",
             AppVersion = "2.0.0.0", AppId = appId.ToString(), Status = ProjectDeliveryResultStatus.Scheduled,
@@ -1202,7 +1202,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         {
             OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = PlainTeamUserId, CreatedAt = DateTime.UtcNow,
         });
-        ctx.OeProjectTeams.Add(new ProjectTeam
+        ctx.OeProjectTeams.Add(new OeProjectTeam
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, TeamId = team.Id, CreatedAt = DateTime.UtcNow,
         });

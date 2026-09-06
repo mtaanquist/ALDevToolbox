@@ -107,7 +107,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     private async Task<(int ProjectId, int TeamId)> SeedAsync(bool withTeam = true)
     {
         await using var ctx = _db.NewContext();
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS Denmark",

@@ -72,7 +72,7 @@ The line runs exactly here:
 
 | Says Solution | Says Project |
 | --- | --- |
-| Visible copy — nav, headings, captions, empty states, validation messages | C# types, members and locals (`Project`, `ProjectId`, `ProjectAccess`, `ProjectConnectionService`) |
+| Visible copy — nav, headings, captions, empty states, validation messages | C# types, members and locals (`OeProject`, `ProjectId`, `ProjectAccess`, `ProjectConnectionService`) |
 | Routes: `/solutions`, `/solutions/new`, `/solutions/{id}` | Tables and columns: `oe_projects`, `oe_project_*`, `project_id` |
 | MCP tool names, their `[Description]` text, and their agent-facing parameter names | Private helper parameters and internal comments about the code |
 

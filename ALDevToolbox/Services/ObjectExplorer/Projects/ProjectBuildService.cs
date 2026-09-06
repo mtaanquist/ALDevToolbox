@@ -5,7 +5,6 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Account;
 using Microsoft.EntityFrameworkCore;
-using OeProjectBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult;
 using ALDevToolbox.Services.ObjectExplorer.Import;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Projects;
@@ -17,7 +16,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Projects;
 /// the catalogue lacks it), compiles each extension with <c>alc</c> in dependency
 /// order (source embedded), and returns the compiled <c>.app</c>s as
 /// <see cref="AppFileUpload"/>s ready for the existing ingest seam plus a per-app
-/// <see cref="ProjectBuildResult"/> report. Partial failures are isolated — one
+/// <see cref="OeProjectBuildResult"/> report. Partial failures are isolated — one
 /// repo or extension that can't be cloned/compiled fails only itself. See
 /// <c>.design/object-explorer-project-builds.md</c>.
 ///
@@ -315,13 +314,13 @@ public sealed class ProjectBuildService
 
     /// <summary>
     /// Re-discovers <paramref name="projectId"/>'s extensions and writes the result
-    /// to the project's denormalised cache (<see cref="Project.DiscoveredExtensionsJson"/>
-    /// / <see cref="Project.DiscoveredAt"/> / <see cref="Project.DiscoveryError"/>), so
+    /// to the project's denormalised cache (<see cref="OeProject.DiscoveredExtensionsJson"/>
+    /// / <see cref="OeProject.DiscoveredAt"/> / <see cref="OeProject.DiscoveryError"/>), so
     /// the pipeline editor's checklist appears instantly from cache. Run by
     /// <see cref="ProjectDiscoveryWorker"/> in the background under the requesting
     /// user's identity — it has <em>no</em> access check (the request-side
     /// <see cref="ProjectDiscoveryService"/> gates the enqueue) and captures failures
-    /// into <see cref="Project.DiscoveryError"/> instead of throwing, leaving any prior
+    /// into <see cref="OeProject.DiscoveryError"/> instead of throwing, leaving any prior
     /// good list intact. See <c>.design/artifacts.md</c>.
     /// </summary>
     public async Task DiscoverExtensionsForCacheAsync(int projectId, CancellationToken ct = default)
@@ -364,7 +363,7 @@ public sealed class ProjectBuildService
     /// access check — the caller owns authorization.
     /// </summary>
     private async Task<(IReadOnlyList<DiscoveredExtension> Extensions, string? Error)> DiscoverCoreAsync(
-        Project project, CancellationToken ct)
+        OeProject project, CancellationToken ct)
     {
         if (project.Repositories.Count == 0)
         {
@@ -515,7 +514,7 @@ public sealed class ProjectBuildService
     /// <summary>
     /// Flips the build that produced <paramref name="releaseId"/> to <c>ready</c>,
     /// stamping its BC version and finish time. No-op when the release has no
-    /// <see cref="ProjectBuild"/> (legacy / synthetic). Mirrors the Release flip.
+    /// <see cref="OeProjectBuild"/> (legacy / synthetic). Mirrors the Release flip.
     /// </summary>
     public async Task MarkBuildReadyAsync(int releaseId, string? bcVersion, CancellationToken ct = default)
     {
@@ -530,7 +529,7 @@ public sealed class ProjectBuildService
     /// <summary>
     /// Flips the build that produced <paramref name="releaseId"/> to <c>failed</c>
     /// with <paramref name="message"/> and a finish time. No-op when the release
-    /// has no <see cref="ProjectBuild"/>.
+    /// has no <see cref="OeProjectBuild"/>.
     /// </summary>
     public async Task MarkBuildFailedAsync(int releaseId, string message, CancellationToken ct = default)
     {
@@ -548,13 +547,13 @@ public sealed class ProjectBuildService
     internal const int ChangelogCommitCap = 100;
 
     /// <summary>
-    /// Records the per-repo commit set (<see cref="ProjectBuildRepoCommit"/>) and
-    /// the changelog (<see cref="ProjectBuildCommit"/>) for the build, computing the
+    /// Records the per-repo commit set (<see cref="OeProjectBuildRepoCommit"/>) and
+    /// the changelog (<see cref="OeProjectBuildCommit"/>) for the build, computing the
     /// latter as <c>git log &lt;prev&gt;..&lt;HEAD&gt;</c> against the project's last
     /// <em>successful</em> build per repo. Best-effort: a provenance failure logs and
     /// returns rather than sinking the build.
     /// </summary>
-    private async Task PersistRepoProvenanceAsync(ProjectBuild build, Project project, List<ClonedRepo> clones, List<PendingLog> logs, CancellationToken ct)
+    private async Task PersistRepoProvenanceAsync(OeProjectBuild build, OeProject project, List<ClonedRepo> clones, List<PendingLog> logs, CancellationToken ct)
     {
         try
         {
@@ -562,7 +561,7 @@ public sealed class ProjectBuildService
             // The commit set for this build.
             foreach (var clone in clones)
             {
-                _db.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+                _db.OeProjectBuildRepoCommits.Add(new OeProjectBuildRepoCommit
                 {
                     OrganizationId = orgId,
                     ProjectBuildId = build.Id,
@@ -591,7 +590,7 @@ public sealed class ProjectBuildService
     /// summary note instead of a commit list. Over-cap ranges are truncated with a
     /// "...and N more" note.
     /// </summary>
-    private async Task ComputeAndPersistChangelogAsync(ProjectBuild build, Project project, List<ClonedRepo> clones, List<PendingLog> logs, CancellationToken ct)
+    private async Task ComputeAndPersistChangelogAsync(OeProjectBuild build, OeProject project, List<ClonedRepo> clones, List<PendingLog> logs, CancellationToken ct)
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var orgId = build.OrganizationId;
@@ -617,7 +616,7 @@ public sealed class ProjectBuildService
         {
             if (clone.RepositoryId is null || clone.CommitSha is null) continue;
 
-            var rows = new List<ProjectBuildCommit>();
+            var rows = new List<OeProjectBuildCommit>();
 
             if (!prevByRepo.TryGetValue(clone.RepositoryId.Value, out var prevSha))
             {
@@ -648,7 +647,7 @@ public sealed class ProjectBuildService
                     var ordering = 0;
                     foreach (var entry in parsed)
                     {
-                        rows.Add(new ProjectBuildCommit
+                        rows.Add(new OeProjectBuildCommit
                         {
                             OrganizationId = orgId,
                             ProjectBuildId = build.Id,
@@ -679,7 +678,7 @@ public sealed class ProjectBuildService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    private static ProjectBuildCommit SummaryNote(int orgId, int buildId, int? repoId, string text) => new()
+    private static OeProjectBuildCommit SummaryNote(int orgId, int buildId, int? repoId, string text) => new()
     {
         OrganizationId = orgId,
         ProjectBuildId = buildId,
@@ -721,7 +720,7 @@ public sealed class ProjectBuildService
     // ── ProjectBuild artifacts + logs ───────────────────────────────────────
 
     /// <summary>Replaces the build's retained deliverables with <paramref name="artifacts"/> (clears stale rows so a retry doesn't duplicate).</summary>
-    private async Task PersistArtifactsAsync(ProjectBuild build, List<PendingArtifact> artifacts, CancellationToken ct)
+    private async Task PersistArtifactsAsync(OeProjectBuild build, List<PendingArtifact> artifacts, CancellationToken ct)
     {
         var stale = await _db.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == build.Id).ToListAsync(ct).ConfigureAwait(false);
         if (stale.Count > 0) _db.OeProjectBuildArtifacts.RemoveRange(stale);
@@ -729,7 +728,7 @@ public sealed class ProjectBuildService
         var now = _clock.GetUtcNow().UtcDateTime;
         foreach (var a in artifacts)
         {
-            _db.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            _db.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
             {
                 OrganizationId = build.OrganizationId,
                 ProjectBuildId = build.Id,
@@ -746,7 +745,7 @@ public sealed class ProjectBuildService
     }
 
     /// <summary>Replaces the build's logs with <paramref name="logs"/> (idempotent across the success-path and the failure finally).</summary>
-    private async Task PersistLogsAsync(ProjectBuild build, List<PendingLog> logs, CancellationToken ct)
+    private async Task PersistLogsAsync(OeProjectBuild build, List<PendingLog> logs, CancellationToken ct)
     {
         var stale = await _db.OeProjectBuildLogs.Where(l => l.ProjectBuildId == build.Id).ToListAsync(ct).ConfigureAwait(false);
         if (stale.Count > 0) _db.OeProjectBuildLogs.RemoveRange(stale);
@@ -755,7 +754,7 @@ public sealed class ProjectBuildService
         var ordering = 0;
         foreach (var l in logs)
         {
-            _db.OeProjectBuildLogs.Add(new ProjectBuildLog
+            _db.OeProjectBuildLogs.Add(new OeProjectBuildLog
             {
                 OrganizationId = build.OrganizationId,
                 ProjectBuildId = build.Id,
@@ -774,7 +773,7 @@ public sealed class ProjectBuildService
     /// Clears stale rows first, like the logs, so a rebuild reports the latest
     /// attempt rather than accumulating both.
     /// </summary>
-    private async Task PersistDiagnosticsAsync(ProjectBuild build, List<PendingDiagnostic> diagnostics, CancellationToken ct)
+    private async Task PersistDiagnosticsAsync(OeProjectBuild build, List<PendingDiagnostic> diagnostics, CancellationToken ct)
     {
         var stale = await _db.OeProjectBuildDiagnostics
             .Where(d => d.ProjectBuildId == build.Id).ToListAsync(ct).ConfigureAwait(false);
@@ -784,7 +783,7 @@ public sealed class ProjectBuildService
         var ordering = 0;
         foreach (var d in diagnostics)
         {
-            _db.OeProjectBuildDiagnostics.Add(new ProjectBuildDiagnostic
+            _db.OeProjectBuildDiagnostics.Add(new OeProjectBuildDiagnostic
             {
                 OrganizationId = build.OrganizationId,
                 ProjectBuildId = build.Id,
@@ -804,7 +803,7 @@ public sealed class ProjectBuildService
     // ── Clone ───────────────────────────────────────────────────────────
 
     private async Task<List<ClonedRepo>> CloneRepositoriesAsync(
-        Project project, string buildRoot, List<BuildAppResult> results, List<PendingLog> logs,
+        OeProject project, string buildRoot, List<BuildAppResult> results, List<PendingLog> logs,
         ProjectBuildOptions options, CancellationToken ct)
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
@@ -893,7 +892,7 @@ public sealed class ProjectBuildService
     /// </summary>
     private async Task<bool> CheckoutCommitAsync(
         string gitPath, string cloneDir, string commitSha, Dictionary<string, string> env, string pat,
-        ProjectRepository repo, List<PendingLog> logs, List<BuildAppResult> results, CancellationToken ct)
+        OeProjectRepository repo, List<PendingLog> logs, List<BuildAppResult> results, CancellationToken ct)
     {
         // The commit reaches this method from a GitHub webhook, so it is checked
         // against what a git object name can be before it goes on a command line.
@@ -1408,10 +1407,10 @@ public sealed class ProjectBuildService
         }
     }
 
-    /// <summary>A captured log section accumulated during a build, before it's persisted as a <see cref="ProjectBuildLog"/>.</summary>
+    /// <summary>A captured log section accumulated during a build, before it's persisted as a <see cref="OeProjectBuildLog"/>.</summary>
     private sealed record PendingLog(int? RepoId, string Section, string Content);
 
-    /// <summary>A compiled deliverable held in memory, before it's persisted as a <see cref="ProjectBuildArtifact"/>.</summary>
+    /// <summary>A compiled deliverable held in memory, before it's persisted as a <see cref="OeProjectBuildArtifact"/>.</summary>
     private sealed record PendingArtifact(string FileName, string AppName, string AppVersion, string? Runtime, byte[] Content);
 
     /// <summary>One parsed compiler diagnostic with its path already made repository-relative, before it becomes a row.</summary>
@@ -1459,13 +1458,13 @@ public sealed record DiscoveredExtension(
 
 /// <summary>
 /// A successfully cloned repository plus the commit it's pinned at — provenance
-/// carried onto each built app and persisted as a <see cref="ProjectBuildRepoCommit"/>.
+/// carried onto each built app and persisted as a <see cref="OeProjectBuildRepoCommit"/>.
 /// <see cref="RepositoryId"/> / <see cref="DisplayName"/> identify the source
-/// <see cref="ProjectRepository"/> so the per-repo changelog and build record link back.
+/// <see cref="OeProjectRepository"/> so the per-repo changelog and build record link back.
 /// </summary>
 public sealed record ClonedRepo(string Dir, string Url, string? CommitSha, DateTime? CommitDate, int? RepositoryId = null, string DisplayName = "");
 
-/// <summary>One extension's outcome from a build, before it's persisted as a <see cref="ProjectBuildResult"/> row. Carries the source provenance (repo + commit) when known.</summary>
+/// <summary>One extension's outcome from a build, before it's persisted as a <see cref="OeProjectBuildResult"/> row. Carries the source provenance (repo + commit) when known.</summary>
 public sealed record BuildAppResult(
     string AppName,
     string AppId,
@@ -1479,7 +1478,7 @@ public sealed record BuildAppResult(
 /// The product of a project build: the compiled uploads ready for the shared
 /// ingest seam, the per-app report, the resolved parent release (when known), the
 /// finalised Release label, and the resolved BC Major.Minor the build compiled
-/// against (stamped onto the <see cref="ProjectBuild"/>).
+/// against (stamped onto the <see cref="OeProjectBuild"/>).
 /// </summary>
 public sealed record ProjectBuildOutcome(
     IReadOnlyList<AppFileUpload> Uploads,

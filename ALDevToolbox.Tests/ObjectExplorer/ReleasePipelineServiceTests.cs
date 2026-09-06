@@ -337,7 +337,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
 
     private static async Task<int> SeedRepositoryAsync(AppDbContext ctx, int projectId)
     {
-        var repository = new ProjectRepository
+        var repository = new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -355,7 +355,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
 
     private static async Task<int> SeedProjectAsync(AppDbContext ctx)
     {
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS " + Guid.NewGuid().ToString("N"),
@@ -369,7 +369,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
 
     private static async Task<int> SeedBuildPipelineAsync(AppDbContext ctx, int projectId, string? name = null)
     {
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -385,7 +385,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
     private static async Task<int> SeedEnvironmentAsync(
         AppDbContext ctx, int projectId, string? name = null, string? status = null, bool missing = false)
     {
-        var env = new ProjectEnvironment
+        var env = new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

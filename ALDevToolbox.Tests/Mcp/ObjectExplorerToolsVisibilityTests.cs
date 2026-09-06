@@ -252,7 +252,7 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
         int projectId, teamId;
         await using (var ctx = _db.NewContext())
         {
-            var project = new Project
+            var project = new OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Name = name,
@@ -301,7 +301,7 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
     private async Task LinkByBuildAsync(int projectId, int releaseId)
     {
         await using var ctx = _db.NewContext();
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,
@@ -312,7 +312,7 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
         ctx.OePipelines.Add(pipeline);
         await ctx.SaveChangesAsync();
 
-        ctx.OeProjectBuilds.Add(new ProjectBuild
+        ctx.OeProjectBuilds.Add(new OeProjectBuild
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = projectId,

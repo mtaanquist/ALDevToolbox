@@ -183,26 +183,26 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        var project = new Project
+        var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS A/S", CreatedAt = now, UpdatedAt = now,
         };
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
 
-        ctx.OeProjectRepositories.Add(new ProjectRepository
+        ctx.OeProjectRepositories.Add(new OeProjectRepository
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id,
             Provider = RepositoryProvider.GitHub, Url = $"https://github.com/{Repo}.git",
             DisplayName = "cronus-customer",
         });
-        var pipeline = new Pipeline
+        var pipeline = new OePipeline
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Nightly",
             CreatedAt = now, UpdatedAt = now,
         };
         ctx.OePipelines.Add(pipeline);
-        ctx.OeProjectEnvironments.Add(new ProjectEnvironment
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id,
             Name = "Production", Type = "Production", FetchedAt = now,

@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ProjectBuildArtifactConfiguration : IEntityTypeConfiguration<ProjectBuildArtifact>
+internal sealed class ProjectBuildArtifactConfiguration : IEntityTypeConfiguration<OeProjectBuildArtifact>
 {
-    public void Configure(EntityTypeBuilder<ProjectBuildArtifact> entity)
+    public void Configure(EntityTypeBuilder<OeProjectBuildArtifact> entity)
     {
         entity.ToTable("oe_project_build_artifacts");
         entity.HasKey(e => e.Id);

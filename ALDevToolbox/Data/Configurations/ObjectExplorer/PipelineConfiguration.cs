@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class PipelineConfiguration : IEntityTypeConfiguration<Pipeline>
+internal sealed class PipelineConfiguration : IEntityTypeConfiguration<OePipeline>
 {
-    public void Configure(EntityTypeBuilder<Pipeline> entity)
+    public void Configure(EntityTypeBuilder<OePipeline> entity)
     {
         entity.ToTable("oe_pipelines");
         entity.HasKey(e => e.Id);

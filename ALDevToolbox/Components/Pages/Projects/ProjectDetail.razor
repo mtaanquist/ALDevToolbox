@@ -280,7 +280,7 @@
     private Dictionary<string, string> _errors = new();
 
     private ProjectHeader? _header;
-    private List<Pipeline> _pipelines = new();
+    private List<OePipeline> _pipelines = new();
     private List<RepositoryProvider> _providers = new();
 
     /// <summary>
@@ -384,7 +384,7 @@
         }
     }
 
-    private Project? _loadedProject;
+    private OeProject? _loadedProject;
 
     private void HydrateEdit()
     {

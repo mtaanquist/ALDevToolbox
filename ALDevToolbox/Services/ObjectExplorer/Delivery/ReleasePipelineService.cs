@@ -10,9 +10,9 @@ using ALDevToolbox.Services.ObjectExplorer.Bc;
 namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 
 /// <summary>
-/// CRUD over <see cref="ReleasePipeline"/> — the reusable "where + how" of a deploy
-/// that draws a <see cref="Pipeline"/> (build) pipeline's artifacts and targets one
-/// <see cref="ProjectEnvironment"/>. A build pipeline can feed several release
+/// CRUD over <see cref="OeReleasePipeline"/> — the reusable "where + how" of a deploy
+/// that draws a <see cref="OePipeline"/> (build) pipeline's artifacts and targets one
+/// <see cref="OeProjectEnvironment"/>. A build pipeline can feed several release
 /// pipelines (build-once-deploy-many). Management rights come from the parent
 /// project's owner via <see cref="ProjectAccess"/>. Org-scoped via the EF query
 /// filter; mutations run inside an authenticated request. Validation throws
@@ -94,7 +94,7 @@ public sealed class ReleasePipelineService
     }
 
     /// <summary>A single active release pipeline, or null when not found in this org.</summary>
-    public async Task<ReleasePipeline?> GetReleasePipelineAsync(int id, CancellationToken ct = default)
+    public async Task<OeReleasePipeline?> GetReleasePipelineAsync(int id, CancellationToken ct = default)
     {
         await EnsureCanViewReleasePipelineAsync(id, ct);
         return await _db.OeReleasePipelines.AsNoTracking()
@@ -113,7 +113,7 @@ public sealed class ReleasePipelineService
         var v = await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
-        var pipeline = new ReleasePipeline
+        var pipeline = new OeReleasePipeline
         {
             OrganizationId = orgId,
             ProjectId = input.ProjectId,

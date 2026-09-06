@@ -262,7 +262,7 @@ public sealed class AuditInterceptorTests : IDisposable
         int projectId;
         await using (var seed = _db.NewContext())
         {
-            var p = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS A/S", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            var p = new OeProject { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS A/S", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
             seed.OeProjects.Add(p);
             await seed.SaveChangesAsync();
             projectId = p.Id;
@@ -289,7 +289,7 @@ public sealed class AuditInterceptorTests : IDisposable
         int projectId;
         await using (var seed = _db.NewContext())
         {
-            var p = new Project
+            var p = new OeProject
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Name = "CRONUS",
@@ -317,7 +317,7 @@ public sealed class AuditInterceptorTests : IDisposable
             .SingleAsync();
         // The before-snapshot records that the secret changed, not the ciphertext.
         JsonDocument.Parse(row.SnapshotJson!).RootElement
-            .GetProperty(nameof(Project.BcClientSecretEncrypted)).GetString()
+            .GetProperty(nameof(OeProject.BcClientSecretEncrypted)).GetString()
             .Should().Be("[redacted]");
     }
 
@@ -329,7 +329,7 @@ public sealed class AuditInterceptorTests : IDisposable
         int projectId;
         await using (var seed = _db.NewContext())
         {
-            var p = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            var p = new OeProject { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
             seed.OeProjects.Add(p);
             await seed.SaveChangesAsync();
             projectId = p.Id;
@@ -355,7 +355,7 @@ public sealed class AuditInterceptorTests : IDisposable
     {
         await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
         {
-            ctx.OeProjects.Add(new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS new", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            ctx.OeProjects.Add(new OeProject { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS new", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
             await ctx.SaveChangesAsync();
         }
 
@@ -370,17 +370,17 @@ public sealed class AuditInterceptorTests : IDisposable
         await using (var seed = _db.NewContext())
         {
             var now = DateTime.UtcNow;
-            var p = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS", CreatedAt = now, UpdatedAt = now };
+            var p = new OeProject { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS", CreatedAt = now, UpdatedAt = now };
             seed.OeProjects.Add(p);
             await seed.SaveChangesAsync();
             projectId = p.Id;
 
-            var pipe = new Pipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build", CreatedAt = now, UpdatedAt = now };
+            var pipe = new OePipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build", CreatedAt = now, UpdatedAt = now };
             seed.OePipelines.Add(pipe);
             await seed.SaveChangesAsync();
             pipelineId = pipe.Id;
 
-            var env = new ProjectEnvironment { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Production", Type = "Production", FetchedAt = now };
+            var env = new OeProjectEnvironment { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Production", Type = "Production", FetchedAt = now };
             seed.OeProjectEnvironments.Add(env);
             await seed.SaveChangesAsync();
             envId = env.Id;
@@ -389,7 +389,7 @@ public sealed class AuditInterceptorTests : IDisposable
 
         await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
         {
-            ctx.OeReleasePipelines.Add(new ReleasePipeline
+            ctx.OeReleasePipelines.Add(new OeReleasePipeline
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ProjectId = projectId,

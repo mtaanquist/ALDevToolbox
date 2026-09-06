@@ -270,7 +270,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var now = DateTime.UtcNow;
-        ctx.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+        ctx.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,

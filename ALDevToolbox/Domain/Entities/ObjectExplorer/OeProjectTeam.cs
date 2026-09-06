@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One <see cref="Team"/> assigned to one <see cref="Project"/> — the join that
+/// One <see cref="Team"/> assigned to one <see cref="OeProject"/> — the join that
 /// grants that team's members view and manage rights on the project (everything
 /// except deleting it). See <c>.design/teams-and-visibility.md</c>.
 ///
@@ -11,7 +11,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// and this row always belong to the same org, and the service enforces that on
 /// insert.</para>
 /// </summary>
-public class ProjectTeam
+public class OeProjectTeam
 {
     public int Id { get; set; }
 
@@ -20,7 +20,7 @@ public class ProjectTeam
     public Organization? Organization { get; set; }
 
     public int ProjectId { get; set; }
-    public Project? Project { get; set; }
+    public OeProject? Project { get; set; }
 
     public int TeamId { get; set; }
     public Team? Team { get; set; }

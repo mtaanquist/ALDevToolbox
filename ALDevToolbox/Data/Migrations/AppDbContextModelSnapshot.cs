@@ -936,7 +936,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oauth_consents", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.BcArtifactVersion", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeArtifactVersion", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1076,7 +1076,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_environment_upgrade_actions", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeFileContent", b =>
                 {
                     b.Property<string>("ContentHash")
                         .HasColumnType("text")
@@ -1106,7 +1106,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_file_contents", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeImportJob", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1196,7 +1196,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_import_jobs", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1293,7 +1293,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_modules", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleFile", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1338,7 +1338,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_files", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1426,7 +1426,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_objects", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleReference", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1533,7 +1533,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_references", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSymbol", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1617,7 +1617,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_symbols", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSystemReference", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1703,7 +1703,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_system_references", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleTranslation", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1799,7 +1799,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_translations", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleVariable", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -1879,7 +1879,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_variables", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OePipeline", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1940,7 +1940,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_pipelines", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2038,7 +2038,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_projects", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2153,7 +2153,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_builds", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildArtifact", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2216,7 +2216,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_artifacts", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildCommit", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2274,7 +2274,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_commits", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildDiagnostic", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildDiagnostic", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2342,7 +2342,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_diagnostics", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2394,7 +2394,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_logs", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildRepoCommit", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildRepoCommit", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2449,7 +2449,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_repo_commits", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildResult", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2515,7 +2515,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_results", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDelivery", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2625,7 +2625,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_deliveries", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDeliveryResult", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDeliveryResult", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2695,7 +2695,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_delivery_results", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectEnvironment", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2883,7 +2883,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_environments", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2928,7 +2928,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_repositories", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectSymbol", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectSymbol", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2975,7 +2975,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_symbols", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectTeam", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3012,7 +3012,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_teams", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3114,7 +3114,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_releases", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleasePipeline", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -5744,7 +5744,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "Release")
                         .WithMany()
                         .HasForeignKey("ReleaseId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -5855,7 +5855,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.BcArtifactVersion", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeArtifactVersion", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -5873,7 +5873,7 @@ namespace ALDevToolbox.Data.Migrations
                         .HasForeignKey("CancelledByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", "Environment")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectEnvironment", "Environment")
                         .WithMany()
                         .HasForeignKey("EnvironmentId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -5885,7 +5885,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -5907,7 +5907,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("RequestedByUser");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeImportJob", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -5915,7 +5915,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", null)
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", null)
                         .WithMany()
                         .HasForeignKey("ReleaseId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -5931,7 +5931,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -5939,13 +5939,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "Release")
                         .WithMany("Modules")
                         .HasForeignKey("ReleaseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", "SymbolReferenceContent")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeFileContent", "SymbolReferenceContent")
                         .WithMany()
                         .HasForeignKey("SymbolReferenceContentHash")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -5957,15 +5957,15 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("SymbolReferenceContent");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleFile", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", "FileContent")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeFileContent", "FileContent")
                         .WithMany()
                         .HasForeignKey("ContentHash")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany("Files")
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -5984,9 +5984,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany("Objects")
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -5998,7 +5998,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile", "SourceFile")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleFile", "SourceFile")
                         .WithMany()
                         .HasForeignKey("SourceFileId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6010,9 +6010,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("SourceFile");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleReference", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany("References")
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6024,23 +6024,23 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", "SourceObject")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", "SourceObject")
                         .WithMany()
                         .HasForeignKey("SourceObjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", "SourceSymbol")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSymbol", "SourceSymbol")
                         .WithMany()
                         .HasForeignKey("SourceSymbolId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", "TargetSymbol")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSymbol", "TargetSymbol")
                         .WithMany()
                         .HasForeignKey("TargetSymbolId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable", "TargetVariable")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleVariable", "TargetVariable")
                         .WithMany()
                         .HasForeignKey("TargetVariableId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6058,15 +6058,15 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("TargetVariable");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSymbol", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany("Symbols")
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", "Object")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", "Object")
                         .WithMany("Symbols")
                         .HasForeignKey("ObjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6085,9 +6085,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSystemReference", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany()
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6099,13 +6099,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", "SourceObject")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", "SourceObject")
                         .WithMany()
                         .HasForeignKey("SourceObjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", "SourceSymbol")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSymbol", "SourceSymbol")
                         .WithMany()
                         .HasForeignKey("SourceSymbolId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6119,9 +6119,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("SourceSymbol");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleTranslation", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany()
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6133,7 +6133,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", "Symbol")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleSymbol", "Symbol")
                         .WithMany()
                         .HasForeignKey("SymbolId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6145,15 +6145,15 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Symbol");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleVariable", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", "Module")
                         .WithMany("Variables")
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", "Object")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", "Object")
                         .WithMany("Variables")
                         .HasForeignKey("ObjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6172,14 +6172,14 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OePipeline", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "GithubReleaseRepository")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", "GithubReleaseRepository")
                         .WithMany()
                         .HasForeignKey("GithubReleaseRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6190,7 +6190,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6205,7 +6205,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
                         .WithMany()
@@ -6223,7 +6223,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6231,18 +6231,18 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", "Pipeline")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OePipeline", "Pipeline")
                         .WithMany("Builds")
                         .HasForeignKey("PipelineId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany("Builds")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "Release")
                         .WithMany()
                         .HasForeignKey("ReleaseId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6263,7 +6263,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("StartedByUser");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildArtifact", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6271,7 +6271,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", "ProjectBuild")
                         .WithMany("Artifacts")
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6282,7 +6282,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ProjectBuild");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildCommit", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6290,13 +6290,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", "ProjectBuild")
                         .WithMany("Changelog")
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", "ProjectRepository")
                         .WithMany()
                         .HasForeignKey("ProjectRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6308,7 +6308,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ProjectRepository");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildDiagnostic", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildDiagnostic", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6316,13 +6316,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", "ProjectBuild")
                         .WithMany("Diagnostics")
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", "ProjectRepository")
                         .WithMany()
                         .HasForeignKey("ProjectRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6334,7 +6334,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ProjectRepository");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildLog", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6342,13 +6342,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", "ProjectBuild")
                         .WithMany("Logs")
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", "ProjectRepository")
                         .WithMany()
                         .HasForeignKey("ProjectRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6360,7 +6360,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ProjectRepository");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildRepoCommit", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildRepoCommit", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6368,13 +6368,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", "ProjectBuild")
                         .WithMany("RepoCommits")
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", "ProjectRepository")
                         .WithMany()
                         .HasForeignKey("ProjectRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6386,7 +6386,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ProjectRepository");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuildResult", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6394,7 +6394,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "Release")
                         .WithMany()
                         .HasForeignKey("ReleaseId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6405,7 +6405,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Release");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDelivery", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6413,19 +6413,19 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", "ProjectBuild")
                         .WithMany()
                         .HasForeignKey("ProjectBuildId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline", "ReleasePipeline")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleasePipeline", "ReleasePipeline")
                         .WithMany()
                         .HasForeignKey("ReleasePipelineId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6447,7 +6447,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("TriggeredByUser");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDeliveryResult", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDeliveryResult", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6455,7 +6455,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", "ProjectDelivery")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDelivery", "ProjectDelivery")
                         .WithMany("Results")
                         .HasForeignKey("ProjectDeliveryId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6466,7 +6466,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ProjectDelivery");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectEnvironment", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6474,7 +6474,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany("Environments")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6485,7 +6485,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6493,7 +6493,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany("Repositories")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6504,7 +6504,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectSymbol", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectSymbol", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6512,7 +6512,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany("Symbols")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6523,7 +6523,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectTeam", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
@@ -6531,7 +6531,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany("Teams")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6550,7 +6550,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "ApplicationVersion")
                         .WithMany()
@@ -6563,7 +6563,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "ParentRelease")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "ParentRelease")
                         .WithMany()
                         .HasForeignKey("ParentReleaseId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -6575,9 +6575,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("ParentRelease");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleasePipeline", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", "BuildPipeline")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OePipeline", "BuildPipeline")
                         .WithMany()
                         .HasForeignKey("BuildPipelineId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -6587,7 +6587,7 @@ namespace ALDevToolbox.Data.Migrations
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "GithubReleaseRepository")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository", "GithubReleaseRepository")
                         .WithMany()
                         .HasForeignKey("GithubReleaseRepositoryId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -6598,13 +6598,13 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", "ProjectEnvironment")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectEnvironment", "ProjectEnvironment")
                         .WithMany()
                         .HasForeignKey("ProjectEnvironmentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -6757,7 +6757,7 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -7194,7 +7194,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Folders");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModule", b =>
                 {
                     b.Navigation("Files");
 
@@ -7207,19 +7207,19 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Variables");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeModuleObject", b =>
                 {
                     b.Navigation("Symbols");
 
                     b.Navigation("Variables");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OePipeline", b =>
                 {
                     b.Navigation("Builds");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject", b =>
                 {
                     b.Navigation("Builds");
 
@@ -7232,7 +7232,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Teams");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectBuild", b =>
                 {
                     b.Navigation("Artifacts");
 
@@ -7245,12 +7245,12 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("RepoCommits");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDelivery", b =>
                 {
                     b.Navigation("Results");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", b =>
                 {
                     b.Navigation("Modules");
                 });

@@ -76,7 +76,7 @@ public sealed record ToolCounts(int Templates, int Recipes, int Releases, int Pr
 public sealed class DashboardService
 {
     /// <summary>
-    /// <see cref="Domain.Entities.ObjectExplorer.Release.Kind"/> for a pipeline
+    /// <see cref="Domain.Entities.ObjectExplorer.OeRelease.Kind"/> for a pipeline
     /// build. Those rows share the releases table with real imports but are a
     /// different tool's business; see <see cref="FailedImportsAsync"/>.
     /// </summary>

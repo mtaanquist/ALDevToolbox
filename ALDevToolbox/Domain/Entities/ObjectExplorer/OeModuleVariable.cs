@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// One object-scoped global variable on a <see cref="ModuleObject"/>, with its declared type
+/// One object-scoped global variable on a <see cref="OeModuleObject"/>, with its declared type
 /// fully resolved by the symbol package. Procedure-local variables are NOT in this table —
 /// they're not in the symbol package and stay in the source-scan fallback path.
 ///
@@ -11,7 +11,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// the entire ecosystem. When typed to a non-AL system type (<c>HttpClient</c>,
 /// <c>JsonObject</c>, <c>ErrorInfo</c>, …) only <see cref="TypeName"/> is populated.
 /// </summary>
-public class ModuleVariable
+public class OeModuleVariable
 {
     public long Id { get; set; }
 
@@ -19,10 +19,10 @@ public class ModuleVariable
     public Organization? Organization { get; set; }
 
     public long ModuleId { get; set; }
-    public Module? Module { get; set; }
+    public OeModule? Module { get; set; }
 
     public long ObjectId { get; set; }
-    public ModuleObject? Object { get; set; }
+    public OeModuleObject? Object { get; set; }
 
     /// <summary>Variable identifier as declared.</summary>
     public string Name { get; set; } = string.Empty;

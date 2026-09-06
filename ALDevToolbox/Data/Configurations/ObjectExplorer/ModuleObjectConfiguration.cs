@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class ModuleObjectConfiguration : IEntityTypeConfiguration<ModuleObject>
+internal sealed class ModuleObjectConfiguration : IEntityTypeConfiguration<OeModuleObject>
 {
-    public void Configure(EntityTypeBuilder<ModuleObject> entity)
+    public void Configure(EntityTypeBuilder<OeModuleObject> entity)
     {
         entity.ToTable("oe_module_objects");
         entity.HasKey(e => e.Id);
