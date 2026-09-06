@@ -35,6 +35,14 @@ public readonly record struct AllocatedIdRange(string Path, int From, int To)
 /// produces are baked into generated <c>app.json</c> files that customers build
 /// against, and eighteen assertions across the generation tests read them back
 /// out of the ZIP.</para>
+///
+/// <para>The one rule that has moved since is #730: a template's
+/// <c>ModuleIdRangeStart</c> says where the module range starts <em>relative to
+/// that template's own Core range</em>, not at a fixed absolute id. When a
+/// workspace moves the Core range, everything after it moves by the same
+/// amount, preserving whatever gap the template author left between the end of
+/// Core and the start of the module range. Leaving Core at the template's own
+/// default shifts by zero, so those baked-in numbers are unchanged.</para>
 /// </summary>
 public static class IdRangeAllocator
 {
@@ -47,7 +55,9 @@ public static class IdRangeAllocator
     /// <param name="selectedExtensionPaths">Optional template extensions the user ticked.</param>
     /// <param name="modules">Selected catalogue modules, already in display order.</param>
     /// <param name="coreIdRangeFrom">The plan's Core range start — claimed by the first extension that declares no range of its own.</param>
-    /// <param name="coreIdRangeTo">The plan's Core range end.</param>
+    /// <param name="coreIdRangeTo">The plan's Core range end. Also decides where the
+    /// module cursor starts: it is shifted by <c>coreIdRangeTo - template.CoreIdRangeTo</c>
+    /// so the layout after Core follows the Core range wherever the workspace put it (#730).</param>
     public static List<AllocatedIdRange> Allocate(
         RuntimeTemplate template,
         IReadOnlyCollection<string> selectedExtensionPaths,
@@ -59,10 +69,12 @@ public static class IdRangeAllocator
         var allocated = new List<AllocatedIdRange>();
 
         // ID-range cursor: starts at the template's first auto-allocate slot
-        // (ModuleIdRangeStart) and walks forward. The first extension consumes
-        // the Core range from the plan when it has no explicit ids; subsequent
-        // unannotated extensions take a slice from the cursor.
-        var cursor = template.ModuleIdRangeStart;
+        // (ModuleIdRangeStart), shifted by however far this workspace moved the
+        // end of the Core range away from the template's own (#730), and walks
+        // forward. The first extension consumes the Core range from the plan
+        // when it has no explicit ids; subsequent unannotated extensions take a
+        // slice from the cursor.
+        var cursor = ModuleRangeStart(template, coreIdRangeTo);
         var firstAuto = true;
 
         foreach (var ext in template.WorkspaceExtensions.OrderBy(e => e.Ordering))
@@ -88,6 +100,24 @@ public static class IdRangeAllocator
 
         return allocated;
     }
+
+    /// <summary>
+    /// Where the first auto-allocated slot after the Core range begins for a
+    /// workspace whose Core range ends at <paramref name="coreIdRangeTo"/>.
+    ///
+    /// <para>The template author's <see cref="RuntimeTemplate.ModuleIdRangeStart"/>
+    /// is read relative to that template's own <see cref="RuntimeTemplate.CoreIdRangeTo"/>,
+    /// so the gap between the two (usually zero — modules start right after Core)
+    /// survives a workspace moving, widening or narrowing the Core range (#730).
+    /// The shift keys on the range's <em>end</em>, so widening Core also pushes
+    /// what follows out of its way.</para>
+    ///
+    /// <para>Can come out below 1 for a large downward move; the plan validation
+    /// in <c>GenerationService</c> refuses such a plan against this same method
+    /// rather than emitting negative object ids.</para>
+    /// </summary>
+    public static int ModuleRangeStart(RuntimeTemplate template, int coreIdRangeTo) =>
+        template.ModuleIdRangeStart + (coreIdRangeTo - template.CoreIdRangeTo);
 
     private static (int From, int To, int Cursor) ResolveTemplateRange(
         WorkspaceExtension ext,

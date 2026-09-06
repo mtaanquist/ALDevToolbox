@@ -98,6 +98,108 @@ public sealed class IdRangeAllocatorTests
         with.Should().Contain(r => r.Path == optional.Path);
     }
 
+    // ===== #730: the layout after Core follows the Core range =====
+
+    /// <summary>
+    /// #730: the reported bug. Moving Core down used to leave every later
+    /// extension parked at the template's absolute ModuleIdRangeStart, so a
+    /// workspace at 60000..60999 still got its modules at 91000.
+    /// </summary>
+    [Fact]
+    public void Moving_the_core_range_down_moves_everything_after_it_by_the_same_amount()
+    {
+        var template = TemplateBuilder.Default("runtime-x");
+        var module = ModuleBuilder.Default("mod", "Mod");
+
+        var ranges = IdRangeAllocator.Allocate(
+            template, Array.Empty<string>(), new[] { module }, 60000, 60999);
+
+        ranges[0].From.Should().Be(60000);
+        ranges[0].To.Should().Be(60999);
+        var moduleRange = ranges.Single(r => r.Path == module.ExtensionName);
+        moduleRange.From.Should().Be(61000, "the module range keeps its zero gap after Core");
+        moduleRange.To.Should().Be(61199);
+    }
+
+    /// <summary>
+    /// The other half of #730: moving Core *up* past the template's module
+    /// start used to overlap it, and the cross-extension overlap check refused
+    /// the plan outright. The shift moves the module range out of the way.
+    /// </summary>
+    [Fact]
+    public void Moving_the_core_range_up_past_the_old_module_start_no_longer_overlaps()
+    {
+        var template = TemplateBuilder.Default("runtime-x");
+        var module = ModuleBuilder.Default("mod", "Mod");
+
+        var ranges = IdRangeAllocator.Allocate(
+            template, Array.Empty<string>(), new[] { module }, 91000, 91999);
+
+        var moduleRange = ranges.Single(r => r.Path == module.ExtensionName);
+        moduleRange.From.Should().Be(92000);
+        moduleRange.From.Should().BeGreaterThan(ranges[0].To, "the ranges have to stay disjoint");
+    }
+
+    /// <summary>
+    /// The shift keys on the range's end, not its start, so widening Core also
+    /// pushes what follows out of its way.
+    /// </summary>
+    [Theory]
+    [InlineData(91199, 91200)]   // widened: 90000..91199
+    [InlineData(90499, 90500)]   // narrowed: 90000..90499
+    public void Resizing_the_core_range_moves_the_module_range_by_the_change_to_its_end(int coreTo, int expectedModuleFrom)
+    {
+        var template = TemplateBuilder.Default("runtime-x");
+        var module = ModuleBuilder.Default("mod", "Mod");
+
+        var ranges = IdRangeAllocator.Allocate(
+            template, Array.Empty<string>(), new[] { module }, CoreFrom, coreTo);
+
+        ranges.Single(r => r.Path == module.ExtensionName).From.Should().Be(expectedModuleFrom);
+    }
+
+    /// <summary>
+    /// The compatibility guarantee behind the whole change: at the template's
+    /// own Core range the shift is zero, so every number the generation tests
+    /// read back out of a ZIP is the number they read before.
+    /// </summary>
+    [Fact]
+    public void Leaving_the_core_range_at_the_template_default_allocates_exactly_as_before()
+    {
+        var template = TemplateBuilder.Default("runtime-x");
+        var module = ModuleBuilder.Default("mod", "Mod");
+
+        var ranges = IdRangeAllocator.Allocate(
+            template, Array.Empty<string>(), new[] { module },
+            template.CoreIdRangeFrom, template.CoreIdRangeTo);
+
+        ranges[0].From.Should().Be(90000);
+        ranges[0].To.Should().Be(90999);
+        var moduleRange = ranges.Single(r => r.Path == module.ExtensionName);
+        moduleRange.From.Should().Be(template.ModuleIdRangeStart);
+        moduleRange.To.Should().Be(template.ModuleIdRangeStart + 199);
+    }
+
+    /// <summary>
+    /// What is preserved is the *gap* the template author left after Core, not
+    /// the phrase "modules start right after Core" - a template that parks its
+    /// modules 4000 ids past the end of Core keeps that distance when the
+    /// workspace moves Core.
+    /// </summary>
+    [Fact]
+    public void A_gap_between_core_and_the_module_range_survives_a_moved_core_range()
+    {
+        var template = TemplateBuilder.Default("runtime-x");
+        template.ModuleIdRangeStart = 95000;    // 4000 ids past CoreIdRangeTo (90999)
+        var module = ModuleBuilder.Default("mod", "Mod");
+
+        var ranges = IdRangeAllocator.Allocate(
+            template, Array.Empty<string>(), new[] { module }, 60000, 60999);
+
+        ranges.Single(r => r.Path == module.ExtensionName).From.Should().Be(65000,
+            "the 4000-id gap after Core is the template author's decision, not an accident");
+    }
+
     /// <summary>
     /// The label is what reaches the preview row, and the handoff's generator
     /// screen writes it as <c>ID from-to</c>. Pinned because it is the one part
