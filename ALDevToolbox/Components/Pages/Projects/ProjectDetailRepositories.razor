@@ -1,0 +1,265 @@
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.GitHub
+
+@*
+    The Repositories tab of a solution's settings: the Git repositories compiled
+    into this solution's deliverables.
+
+    Named user: the BC consultant wiring a customer's solution up to the two or
+    three repositories its extensions live in - by picking them off GitHub where
+    that is possible, and by pasting a URL where it is not.
+
+    Like General, this tab has no Save of its own: both share the page header's
+    "Save solution" primary, so the rows are edited in the model the page hands
+    down and every change raises OnDirty. Repository errors come back from the
+    service keyed by position, which the page re-keys onto the rows it sent -
+    hence RepoErrors, a lookup rather than a flat dictionary.
+*@
+
+<div class="form-sec__head">
+    <h2 class="card__title">
+        Repositories
+        <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span><span>@Edit.Repos.Count(r => !r.IsBlank()) added</span></span>
+    </h2>
+</div>
+<p class="form-sec__cap">Source repositories compiled into this solution's <code>.app</code> deliverables. Each build pulls the latest commit from every repository.</p>
+<div class="card">
+    <div class="card__body">
+        @* Assistance, never a gate: when this organisation is on Azure
+           DevOps only, has not connected a GitHub organisation, or the
+           person looking has not connected their own account, the picker
+           is absent and the tab is exactly what it was before. See
+           .design/github-integration.md, issue #624. *@
+        @if (CanPickFromGitHub)
+        {
+            <div class="pd-repo-pick">
+                <RepositoryPicker Label="Add a repository from GitHub"
+                                  InputId="pd-repo-pick"
+                                  Selected="_pickedRepo"
+                                  SelectedChanged="AddRepoFromGitHub"
+                                  Disabled="@Saving" />
+                @if (_repoPickNote is { } note)
+                {
+                    <p class="field__hint pd-repo-pick__note">@note</p>
+                }
+            </div>
+        }
+        @if (Edit.Repos.Count == 0)
+        {
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__title">No repositories yet</span>
+                <span class="empty-state__text">Add the Git repositories that make up this solution.</span>
+            </div>
+        }
+        else
+        {
+            <div class="row-editor">
+                <table class="data-table row-editor__table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Host</th>
+                            <th scope="col">Repository URL</th>
+                            <th scope="col">Display name <span class="u-muted">· optional</span></th>
+                            @if (CanManage)
+                            {
+                                <th scope="col"></th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var repo in Edit.Repos)
+                        {
+                            <tr @key="repo">
+                                <td>
+                                    @if (CanManage && Providers.Count > 1)
+                                    {
+                                        <span class="select-wrap">
+                                            <select class="select select--sm" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@Saving" aria-label="Host">
+                                                @foreach (var prov in Providers)
+                                                {
+                                                    <option value="@prov">@prov.DisplayName()</option>
+                                                }
+                                            </select>
+                                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span>@repo.Provider.DisplayName()</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (CanManage)
+                                    {
+                                        <input type="text" class="input input--sm" @bind="repo.Url" @bind:event="oninput" @bind:after="MarkDirty"
+                                               disabled="@Saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
+                                        <FieldError Field="Url" Errors="RepoErrorsFor(repo)" />
+                                    }
+                                    else
+                                    {
+                                        <span class="pd-url">@repo.Url</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (CanManage)
+                                    {
+                                        <input type="text" class="input input--sm" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="MarkDirty"
+                                               disabled="@Saving" placeholder="e.g. Base app" aria-label="Display name" />
+                                    }
+                                    else
+                                    {
+                                        <span>@repo.DisplayName</span>
+                                    }
+                                </td>
+                                @if (CanManage)
+                                {
+                                    <td class="row-editor__cell-center">
+                                        <button type="button" class="btn btn--sm" @onclick="() => RemoveRepo(repo)"
+                                                disabled="@Saving" aria-label="Remove repository">
+                                            <Icon Name="trash-2" Width="14" Height="14" />
+                                        </button>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @if (CanManage)
+        {
+            <div class="form-actions">
+                <button type="button" class="btn btn--sm" @onclick="AddRepo" disabled="@Saving">
+                    <Icon Name="plus" Width="14" Height="14" />
+                    <span>@(CanPickFromGitHub ? "Add a repository URL" : "Add repository")</span>
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>Whether this person may change the solution. A viewer sees the rows read-only.</summary>
+    [Parameter] public bool CanManage { get; set; }
+
+    /// <summary>True while the page's own Save is in flight, which disables every control here.</summary>
+    [Parameter] public bool Saving { get; set; }
+
+    /// <summary>The page's edit model, shared with the General tab and written by the page's Save.</summary>
+    [Parameter, EditorRequired] public ProjectDetail.EditModel Edit { get; set; } = new();
+
+    /// <summary>The source-control providers this organisation allows, as the page read them.</summary>
+    [Parameter] public IReadOnlyList<RepositoryProvider> Providers { get; set; } = Array.Empty<RepositoryProvider>();
+
+    /// <summary>
+    /// Whether this person can be offered repositories to pick from, rather than
+    /// left to type a URL. The page answers this; a no is silent.
+    /// </summary>
+    [Parameter] public bool CanPickFromGitHub { get; set; }
+
+    /// <summary>
+    /// Per-row repository errors from the last save, so each message renders under
+    /// the row it belongs to instead of stacking in a page-level alert that never
+    /// names the row. The page re-keys the service's positional keys onto the rows.
+    /// </summary>
+    [Parameter] public IReadOnlyDictionary<ProjectDetail.RepoRow, Dictionary<string, string>>? RepoErrors { get; set; }
+
+    /// <summary>Raised when the list or a row changes, so the page can show "Unsaved changes".</summary>
+    [Parameter] public EventCallback OnDirty { get; set; }
+
+    /// <summary>
+    /// The repository just picked, held for exactly one render - see
+    /// <see cref="OnAfterRender"/>. The row it produced in the table below is
+    /// the record of the pick, so the control goes back to being a search box
+    /// rather than sitting on the last answer.
+    /// </summary>
+    private GitHubRepositorySummary? _pickedRepo;
+
+    /// <summary>What the last pick did, so the row that appeared is accounted for.</summary>
+    private string? _repoPickNote;
+
+    private IReadOnlyDictionary<string, string>? RepoErrorsFor(ProjectDetail.RepoRow row) =>
+        RepoErrors is not null && RepoErrors.TryGetValue(row, out var errs) ? errs : null;
+
+    private Task MarkDirty() => OnDirty.InvokeAsync();
+
+    /// <summary>
+    /// Returns the repository picker to its search box after a pick. The control
+    /// keeps whichever repository it is handed, and Blazor only re-supplies a
+    /// parameter whose value <em>changed</em> - so letting go of one takes a
+    /// render where this tab agrees a repository is chosen, then one where it
+    /// no longer is. Nothing else here holds a repository, so the guard
+    /// makes this a no-op on every other render.
+    /// </summary>
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_pickedRepo is null) return;
+        _pickedRepo = null;
+        StateHasChanged();
+    }
+
+    // The note under the picker describes the list as it was one pick ago, so any
+    // other change to the list retires it.
+    private async Task AddRepo()
+    {
+        Edit.Repos.Add(new ProjectDetail.RepoRow { Provider = DefaultProvider });
+        _repoPickNote = null;
+        await OnDirty.InvokeAsync();
+    }
+
+    private async Task RemoveRepo(ProjectDetail.RepoRow row)
+    {
+        Edit.Repos.Remove(row);
+        _repoPickNote = null;
+        await OnDirty.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Turns a repository picked on GitHub into a row, filled in from what GitHub
+    /// itself says it is - which is the whole point: a clone URL nobody typed
+    /// cannot be the reason a build fails twenty minutes from now.
+    ///
+    /// <para>The build clones the default branch, so it is named here rather than
+    /// stored: a solution repository has no branch of its own to set.</para>
+    /// </summary>
+    private async Task AddRepoFromGitHub(GitHubRepositorySummary? repo)
+    {
+        _pickedRepo = repo;
+        if (repo is null) return;
+
+        if (Edit.Repos.Any(r => SameRepository(r.Url, repo.CloneUrl)))
+        {
+            _repoPickNote = $"{repo.Name} is already in this solution.";
+            return;
+        }
+
+        Edit.Repos.Add(new ProjectDetail.RepoRow
+        {
+            Provider = RepositoryProvider.GitHub,
+            Url = repo.CloneUrl,
+            DisplayName = repo.Name,
+        });
+        _repoPickNote = $"Added {repo.Name}. Builds use its {repo.DefaultBranch} branch.";
+        await OnDirty.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Whether two URLs name the same repository. GitHub's clone URL ends in
+    /// <c>.git</c> and a URL someone pasted usually does not, so comparing them
+    /// as typed would let the same repository in twice.
+    /// </summary>
+    private static bool SameRepository(string? a, string b) =>
+        string.Equals(Canonical(a), Canonical(b), StringComparison.OrdinalIgnoreCase);
+
+    private static string Canonical(string? url)
+    {
+        var trimmed = (url ?? string.Empty).Trim().TrimEnd('/');
+        return trimmed.EndsWith(".git", StringComparison.OrdinalIgnoreCase)
+            ? trimmed[..^4]
+            : trimmed;
+    }
+
+    private RepositoryProvider DefaultProvider =>
+        Providers.Contains(RepositoryProvider.GitHub) ? RepositoryProvider.GitHub
+        : Providers.FirstOrDefault();
+}

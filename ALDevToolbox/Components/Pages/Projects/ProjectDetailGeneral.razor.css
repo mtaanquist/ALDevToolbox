@@ -1,0 +1,23 @@
+/*
+    Scoped chrome for the General tab of the solution settings page.
+*/
+
+/* The destructive setting at the foot of General. .setting is a two-column grid
+   built for a .setting-list inside a card body; here it is the card's only row,
+   so the card supplies no body of its own and the row's bottom rule is dead.
+   No .card--danger either: .setting--danger already tints the row and draws the
+   keyline, and a red border under a red fill is a second telling of one fact.
+
+   The columns are re-proportioned for the same reason. The archetype's 260px
+   label column is sized for a *list* of rows, where the neighbours fill the
+   wide control column and the labels line up down the page; the handoff's own
+   danger rows (PageSettings.dc.html) sit in a .setting-list and hold a select
+   plus a button. Alone in a full-width card the 260px column wrapped a
+   two-sentence hint into a narrow ribbon and left three quarters of the row
+   empty beside one button. Flipping to 1fr + auto gives the hint the line
+   length it was written for and puts the button at the row's end, where a
+   setting's control belongs. ::deep because the row is rendered by SettingRow,
+   so the markup carries that component's scope, not this one's. */
+.pd-danger { overflow: hidden; }
+.pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr) auto; border-bottom: 0; }
+@container (max-width: 720px) { .pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr); } }

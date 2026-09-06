@@ -1,0 +1,11 @@
+/*
+    Scoped chrome for the Pipelines tab of the solution settings page. The list
+    is the design system's .sub-rows; only the row's "this is a link" affordance
+    is local.
+*/
+
+/* A whole-row link into the Pipelines tool. The chevron is the affordance that
+   says so - .sub-row is normally an editor row, not a link. */
+.pd-pipe { text-decoration: none; color: inherit; }
+.pd-pipe:hover .sub-row__name { color: var(--primary-ink); }
+.pd-pipe__chev { color: var(--ink-4); flex: none; }

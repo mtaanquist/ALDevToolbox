@@ -1,0 +1,101 @@
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+
+@*
+    The Pipelines tab of a solution's settings: the build automation that turns
+    the solution's repositories into .app files.
+
+    Named user: the BC consultant who has just added the customer's repositories
+    and wants a first build.
+
+    The list is the page's - it is read with the solution - so this tab only
+    renders it and owns the "New pipeline" dialog. Creating one navigates
+    straight into the Pipelines tool, which is where builds are started and
+    downloaded, so nothing comes back here to be refreshed.
+*@
+
+<div class="form-sec__head">
+    <h2 class="card__title">
+        Pipelines
+        <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span><span>@Pipelines.Count pipeline@(Pipelines.Count == 1 ? "" : "s")</span></span>
+    </h2>
+</div>
+<p class="form-sec__cap">Build automation for this solution. Each pipeline chooses which extensions to compile; open one to start builds and download its <code>.app</code> files.</p>
+<div class="card">
+    <div class="card__body">
+        @if (Pipelines.Count == 0)
+        {
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__title">No pipelines yet. Add one to choose which extensions to build and start producing <code>.app</code> files.</span>
+            </div>
+        }
+        else
+        {
+            <div class="sub-rows sub-rows--plain">
+                @foreach (var pl in Pipelines)
+                {
+                    <a class="sub-row pd-pipe" href="@($"/pipelines/{pl.Id}")">
+                        <div class="sub-row__stack">
+                            <span class="sub-row__name">@pl.Name</span>
+                            <span class="sub-row__val">@PipelineScope(pl)</span>
+                        </div>
+                        <span class="sub-row__acts">
+                            <Icon Name="chevron-right" Width="16" Height="16" Css="pd-pipe__chev" />
+                        </span>
+                    </a>
+                }
+            </div>
+        }
+        <div class="form-actions">
+            <button type="button" class="btn btn--sm" @onclick="NewPipelineAsync" disabled="@Saving">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>New pipeline</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineCreatedAsync" />
+
+@code {
+    /// <summary>The solution these pipelines belong to.</summary>
+    [Parameter, EditorRequired] public int Id { get; set; }
+
+    /// <summary>The solution's name, which the create dialog shows.</summary>
+    [Parameter] public string SolutionName { get; set; } = string.Empty;
+
+    /// <summary>The pipelines, read with the solution by the page.</summary>
+    [Parameter] public IReadOnlyList<Pipeline> Pipelines { get; set; } = Array.Empty<Pipeline>();
+
+    /// <summary>True while the page's own Save is in flight.</summary>
+    [Parameter] public bool Saving { get; set; }
+
+    private PipelineEditorDialog? _editor;
+
+    private async Task NewPipelineAsync()
+    {
+        if (_editor is null) return;
+        await _editor.OpenForCreateAsync(Id, SolutionName);
+    }
+
+    private void OnPipelineCreatedAsync(int pipelineId) => Nav.NavigateTo($"/pipelines/{pipelineId}");
+
+    /// <summary>
+    /// One-line scope summary for a pipeline row: how many extensions it builds.
+    /// A null/empty <see cref="Pipeline.RequestedAppIdsJson"/> means "build everything".
+    /// </summary>
+    private static string PipelineScope(Pipeline pl)
+    {
+        if (string.IsNullOrWhiteSpace(pl.RequestedAppIdsJson)) return "Builds all extensions";
+        try
+        {
+            var ids = System.Text.Json.JsonSerializer.Deserialize<List<string>>(pl.RequestedAppIdsJson);
+            var n = ids?.Count ?? 0;
+            return n == 0 ? "Builds all extensions" : $"Builds {n} selected extension{(n == 1 ? "" : "s")}";
+        }
+        catch
+        {
+            return "Builds selected extensions";
+        }
+    }
+}
