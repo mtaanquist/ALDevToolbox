@@ -224,15 +224,29 @@ Each extension gets one `idRanges` entry. Three layers, in priority order:
 
 1. **Explicit on the extension.** If the row carries both `id_range_from` and `id_range_to`, use them verbatim. The cursor does not advance.
 2. **Module-supplied size.** For a module-cloned extension, allocate `[cursor, cursor + size - 1]` where `size = module.IdRangeSize ?? template.ModuleIdRangeSize`. Cursor advances past the slice.
-3. **Auto-allocated from the template.** The first auto-allocated template-declared extension consumes the plan's `[CoreIdRangeFrom, CoreIdRangeTo]`. Subsequent auto-allocated extensions take a `template.ModuleIdRangeSize`-wide slice from the cursor, which starts at `template.ModuleIdRangeStart` and advances after each consumed slice.
+3. **Auto-allocated from the template.** The first auto-allocated template-declared extension consumes the plan's `[CoreIdRangeFrom, CoreIdRangeTo]`. Subsequent auto-allocated extensions take a `template.ModuleIdRangeSize`-wide slice from the cursor, and the cursor advances after each consumed slice.
 
-So for a template with `module_id_range_start = 91000` and `module_id_range_size = 200`, and a workspace selecting Core (auto), Hotfix (auto), and the Document Capture module:
+**Where the cursor starts (#730).** `template.ModuleIdRangeStart` describes where the module range begins *relative to that template's own Core range*, not at a fixed absolute id. The cursor therefore starts at
+
+```
+template.ModuleIdRangeStart + (plan.CoreIdRangeTo - template.CoreIdRangeTo)
+```
+
+so whatever gap the template author left between the end of Core and the start of the module range (usually zero) is preserved wherever the workspace puts Core. The shift keys on the range's *end*, so widening Core also pushes what follows out of its way; leaving Core at the template's own default shifts by zero and allocates exactly as before. It applies whether or not the first extension carries explicit ids of its own — the plan's Core range is still what the user asked for.
+
+So for a template with `core_id_range = 90000..90999`, `module_id_range_start = 91000` and `module_id_range_size = 200`, and a workspace selecting Core (auto), Hotfix (auto), and the Document Capture module:
 
 - Core (first auto): `90000..90999` from the plan.
 - Hotfix (next auto): `91000..91199` from the cursor.
 - Document Capture (module, default size 200): `91200..91399`.
 
-Validation: the resolved ranges must not overlap. `ValidateIdRanges` checks this up front and throws `PlanValidationException` with a field-keyed `Extensions[*].IdRange` error pointing at the colliding pair.
+The same template and selection, with the workspace moving Core down to `60000..60999`:
+
+- Core (first auto): `60000..60999` from the plan.
+- Hotfix (next auto): `61000..61199` — the cursor shifted by `60999 - 90999 = -30000`.
+- Document Capture: `61200..61399`.
+
+Validation: the resolved ranges must not overlap. `ValidateIdRanges` checks this up front and throws `PlanValidationException` with a field-keyed `Extensions[*].IdRange` error pointing at the colliding pair. A downward move large enough to push the shifted cursor below object id 1 is refused earlier, keyed on `CoreIdRangeTo` so the New Workspace page can render it next to the range editor.
 
 ## Dependency resolution
 

@@ -176,6 +176,7 @@ public class GenerationService
         ValidateWorkspacePlan(plan);
 
         var template = await LoadTemplateAsync(plan.TemplateKey, ct);
+        ValidateCoreRangeAgainstTemplate(plan, template);
         var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
         var orgConfig = await GetOrgConfigAsync(ct);
 
@@ -440,6 +441,27 @@ public class GenerationService
             }
         }
         if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    /// <summary>
+    /// The one Core-range rule that needs the template: everything the
+    /// workspace allocates after Core is shifted by however far the workspace
+    /// moved the end of the Core range (#730), so a large enough downward move
+    /// would put the first slot after Core at or below object id 0.
+    ///
+    /// <para>Keyed on <c>CoreIdRangeTo</c> because that is the field the shift
+    /// keys on, and because the New Workspace page renders that key inline next
+    /// to the range editor rather than in its page-level error list.</para>
+    /// </summary>
+    private static void ValidateCoreRangeAgainstTemplate(ProjectPlan plan, RuntimeTemplate template)
+    {
+        if (IdRangeAllocator.ModuleRangeStart(template, plan.CoreIdRangeTo) >= 1) return;
+
+        throw new PlanValidationException(new Dictionary<string, string>
+        {
+            [nameof(plan.CoreIdRangeTo)] =
+                "Raise the Core range: the extensions after it would start below ID 1.",
+        });
     }
 
     /// <summary>

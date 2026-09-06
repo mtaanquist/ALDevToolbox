@@ -62,6 +62,49 @@ public sealed class ValidateOnlyTests : IDisposable
         await AssertGenerateRefusesAsync(plan, "CoreIdRangeTo");
     }
 
+    /// <summary>
+    /// #730: everything after Core moves with the Core range, so a large enough
+    /// downward move would put the first slot after Core below object id 1.
+    /// Refused up front, keyed on the field the shift keys on so the New
+    /// Workspace page renders it next to the range editor.
+    /// </summary>
+    [Fact]
+    public async Task A_core_range_that_pushes_later_extensions_below_id_one_is_reported_and_refused()
+    {
+        // The default fixture leaves no gap after Core (modules start at
+        // CoreIdRangeTo + 1), so its shifted start is always CoreIdRangeTo + 1
+        // and can never fall below 1. Only a template whose module range starts
+        // *before* the end of its own Core range can, so seed one of those:
+        // with a module start 999 ids before CoreIdRangeTo, a workspace Core
+        // range ending at 999 shifts by -90000 and lands the module start on 0.
+        var template = TemplateBuilder.Default();
+        template.ModuleIdRangeStart = 90000;
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+        var plan = PlanBuilder.WorkspacePlan(coreFrom: 1, coreTo: 999);
+
+        (await NewService().ValidateWorkspaceAsync(plan)).Should().ContainKey("CoreIdRangeTo");
+        await AssertGenerateRefusesAsync(plan, "CoreIdRangeTo");
+    }
+
+    /// <summary>
+    /// The other side of the same rule: a moved Core range that still leaves
+    /// room for what follows is accepted, and the page must not block it.
+    /// </summary>
+    [Fact]
+    public async Task A_moved_core_range_that_leaves_room_after_it_is_accepted()
+    {
+        await SeedTemplateAsync();
+
+        var errors = await NewService().ValidateWorkspaceAsync(
+            PlanBuilder.WorkspacePlan(coreFrom: 60000, coreTo: 60999));
+
+        errors.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task A_template_that_does_not_exist_is_reported_and_refused()
     {

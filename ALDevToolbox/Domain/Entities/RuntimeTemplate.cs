@@ -89,15 +89,28 @@ public class RuntimeTemplate
 
     /// <summary>
     /// Inclusive lower bound of the first template-declared extension's id
-    /// range, used when the extension doesn't supply its own. Subsequent
-    /// auto-allocated extensions start at <see cref="ModuleIdRangeStart"/>.
+    /// range, used when the extension doesn't supply its own. A workspace can
+    /// move this range; see <see cref="ModuleIdRangeStart"/> for what that does
+    /// to everything after it.
     /// </summary>
     public int CoreIdRangeFrom { get; set; }
 
-    /// <summary>Inclusive upper bound of the auto-allocated first extension's id range.</summary>
+    /// <summary>
+    /// Inclusive upper bound of the auto-allocated first extension's id range.
+    /// Also the anchor the module range is measured from — a workspace that
+    /// moves its Core range shifts the module range by the same amount (#730).
+    /// </summary>
     public int CoreIdRangeTo { get; set; }
 
-    /// <summary>The first object id assigned to a module-cloned extension (or an unannotated second template extension).</summary>
+    /// <summary>
+    /// The first object id assigned to a module-cloned extension (or an
+    /// unannotated second template extension), expressed against this
+    /// template's own <see cref="CoreIdRangeTo"/>. A workspace that moves,
+    /// widens or narrows the Core range shifts this start by
+    /// <c>plan.CoreIdRangeTo - CoreIdRangeTo</c>, so the gap the author left
+    /// after Core is preserved wherever Core ends up (#730). See
+    /// <c>.design/generation-engine.md</c>, "ID range allocation".
+    /// </summary>
     public int ModuleIdRangeStart { get; set; }
 
     /// <summary>How many object ids each module / unannotated extension gets, unless it overrides this.</summary>
