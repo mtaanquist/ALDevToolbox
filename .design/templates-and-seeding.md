@@ -304,7 +304,7 @@ Both `/admin/templates/new` and `/admin/templates/{key}` expose a TOML editor ne
 
 Saving from TOML mode parses the textarea via Tomlyn, maps it onto the same `TemplateAuthoring` payload the structured form produces (once the structured editor is rewritten around the recursive tree), and runs through identical validation in `TemplateService.CreateAsync` / `UpdateAsync`. There is no separate code path on the way to the database.
 
-The mapper (`Services/TemplateTomlMapper.cs`) is load-bearing infrastructure for the admin editor and the export pipeline. A few things to keep in mind:
+The mapper (`Services/Templates/TemplateTomlMapper.cs`) is load-bearing infrastructure for the admin editor and the export pipeline. A few things to keep in mind:
 
 - One TOML schema covers the admin editor, the export ZIP, and any future import-from-TOML affordance. Don't fork it.
 - `deprecated` is deliberately not represented in the TOML view — flip it from the structured form's checkbox.

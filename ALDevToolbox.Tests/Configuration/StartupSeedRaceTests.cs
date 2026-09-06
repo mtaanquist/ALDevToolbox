@@ -5,6 +5,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.Configuration;
 

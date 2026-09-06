@@ -14,6 +14,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ALDevToolbox.Services.Operations;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.GitHub;
 
@@ -302,7 +304,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
             queue ?? new GitHubWebhookQueue(), provider,
             maintenance ?? new MaintenanceModeState(),
             NullLogger<GitHubPullRequestBuildWorker>.Instance,
-            new ALDevToolbox.Services.WorkerHeartbeatRegistry(TimeProvider.System))
+            new ALDevToolbox.Services.Workers.WorkerHeartbeatRegistry(TimeProvider.System))
         {
             MaintenanceRetryDelay = TimeSpan.Zero,
         };

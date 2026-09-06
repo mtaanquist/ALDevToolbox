@@ -1,6 +1,7 @@
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.Configuration;
 

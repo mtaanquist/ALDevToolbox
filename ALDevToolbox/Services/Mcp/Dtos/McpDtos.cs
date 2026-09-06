@@ -223,7 +223,7 @@ public sealed record RecipeFileInputDto(string FileName, string Content, string 
 
 /// <summary>
 /// Input shape for the <c>suggest_recipe</c> tool. Mirrors
-/// <see cref="ALDevToolbox.Services.RecipeSuggestionInput"/> for the MCP
+/// <see cref="ALDevToolbox.Services.Cookbook.RecipeSuggestionInput"/> for the MCP
 /// boundary; <see cref="ToDomain"/> is the one-liner mapping. <c>Type</c>
 /// is a string (<c>Snippet</c>, <c>Pattern</c>, or <c>Module</c>) so the
 /// agent reads the same name humans see on the cookbook chip-row.
@@ -242,13 +242,13 @@ public sealed record SuggestRecipeInput(
     int? MinimumApplicationVersionId = null,
     decimal? EstimatedValueHours = null)
 {
-    public ALDevToolbox.Services.RecipeSuggestionInput ToDomain() => new(
+    public ALDevToolbox.Services.Cookbook.RecipeSuggestionInput ToDomain() => new(
         Title,
         Description,
         Keywords,
         ParseType(Type),
         Files
-            .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
+            .Select(f => new ALDevToolbox.Services.Cookbook.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
         MinimumApplicationVersionId,
@@ -287,13 +287,13 @@ public sealed record UpdateRecipeSuggestionInput(
     int? MinimumApplicationVersionId = null,
     decimal? EstimatedValueHours = null)
 {
-    public ALDevToolbox.Services.RecipeSuggestionInput ToDomain() => new(
+    public ALDevToolbox.Services.Cookbook.RecipeSuggestionInput ToDomain() => new(
         Title,
         Description,
         Keywords,
         SuggestRecipeInput.ParseType(Type),
         Files
-            .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
+            .Select(f => new ALDevToolbox.Services.Cookbook.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
         MinimumApplicationVersionId,
@@ -325,14 +325,14 @@ public sealed record UpdateRecipeInput(
     decimal? EstimatedValueHours = null,
     bool? Deprecated = null)
 {
-    public ALDevToolbox.Services.RecipeInput ToDomain(bool currentDeprecated) => new(
+    public ALDevToolbox.Services.Cookbook.RecipeInput ToDomain(bool currentDeprecated) => new(
         Title,
         Description,
         Keywords,
         SuggestRecipeInput.ParseType(Type),
         Deprecated ?? currentDeprecated,
         Files
-            .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
+            .Select(f => new ALDevToolbox.Services.Cookbook.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
         MinimumApplicationVersionId,

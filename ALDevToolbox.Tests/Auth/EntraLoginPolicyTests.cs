@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.Auth;
 

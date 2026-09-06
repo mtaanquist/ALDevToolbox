@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
+using ALDevToolbox.Services.Cookbook;
 
 namespace ALDevToolbox.Services.Mcp.Tools;
 

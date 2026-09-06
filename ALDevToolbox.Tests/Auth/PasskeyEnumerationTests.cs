@@ -6,6 +6,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using Fido2NetLib;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Tests.Auth;
 

@@ -1,4 +1,5 @@
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Backups;
 
 namespace ALDevToolbox.Startup;
 
@@ -23,7 +24,7 @@ public static class BackgroundWorkerRegistration
         // skip the timer there too.
         if (!singleTenantMode)
         {
-            services.AddHostedService<ALDevToolbox.Services.UsageSnapshotScheduler>();
+            services.AddHostedService<ALDevToolbox.Services.Organizations.UsageSnapshotScheduler>();
         }
         // Daily import of new Microsoft OnPrem releases for orgs that opted in
         // (OrganizationSettings.AutoImportReleasesEnabled); runs in single- and
@@ -49,7 +50,7 @@ public static class BackgroundWorkerRegistration
         services.AddHostedService<ALDevToolbox.Services.GitHub.RepositoryDiscoveryScheduler>();
         // Periodic prune of old login_attempts rows so the table doesn't grow
         // unbounded (the rate-limiter only reads a ~15-minute window). See issue #403.
-        services.AddHostedService<ALDevToolbox.Services.LoginAttemptPruneScheduler>();
+        services.AddHostedService<ALDevToolbox.Services.Account.LoginAttemptPruneScheduler>();
         return services;
     }
 }

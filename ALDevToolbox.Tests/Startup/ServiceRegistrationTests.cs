@@ -39,7 +39,7 @@ public class ServiceRegistrationTests : IClassFixture<TestDb>
                 });
             using var _ = factory.CreateClient();
 
-            var appAssembly = typeof(ALDevToolbox.Services.GenerationService).Assembly;
+            var appAssembly = typeof(ALDevToolbox.Services.Generation.GenerationService).Assembly;
 
             // Hosted services are constructed by the host, so resolving them
             // also proves their whole dependency graph is registered.

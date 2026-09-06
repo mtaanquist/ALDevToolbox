@@ -9,6 +9,8 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
+using ALDevToolbox.Services.Cookbook;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Tests.GitHub;
 

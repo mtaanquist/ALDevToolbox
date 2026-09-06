@@ -3,6 +3,7 @@ using ALDevToolbox.Services;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.Schema;
 

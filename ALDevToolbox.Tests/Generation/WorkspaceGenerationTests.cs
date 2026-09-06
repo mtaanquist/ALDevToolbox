@@ -7,6 +7,8 @@ using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Generation;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.Generation;
 

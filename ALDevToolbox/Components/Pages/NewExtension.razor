@@ -15,6 +15,9 @@
 @using ALDevToolbox.Services.GitHub
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.Generation
+@using ALDevToolbox.Services.Organizations
+@using ALDevToolbox.Services.Templates
 
 <PageTitle>New extension · AL Dev Toolbox</PageTitle>
 
@@ -1013,7 +1016,7 @@
         var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, perExtensionPaths).ToList();
         // Every generated extension folder carries its own saved config so the
         // form can be restored from it later.
-        contents.Add(PreviewNode.File(ALDevToolbox.Services.WorkspaceConfigService.FileName));
+        contents.Add(PreviewNode.File(ALDevToolbox.Services.Generation.WorkspaceConfigService.FileName));
         if (includeWorkspaceRootFiles)
         {
             foreach (var path in workspaceRootPaths)
@@ -1090,7 +1093,7 @@
         // Side-cars + workspace-root-scoped org files, then sort. Shared with
         // New Workspace and Template Detail so all three previews stay identical.
         return PreviewTreeBuilder.BuildWorkspacePreview(
-            rootName, children, ALDevToolbox.Services.WorkspaceConfigService.FileName, workspaceRootPaths);
+            rootName, children, ALDevToolbox.Services.Generation.WorkspaceConfigService.FileName, workspaceRootPaths);
     }
 
     private static string StripWhitespace(string value) =>

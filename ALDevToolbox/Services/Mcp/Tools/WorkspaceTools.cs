@@ -6,6 +6,8 @@ using ALDevToolbox.Services.Mcp.Dtos;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
+using ALDevToolbox.Services.Generation;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Services.Mcp.Tools;
 

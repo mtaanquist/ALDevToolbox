@@ -11,7 +11,7 @@ public static class DeploymentIdentityRegistration
         // Stable per-deployment id (same volume as the keys) used to fingerprint
         // off-site dumps so a restore won't clobber the DB with a neighbour
         // deployment's dump from a shared bucket. Registered as a singleton.
-        var deploymentIdentity = ALDevToolbox.Services.DeploymentIdentity.LoadOrCreate(oauthKeyDir, oauthKeyLogger);
+        var deploymentIdentity = ALDevToolbox.Services.Operations.DeploymentIdentity.LoadOrCreate(oauthKeyDir, oauthKeyLogger);
         services.AddSingleton(deploymentIdentity);
         return services;
     }

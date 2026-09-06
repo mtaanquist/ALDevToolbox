@@ -5,6 +5,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Generation;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Services.GitHub;
 

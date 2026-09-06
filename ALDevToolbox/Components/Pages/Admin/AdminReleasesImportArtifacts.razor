@@ -4,7 +4,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Import.BcArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Import.ArtifactReleaseImporter Importer
 @inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
-@inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject ALDevToolbox.Services.Organizations.OrganizationConfigService Config
 @inject ILogger<AdminReleasesImportArtifacts> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
@@ -247,7 +247,7 @@
         _autoLastRunAt = config.Settings.AutoImportLastRunAt;
         // Pre-fill the browse country from the auto-import list (its first code)
         // so the common case is one click to refresh.
-        _browseCountry = ALDevToolbox.Services.OrganizationConfigService
+        _browseCountry = ALDevToolbox.Services.Organizations.OrganizationConfigService
             .ParseAutoImportCountries(_autoCountry)
             .FirstOrDefault() ?? string.Empty;
 
@@ -369,7 +369,7 @@
         {
             await Config.SaveAutoImportAsync(_autoEnabled, _autoCountry);
             _autoCountry = string.Join(",",
-                ALDevToolbox.Services.OrganizationConfigService.ParseAutoImportCountries(_autoCountry));
+                ALDevToolbox.Services.Organizations.OrganizationConfigService.ParseAutoImportCountries(_autoCountry));
             _autoMessage = _autoEnabled
                 ? $"Automatic import enabled for '{_autoCountry}'."
                 : "Automatic import disabled.";

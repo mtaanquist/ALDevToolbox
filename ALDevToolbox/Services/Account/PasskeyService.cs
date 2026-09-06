@@ -7,6 +7,7 @@ using Fido2NetLib;
 using Fido2NetLib.Objects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Services.Account;
 
