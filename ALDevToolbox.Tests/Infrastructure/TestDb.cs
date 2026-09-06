@@ -169,7 +169,16 @@ public sealed class TestDb : IDisposable
     /// tests exercise the same write-path the application uses without going
     /// through DI.
     /// </summary>
-    public AppDbContext NewContextWithAudit(AuditInterceptor interceptor)
+    public AppDbContext NewContextWithAudit(AuditInterceptor interceptor) => NewContext(interceptor);
+
+    /// <summary>
+    /// Returns a fresh context with <paramref name="interceptor"/> wired up.
+    /// Beyond auditing, this is how a test makes something happen *during* a
+    /// save - a <c>SaveChangesInterceptor</c> that writes through a second
+    /// context is the deterministic way to reproduce a race between a service's
+    /// pre-check and its save.
+    /// </summary>
+    public AppDbContext NewContext(IInterceptor interceptor)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(_connectionString)
