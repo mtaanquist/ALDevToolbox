@@ -276,7 +276,7 @@
                                 <input class="input input--num" id="tpl-mod-size" type="number" required min="1"
                                        @bind="_form.ModuleIdRangeSize" @bind:event="oninput" />
                             </span>
-                            <span class="field__hint">Start of the first module's range, and how many IDs each module gets.</span>
+                            <span class="field__hint">Start of the first module's range, and how many IDs each module gets. If a workspace changes the Core range, this start moves with it by the same amount.</span>
                             <FieldError Field="ModuleIdRangeStart" Errors="_fieldErrors" />
                             <FieldError Field="ModuleIdRangeSize" Errors="_fieldErrors" />
                         </div>
