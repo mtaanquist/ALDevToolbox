@@ -10,15 +10,25 @@ namespace ALDevToolbox.Services;
 /// <c>ProjectConnectionService</c>'s two Business Central update-date writes act on a
 /// customer's tenant and change no row of ours for the interceptor to notice, so they
 /// add their own entry. See <c>.design/saas-delivery.md</c> and issue #657.
+///
+/// <para>This service opens its own short-lived context per read through the
+/// scoped <see cref="IDbContextFactory{TContext}"/> rather than sharing the
+/// circuit's <see cref="AppDbContext"/>. <c>&lt;AuditHistoryPanel&gt;</c> loads
+/// while the page it sits on may be saving, and a <see cref="DbContext"/>
+/// allows one operation at a time, so the two collided ("A second operation was
+/// started on this context instance") and the user lost the edit. See issue
+/// #741. This is the sanctioned exception, not a pattern to copy without the
+/// same concurrent-read justification: every other service stays on the shared
+/// scoped context.</para>
 /// </summary>
 public sealed class AuditService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly IOrganizationContext _orgContext;
 
-    public AuditService(AppDbContext db, IOrganizationContext orgContext)
+    public AuditService(IDbContextFactory<AppDbContext> dbFactory, IOrganizationContext orgContext)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _orgContext = orgContext;
     }
 
@@ -27,10 +37,11 @@ public sealed class AuditService
     /// the acting user's organisation, newest first. Drives the
     /// <c>/admin/audit</c> overview page.
     /// </summary>
-    public Task<List<AuditLogEntry>> GetRecentAsync(int limit = 200, CancellationToken ct = default)
+    public async Task<List<AuditLogEntry>> GetRecentAsync(int limit = 200, CancellationToken ct = default)
     {
         var orgId = _orgContext.CurrentOrganizationId;
-        return _db.AuditLog
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.AuditLog
             .AsNoTracking()
             .Where(e => e.OrganizationId == orgId)
             .OrderByDescending(e => e.Timestamp)
@@ -50,7 +61,8 @@ public sealed class AuditService
         CancellationToken ct = default)
     {
         var orgId = _orgContext.CurrentOrganizationId;
-        var q = _db.AuditLog
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var q = db.AuditLog
             .AsNoTracking()
             .Where(e => e.OrganizationId == orgId);
 
@@ -96,14 +108,15 @@ public sealed class AuditService
     /// specific entity, newest first. Drives the
     /// <c>&lt;AuditHistoryPanel&gt;</c> component embedded on admin edit pages.
     /// </summary>
-    public Task<List<AuditLogEntry>> GetForEntityAsync(
+    public async Task<List<AuditLogEntry>> GetForEntityAsync(
         AuditEntityType entityType,
         int entityId,
         int limit = 200,
         CancellationToken ct = default)
     {
         var orgId = _orgContext.CurrentOrganizationId;
-        return _db.AuditLog
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.AuditLog
             .AsNoTracking()
             .Where(e => e.EntityType == entityType
                         && e.EntityId == entityId
@@ -119,10 +132,11 @@ public sealed class AuditService
     /// organisation, or <c>null</c> if no such row exists in scope. Used by
     /// the diff viewer to load the row a user clicked through to.
     /// </summary>
-    public Task<AuditLogEntry?> GetByIdAsync(int id, CancellationToken ct = default)
+    public async Task<AuditLogEntry?> GetByIdAsync(int id, CancellationToken ct = default)
     {
         var orgId = _orgContext.CurrentOrganizationId;
-        return _db.AuditLog
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.AuditLog
             .AsNoTracking()
             .Where(e => e.Id == id && e.OrganizationId == orgId)
             .FirstOrDefaultAsync(ct);
@@ -136,10 +150,11 @@ public sealed class AuditService
     /// <c>null</c> when no later row exists (the change is the most recent
     /// for that entity, or the entity was deleted).
     /// </summary>
-    public Task<AuditLogEntry?> GetNextForEntityAsync(AuditLogEntry entry, CancellationToken ct = default)
+    public async Task<AuditLogEntry?> GetNextForEntityAsync(AuditLogEntry entry, CancellationToken ct = default)
     {
         var orgId = _orgContext.CurrentOrganizationId;
-        return _db.AuditLog
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.AuditLog
             .AsNoTracking()
             .Where(e => e.EntityType == entry.EntityType
                         && e.EntityId == entry.EntityId

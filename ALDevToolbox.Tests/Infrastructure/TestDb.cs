@@ -165,6 +165,22 @@ public sealed class TestDb : IDisposable
     public AppDbContext NewContext() => new(_options, OrgContext);
 
     /// <summary>
+    /// Returns a factory handing out fresh contexts bound to the per-fixture
+    /// database, for the services that open a context per call rather than
+    /// holding a scoped one (<see cref="AuditService"/>; see issue #741).
+    /// </summary>
+    public IDbContextFactory<AppDbContext> NewContextFactory() => new TestContextFactory(this);
+
+    private sealed class TestContextFactory : IDbContextFactory<AppDbContext>
+    {
+        private readonly TestDb _db;
+
+        public TestContextFactory(TestDb db) => _db = db;
+
+        public AppDbContext CreateDbContext() => _db.NewContext();
+    }
+
+    /// <summary>
     /// Returns a fresh context with the audit interceptor wired up. Lets audit
     /// tests exercise the same write-path the application uses without going
     /// through DI.
