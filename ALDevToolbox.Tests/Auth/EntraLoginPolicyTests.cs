@@ -1,4 +1,5 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
@@ -6,7 +7,9 @@ using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace ALDevToolbox.Tests.Auth;
 
@@ -237,6 +240,104 @@ public sealed class EntraLoginPolicyTests : IDisposable
 
         // Re-linking your own identity is a no-op, not an error.
         await entra.LinkAsync(first, new EntraTokenIdentity(TenantA, Oid, "first@cronus.com", null));
+    }
+
+    /// <summary>
+    /// Issue #736. The pre-check sees past the tenant filter, so a stranger
+    /// seeded up front is refused by the check, not by the index. This pins the
+    /// backstop instead: the identity is claimed by another organisation
+    /// *during* the save, so the check found nothing and the insert loses on
+    /// the deployment-wide unique index. That has to read as the same refusal,
+    /// not a DbUpdateException the endpoint turns into a 500.
+    /// </summary>
+    [Fact]
+    public async Task Link_refuses_an_identity_claimed_between_the_check_and_the_save()
+    {
+        await SetPolicyAsync(TestDb.DefaultOrgId, LocalLoginPolicy.AllowAll);
+        var mine = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        var strangerId = await SeedUserAsync(TestDb.OtherOrgId, "stranger@cronus.com");
+
+        await using var ctx = _db.NewContext(new ClaimIdentityDuringSaveInterceptor(_db, strangerId));
+        var entra = NewEntra(ctx);
+
+        Func<Task> act = () => entra.LinkAsync(mine, new EntraTokenIdentity(TenantA, Oid, "mette@cronus.com", null));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors["EntraLink"].Should().Contain("different user");
+        // Nothing about the other organisation reaches the person reading it.
+        ex.Which.Errors["EntraLink"].Should().NotContain("stranger@cronus.com").And.NotContain("organisation");
+
+        await using var read = _db.NewContext();
+        var rows = await read.UserExternalLogins.IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.Provider == EntraSignInService.ProviderName
+                && l.Issuer == TenantA && l.Subject == Oid)
+            .ToListAsync();
+        rows.Should().ContainSingle("the refused link wrote nothing")
+            .Which.UserId.Should().Be(strangerId, "the row that won the race is untouched");
+    }
+
+    /// <summary>
+    /// The catch names the identity index, so a save that breaks a *different*
+    /// unique index is still a real fault. (The SQLSTATE half of the same
+    /// contract is covered by
+    /// <c>StartupSeedRaceTests.IsUniqueViolation_does_not_swallow_other_database_faults</c>.)
+    /// </summary>
+    [Fact]
+    public void A_unique_violation_on_another_index_is_not_the_identity_clash()
+    {
+        var elsewhere = new PostgresException(
+            "duplicate key value violates unique constraint", "ERROR", "ERROR",
+            PostgresErrorCodes.UniqueViolation, constraintName: "IX_users_email");
+        DbErrors.IsUniqueViolation(new DbUpdateException("save failed", elsewhere),
+                UserExternalLoginConfiguration.IdentityIndexName)
+            .Should().BeFalse("a clash on another index is a different rule and must propagate as a fault");
+
+        var identity = new PostgresException(
+            "duplicate key value violates unique constraint", "ERROR", "ERROR",
+            PostgresErrorCodes.UniqueViolation,
+            constraintName: UserExternalLoginConfiguration.IdentityIndexName);
+        DbErrors.IsUniqueViolation(new DbUpdateException("save failed", identity),
+                UserExternalLoginConfiguration.IdentityIndexName)
+            .Should().BeTrue("this is the one LinkAsync translates into a refusal");
+    }
+
+    /// <summary>
+    /// Gives the Microsoft identity under test to a user in another
+    /// organisation while the context under test is saving, which is the only
+    /// way to land between <c>LinkAsync</c>'s existence check and its insert.
+    /// </summary>
+    private sealed class ClaimIdentityDuringSaveInterceptor : SaveChangesInterceptor
+    {
+        private readonly TestDb _db;
+        private readonly int _strangerUserId;
+        private bool _claimed;
+
+        public ClaimIdentityDuringSaveInterceptor(TestDb db, int strangerUserId)
+        {
+            _db = db;
+            _strangerUserId = strangerUserId;
+        }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_claimed)
+            {
+                _claimed = true;
+                await using var other = _db.NewContext();
+                other.UserExternalLogins.Add(new UserExternalLogin
+                {
+                    UserId = _strangerUserId,
+                    Provider = EntraSignInService.ProviderName,
+                    Issuer = TenantA,
+                    Subject = Oid,
+                    DisplayIdentity = "stranger@cronus.com",
+                    CreatedAt = DateTime.UtcNow,
+                });
+                await other.SaveChangesAsync(cancellationToken);
+            }
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 
     [Fact]
