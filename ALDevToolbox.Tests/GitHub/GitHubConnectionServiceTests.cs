@@ -8,6 +8,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Tests.GitHub;
 

@@ -155,7 +155,7 @@ public sealed class ReleaseAutoImportScheduler : PolledScheduler
             // The setting may hold a comma-separated list ("w1,dk,nl") — one
             // import per code. Each code fails independently so a bad country
             // can't block the rest of the org's list (or the next org).
-            foreach (var country in Services.OrganizationConfigService.ParseAutoImportCountries(countries))
+            foreach (var country in Services.Organizations.OrganizationConfigService.ParseAutoImportCountries(countries))
             {
                 try
                 {
@@ -228,7 +228,7 @@ public sealed class ReleaseAutoImportScheduler : PolledScheduler
             // The config cache has no TTL — it only refreshes on invalidation, so
             // a direct write like this must invalidate or the page shows a stale
             // "last checked" until the next settings save.
-            scope.ServiceProvider.GetRequiredService<Services.OrganizationConfigService>().InvalidateCache(orgId);
+            scope.ServiceProvider.GetRequiredService<Services.Organizations.OrganizationConfigService>().InvalidateCache(orgId);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

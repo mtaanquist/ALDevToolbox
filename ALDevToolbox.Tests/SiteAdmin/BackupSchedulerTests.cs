@@ -11,6 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using ALDevToolbox.Services.Configuration;
+using ALDevToolbox.Services.Operations;
+using ALDevToolbox.Services.Backups;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

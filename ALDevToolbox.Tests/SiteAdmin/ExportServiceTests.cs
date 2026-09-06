@@ -6,6 +6,8 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Organizations;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

@@ -4,6 +4,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

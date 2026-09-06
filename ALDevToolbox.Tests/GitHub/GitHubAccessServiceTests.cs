@@ -9,6 +9,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using ALDevToolbox.Tests.Auth;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Tests.GitHub;
 

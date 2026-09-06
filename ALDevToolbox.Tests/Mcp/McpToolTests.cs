@@ -12,6 +12,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
+using ALDevToolbox.Services.Cookbook;
+using ALDevToolbox.Services.Generation;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.Mcp;
 

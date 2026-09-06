@@ -12,6 +12,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ALDevToolbox.Services.Generation;
+using ALDevToolbox.Services.Organizations;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Tests.Components;
 
@@ -268,7 +271,7 @@ public sealed class NewWorkspaceTests : IDisposable
     {
         using var rsa = System.Security.Cryptography.RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(
-            new ALDevToolbox.Services.GitHubAppInput(
+            new ALDevToolbox.Services.Operations.GitHubAppInput(
                 AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
                 ClientSecret: "s3cr3t", ClearClientSecret: false,
                 PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));

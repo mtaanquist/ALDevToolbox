@@ -10,6 +10,7 @@ using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleRefe
 using OeModuleSystemReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference;
 using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 

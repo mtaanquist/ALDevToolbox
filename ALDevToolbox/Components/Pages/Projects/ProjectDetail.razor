@@ -8,8 +8,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
-@inject ALDevToolbox.Services.RepositoryProviderPolicyService Config
-@inject ALDevToolbox.Services.TeamService Teams
+@inject ALDevToolbox.Services.Organizations.RepositoryProviderPolicyService Config
+@inject ALDevToolbox.Services.Organizations.TeamService Teams
 @inject ALDevToolbox.Services.GitHub.GitHubRepositoryService GitHubRepos
 @inject NavigationManager Nav
 @inject ILogger<ProjectDetail> Log
@@ -20,6 +20,7 @@
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Services.GitHub
+@using ALDevToolbox.Services.Organizations
 
 @*
     One solution's settings, grouped behind a left sub-nav so each concern loads on

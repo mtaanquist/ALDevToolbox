@@ -6,6 +6,8 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Services.Backups;
+using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

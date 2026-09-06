@@ -6,6 +6,7 @@ using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
 using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+using ALDevToolbox.Services.Templates;
 
 namespace ALDevToolbox.Services.GitHub;
 

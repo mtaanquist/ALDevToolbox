@@ -521,7 +521,7 @@ public sealed class AuditInterceptorTests : IDisposable
         {
             var (outcome, user) = await NewAuthService(ctx)
                 .TryLoginAsync("signs-in@cronus.example", password, "127.0.0.1");
-            outcome.Should().Be(ALDevToolbox.Services.LoginOutcome.Success);
+            outcome.Should().Be(ALDevToolbox.Services.Account.LoginOutcome.Success);
             user!.LastLoginAt.Should().NotBeNull("the login must actually have stamped the column");
         }
 
