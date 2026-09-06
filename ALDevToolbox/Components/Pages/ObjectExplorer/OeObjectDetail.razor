@@ -1,9 +1,9 @@
 @page "/object-explorer/object/{ObjectId:long}"
 @attribute [Authorize]
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
-@inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks Links
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceSessionService ReferenceSessions
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore

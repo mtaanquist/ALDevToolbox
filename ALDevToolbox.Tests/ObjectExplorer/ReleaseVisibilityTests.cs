@@ -4,6 +4,8 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Explore;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;

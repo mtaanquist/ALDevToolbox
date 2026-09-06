@@ -1,5 +1,6 @@
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.DeliveryService Deliveries
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryService Deliveries
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<ReleaseBuildDialog> Log
 @using ALDevToolbox.Domain.ValueObjects

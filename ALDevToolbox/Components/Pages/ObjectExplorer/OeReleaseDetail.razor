@@ -7,14 +7,15 @@
    loads exactly once on the interactive pass. *@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @implements IAsyncDisposable
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
-@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
-@inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectSearchService Search
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService Comparison
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectSearchService Search
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks Links
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Explore
 @using System.Web
 @using ALDevToolbox.Components.Shared
 

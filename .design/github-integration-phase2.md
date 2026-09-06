@@ -49,7 +49,7 @@ implementations are written so they do not need to:
   `GitHubApiException` on refusal, a `CancellationToken` on every method.
 - **`app.json` parsing moves out of `ProjectBuildService`.** `ParseManifest`,
   `AppJsonManifest`, `AppJsonDependency` and the test-folder exclusion rules become a
-  static `AppJsonManifestParser` (`Services/ObjectExplorer/AppJsonManifestParser.cs`);
+  static `AppJsonManifestParser` (`Services/ObjectExplorer/Import/AppJsonManifestParser.cs`);
   the build service delegates. #629 lifts it; #630 extends `AppJsonDependency` with the
   dependency `version` the current parser drops.
 - **Translation-file rules move out of `GitHubTranslationService`.** "A `.xlf` whose

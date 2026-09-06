@@ -1,14 +1,14 @@
 @page "/admin/object-explorer/new/artifacts"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.BcArtifactService Artifacts
-@inject ALDevToolbox.Services.ObjectExplorer.ArtifactReleaseImporter Importer
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.Import.BcArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Import.ArtifactReleaseImporter Importer
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.OrganizationConfigService Config
 @inject ILogger<AdminReleasesImportArtifacts> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Import
 
 @*
     Artifacts tab of the Import Release page. Interactive (InteractiveServer):

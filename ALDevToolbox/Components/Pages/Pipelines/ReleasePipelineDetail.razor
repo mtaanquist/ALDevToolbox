@@ -2,15 +2,16 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
-@inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
-@inject ALDevToolbox.Services.ObjectExplorer.DeliveryService Deliveries
-@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryService Deliveries
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject NavigationManager Nav
 @inject ILogger<ReleasePipelineDetail> Log
 @inject IServiceScopeFactory ScopeFactory
 @using Microsoft.Extensions.DependencyInjection
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
 

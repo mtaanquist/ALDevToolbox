@@ -1,12 +1,13 @@
 @page "/object-explorer/file/{FileId:long}"
 @attribute [Authorize]
-@inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
-@inject ALDevToolbox.Services.ObjectExplorer.ExplorerTreeService ExplorerTree
-@inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
-@inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.SourceViewerService SourceViewer
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ExplorerTreeService ExplorerTree
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService Comparison
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks Links
+@inject ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceSessionService ReferenceSessions
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Explore
 @using ALDevToolbox.Components.Shared
 @using System.Text.Json
 @using System.Security.Claims

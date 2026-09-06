@@ -5,7 +5,7 @@ public readonly record struct CalTypeRef(string Kind, int Id);
 
 /// <summary>
 /// The variable / Rec scope a body executes in. Built by
-/// <see cref="ALDevToolbox.Services.ObjectExplorer.CalImportService"/> from the
+/// <see cref="ALDevToolbox.Services.ObjectExplorer.Import.CalImportService"/> from the
 /// owner object's globals plus the procedure's parameters and locals.
 /// </summary>
 public sealed class CalExtractScope

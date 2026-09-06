@@ -1,4 +1,4 @@
-using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Explore;
 using AwesomeAssertions;
 using Xunit;
 

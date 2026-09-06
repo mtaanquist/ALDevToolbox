@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
+using ALDevToolbox.Services.ObjectExplorer.Explore;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -36,7 +37,7 @@ public sealed class ObjectExplorerShellTests
     private const string Viewer = "ALDevToolbox/Components/Pages/ObjectExplorer/SourceFileViewer.razor";
     private const string TreeRow = "ALDevToolbox/Components/Pages/ObjectExplorer/OeTreeRow.razor";
     private const string Glyphs = "ALDevToolbox/Components/Pages/ObjectExplorer/ObjectKindGlyph.cs";
-    private const string Ranking = "ALDevToolbox/Services/ObjectExplorer/ObjectSearchRanking.cs";
+    private const string Ranking = "ALDevToolbox/Services/ObjectExplorer/Explore/ObjectSearchRanking.cs";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
     private const string Tools = "ALDevToolbox/wwwroot/source-viewer.css";
     private const string PagesPower = "ALDevToolbox/wwwroot/pages-power.css";

@@ -1,10 +1,11 @@
 @page "/pipelines"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
 @inject NavigationManager Nav
-@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Components.Shared
 
 @*

@@ -29,10 +29,10 @@ Services/Al/
     └── AlDataItemDsl.cs                 — shared helper for the alias-plus-source shape
 
 Services/ObjectExplorer/
-├── AppPackageReader.cs              — parses SymbolReference.json (strips namespaces from extends targets)
-├── ReleaseImportService.cs          — orchestrates import + builds the resolver catalog
-├── ReferenceResolver.cs             — shared resolver (extractor side + click-time side)
-└── ReferenceSessionService.cs       — mints Find-references sessions, delegates to the resolver
+├── Import/AppPackageReader.cs         — parses SymbolReference.json (strips namespaces from extends targets)
+├── Import/ReleaseImportService.cs     — orchestrates import + builds the resolver catalog
+├── Explore/ReferenceResolver.cs       — shared resolver (extractor side + click-time side)
+└── Explore/ReferenceSessionService.cs — mints Find-references sessions, delegates to the resolver
 ```
 
 ### The orchestrator pattern
@@ -60,7 +60,7 @@ Each hook has a default no-op so a new structure extractor only overrides what i
 
 `ReferenceResolver` is one class consulted by **both** the click-time path (`ReferenceSessionService.CreateAtPositionAsync`) and the extractor side (transitively via `IAlTypeResolver.ResolveMember`). Adding a new strategy goes in here and both paths benefit.
 
-Production catalog: `CatalogResolver` (in `Services/ObjectExplorer/CatalogResolver.cs`, built by `ReleaseImportService` at import start) implements `IAlTypeResolver` against per-release dictionaries built once at import start:
+Production catalog: `CatalogResolver` (in `Services/ObjectExplorer/Import/CatalogResolver.cs`, built by `ReleaseImportService` at import start) implements `IAlTypeResolver` against per-release dictionaries built once at import start:
 
 - `_typesByName` — name → list of `AlTypeRef` candidates (multiple AppIds can share a name; resolver picks the visible one matching the kind hint).
 - `_typesByObjectId` — DB id → AlTypeRef.
@@ -273,7 +273,7 @@ E.g. we want a dedicated extractor for `controladdin` because new controladdins 
 
 E.g. a new "clicked token resolves to an enum value" affordance.
 
-1. Add a new variant to `ResolutionTarget` (in `Services/ObjectExplorer/ReferenceResolver.cs`):
+1. Add a new variant to `ResolutionTarget` (in `Services/ObjectExplorer/Explore/ReferenceResolver.cs`):
 
    ```csharp
    public sealed record EnumValueTarget(long EnumObjectId, string ValueName) : ResolutionTarget;
@@ -360,7 +360,7 @@ Migrations of `oe_module_symbols` / `oe_module_references` / `oe_module_variable
 
 ## Verification checklist for a refactor commit
 
-Whenever you touch `Services/Al/*` or `Services/ObjectExplorer/ReleaseImportService.cs`'s extractor / resolver bits:
+Whenever you touch `Services/Al/*` or `Services/ObjectExplorer/Import/ReleaseImportService.cs`'s extractor / resolver bits:
 
 1. `dotnet build` is clean.
 2. `dotnet test -- --filter-namespace ALDevToolbox.Tests.Al` green.

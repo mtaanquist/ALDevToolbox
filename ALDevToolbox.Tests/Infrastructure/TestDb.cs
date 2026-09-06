@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Testcontainers.PostgreSql;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 
 namespace ALDevToolbox.Tests.Infrastructure;
 
@@ -435,18 +436,18 @@ public sealed class TestDb : IDisposable
             new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
             clock ?? TimeProvider.System,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubReleaseService>.Instance);
-    /// A <see cref="ALDevToolbox.Services.ObjectExplorer.ProjectService"/> on this
+    /// A <see cref="ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService"/> on this
     /// fixture's context, with the discovery queue nobody drains here.
     /// </summary>
-    public ALDevToolbox.Services.ObjectExplorer.ProjectService NewProjectService(AppDbContext ctx)
+    public ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService NewProjectService(AppDbContext ctx)
     {
         var projectAccess = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext);
-        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService(
-            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue(),
-            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>.Instance);
-        return new ALDevToolbox.Services.ObjectExplorer.ProjectService(
+        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService(
+            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryQueue(),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService>.Instance);
+        return new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService(
             ctx, OrgContext, projectAccess, extensionDiscovery,
-            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectService>.Instance);
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService>.Instance);
     }
 
     /// <summary>
@@ -461,12 +462,12 @@ public sealed class TestDb : IDisposable
         TimeProvider? clock = null)
     {
         var projectAccess = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext);
-        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService(
-            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue(),
-            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>.Instance);
-        var projects = new ALDevToolbox.Services.ObjectExplorer.ProjectService(
+        var extensionDiscovery = new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService(
+            ctx, OrgContext, projectAccess, new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryQueue(),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService>.Instance);
+        var projects = new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService(
             ctx, OrgContext, projectAccess, extensionDiscovery,
-            NullLogger<ALDevToolbox.Services.ObjectExplorer.ProjectService>.Instance);
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService>.Instance);
         return new ALDevToolbox.Services.GitHub.RepositoryDiscoveryService(
             ctx, client, access, NewGitHubConnectionService(ctx, access), NewOrganizationConfigService(ctx),
             projects, OrgContext, clock ?? TimeProvider.System,
@@ -490,7 +491,7 @@ public sealed class TestDb : IDisposable
             NewGitHubRepositoryService(ctx, client, access),
             new CatalogService(ctx, NullLogger<CatalogService>.Instance, OrgContext),
             new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, OrgContext),
-            new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks(),
+            new ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks(),
             new ALDevToolbox.Endpoints.PublicOrigin(publicOrigin),
             OrgContext,
             clock ?? TimeProvider.System,
@@ -562,7 +563,7 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.GitHubReleaseService>();
         services.TryAddSingleton(new ALDevToolbox.Endpoints.PublicOrigin(null));
         services.AddScoped<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>();
-        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks>();
         services.AddScoped<ALDevToolbox.Services.GitHub.DependencyDriftService>();
     }
 

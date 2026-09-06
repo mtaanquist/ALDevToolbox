@@ -742,22 +742,22 @@ public sealed class McpToolTests : IDisposable
     private async Task<int> SeedOeReleaseAsync(string appFileName, string label, bool storeSymbolReference = false)
     {
         await using var ctx = _db.NewContext();
-        var importer = new ALDevToolbox.Services.ObjectExplorer.ReleaseImportService(
+        var importer = new ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportService(
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
-            new ALDevToolbox.Services.ObjectExplorer.TranslationImportService(
-                ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>.Instance),
-            new ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter(ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter>.Instance),
-            NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>.Instance);
+            new ALDevToolbox.Services.ObjectExplorer.Import.TranslationImportService(
+                ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<ALDevToolbox.Services.ObjectExplorer.Import.TranslationImportService>.Instance),
+            new ALDevToolbox.Services.ObjectExplorer.Import.CallSiteReferenceEmitter(ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.Import.CallSiteReferenceEmitter>.Instance),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportService>.Instance);
         await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, appFileName));
         var summary = await importer.ImportReleaseAsync(
-            new ALDevToolbox.Services.ObjectExplorer.ReleaseImportRequest(
+            new ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportRequest(
                 Label: label,
                 Kind: "first_party",
                 ParentReleaseId: null,
                 ApplicationVersionId: null,
                 Uploads: new[]
                 {
-                    new ALDevToolbox.Services.ObjectExplorer.AppFileUpload("dk.app", s1, SourceZipStream: null),
+                    new ALDevToolbox.Services.ObjectExplorer.Import.AppFileUpload("dk.app", s1, SourceZipStream: null),
                 },
                 StoreSymbolReference: storeSymbolReference));
         return summary.ReleaseId;
@@ -766,14 +766,14 @@ public sealed class McpToolTests : IDisposable
     private ObjectExplorerTools NewOeTools(Data.AppDbContext ctx)
     {
         var access = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, _db.OrgContext);
-        var references = new ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService(
-            ctx, access, _db.OrgContext, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
-        var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
-            ctx, references, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
-        var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx, access);
-        var translations = new ALDevToolbox.Services.ObjectExplorer.TranslationQueryService(ctx);
-        var comparison = new ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService(
-            ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>.Instance);
+        var references = new ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceQueryService(
+            ctx, access, _db.OrgContext, NullLogger<ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceQueryService>.Instance);
+        var explorer = new ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService(
+            ctx, references, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService>.Instance);
+        var search = new ALDevToolbox.Services.ObjectExplorer.Explore.ObjectSearchService(ctx, access);
+        var translations = new ALDevToolbox.Services.ObjectExplorer.Explore.TranslationQueryService(ctx);
+        var comparison = new ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService(
+            ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService>.Instance);
         return new ObjectExplorerTools(explorer, search, references, translations, comparison);
     }
 

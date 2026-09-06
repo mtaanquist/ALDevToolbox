@@ -1,3 +1,4 @@
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 namespace ALDevToolbox.Startup;
 
 /// <summary>
@@ -10,35 +11,35 @@ public static class ObjectExplorerRegistration
     /// <summary>Registers the Object Explorer services, queues, workers and HTTP clients.</summary>
     public static IServiceCollection AddObjectExplorer(this IServiceCollection services)
     {
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CallSiteReferenceEmitter>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CalImportService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DvdDownloadService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.TranslationImportService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.CallSiteReferenceEmitter>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.CalImportService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.DvdDownloadService>();
         // Resolve + download Microsoft OnPrem artifacts straight from the CDN, and the
         // coordinator both the Artifacts tab and the auto-import scheduler call.
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.BcArtifactService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactReleaseImporter>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.BcArtifactService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.ArtifactReleaseImporter>();
         // In-process hand-off + worker for the DVD-scale imports (folder-ZIP upload,
         // URL download) so the admin isn't held on the page while they ingest.
-        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportQueue>();
         // Owns the on-disk AL compiler volume; singleton so its provisioning gate is shared.
         // AL_COMPILER_* read once here rather than in the provisioner's
         // constructor; see #733 and Services/Configuration/.
         services.AddSingleton(sp => ALDevToolbox.Services.Configuration.AlCompilerOptions
             .FromConfiguration(sp.GetRequiredService<IConfiguration>()));
-        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Projects.AlCompilerProvisioner>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs>();
         // The upload form's policy: which ingest path a submission takes, what gets
         // staged to disk, and what goes on the queue. The endpoints only read the
         // form and redirect on the outcome.
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportRequestService>();
-        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PipelineService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportRequestService>();
+        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportWorker>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseManagementService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
         // Business Central SaaS delivery: connection config + the API seams. The token
         // cache is a singleton (shared in-memory bearer cache, like the compiler gate);
@@ -58,21 +59,21 @@ public static class ObjectExplorerRegistration
         // SaaS delivery (manual publish): the create/run orchestration is scoped; the queue is
         // a singleton hand-off to the hosted worker, mirroring ProjectDiscoveryQueue/Worker. The
         // worker runs the upload→install→poll publish off the request thread. No external queue.
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DeliveryService>();
-        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.DeliveryQueue>();
-        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryWorker>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryService>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryQueue>();
+        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryWorker>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService>();
         // Project-build pipeline: the compile/ingest service, its release coordinator,
         // and the (stateless) external-process seam for git + alc.
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildImporter>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
         // Background warm of the per-project discovered-extensions cache (the pipeline
         // editor's checklist): an in-process queue + worker, mirroring the release-import
         // pair. In-memory dedupe, no external dependency.
-        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>();
-        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryWorker>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryQueue>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService>();
+        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryWorker>();
         // Background re-read of a project's BC environments, which re-mirrors the next
         // platform update per environment. Same in-process queue + worker shape; fed by the
         // nightly sweep (see BackgroundWorkerRegistration) and by an on-demand refresh.
@@ -87,18 +88,18 @@ public static class ObjectExplorerRegistration
         // worker polls the table rather than a channel, so a slot survives a restart.
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionWorker>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.TranslationQueryService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectSearchService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceQueryService>();
         // The project-visibility fence both source surfaces share, and the two
         // halves of the source page: the file viewer and the explorer tree.
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.SourceVisibility>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.SourceViewerService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ExplorerTreeService>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceResolver>();
-        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService>();
-        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.SourceVisibility>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.SourceViewerService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ExplorerTreeService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceResolver>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ReferenceSessionService>();
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks>();
         // Business Central delivery client (token + Admin Center + automation APIs).
         // Fixed public Microsoft hosts (login.microsoftonline.com,
         // api.businesscentral.dynamics.com), so no SSRF guard is needed — just a bounded
@@ -114,7 +115,7 @@ public static class ObjectExplorerRegistration
         // redirects are allowed: Microsoft download URLs commonly 302 to a CDN, and the
         // ConnectCallback re-checks every hop's IP so a redirect still can't reach an
         // internal target. The long timeout covers the multi-GB body.
-        services.AddHttpClient(nameof(ALDevToolbox.Services.ObjectExplorer.DvdDownloadService), client =>
+        services.AddHttpClient(nameof(ALDevToolbox.Services.ObjectExplorer.Import.DvdDownloadService), client =>
             {
                 client.Timeout = TimeSpan.FromMinutes(20);
             })

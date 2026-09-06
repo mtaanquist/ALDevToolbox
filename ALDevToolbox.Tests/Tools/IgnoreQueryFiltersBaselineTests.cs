@@ -1,3 +1,4 @@
+using ALDevToolbox.Services.ObjectExplorer.Import;
 using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Tools;
@@ -57,8 +58,8 @@ public sealed class IgnoreQueryFiltersBaselineTests
         ["ALDevToolbox/Services/InviteService.cs"] = 5,
         ["ALDevToolbox/Services/OAuth/OAuthClaimsTransformer.cs"] = 1,
         ["ALDevToolbox/Services/OAuth/OAuthClientAdminService.cs"] = 5,
-        ["ALDevToolbox/Services/ObjectExplorer/PersistedImportJobs.cs"] = 8,
-        ["ALDevToolbox/Services/ObjectExplorer/ReleaseAutoImportScheduler.cs"] = 1,
+        ["ALDevToolbox/Services/ObjectExplorer/Import/PersistedImportJobs.cs"] = 8,
+        ["ALDevToolbox/Services/ObjectExplorer/Import/ReleaseAutoImportScheduler.cs"] = 1,
         ["ALDevToolbox/Services/OrganizationAdminService.cs"] = 1,
         ["ALDevToolbox/Services/OrganizationConfigService.cs"] = 3,
         ["ALDevToolbox/Services/PerTenantBackupService.cs"] = 1,

@@ -5,7 +5,7 @@ namespace ALDevToolbox.Services.Cal;
 /// objects" produces one large file of <c>OBJECT &lt;Type&gt; &lt;Id&gt;
 /// &lt;Name&gt; { … }</c> declarations (Windows-1252 / CRLF). These records
 /// are the intermediate shape between the raw text and the <c>oe_*</c> entity
-/// rows that <see cref="ALDevToolbox.Services.ObjectExplorer.CalImportService"/>
+/// rows that <see cref="ALDevToolbox.Services.ObjectExplorer.Import.CalImportService"/>
 /// persists — deliberately separate from the AL <c>.app</c> symbol-package
 /// shapes, because C/AL and AL share no on-disk format.
 ///

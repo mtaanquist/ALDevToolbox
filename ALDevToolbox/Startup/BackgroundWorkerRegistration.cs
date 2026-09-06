@@ -16,7 +16,7 @@ public static class BackgroundWorkerRegistration
         // except where a second condition applies.
         services.AddHostedService<BackupScheduler>();
         // Daily VACUUM over the Object Explorer content tables.
-        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerVacuumScheduler>();
+        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Import.ObjectExplorerVacuumScheduler>();
         // Refreshes per-org storage snapshots so StorageBar reads a cached row rather
         // than counting every tenanted table on each navigation.
         // Single-tenant mode hides the StorageBar entirely, so there's nothing to feed —
@@ -28,10 +28,10 @@ public static class BackgroundWorkerRegistration
         // Daily import of new Microsoft OnPrem releases for orgs that opted in
         // (OrganizationSettings.AutoImportReleasesEnabled); runs in single- and
         // multi-tenant alike.
-        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
+        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Import.ReleaseAutoImportScheduler>();
         // Enqueues scheduled SaaS deliveries when due, and fails restart-orphaned ones on its
         // first sweep.
-        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryScheduler>();
+        services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryScheduler>();
         // Nightly sweep that re-reads every BC-connected project's environments, keeping the
         // mirrored next-platform-update columns fresh for the fleet view.
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshScheduler>();

@@ -1,7 +1,8 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
-using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Import;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.GitHub;

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Components.Shared;
-using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Explore;
 using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Assets;

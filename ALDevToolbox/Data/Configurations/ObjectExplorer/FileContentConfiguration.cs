@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using ALDevToolbox.Services.ObjectExplorer.Explore;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
