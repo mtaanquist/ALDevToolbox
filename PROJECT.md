@@ -21,7 +21,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/Account/`          | Sign-in and account services: `AuthService`, `EntraSignInService`, `PasskeyService`, `EmailMfaService`. |
 | `Services/Al/` and `Services/Cal/` | The AL and C/AL source parsers and reference extractors (see the extractor guides in this file). |
 | `Services/Generation/`       | The generation core: `WorkspaceZipBuilder`, `MustacheRenderer`, `IdRangeAllocator`, `EmittableExtension`. |
-| `Services/ObjectExplorer/`   | By far the largest subsystem: release/module/object ingest, project builds, pipelines, deliveries, discovery, and their queues and workers. |
+| `Services/ObjectExplorer/`   | By far the largest subsystem: release/module/object ingest, project builds, pipelines, deliveries, discovery, and their queues and workers. `ReleaseImportRequestService` holds the upload form's policy — which ingest path a submission takes, what is staged to disk, and what goes on the queue — so the endpoints only read the form and redirect on the outcome. |
 | `Services/ObjectExplorer/Bc/`| Everything that talks to a customer's Business Central tenant: the Admin Center clients, `ProjectConnectionService`, and the Upgrades services (`UpgradeFleetService`, `UpgradeActionService`, `UpgradeActionWorker`, `EnvironmentRefreshScheduler`/`Queue`/`Worker`). |
 | `Services/Translation/`      | Translator services: translation memory, machine-translation providers, suggestion coordination. |
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |

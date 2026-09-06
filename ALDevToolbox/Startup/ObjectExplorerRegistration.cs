@@ -29,6 +29,10 @@ public static class ObjectExplorerRegistration
             .FromConfiguration(sp.GetRequiredService<IConfiguration>()));
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
+        // The upload form's policy: which ingest path a submission takes, what gets
+        // staged to disk, and what goes on the queue. The endpoints only read the
+        // form and redirect on the outcome.
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportRequestService>();
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
