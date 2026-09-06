@@ -1,8 +1,10 @@
+using System.Net;
 using System.Security.Cryptography;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.GitHub;
+using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -130,9 +132,71 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         again.Should().Be(job, "the same head is built once the restore is over");
     }
 
+    // --- Member forks (#627) -----------------------------------------------
+
+    [Fact]
+    public async Task A_member_fork_is_built_when_GitHub_confirms_the_membership()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var api = ApiAnswering(HttpStatusCode.NoContent);
+        var builds = new ReleaseImportQueue();
+
+        await NewWorker(api: api, builds: builds).RunOneAsync(NewJob(isMemberFork: true), CancellationToken.None);
+
+        api.Calls.Should().Contain(c => c.Contains("/orgs/cronus-dk/members/erik"),
+            "the delivery's author_association is re-checked at build time, not trusted");
+        api.Calls.Should().Contain(c => c.Contains("/check-runs"), "the pull request gets an answer");
+        builds.Reader.TryRead(out var queued).Should().BeTrue("a confirmed member's fork builds like any branch");
+        queued!.Source.Should().BeOfType<ReleaseImportSource.PullRequestBuild>()
+            .Which.ForkAuthor.Should().Be("erik", "the check run says where the code came from");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Found)]
+    [InlineData(FakeGitHubApi.Unreachable)]
+    public async Task A_fork_whose_author_GitHub_does_not_confirm_is_dropped_without_a_check_run(HttpStatusCode membership)
+    {
+        // 404 is "not a member", 302 is "you are not in this organisation
+        // either", and no answer at all is not a yes. All three refuse, and none
+        // of them opens a check run - there is nothing to leave spinning on a
+        // pull request the toolbox will say nothing about.
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var api = ApiAnswering(membership);
+        var builds = new ReleaseImportQueue();
+
+        await NewWorker(api: api, builds: builds).RunOneAsync(NewJob(isMemberFork: true), CancellationToken.None);
+
+        api.Calls.Should().NotContain(c => c.Contains("/check-runs"));
+        builds.Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_pull_request_from_the_repository_itself_never_asks_about_membership()
+    {
+        // The membership call costs a request on the organisation's rate limit
+        // and answers a question a branch pull request does not raise.
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var api = ApiAnswering(HttpStatusCode.NoContent);
+        var builds = new ReleaseImportQueue();
+
+        await NewWorker(api: api, builds: builds).RunOneAsync(NewJob(), CancellationToken.None);
+
+        api.Calls.Should().NotContain(c => c.Contains("/members/"));
+        builds.Reader.TryRead(out var queued).Should().BeTrue();
+        queued!.Source.Should().BeOfType<ReleaseImportSource.PullRequestBuild>()
+            .Which.ForkAuthor.Should().BeNull("a branch of the repository is not anybody's fork");
+    }
+
     // --- Fixture -----------------------------------------------------------
 
-    private static GitHubPullRequestJob NewJob() => new(
+    private static GitHubPullRequestJob NewJob(bool isMemberFork = false, string authorLogin = "erik") => new(
         InstallationId: ConnectedInstallation,
         RepositoryFullName: "cronus-dk/customer-app",
         CloneUrl: "https://github.com/cronus-dk/customer-app.git",
@@ -140,7 +204,48 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         HeadSha: "abc1234",
         HeadRef: "feature/vat",
         BaseRef: "main",
-        DeliveryId: "delivery-1");
+        DeliveryId: "delivery-1",
+        AuthorLogin: authorLogin,
+        IsMemberFork: isMemberFork);
+
+    /// <summary>
+    /// A GitHub that mints an installation token, answers the membership
+    /// question with <paramref name="membership"/>, and takes a check run.
+    /// <see cref="FakeGitHubApi.Unreachable"/> is GitHub not answering at all.
+    /// </summary>
+    private static FakeGitHubApi ApiAnswering(HttpStatusCode membership)
+    {
+        var api = new FakeGitHubApi()
+            .On(HttpMethod.Post, $"/app/installations/{ConnectedInstallation}/access_tokens",
+                HttpStatusCode.Created, FakeGitHubApi.InstallationTokenJson())
+            .On(HttpMethod.Post, "/repos/cronus-dk/customer-app/check-runs",
+                HttpStatusCode.Created, "{\"id\":555}");
+        return api.On(HttpMethod.Get, "/orgs/cronus-dk/members/erik", membership);
+    }
+
+    /// <summary>A solution tracking the repository the deliveries are about.</summary>
+    private async Task SeedSolutionTrackingTheRepositoryAsync()
+    {
+        await using var ctx = _db.NewContext();
+        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = "CRONUS Customer App",
+            CreatedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+
+        ctx.OeProjectRepositories.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = project.Id,
+            Url = "https://github.com/cronus-dk/customer-app.git",
+            Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub,
+            DisplayName = "customer-app",
+        });
+        await ctx.SaveChangesAsync();
+    }
 
 
     /// <summary>
@@ -149,7 +254,10 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
     /// test is that each read happens under its own tenant filter.
     /// </summary>
     private GitHubPullRequestBuildWorker NewWorker(
-        GitHubWebhookQueue? queue = null, MaintenanceModeState? maintenance = null)
+        GitHubWebhookQueue? queue = null,
+        MaintenanceModeState? maintenance = null,
+        FakeGitHubApi? api = null,
+        ReleaseImportQueue? builds = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IOrganizationContext>(_db.OrgContext);
@@ -163,7 +271,29 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         _db.AddStorageServices(services);
         services.AddScoped<OrganizationConfigService>();
         services.AddScoped<SystemSettingsService>();
-        _db.AddGitHubServices(services, new FakeGitHubApi());
+        _db.AddGitHubServices(services, api ?? new FakeGitHubApi());
+
+        // Everything from the check run down: a member fork that passes the gate
+        // has to reach a real OpenAsync and a real StartPullRequestBuildAsync, or
+        // "it was built" is only the absence of a log line.
+        services.AddScoped<GitHubCheckRunService>();
+        services.AddSingleton(builds ?? new ReleaseImportQueue());
+        services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryService>();
+        services.AddScoped<TranslationImportService>();
+        services.AddScoped<CallSiteReferenceEmitter>();
+        // Built by hand rather than by the container: the dependency-drift scan is
+        // an optional constructor argument the container would insist on
+        // resolving, and it plays no part in a pull-request build.
+        services.AddScoped(sp => new ReleaseImportService(
+            sp.GetRequiredService<AppDbContext>(),
+            sp.GetRequiredService<IOrganizationContext>(),
+            sp.GetRequiredService<StorageQuotaGuard>(),
+            sp.GetRequiredService<TranslationImportService>(),
+            sp.GetRequiredService<CallSiteReferenceEmitter>(),
+            NullLogger<ReleaseImportService>.Instance));
+        services.AddScoped<PersistedImportJobs>();
+        services.AddScoped<ProjectAccess>();
+        services.AddScoped<ProjectBuildImporter>();
 
         var provider = services.BuildServiceProvider();
         return new GitHubPullRequestBuildWorker(

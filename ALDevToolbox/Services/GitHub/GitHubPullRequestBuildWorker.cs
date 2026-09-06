@@ -109,10 +109,25 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
             return;
         }
 
-        var (identity, _) = resolved.Value;
+        var (identity, orgLogin) = resolved.Value;
         using var orgScope = AmbientOrganizationScope.Enter(identity);
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // A pull request from a member's own fork is built, and this is where
+        // "member" stops being GitHub's word from the delivery and becomes an
+        // answer we asked for ourselves. The delivery's author_association is
+        // stamped when the pull request is opened and re-used by every later
+        // push, so somebody who has left the organisation in the meantime still
+        // arrives labelled MEMBER. Nothing is cloned until GitHub confirms the
+        // membership now, on the installation token.
+        if (job.IsMemberFork && !await AuthorIsStillAMemberAsync(job, orgLogin, scope, ct).ConfigureAwait(false))
+        {
+            // Dropped before any check run is opened: there is nothing to leave
+            // spinning, and a pull request whose author we cannot vouch for is
+            // one the toolbox says nothing about at all.
+            return;
+        }
 
         // Which solutions track this repository, under the organisation's own
         // query filter. Matching is on the normalised clone URL, because the same
@@ -160,6 +175,7 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
                     headRef: job.HeadRef,
                     pullRequestNumber: job.PullRequestNumber,
                     checkRunId: checkRunId,
+                    forkAuthor: job.IsMemberFork ? job.AuthorLogin : null,
                     ct: ct).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -180,6 +196,53 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
                         ct).ConfigureAwait(false);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether GitHub still calls <paramref name="job"/>'s author a member of
+    /// <paramref name="orgLogin"/>, asked on the installation token.
+    ///
+    /// <para><strong>An answer we could not get is a refusal.</strong> GitHub
+    /// being unreachable, the app being unconfigured, the organisation login not
+    /// recorded - none of those are a yes, and the cost of guessing wrong is a
+    /// stranger's code compiled on the customer's own installation. So every
+    /// unhappy path here returns false, and the reason is in the log.</para>
+    /// </summary>
+    private async Task<bool> AuthorIsStillAMemberAsync(
+        GitHubPullRequestJob job, string orgLogin, AsyncServiceScope scope, CancellationToken ct)
+    {
+        if (orgLogin.Length == 0 || job.AuthorLogin.Length == 0)
+        {
+            _logger.LogInformation(
+                "Dropped a fork pull-request delivery for {Job}: there is no organisation login or author to check membership for.",
+                Describe(job));
+            return false;
+        }
+
+        try
+        {
+            var github = scope.ServiceProvider.GetRequiredService<GitHubAppClient>();
+            var token = await github.GetInstallationTokenAsync(job.InstallationId, ct).ConfigureAwait(false);
+            if (await github.InstallationSeesOrgMemberAsync(token, orgLogin, job.AuthorLogin, ct).ConfigureAwait(false))
+            {
+                _logger.LogInformation(
+                    "Building {Job} from the author's own fork: GitHub confirms {Author} is a member of {Org}.",
+                    Describe(job), job.AuthorLogin, orgLogin);
+                return true;
+            }
+
+            _logger.LogInformation(
+                "Dropped a fork pull-request delivery for {Job}: GitHub does not report {Author} as a member of {Org}.",
+                Describe(job), job.AuthorLogin, orgLogin);
+            return false;
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException)
+        {
+            _logger.LogWarning(ex,
+                "Dropped a fork pull-request delivery for {Job}: could not ask GitHub whether {Author} is a member of {Org}.",
+                Describe(job), job.AuthorLogin, orgLogin);
+            return false;
         }
     }
 

@@ -142,7 +142,8 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
                 // than one that says the build could not be started. It will most
                 // likely fail too - the same credential writes both - but the
                 // attempt costs nothing and its refusal is logged, not thrown.
-                await checks.CompleteAsync(source.InstallationId, source.RepositoryFullName, job.ReleaseId, ct)
+                await checks.CompleteAsync(
+                    source.InstallationId, source.RepositoryFullName, job.ReleaseId, source.ForkAuthor, ct)
                     .ConfigureAwait(false);
                 return;
             }
@@ -194,7 +195,8 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
                 await buildService.MarkBuildFailedAsync(job.ReleaseId, message, ct).ConfigureAwait(false);
             }
 
-            await checks.CompleteAsync(source.InstallationId, source.RepositoryFullName, job.ReleaseId, ct)
+            await checks.CompleteAsync(
+                    source.InstallationId, source.RepositoryFullName, job.ReleaseId, source.ForkAuthor, ct)
                 .ConfigureAwait(false);
         }
         finally

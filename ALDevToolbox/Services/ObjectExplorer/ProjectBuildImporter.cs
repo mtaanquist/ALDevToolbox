@@ -167,6 +167,7 @@ public sealed class ProjectBuildImporter
         string headRef,
         int pullRequestNumber,
         long? checkRunId,
+        string? forkAuthor = null,
         CancellationToken ct = default)
     {
         var project = await _db.OeProjects.AsNoTracking()
@@ -209,7 +210,7 @@ public sealed class ProjectBuildImporter
 
         var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "queuing a pull-request build");
         var source = new ReleaseImportSource.PullRequestBuild(
-            projectId, repositoryId, headSha, installationId, repositoryFullName, pullRequestNumber);
+            projectId, repositoryId, headSha, installationId, repositoryFullName, pullRequestNumber, forkAuthor);
         await _queue.EnqueueAsync(
             new ReleaseImportJob(releaseId, identity, source, StoreSymbolReference: false, JobRowId: 0), ct)
             .ConfigureAwait(false);

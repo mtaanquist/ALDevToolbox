@@ -621,6 +621,49 @@ on every pull request, inline in the Files tab.
   page it could use. It is omitted entirely when `PUBLIC_BASE_URL` is unset, since a
   link to `localhost` is worse than none.
 
+**Member forks.** Refusing every fork turned out to refuse the ordinary case too: a
+consultant who works from a personal fork of the customer's repository, which is a normal
+way to work in a GitHub organisation, got no answer on any pull request. A fork is now
+built when three things hold, and all three are needed.
+
+- **GitHub calls the author a member.** `pull_request.author_association` is `MEMBER` or
+  `OWNER`. That is GitHub's own verdict on who the person is to the repository, and the
+  delivery carrying it is HMAC-verified, so it is worth reading - `COLLABORATOR`,
+  `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, `NONE` and the field being absent are all read
+  as no.
+- **The fork is the author's own.** `pull_request.head.repo.owner.login` equals
+  `pull_request.user.login`, case-insensitively. A fork's owner can hand push rights to
+  anybody, so a member opening a pull request from a third party's fork is still somebody
+  else's code arriving under a member's name, and it is refused with its own log line.
+- **The membership still holds at build time.** `author_association` is stamped when the
+  pull request is opened and re-used by every later `synchronize`, so somebody who left the
+  organisation in between still arrives labelled `MEMBER`. The worker therefore asks GitHub
+  again, on the installation token, through
+  `GitHubAppClient.InstallationSeesOrgMemberAsync` (`GET /orgs/{org}/members/{username}`,
+  a new `GitHubAppClient.Members.cs` partial): 204 is yes, and 404, the 302 GitHub sends a
+  caller who is not itself in the organisation, and GitHub not answering at all are all no.
+  **An answer we could not get is a refusal** - the cost of guessing wrong is a stranger's
+  code compiled on the customer's installation. The `Members: read` grant the App has
+  carried since phase 1 is what makes the call possible.
+
+The check happens after the organisation is resolved and **before any check run is
+opened**, so a refused fork leaves nothing spinning on the pull request; the toolbox
+simply says nothing, which is what it already does for a repository no solution tracks.
+A same-repository pull request never makes the call, so nothing about the ordinary path
+costs an extra request on the organisation's rate limit.
+
+The clone is unchanged. `ProjectBuildService.CheckoutCommitAsync` already runs
+`git fetch --depth 1 origin -- <sha>` against the *base* repository's remote, and GitHub
+advertises the pull request head there as `refs/pull/N/head`, so the fork's commit is
+reachable without ever adding the fork as a remote or handing a token to it. That also
+keeps the credential story intact: the installation token is only ever presented to the
+repository the organisation actually installed the App on.
+
+What the reviewer sees says where the code came from: the check-run summary carries
+"Built from {author}'s fork." The author rides along on the in-memory
+`ReleaseImportSource.PullRequestBuild` job rather than on `oe_project_builds` - it exists
+for the length of one build and needs no column, so this change has no migration.
+
 **Review fixes.** The gate as first written would have failed on a default deployment,
 and it accepted work it should not have. What changed:
 
@@ -629,13 +672,14 @@ and it accepted work it should not have. What changed:
   annotation with no code leave the property out rather than sending `null` - GitHub's
   check-run schema answers 422 to the second, which on a deployment that has not been told
   its own public address is every check run there is.
-- **Fork pull requests are not built.** Anyone on GitHub can fork a public repository and
-  open a pull request against it; building one would clone and compile a stranger's code
-  on the customer's own installation token, on a machine holding that organisation's
-  symbols. The webhook parser reads `pull_request.head.repo` and answers 204 when the head
-  repository is not the repository the delivery is about (or is flagged as a fork), logging
-  it at Information. There is no opt-in - a team that wants fork builds needs a review step
-  this design does not have.
+- **Fork pull requests from outside the organisation are not built.** Anyone on GitHub can
+  fork a public repository and open a pull request against it; building one would clone and
+  compile a stranger's code on the customer's own installation token, on a machine holding
+  that organisation's symbols. The webhook parser reads `pull_request.head.repo` and answers
+  204 when the head repository is not the repository the delivery is about, logging it at
+  Information. A fork belonging to a *member* of the connected organisation is the one
+  exception, added afterwards and described under **Member forks** below; there is still no
+  opt-in for anybody else's.
 - **What reaches git is checked before it gets there.** The head SHA must match
   `^[0-9a-f]{7,40}$` and the head ref may only contain `A-Za-z0-9._/-` and may not start
   with a dash; `git fetch` gets a `--` before the revision. `git checkout` deliberately

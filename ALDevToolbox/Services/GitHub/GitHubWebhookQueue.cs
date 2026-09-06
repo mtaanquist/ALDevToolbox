@@ -11,6 +11,15 @@ namespace ALDevToolbox.Services.GitHub;
 /// endpoint never touches the database, so a delivery whose signature checked out
 /// costs one channel write and nothing else. The worker is where the installation
 /// is resolved back to an organisation and where anything is trusted.</para>
+///
+/// <para><see cref="IsMemberFork"/> marks the one kind of pull request whose head
+/// lives somewhere else and is still built: one opened by a member or owner of the
+/// organisation, from that person's own fork. GitHub's <c>author_association</c> is
+/// what says so, and the delivery carrying it was HMAC-verified - but it is still
+/// only what GitHub said when the pull request was opened, so the worker asks the
+/// membership question again with the installation token before anything is cloned.
+/// <see cref="AuthorLogin"/> is who to ask about, and who the check run names as the
+/// source of the code.</para>
 /// </summary>
 public sealed record GitHubPullRequestJob(
     long InstallationId,
@@ -20,7 +29,9 @@ public sealed record GitHubPullRequestJob(
     string HeadSha,
     string HeadRef,
     string BaseRef,
-    string DeliveryId)
+    string DeliveryId,
+    string AuthorLogin = "",
+    bool IsMemberFork = false)
 {
     /// <summary>
     /// The pull request this job is about, as a key: one build at a time per
