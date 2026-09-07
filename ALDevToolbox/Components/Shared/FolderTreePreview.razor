@@ -25,10 +25,14 @@
                 <button type="button" class="tree__row @RowClass(node) tree__row--toggle"
                         style="--d: @row.Depth" role="treeitem"
                         aria-expanded="@(row.Expanded ? "true" : "false")"
-                        aria-label="@(row.Expanded ? $"Collapse {node.Name}" : $"Expand {node.Name}")"
+                        aria-label="@ToggleLabel(row)"
                         @onclick="() => Toggle(row.Path, row.Expanded)">
                     <Icon Name="@(row.Expanded ? "folder-open" : "folder")" Width="14" Height="14" Css="tree__ico" />
                     <span class="tree__name">@node.Name/</span>
+                    @if (node.IsExcluded)
+                    {
+                        <span class="u-sr-only">not in the ZIP</span>
+                    }
                     @if (RowMeta(node) is { } meta)
                     {
                         <span class="tree__meta">@meta</span>
@@ -41,6 +45,10 @@
                     <Icon Name="@(node.Kind == PreviewNodeKind.File ? "file-code" : "folder")"
                           Width="14" Height="14" Css="tree__ico" />
                     <span class="tree__name">@node.Name@(node.Kind == PreviewNodeKind.File ? "" : "/")</span>
+                    @if (node.IsExcluded)
+                    {
+                        <span class="u-sr-only">not in the ZIP</span>
+                    }
                     @if (RowMeta(node) is { } meta)
                     {
                         <span class="tree__meta">@meta</span>
@@ -56,6 +64,15 @@
         <span class="tree__key">
             <Icon Name="folder" Width="13" Height="13" />Static / grouping folder
         </span>
+        @* Only while something is actually struck through: the key explains a
+           treatment that is on screen, and vanishes with it. *@
+        @if (HasExcluded(Root))
+        {
+            <span class="tree__key tree__key--excluded">
+                <Icon Name="file-code" Width="13" Height="13" />
+                <span class="tree__key-sample">Example.al</span>Not in the ZIP
+            </span>
+        }
     </div>
 }
 
@@ -120,10 +137,38 @@
     private static string? RowMeta(PreviewNode node) =>
         node.IsNew ? "new" : string.IsNullOrWhiteSpace(node.Meta) ? null : node.Meta;
 
-    private static string RowClass(PreviewNode node) => node.Kind switch
+    /// <summary>
+    /// A folder row's accessible name. It has to carry the excluded state
+    /// itself: an aria-label replaces the row's inner text, so the hidden
+    /// "not in the ZIP" span inside the button would otherwise never be read.
+    /// </summary>
+    private static string ToggleLabel(Row row)
     {
-        PreviewNodeKind.Extension => "tree__row--gen",
-        PreviewNodeKind.File => "tree__row--file",
-        _ => "tree__row--group",
-    };
+        var label = row.Expanded ? $"Collapse {row.Node.Name}" : $"Expand {row.Node.Name}";
+        return row.Node.IsExcluded ? label + ", not in the ZIP" : label;
+    }
+
+    /// <summary>
+    /// Walks the whole tree, not the flattened rows, so a collapsed folder
+    /// hiding the struck-through files still earns the legend key that
+    /// explains them.
+    /// </summary>
+    private static bool HasExcluded(PreviewNode node) =>
+        node.IsExcluded || node.Children.Any(HasExcluded);
+
+    /// <summary>
+    /// Kind picks the base row treatment; <see cref="PreviewNode.IsExcluded"/>
+    /// adds the struck-through modifier for rows the generator will leave out
+    /// (example files while the preview's own toggle is off).
+    /// </summary>
+    private static string RowClass(PreviewNode node)
+    {
+        var kind = node.Kind switch
+        {
+            PreviewNodeKind.Extension => "tree__row--gen",
+            PreviewNodeKind.File => "tree__row--file",
+            _ => "tree__row--group",
+        };
+        return node.IsExcluded ? kind + " tree__row--excluded" : kind;
+    }
 }

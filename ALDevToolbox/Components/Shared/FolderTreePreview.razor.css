@@ -21,3 +21,7 @@
     outline: var(--focus-ring);
     outline-offset: -1px;
 }
+
+/* The struck-through treatment for rows the generator will skip lives in
+   app.css, not here: it also has to colour the row's icon, and that <svg>
+   comes from the Icon component, so a scoped rule would never reach it. */
