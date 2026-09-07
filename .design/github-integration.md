@@ -329,6 +329,8 @@ parameter surface changes once a second caller is compiling against it.
 
 ### #622 New workspace → create the repository
 
+The repository name suggestion and the registration of the created repository on a Solution are specified in `customer-naming.md`.
+
 Generation is unchanged: in memory, synchronous. The repository is created with
 the installation token via `POST /orgs/{org}/repos` and `auto_init: false`, and
 then filled in two writes:

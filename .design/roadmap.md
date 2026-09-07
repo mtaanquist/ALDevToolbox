@@ -15,6 +15,8 @@ Forward-looking ideas that are **not committed**. This is the wishlist; the reco
 
 ## Generation
 
+- **New Workspace tidy-ups left out of the customer-naming milestone** (`customer-naming.md`, "Out of scope"): collapse the rarely-changed fields (descriptions, tenant ID, ID range) behind a disclosure so the happy path is template, customer, modules, download; render the substituted description under the field as the user types instead of showing raw `{{short_name}}`; rename the primary button from "Download ZIP" to a verb the user would use; a Solution picker on New Extension.
+
 - **Workspace upgrade flow.** Given an existing generated workspace, diff it against the current template state and let the user apply selected updates. Big — needs its own design pass before it's an anchor for a phase.
 - **Conditional folders / files.** "Include this folder only when module X is selected." Expressible today by splitting templates; a real conditional grammar would compress that.
 - **Binary files in template folders.** v1 was text-only; some templates (icons, splash assets) want bytes.
