@@ -61,8 +61,9 @@ public sealed class ProjectServiceTests : IDisposable
     private static ProjectInput NewInput(
         string name = "Acme",
         string? country = "dk",
+        string? shortName = null,
         params ProjectRepositoryInput[] repos)
-        => new(name, country, repos.Length == 0
+        => new(name, shortName, country, repos.Length == 0
             ? new[] { new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") }
             : repos);
 
@@ -73,7 +74,7 @@ public sealed class ProjectServiceTests : IDisposable
         var svc = Svc(ctx);
 
         var id = await svc.CreateProjectAsync(NewInput(
-            "Acme A/S", "dk",
+            "Acme A/S", "dk", null,
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core"),
             new ProjectRepositoryInput(RepositoryProvider.AzureDevOps, "https://dev.azure.com/acme/bc/_git/exts", "Exts")));
 
@@ -93,7 +94,7 @@ public sealed class ProjectServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = Svc(ctx);
 
-        var id = await svc.CreateProjectAsync(NewInput("Acme", "dk",
+        var id = await svc.CreateProjectAsync(NewInput("Acme", "dk", null,
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core.git", "")));
 
         var loaded = await svc.GetProjectAsync(id);
@@ -135,7 +136,7 @@ public sealed class ProjectServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = Svc(ctx);
 
-        var act = () => svc.CreateProjectAsync(NewInput("Acme", "dk",
+        var act = () => svc.CreateProjectAsync(NewInput("Acme", "dk", null,
             new ProjectRepositoryInput(provider, url, "Repo")));
 
         (await act.Should().ThrowAsync<PlanValidationException>())
@@ -244,15 +245,50 @@ public sealed class ProjectServiceTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// The short name is what the generator puts in extension names when the
+    /// customer's own name is too long for one. It round-trips, and blanking it
+    /// stores nothing rather than an empty string, so "no abbreviation" reads the
+    /// same however it was reached. See <c>.design/customer-naming.md</c>.
+    /// </summary>
+    [Fact]
+    public async Task Create_and_update_persist_the_short_name()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        var id = await svc.CreateProjectAsync(NewInput("CRONUS A/S", "dk", "CRO"));
+        (await svc.GetProjectAsync(id))!.ShortName.Should().Be("CRO");
+
+        await svc.UpdateProjectAsync(id, NewInput("CRONUS A/S", "dk", "  CRN  "));
+        (await svc.GetProjectAsync(id))!.ShortName.Should().Be("CRN", "it is stored as typed, trimmed");
+
+        await svc.UpdateProjectAsync(id, NewInput("CRONUS A/S", "dk", "   "));
+        (await svc.GetProjectAsync(id))!.ShortName.Should().BeNull(
+            "a blank abbreviation means the full name is used, and that is one state, not two");
+    }
+
+    [Fact]
+    public async Task A_short_name_longer_than_the_generator_accepts_is_refused_inline()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        var act = () => svc.CreateProjectAsync(NewInput("CRONUS A/S", "dk", new string('x', 51)));
+
+        var ex = (await act.Should().ThrowAsync<PlanValidationException>()).Which;
+        ex.Errors.Should().ContainKey("ShortName");
+    }
+
     [Fact]
     public async Task Update_replaces_repository_set()
     {
         await using var ctx = _db.NewContext();
         var svc = Svc(ctx);
-        var id = await svc.CreateProjectAsync(NewInput("Acme", "dk",
+        var id = await svc.CreateProjectAsync(NewInput("Acme", "dk", null,
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/old", "Old")));
 
-        await svc.UpdateProjectAsync(id, new ProjectInput("Acme Renamed", "w1", new[]
+        await svc.UpdateProjectAsync(id, new ProjectInput("Acme Renamed", null, "w1", new[]
         {
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/new", "New"),
         }));
@@ -418,7 +454,7 @@ public sealed class ProjectServiceTests : IDisposable
         // The create already enqueued; clear it so we observe the update's own warm.
         _discoveryQueue.Complete(id);
 
-        await svc.UpdateProjectAsync(id, new ProjectInput("Acme", "dk", new[]
+        await svc.UpdateProjectAsync(id, new ProjectInput("Acme", null, "dk", new[]
         {
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/new", "New"),
         }));

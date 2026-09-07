@@ -53,6 +53,7 @@ public sealed class ArtifactService
             {
                 p.Id,
                 p.Name,
+                p.ShortName,
                 OwnerName = p.CreatedByUser != null ? p.CreatedByUser.DisplayName : null,
                 RepoCount = p.Repositories.Count,
                 RepoNames = p.Repositories.Select(r => r.DisplayName).ToList(),
@@ -95,7 +96,7 @@ public sealed class ArtifactService
             if (latest is not null && commitByBuild.TryGetValue(latest.Id, out var hash) && !string.IsNullOrEmpty(hash))
                 commitShort = hash.Length > 7 ? hash[..7] : hash;
             rows.Add(new ProjectArtifactsRow(
-                p.Id, p.Name, p.OwnerName, p.RepoCount,
+                p.Id, p.Name, p.ShortName, p.OwnerName, p.RepoCount,
                 Latest: latest is null ? null : new BuildSummary(
                     latest.Id, latest.Status, latest.BcVersion, latest.Branch, commitShort, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
                 LatestSuccessfulBuildId: latestSuccessful?.Id,
@@ -105,7 +106,7 @@ public sealed class ArtifactService
         foreach (var p in locked)
         {
             rows.Add(new ProjectArtifactsRow(
-                p.Id, p.Name, OwnerName: null, RepoCount: 0,
+                p.Id, p.Name, ShortName: null, OwnerName: null, RepoCount: 0,
                 Latest: null, LatestSuccessfulBuildId: null,
                 RepoNames: Array.Empty<string>(),
                 IsLocked: true));
@@ -571,6 +572,7 @@ public sealed class ArtifactService
 public sealed record ProjectArtifactsRow(
     int Id,
     string Name,
+    string? ShortName,
     string? OwnerName,
     int RepoCount,
     BuildSummary? Latest,

@@ -514,6 +514,33 @@ public sealed class ProjectAccessTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// The generator's Solution picker reads through the same gate: a customer
+    /// this person cannot see is not offered as one to start a workspace for.
+    /// </summary>
+    [Fact]
+    public async Task The_solution_picker_omits_a_private_solution_the_user_has_no_grant_on()
+    {
+        var openId = await SeedProjectAsync("CRONUS Norway");
+        var privateId = await SeedProjectAsync("CRONUS Denmark");
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await SetAccessAsOwnerAsync(privateId, ProjectVisibility.Private, teamId);
+
+        ActAs(PlainUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            var options = await Svc(ctx).ListSolutionOptionsAsync();
+            options.Select(o => o.Id).Should().Equal(openId);
+        }
+
+        ActAs(TeamMemberUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            var options = await Svc(ctx).ListSolutionOptionsAsync();
+            options.Select(o => o.Name).Should().Equal("CRONUS Denmark", "CRONUS Norway");
+        }
+    }
+
     [Fact]
     public async Task The_projects_list_shows_a_private_project_as_a_name_only_locked_row()
     {

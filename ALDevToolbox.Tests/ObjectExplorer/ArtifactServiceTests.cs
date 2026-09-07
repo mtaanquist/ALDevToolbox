@@ -27,7 +27,7 @@ public sealed class ArtifactServiceTests : IDisposable
         int projectId;
         await using (var ctx = _db.NewContext())
         {
-            projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            projectId = await SeedProjectAsync(ctx, "CRONUS A/S", shortName: "CRO");
             // An older successful build, then a newer failed one.
             await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc), bcVersion: "26.0", artifactCount: 2);
             await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 2, 9, 0, 0, DateTimeKind.Utc));
@@ -38,6 +38,9 @@ public sealed class ArtifactServiceTests : IDisposable
 
         var row = rows.Should().ContainSingle().Subject;
         row.Name.Should().Be("CRONUS A/S");
+        // The abbreviation rides along so an agent reading list_solutions sees
+        // the same two names a person does. See .design/customer-naming.md.
+        row.ShortName.Should().Be("CRO");
         row.Latest!.Status.Should().Be(ProjectBuildStatus.Failed, "the newest build wins the summary");
         row.LatestSuccessfulBuildId.Should().NotBeNull("the older ready build is the Download-all target");
     }
@@ -238,11 +241,11 @@ public sealed class ArtifactServiceTests : IDisposable
 
     // ── seeding helpers ─────────────────────────────────────────────────
 
-    private static async Task<int> SeedProjectAsync(Data.AppDbContext ctx, string name, string[]? repoNames = null, int orgId = TestDb.DefaultOrgId)
+    private static async Task<int> SeedProjectAsync(Data.AppDbContext ctx, string name, string[]? repoNames = null, int orgId = TestDb.DefaultOrgId, string? shortName = null)
     {
         var project = new OeProject
         {
-            OrganizationId = orgId, Name = name, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            OrganizationId = orgId, Name = name, ShortName = shortName, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
             Repositories = (repoNames ?? new[] { "repo" }).Select(n => new OeProjectRepository
             {
                 OrganizationId = orgId, Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub,

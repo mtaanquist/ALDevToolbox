@@ -398,6 +398,9 @@ public sealed class RepositoryDiscoveryService
 
         var projectId = await _projects.CreateProjectAsync(new ProjectInput(
             name,
+            // Nothing here knows an abbreviation for the customer; the solution's
+            // own settings page is where one gets typed.
+            ShortName: null,
             country,
             [new ProjectRepositoryInput(RepositoryProvider.GitHub, candidate.CloneUrl, RepositoryName(candidate.FullName))]),
             ct);
