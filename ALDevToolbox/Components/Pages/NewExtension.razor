@@ -477,7 +477,7 @@
                                     @* Spaces come out of the file name, exactly as the generator
                                        emits it - naming a file that is not in the ZIP sends the
                                        user hunting. *@
-                                    <code class="code">@($"{StripWhitespace(_workspaceContext.WorkspaceName)}.code-workspace")</code>
+                                    <code class="code">@($"{CustomerNaming.Apply(_workspaceContext.WorkspaceName, NamingStyle.PascalCase)}.code-workspace")</code>
                                     file into your existing workspace, replacing the old workspace
                                     file. The new <code class="code">folders</code> array already lists every
                                     extension plus the new one.
@@ -587,9 +587,11 @@
     /// </summary>
     private string _errorAction = "generated";
 
-    // The folder name strips spaces (the display name in app.json keeps them),
-    // mirroring GenerationNaming.StripWhitespace in the generator. See issue #520.
-    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : StripWhitespace(_extensionName);
+    // The folder name drops the spaces the display name in app.json keeps,
+    // mirroring how the generator derives it (CustomerNaming). See issue #520.
+    private string FolderName => string.IsNullOrWhiteSpace(_extensionName)
+        ? "MyExtension"
+        : CustomerNaming.Apply(_extensionName, NamingStyle.PascalCase);
 
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
 
@@ -1030,9 +1032,9 @@
 
     private PreviewNode BuildSiblingWorkspacePreview(WorkspaceImportContext context)
     {
-        var rootName = string.IsNullOrWhiteSpace(context.WorkspaceName)
-            ? "Workspace"
-            : StripWhitespace(context.WorkspaceName);
+        var rootName = CustomerNaming.Apply(context.WorkspaceName, NamingStyle.PascalCase) is { Length: > 0 } folder
+            ? folder
+            : "Workspace";
 
         var children = new List<PreviewNode>();
 
@@ -1096,8 +1098,6 @@
             rootName, children, ALDevToolbox.Services.Generation.WorkspaceConfigService.FileName, workspaceRootPaths);
     }
 
-    private static string StripWhitespace(string value) =>
-        new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
 
     /// <summary>
     /// Reads a saved <c>workspace.aldt.toml</c> and hydrates the form from it.

@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.DataProtection;
-using System.Text.RegularExpressions;
 using ALDevToolbox.Components.Pages;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
@@ -19,24 +18,16 @@ using ALDevToolbox.Services.Templates;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Smoke test for <c>/templates/workspace</c>. The headline assertion is the
-/// HTML <c>pattern</c> attribute on the WorkspaceName input matching
-/// <c>GenerationService.WorkspaceNameRegex</c> byte for byte — CLAUDE.md
-/// §"Always have the end user in mind" requires the client-side rule to
-/// mirror the server source of truth. Three-state loading / empty /
+/// Smoke test for <c>/templates/workspace</c>. The headline assertion is that
+/// the WorkspaceName input carries the rules the server actually applies and
+/// no others — CLAUDE.md §"Always have the end user in mind" requires the
+/// client-side rule to mirror the server source of truth, and since #755 that
+/// rule is a length, not a character class (see
+/// <c>.design/customer-naming.md</c>). Three-state loading / empty /
 /// populated covered as well.
 /// </summary>
 public sealed class NewWorkspaceTests : IDisposable
 {
-    /// <summary>
-    /// Compiled-time copy of the regex GenerationService uses. The test pins
-    /// both that this matches the server's pattern and that the HTML
-    /// attribute matches this. If GenerationService.WorkspaceNameRegex
-    /// changes without updating the form, both this constant and the test
-    /// flip — the failure points straight at the drift.
-    /// </summary>
-    private const string ServerWorkspaceNameRegex = @"^[A-Za-z][A-Za-z0-9 ]*$";
-
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
 
@@ -81,27 +72,7 @@ public sealed class NewWorkspaceTests : IDisposable
     }
 
     [Fact]
-    public void Server_side_workspace_name_regex_matches_the_compiled_constant_used_by_this_test()
-    {
-        // Reaching through reflection to pin GenerationService's actual regex
-        // would be brittle (private static, RegexOptions.Compiled); the
-        // contract is "the source string is identical". If GenerationService
-        // changes the pattern, that file's tests will flip — and developers
-        // updating the form must also update ServerWorkspaceNameRegex here
-        // so the form-vs-server parity assertion below remains meaningful.
-        var serverSource = typeof(GenerationService).GetField(
-            "WorkspaceNameRegex",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-            .GetValue(null) as Regex;
-
-        serverSource.Should().NotBeNull();
-        serverSource!.ToString().Should().Be(ServerWorkspaceNameRegex,
-            "this constant is the test's anchor for the form-vs-server parity check — "
-            + "if GenerationService changes the regex, update ServerWorkspaceNameRegex too");
-    }
-
-    [Fact]
-    public async Task Workspace_name_input_pattern_attribute_matches_the_server_regex()
+    public async Task Workspace_name_input_carries_the_rules_the_server_actually_applies()
     {
         await using (var seed = _db.NewContext())
         {
@@ -114,9 +85,12 @@ public sealed class NewWorkspaceTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             var input = cut.Find("input[name='WorkspaceName']");
-            input.GetAttribute("pattern").Should().Be(ServerWorkspaceNameRegex,
-                "CLAUDE.md §\"Always have the end user in mind\": the HTML pattern= "
-                + "must mirror GenerationService.WorkspaceNameRegex — keep the two in sync");
+            input.HasAttribute("pattern").Should().BeFalse(
+                "the customer's name may be written in any script since #755 — a pattern= "
+                + "here would refuse names the server accepts (see .design/customer-naming.md)");
+            input.GetAttribute("maxlength").Should().Be("100",
+                "CLAUDE.md §\"Always have the end user in mind\": the form mirrors the "
+                + "server's rules, and 100 characters is the one length rule left");
             input.HasAttribute("required").Should().BeTrue(
                 "the server rejects null/whitespace; the form must surface that to the user");
         });

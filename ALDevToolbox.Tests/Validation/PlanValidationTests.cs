@@ -54,18 +54,35 @@ public sealed class PlanValidationTests : IDisposable
     }
 
     [Fact]
-    public async Task Workspace_plan_with_invalid_workspace_name_keys_the_error_under_workspace_name()
+    public async Task Workspace_plan_with_a_name_that_names_nothing_keys_the_error_under_workspace_name()
     {
         var service = NewService();
-        // Invalid: starts with a digit. Pattern allows letters/digits/spaces but
-        // must lead with a letter.
-        var plan = PlanBuilder.WorkspacePlan(workspaceName: "9Bad");
+        // The customer name may be written in any script, but it has to be a
+        // name: "!!!" leaves nothing to derive a folder from.
+        // See .design/customer-naming.md.
+        var plan = PlanBuilder.WorkspacePlan(workspaceName: "!!!");
 
         var ex = (await service.Invoking(s => s.GenerateWorkspaceAsync(plan))
             .Should().ThrowAsync<PlanValidationException>()).Which;
 
         ex.Errors.Should().ContainKey(nameof(plan.WorkspaceName));
-        ex.Errors[nameof(plan.WorkspaceName)].Should().NotBeNullOrWhiteSpace();
+        ex.Errors[nameof(plan.WorkspaceName)]
+            .Should().Be("Required. Give the customer's name, for example CRONUS A/S.");
+    }
+
+    [Fact]
+    public async Task Workspace_plan_with_a_name_outside_ascii_is_not_refused_for_its_letters()
+    {
+        var service = NewService();
+        // The rule this replaced refused "Jørgensen Møbler" outright. The
+        // template is not seeded here, so the only thing asserted is that the
+        // name itself is no longer the objection.
+        var plan = PlanBuilder.WorkspacePlan(workspaceName: "Jørgensen Møbler");
+
+        var ex = (await service.Invoking(s => s.GenerateWorkspaceAsync(plan))
+            .Should().ThrowAsync<PlanValidationException>()).Which;
+
+        ex.Errors.Should().NotContainKey(nameof(plan.WorkspaceName));
     }
 
     [Fact]

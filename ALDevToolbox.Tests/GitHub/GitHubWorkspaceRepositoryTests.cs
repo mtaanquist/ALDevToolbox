@@ -380,7 +380,7 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         await using var _ = ctx;
 
         var act = () => service.CreateAsync(
-            WorkspacePlan() with { WorkspaceName = "9 Lives" }, RepoName, isPrivate: true);
+            WorkspacePlan() with { WorkspaceName = "!!!" }, RepoName, isPrivate: true);
 
         (await act.Should().ThrowAsync<PlanValidationException>())
             .Which.Errors.Should().ContainKey("WorkspaceName");
@@ -417,12 +417,15 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
     }
 
     [Theory]
-    // The shape people actually name repositories, from the shape they name
-    // workspaces. Only a suggestion - the field is editable.
-    [InlineData("CRONUS Customer", "CRONUS-Customer")]
-    [InlineData("CRONUS A/S", "CRONUS-A-S")]
-    [InlineData("CRONUS  Customer", "CRONUS-Customer")]
-    [InlineData("  CRONUS  ", "CRONUS")]
+    // The shape people actually name repositories, from the customer's name.
+    // Lowercase kebab-case since #755, so a repository is found by the same
+    // form whoever typed the customer in - and so "Jørgensen Møbler" reaches a
+    // name GitHub will take. Only a suggestion - the field is editable.
+    [InlineData("CRONUS Customer", "cronus-customer")]
+    [InlineData("CRONUS A/S", "cronus-a-s")]
+    [InlineData("CRONUS  Customer", "cronus-customer")]
+    [InlineData("  CRONUS  ", "cronus")]
+    [InlineData("Jørgensen Møbler", "jorgensen-mobler")]
     [InlineData("", "")]
     public void The_suggested_name_is_one_github_would_keep(string workspaceName, string expected)
     {

@@ -129,25 +129,15 @@ public sealed class GitHubWorkspaceRepositoryService
         ?? throw new InvalidOperationException("No user in scope; repository creation called outside an authenticated request.");
 
     /// <summary>
-    /// The repository name a workspace called <paramref name="workspaceName"/>
-    /// suggests: its words joined with hyphens, which is both a legal GitHub
-    /// name and the shape people actually name repositories. Only a suggestion -
-    /// the user can type anything the rule above allows.
+    /// The repository name a customer called <paramref name="workspaceName"/>
+    /// suggests: the transliterated name in lowercase kebab-case, which is both
+    /// a legal GitHub name and the shape people actually name repositories, and
+    /// which "Jørgensen Møbler" can reach as well as "CRONUS" can. Only a
+    /// suggestion - the user can type anything the rule above allows.
+    /// See <see cref="Generation.CustomerNaming"/>.
     /// </summary>
-    public static string SuggestName(string? workspaceName)
-    {
-        var kept = new string((workspaceName ?? string.Empty)
-            .Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '-')
-            .ToArray());
-        // Collapse the runs a multi-word name leaves behind, then trim the ends:
-        // "CRONUS  Customer A/S" would otherwise suggest "CRONUS--Customer-A-S-".
-        while (kept.Contains("--", StringComparison.Ordinal))
-        {
-            kept = kept.Replace("--", "-", StringComparison.Ordinal);
-        }
-        kept = kept.Trim('-', '.');
-        return kept.Length > 100 ? kept[..100].TrimEnd('-', '.') : kept;
-    }
+    public static string SuggestName(string? workspaceName) =>
+        CustomerNaming.Apply(workspaceName, NamingStyle.KebabCase);
 
     /// <summary>
     /// Generates <paramref name="plan"/> and creates
@@ -284,7 +274,7 @@ public sealed class GitHubWorkspaceRepositoryService
         await using var stream = archive.Stream;
         stream.Position = 0;
 
-        var root = GenerationNaming.StripWhitespace(plan.WorkspaceName) + "/";
+        var root = CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase) + "/";
         var files = new List<GitHubCommitFile>();
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true))
         {
