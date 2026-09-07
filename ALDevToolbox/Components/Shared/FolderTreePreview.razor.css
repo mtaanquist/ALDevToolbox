@@ -21,3 +21,17 @@
     outline: var(--focus-ring);
     outline-offset: -1px;
 }
+
+/* A file the generator will skip stays in the tree, so the "Example files"
+   toggle in the preview card head visibly costs something rather than the
+   tree quietly shrinking. Muted and struck through; the row keeps its shape
+   so nothing reflows when the toggle flips. */
+
+.tree__row--excluded .tree__name,
+.tree__row--excluded .tree__ico {
+    color: var(--ink-4);
+}
+
+.tree__row--excluded .tree__name {
+    text-decoration: line-through;
+}

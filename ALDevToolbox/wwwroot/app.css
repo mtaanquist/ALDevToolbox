@@ -203,3 +203,20 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 /* ---------- Accessibility helpers (M21) ---------- */
 
 
+
+/* ---------- Live preview card head (New Workspace / New Extension) ---------- */
+
+/* The example-files switch sits beside the Live badge in the preview card
+   head, so the option is next to the tree it changes. Both pages use it. */
+
+.preview__head-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+}
+
+.preview__head-tools .switch {
+    font-size: var(--text-xs);
+    white-space: nowrap;
+}

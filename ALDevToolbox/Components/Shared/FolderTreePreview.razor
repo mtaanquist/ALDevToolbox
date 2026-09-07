@@ -37,7 +37,8 @@
             }
             else
             {
-                <div class="tree__row @RowClass(node)" style="--d: @row.Depth" role="treeitem">
+                <div class="tree__row @RowClass(node)" style="--d: @row.Depth" role="treeitem"
+                     title="@(node.IsExcluded ? "Not generated - example files are off" : null)">
                     <Icon Name="@(node.Kind == PreviewNodeKind.File ? "file-code" : "folder")"
                           Width="14" Height="14" Css="tree__ico" />
                     <span class="tree__name">@node.Name@(node.Kind == PreviewNodeKind.File ? "" : "/")</span>
@@ -120,10 +121,19 @@
     private static string? RowMeta(PreviewNode node) =>
         node.IsNew ? "new" : string.IsNullOrWhiteSpace(node.Meta) ? null : node.Meta;
 
-    private static string RowClass(PreviewNode node) => node.Kind switch
+    /// <summary>
+    /// Kind picks the base row treatment; <see cref="PreviewNode.IsExcluded"/>
+    /// adds the struck-through modifier for rows the generator will leave out
+    /// (example files while the preview's own toggle is off).
+    /// </summary>
+    private static string RowClass(PreviewNode node)
     {
-        PreviewNodeKind.Extension => "tree__row--gen",
-        PreviewNodeKind.File => "tree__row--file",
-        _ => "tree__row--group",
-    };
+        var kind = node.Kind switch
+        {
+            PreviewNodeKind.Extension => "tree__row--gen",
+            PreviewNodeKind.File => "tree__row--file",
+            _ => "tree__row--group",
+        };
+        return node.IsExcluded ? kind + " tree__row--excluded" : kind;
+    }
 }

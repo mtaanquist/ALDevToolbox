@@ -111,6 +111,27 @@ public sealed class FolderTreePreviewTests : IDisposable
     }
 
     [Fact]
+    public void Excluded_files_stay_in_the_tree_but_carry_the_struck_through_modifier()
+    {
+        // With the preview's "Example files" toggle off the example rows are
+        // still listed, greyed and struck through, so the user sees what the
+        // toggle costs instead of the tree silently shrinking.
+        var root = PreviewNode.Folder("Workspace", new[]
+        {
+            PreviewNode.File("Real.al"),
+            PreviewNode.File("Example.al") with { IsExcluded = true },
+        });
+
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
+
+        var rows = cut.FindAll(".tree__row--file");
+        rows.Should().HaveCount(2, "an excluded file is shown, not hidden");
+        rows[0].ClassList.Should().NotContain("tree__row--excluded");
+        rows[1].ClassList.Should().Contain("tree__row--excluded");
+        rows[1].GetAttribute("title").Should().Contain("Not generated");
+    }
+
+    [Fact]
     public void The_legend_explains_what_the_accented_folders_are()
     {
         var root = PreviewNode.Folder("Workspace");

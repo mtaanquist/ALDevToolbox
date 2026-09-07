@@ -39,7 +39,7 @@ public sealed class ExtensionPreviewBuilderTests
     }
 
     [Fact]
-    public void BuildContents_drops_example_files_when_includeExamples_is_false()
+    public void BuildContents_flags_example_files_as_excluded_when_includeExamples_is_false()
     {
         var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
         folder.Files.Add(new WorkspaceExtensionFile
@@ -53,9 +53,44 @@ public sealed class ExtensionPreviewBuilderTests
 
         var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: false, NoPerExtensionFiles);
 
+        // The example row stays in the tree so the toggle in the preview card
+        // head visibly costs something; the flag is what greys and strikes it.
         var source = contents.Single(n => n.Name == "Source");
-        source.Children.Select(c => c.Name).Should().Contain("Real.al");
-        source.Children.Select(c => c.Name).Should().NotContain("Example.al");
+        source.Children.Single(c => c.Name == "Real.al").IsExcluded.Should().BeFalse();
+        source.Children.Single(c => c.Name == "Example.al").IsExcluded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildContents_keeps_example_files_unflagged_when_includeExamples_is_true()
+    {
+        var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
+        folder.Files.Add(new WorkspaceExtensionFile
+        {
+            OrganizationId = 1, Path = "Example.al", Content = string.Empty, IsExample = true,
+        });
+
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, NoPerExtensionFiles);
+
+        contents.Single(n => n.Name == "Source")
+            .Children.Single(c => c.Name == "Example.al").IsExcluded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildContents_adds_gitkeep_when_only_excluded_examples_remain()
+    {
+        // Mirrors the generator: with examples off the folder ships empty, so
+        // it gets the .gitkeep — beside the struck-through example row.
+        var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
+        folder.Files.Add(new WorkspaceExtensionFile
+        {
+            OrganizationId = 1, Path = "Example.al", Content = string.Empty, IsExample = true,
+        });
+
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: false, NoPerExtensionFiles);
+
+        var source = contents.Single(n => n.Name == "Source");
+        source.Children.Select(c => c.Name).Should().BeEquivalentTo(new[] { "Example.al", ".gitkeep" });
+        source.Children.Single(c => c.Name == ".gitkeep").IsExcluded.Should().BeFalse();
     }
 
     [Fact]
