@@ -295,6 +295,41 @@ public sealed class NewWorkspaceTests : IDisposable
     }
 
     /// <summary>
+    /// The example-files option sits in the preview card head so its effect is
+    /// visible in the tree beside it. That moves it off the posted checkbox it
+    /// used to be, so the value now rides a hidden input — pinned here because
+    /// losing it would silently generate example files the user turned off.
+    /// </summary>
+    [Fact]
+    public async Task The_example_files_switch_sits_in_the_preview_head_and_still_posts_its_value()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-15"));
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".card__head .switch").TextContent.Should().Contain("Include example files");
+            cut.Find("input[type='hidden'][name='IncludeExamples']")
+                .GetAttribute("value").Should().Be("true", "the option defaults to on");
+            cut.Markup.Should().NotContain("Include example AL files",
+                "the option moved out of the Options section into the preview head");
+        });
+
+        cut.Find(".card__head .switch input[type='checkbox']").Change(false);
+
+        cut.WaitForAssertion(() =>
+            cut.Find("input[type='hidden'][name='IncludeExamples']")
+                .GetAttribute("value").Should().Be("false",
+                    "the endpoint reads IncludeExamples from the POST, so the switch "
+                    + "has to carry the user's choice into it"));
+    }
+
+    /// <summary>
     /// The handoff between the page's validation and generate.js. The page
     /// cancels every submit and posts the form itself once the plan is clean
     /// (#546), which only works if two things hold: the form carries the id

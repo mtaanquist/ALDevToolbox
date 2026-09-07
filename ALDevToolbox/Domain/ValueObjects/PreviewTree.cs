@@ -21,6 +21,15 @@ public record PreviewNode(
     public bool IsNew { get; init; }
 
     /// <summary>
+    /// Marks a node the generator will <em>not</em> write, so the preview can
+    /// show it struck through rather than hiding it. Set on example AL files
+    /// while the "Example files" toggle in the preview card head is off: the
+    /// user sees exactly what the toggle costs them instead of the tree
+    /// silently shrinking. See <c>customer-naming.md</c>.
+    /// </summary>
+    public bool IsExcluded { get; init; }
+
+    /// <summary>
     /// Right-aligned per-row detail, rendered into the design system's
     /// <c>.tree__meta</c> slot. Carries the allocated AL object-id range on a
     /// generated extension folder ("ID 50100-50199") — which is what the

@@ -272,17 +272,6 @@
                     }
                 </section>
 
-                <section class="form-sec">
-                    <div class="form-sec__head"><span class="section-label">Options</span></div>
-                    <div class="check-list">
-                        <label class="check @(_includeExamples ? "is-checked" : "")">
-                            <input type="checkbox" name="IncludeExamples" value="true" @bind="_includeExamples" />
-                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                            Include example AL files
-                        </label>
-                    </div>
-                </section>
-
                 </div>
 
                 <aside class="gen__aside">
@@ -439,8 +428,19 @@
                                 <h4 class="card__title">Preview</h4>
                                 <p class="card__sub">@FolderName</p>
                             </div>
-                            <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                            @* The example-files switch lives here, not in the form
+                               below: flipping it strikes the affected rows out of
+                               the tree beside it, which is the whole explanation
+                               the option needs. *@
+                            <div class="preview__head-tools">
+                                <Switch Name="IncludeExamples" Label="Include example files"
+                                        @bind-Checked="_includeExamples" />
+                                <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                            </div>
                         </div>
+                        @* Switch drives component state, so it posts nothing of its
+                           own - this carries the value into the form post. *@
+                        <input type="hidden" name="IncludeExamples" value="@(_includeExamples ? "true" : "false")" />
                         <FolderTreePreview Root="BuildPreview()" />
                     </div>
 

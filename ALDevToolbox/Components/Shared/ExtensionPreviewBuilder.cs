@@ -76,13 +76,13 @@ public static class ExtensionPreviewBuilder
         }
         foreach (var file in folder.Files.OrderBy(f => f.Ordering))
         {
-            if (!includeExamples && file.IsExample) continue;
-            children.Add(PreviewNode.File(file.Path));
+            // Example files stay in the tree when the toggle is off, flagged
+            // so the renderer strikes them through — the toggle sits in the
+            // preview card head and has to visibly cost something.
+            var excluded = !includeExamples && file.IsExample;
+            children.Add(PreviewNode.File(file.Path) with { IsExcluded = excluded });
         }
-        if (children.Count == 0)
-        {
-            children.Add(PreviewNode.File(".gitkeep"));
-        }
+        AddGitkeepIfEmpty(children);
         return PreviewNode.Folder(folder.Path, children);
     }
 
@@ -95,13 +95,27 @@ public static class ExtensionPreviewBuilder
         }
         foreach (var file in folder.Files.OrderBy(f => f.Ordering))
         {
-            if (!includeExamples && file.IsExample) continue;
-            children.Add(PreviewNode.File(file.Path));
+            // Example files stay in the tree when the toggle is off, flagged
+            // so the renderer strikes them through — the toggle sits in the
+            // preview card head and has to visibly cost something.
+            var excluded = !includeExamples && file.IsExample;
+            children.Add(PreviewNode.File(file.Path) with { IsExcluded = excluded });
         }
-        if (children.Count == 0)
+        AddGitkeepIfEmpty(children);
+        return PreviewNode.Folder(folder.Path, children);
+    }
+
+    /// <summary>
+    /// Mirrors the generator's empty-leaf rule: a folder with nothing the ZIP
+    /// would actually contain gets a <c>.gitkeep</c>. Excluded rows don't
+    /// count, so turning examples off makes the placeholder appear alongside
+    /// them — which is what the ZIP will hold.
+    /// </summary>
+    private static void AddGitkeepIfEmpty(List<PreviewNode> children)
+    {
+        if (children.All(c => c.IsExcluded))
         {
             children.Add(PreviewNode.File(".gitkeep"));
         }
-        return PreviewNode.Folder(folder.Path, children);
     }
 }

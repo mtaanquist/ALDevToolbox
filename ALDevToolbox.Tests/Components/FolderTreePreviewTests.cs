@@ -111,6 +111,69 @@ public sealed class FolderTreePreviewTests : IDisposable
     }
 
     [Fact]
+    public void Excluded_files_stay_in_the_tree_but_carry_the_struck_through_modifier()
+    {
+        // With the preview's "Example files" toggle off the example rows are
+        // still listed, greyed and struck through, so the user sees what the
+        // toggle costs instead of the tree silently shrinking.
+        var root = PreviewNode.Folder("Workspace", new[]
+        {
+            PreviewNode.File("Real.al"),
+            PreviewNode.File("Example.al") with { IsExcluded = true },
+        });
+
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
+
+        var rows = cut.FindAll(".tree__row--file");
+        rows.Should().HaveCount(2, "an excluded file is shown, not hidden");
+        rows[0].ClassList.Should().NotContain("tree__row--excluded");
+        rows[1].ClassList.Should().Contain("tree__row--excluded");
+        rows[1].QuerySelector(".u-sr-only")!.TextContent.Should().Be("not in the ZIP",
+            "strike-through is invisible to a screen reader, so the state is also said");
+        rows[0].QuerySelector(".u-sr-only").Should().BeNull();
+    }
+
+    [Fact]
+    public void A_collapsible_folder_that_is_excluded_says_so_to_a_screen_reader_too()
+    {
+        var root = PreviewNode.Folder("Workspace", new[]
+        {
+            PreviewNode.Folder("Examples", new[] { PreviewNode.File("Example.al") })
+                with { IsExcluded = true },
+        });
+
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
+
+        cut.Find("button.tree__row--excluded .u-sr-only").TextContent.Should().Be("not in the ZIP");
+        cut.Find("button.tree__row--excluded").GetAttribute("aria-label").Should()
+            .EndWith(", not in the ZIP",
+                "the aria-label replaces the row's inner text, so it has to say it too");
+    }
+
+    [Fact]
+    public void The_legend_gains_a_key_for_struck_rows_only_while_something_is_struck()
+    {
+        var clean = PreviewNode.Folder("Workspace", new[] { PreviewNode.File("Real.al") });
+
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, clean));
+        cut.FindAll(".tree__key--excluded").Should().BeEmpty(
+            "the key explains a treatment that is not on screen");
+
+        // Collapsed by default is irrelevant — the key follows the whole tree,
+        // not the rows currently rendered.
+        var withExcluded = PreviewNode.Folder("Workspace", new[]
+        {
+            PreviewNode.Folder("src", new[]
+            {
+                PreviewNode.File("Example.al") with { IsExcluded = true },
+            }),
+        });
+
+        cut.Render(p => p.Add(c => c.Root, withExcluded));
+        cut.Find(".tree__key--excluded").TextContent.Should().Contain("Not in the ZIP");
+    }
+
+    [Fact]
     public void The_legend_explains_what_the_accented_folders_are()
     {
         var root = PreviewNode.Folder("Workspace");
