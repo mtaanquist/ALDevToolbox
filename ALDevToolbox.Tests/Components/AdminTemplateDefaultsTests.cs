@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.DataProtection;
 using ALDevToolbox.Components.Pages.Admin;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
@@ -88,6 +89,65 @@ public sealed class AdminTemplateDefaultsTests : IDisposable
         // rather than inner content (the runtime sets the property after the
         // browser hydrates); TextContent is empty in the initial render.
         cut.Find("#cfg-desc").GetAttribute("value").Should().Be("Long description here.");
+    }
+
+    [Fact]
+    public async Task The_naming_section_pre_fills_from_the_settings_row_and_saves()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.OrganizationSettings.Add(new OrganizationSettings
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                DefaultPublisher = "CRONUS A/S",
+                DefaultIdRangeFrom = 80000,
+                DefaultIdRangeTo = 80999,
+                NamingFolderStyle = NamingStyle.Lowercase,
+                NamingRepositoryStyle = NamingStyle.SnakeCase,
+                ExtensionPrefixMode = ExtensionPrefixMode.Fixed,
+                ExtensionPrefix = "PARTNER",
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<AdminTemplateDefaults>();
+        cut.WaitForState(() => cut.FindAll("#cfg-folder-style").Any(), TimeSpan.FromSeconds(5));
+
+        cut.Find("#cfg-folder-style").GetAttribute("value").Should().Be(nameof(NamingStyle.Lowercase));
+        cut.Find("#cfg-repo-style").GetAttribute("value").Should().Be(nameof(NamingStyle.SnakeCase));
+        cut.Find("#cfg-prefix-mode").GetAttribute("value").Should().Be(nameof(ExtensionPrefixMode.Fixed));
+        cut.Find("#cfg-prefix").GetAttribute("value").Should().Be("PARTNER");
+        // The example is worked through for the admin rather than described.
+        cut.Markup.Should().Contain("jorgensen_mobler");
+
+        // Change one style and save: the row has to carry the new value.
+        cut.Find("#cfg-folder-style").Change(nameof(NamingStyle.KebabCase));
+        cut.Find(".form-actions .btn--primary").Click();
+
+        await using (var check = _db.NewContext())
+        {
+            var row = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                .FirstAsync(check.OrganizationSettings);
+            row.NamingFolderStyle.Should().Be(NamingStyle.KebabCase);
+            row.NamingRepositoryStyle.Should().Be(NamingStyle.SnakeCase);
+            row.ExtensionPrefixMode.Should().Be(ExtensionPrefixMode.Fixed);
+            row.ExtensionPrefix.Should().Be("PARTNER");
+        }
+    }
+
+    [Fact]
+    public void The_prefix_value_is_only_asked_for_when_a_prefix_is_used()
+    {
+        var cut = _ctx.Render<AdminTemplateDefaults>();
+        cut.WaitForState(() => cut.FindAll("#cfg-prefix-mode").Any(), TimeSpan.FromSeconds(5));
+
+        // PerWorkspace is the default, so the value field starts out shown.
+        cut.FindAll("#cfg-prefix").Should().NotBeEmpty();
+
+        cut.Find("#cfg-prefix-mode").Change(nameof(ExtensionPrefixMode.Hidden));
+        cut.WaitForAssertion(() => cut.FindAll("#cfg-prefix").Should().BeEmpty(
+            "an organisation that uses no prefix has no value to give"));
     }
 
     [Fact]

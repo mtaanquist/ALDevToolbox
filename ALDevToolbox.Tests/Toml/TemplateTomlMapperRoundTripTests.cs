@@ -42,13 +42,12 @@ public sealed class TemplateTomlMapperRoundTripTests
     }
 
     [Fact]
-    public void Round_trip_preserves_defaults_including_affix_and_extension_prefix()
+    public void Round_trip_preserves_defaults_including_affix()
     {
         var template = TemplateBuilder.Default();
         template.Defaults.Publisher = "Acme";
         template.Defaults.Application = "27.0.0.0";
         template.Defaults.Platform = "1.0.0.0";
-        template.Defaults.ExtensionPrefix = "ACME";
         template.Defaults.Affix = "ACME";
         template.Defaults.AffixType = AffixType.Prefix;
         template.Defaults.Features = new List<string> { "TranslationFile", "NoImplicitWith" };
@@ -63,7 +62,6 @@ public sealed class TemplateTomlMapperRoundTripTests
         defaults.Publisher.Should().Be("Acme");
         defaults.Application.Should().Be("27.0.0.0");
         defaults.Platform.Should().Be("1.0.0.0");
-        defaults.ExtensionPrefix.Should().Be("ACME");
         defaults.Affix.Should().Be("ACME");
         defaults.AffixType.Should().Be(AffixType.Prefix);
         defaults.Features.Should().Equal("TranslationFile", "NoImplicitWith");

@@ -61,6 +61,28 @@ public class GenerationService
                 ?? throw new InvalidOperationException("Generation invoked without an organisation in scope."),
             ct);
 
+    private static string ResolvePrefix(OrganizationConfig orgConfig, ProjectPlan plan) =>
+        ExtensionPrefixPolicy.Resolve(
+            orgConfig.Settings, plan.ExtensionPrefix, plan.ShortName, plan.WorkspaceName);
+
+    /// <summary>
+    /// The prefix <paramref name="plan"/> will actually be generated with, per
+    /// the organisation's <see cref="ExtensionPrefixMode"/>. Public so the MCP
+    /// tool can report it back to the agent that asked - the generator resolves
+    /// it again internally, off the same cached settings row.
+    /// </summary>
+    public async Task<string> ResolveExtensionPrefixAsync(ProjectPlan plan, CancellationToken ct = default) =>
+        ResolvePrefix(await GetOrgConfigAsync(ct), plan);
+
+    /// <summary>
+    /// The organisation's folder naming style - how a customer's name becomes
+    /// the workspace folder and the <c>.code-workspace</c> file name. Exposed
+    /// for the callers that show or rewrite those names without generating
+    /// anything themselves.
+    /// </summary>
+    public async Task<NamingStyle> GetFolderStyleAsync(CancellationToken ct = default) =>
+        (await GetOrgConfigAsync(ct)).Settings.NamingFolderStyle;
+
     // ===== Workspace flow =====
 
     /// <summary>
@@ -72,10 +94,10 @@ public class GenerationService
     public async Task<GeneratedArchive> GenerateWorkspaceAsync(ProjectPlan plan, CancellationToken ct = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        var (template, extensions, orgConfig) = await PrepareWorkspaceAsync(plan, ct);
+        var (resolvedPlan, template, extensions, orgConfig) = await PrepareWorkspaceAsync(plan, ct);
 
-        var (stream, fileCount) = await _zipBuilder.BuildWorkspaceAsync(plan, template, extensions, orgConfig, ct);
-        var folderName = CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase);
+        var (stream, fileCount) = await _zipBuilder.BuildWorkspaceAsync(resolvedPlan, template, extensions, orgConfig, ct);
+        var folderName = CustomerNaming.Apply(resolvedPlan.WorkspaceName, orgConfig.Settings.NamingFolderStyle);
         stopwatch.Stop();
 
         _logger.LogInformation(
@@ -171,7 +193,7 @@ public class GenerationService
     /// plan the endpoint then rejects — landing the user on the error page this
     /// was built to avoid. One code path is the only way to keep that honest.
     /// </remarks>
-    private async Task<(RuntimeTemplate Template, List<EmittableExtension> Extensions, OrganizationConfig OrgConfig)>
+    private async Task<(ProjectPlan Plan, RuntimeTemplate Template, List<EmittableExtension> Extensions, OrganizationConfig OrgConfig)>
         PrepareWorkspaceAsync(ProjectPlan plan, CancellationToken ct)
     {
         ValidateWorkspacePlan(plan);
@@ -181,6 +203,12 @@ public class GenerationService
         var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
         var orgConfig = await GetOrgConfigAsync(ct);
 
+        // The prefix is the organisation's policy, not the caller's, so it is
+        // decided here rather than trusted from the form or the MCP input -
+        // under Hidden and Fixed whatever arrived is ignored. See
+        // .design/customer-naming.md.
+        plan = plan with { ExtensionPrefix = ResolvePrefix(orgConfig, plan) };
+
         // {{publisher}} resolves to the org's configuration default, falling
         // back to the template default for a fresh org. Resolved once here and
         // threaded into every extension so the per-extension app.json and the
@@ -188,11 +216,11 @@ public class GenerationService
         var publisher = GenerationNaming.ResolvePublisher(
             orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher);
 
-        var extensions = BuildExtensionList(template, plan, modules, publisher);
+        var extensions = BuildExtensionList(template, plan, modules, publisher, orgConfig.Settings.NamingFolderStyle);
         ValidateIdRanges(extensions);
         ValidateExtensionNames(extensions);
 
-        return (template, extensions, orgConfig);
+        return (plan, template, extensions, orgConfig);
     }
 
     /// <summary>
@@ -297,7 +325,7 @@ public class GenerationService
     /// <see cref="EmittableExtension"/> carries a fresh GUID, its resolved
     /// id-range, the substituted display name, and the source folder tree.
     /// </summary>
-    private List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules, string publisher)
+    private List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules, string publisher, NamingStyle folderStyle)
     {
         var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
         var list = new List<EmittableExtension>();
@@ -315,21 +343,21 @@ public class GenerationService
         {
             if (!ext.Required && !selectedOptional.Contains(ext.Path)) continue;
             var range = ranges[next++];
-            list.Add(BuildFromTemplate(ext, template, plan, range.From, range.To, publisher));
+            list.Add(BuildFromTemplate(ext, template, plan, range.From, range.To, publisher, folderStyle));
         }
 
         foreach (var module in modules)
         {
             var range = ranges[next++];
-            list.Add(BuildFromModule(module, template, plan, range.From, range.To, publisher));
+            list.Add(BuildFromModule(module, template, plan, range.From, range.To, publisher, folderStyle));
         }
 
         return list;
     }
 
-    private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher)
+    private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher, NamingStyle folderStyle)
     {
-        var name = SubstituteScalar(ext.NameTemplate, plan, template);
+        var name = SubstituteScalar(ext.NameTemplate, plan, template, folderStyle);
         return new EmittableExtension(
             Path: ext.Path,
             Name: name,
@@ -349,14 +377,14 @@ public class GenerationService
                 .ToList());
     }
 
-    private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher)
+    private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher, NamingStyle folderStyle)
     {
         // The cloned extension's folder name and rendered AL name both come
         // from Module.ExtensionName (a PascalCase admin-controlled value).
         // Module.Key stays as the URL/admin slug and the dep ref target —
         // not the folder.
         var nameTemplate = $"{{{{extension_prefix}}}} {module.ExtensionName}";
-        var name = SubstituteScalar(nameTemplate, plan, template);
+        var name = SubstituteScalar(nameTemplate, plan, template, folderStyle);
 
         // Module dependencies (from module_dependencies) become literal deps.
         // Implicit dependencies on every required template-declared extension
@@ -541,7 +569,7 @@ public class GenerationService
     /// <c>"{{extension_prefix}} Core"</c>, and an organisation that sets no
     /// prefix would otherwise get an extension called " Core".
     /// </remarks>
-    private string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
+    private string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template, NamingStyle folderStyle)
     {
         var ctx = new MustacheContext(
             Name: source,
@@ -552,7 +580,8 @@ public class GenerationService
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty,
-            TenantId: plan.TenantId);
+            TenantId: plan.TenantId,
+            FolderStyle: folderStyle);
         return _mustache.Render(source, ctx).Trim();
     }
 }

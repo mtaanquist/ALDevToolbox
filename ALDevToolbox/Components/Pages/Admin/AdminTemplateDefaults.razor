@@ -9,6 +9,7 @@
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 @using Microsoft.AspNetCore.Components.Forms
+@using ALDevToolbox.Services.Generation
 @using ALDevToolbox.Services.Organizations
 
 @*
@@ -115,6 +116,101 @@
             </div>
         </section>
 
+        @* Naming (#757). The two derived names and the extension prefix are an
+           organisation convention, so they are set once here rather than on
+           every workspace. The example under each picker is the same
+           CustomerNaming call the generator makes, so what an admin reads is
+           what the generator will write. See .design/customer-naming.md. *@
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Naming</h2>
+                    <p class="card__sub">
+                        How a customer's name becomes the names in a generated
+                        workspace. Applies to every workspace your organisation
+                        generates from now on.
+                    </p>
+                </div>
+            </div>
+            <div class="card__body form-sec">
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="field__label" for="cfg-folder-style">Workspace folder name</label>
+                        <span class="select-wrap">
+                            <select class="select" id="cfg-folder-style" @bind="_folderStyle">
+                                @foreach (var style in FolderStyles)
+                                {
+                                    <option value="@style">@StyleLabel(style)</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <span class="field__hint">
+                            A customer called @ExampleCustomer gets the folder
+                            <code class="code">@CustomerNaming.Apply(ExampleCustomer, _folderStyle)</code>,
+                            with a matching <code class="code">.code-workspace</code> file inside it.
+                        </span>
+                    </div>
+
+                    <div class="field">
+                        <label class="field__label" for="cfg-repo-style">Repository name</label>
+                        <span class="select-wrap">
+                            <select class="select" id="cfg-repo-style" @bind="_repositoryStyle">
+                                @foreach (var style in RepositoryStyles)
+                                {
+                                    <option value="@style">@StyleLabel(style)</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <span class="field__hint">
+                            The same customer gets the repository
+                            <code class="code">@CustomerNaming.Apply(ExampleCustomer, _repositoryStyle)</code>.
+                            Suggested on the form - the consultant can still type another name.
+                        </span>
+                    </div>
+
+                    <div class="field">
+                        <label class="field__label" for="cfg-prefix-mode">Extension prefix</label>
+                        <span class="select-wrap">
+                            <select class="select" id="cfg-prefix-mode" @bind="_prefixMode">
+                                <option value="@ExtensionPrefixMode.Hidden">Not used</option>
+                                <option value="@ExtensionPrefixMode.Fixed">Same for every workspace</option>
+                                <option value="@ExtensionPrefixMode.PerWorkspace">Chosen per workspace</option>
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <span class="field__hint">
+                            The word every extension name starts with, as in
+                            <code class="code">CRONUS Core</code>. Choose <strong>Not used</strong> and
+                            each customer's own short name starts the name instead.
+                        </span>
+                    </div>
+
+                    @if (_prefixMode != ExtensionPrefixMode.Hidden)
+                    {
+                        <div class="field">
+                            <label class="field__label" for="cfg-prefix">
+                                Prefix
+                                @if (_prefixMode == ExtensionPrefixMode.Fixed)
+                                {
+                                    <span class="req">*</span>
+                                }
+                            </label>
+                            <input class="input" id="cfg-prefix" type="text" placeholder="e.g. CRONUS"
+                                   maxlength="@OrganizationConfigService.MaxExtensionPrefixLength"
+                                   @bind="_prefix" @bind:event="oninput" />
+                            <span class="field__hint">
+                                @(_prefixMode == ExtensionPrefixMode.Fixed
+                                    ? "Used for every workspace, so extensions are named after your organisation rather than the customer."
+                                    : "Fills the field on the New Workspace form. Leave blank to fill it with the customer's short name instead.")
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+
         @* Logo section - folded in from the retired /admin/templates/logo page so
            admins manage one Defaults form instead of two. The image is bundled
            into every generated workspace under .assets/images/logo.<ext>.
@@ -216,6 +312,40 @@
     private string _url = string.Empty;
     private string _logoPath = string.Empty;
 
+    private NamingStyle _folderStyle = NamingStyle.PascalCase;
+    private NamingStyle _repositoryStyle = NamingStyle.KebabCase;
+    private ExtensionPrefixMode _prefixMode = ExtensionPrefixMode.PerWorkspace;
+    private string _prefix = string.Empty;
+
+    private NamingStyle _baseFolderStyle = NamingStyle.PascalCase;
+    private NamingStyle _baseRepositoryStyle = NamingStyle.KebabCase;
+    private ExtensionPrefixMode _basePrefixMode = ExtensionPrefixMode.PerWorkspace;
+    private string _basePrefix = string.Empty;
+
+    /// <summary>
+    /// The name the examples are worked through. A Danish customer with two
+    /// letters that have to be transliterated, so an admin sees what the styles
+    /// do to a real name rather than to an ASCII one.
+    /// </summary>
+    private const string ExampleCustomer = "Jørgensen Møbler";
+
+    private static readonly NamingStyle[] FolderStyles =
+        Enum.GetValues<NamingStyle>();
+
+    /// <summary>Every style but None - a repository name cannot contain spaces.</summary>
+    private static readonly NamingStyle[] RepositoryStyles =
+        Enum.GetValues<NamingStyle>().Where(s => s != NamingStyle.None).ToArray();
+
+    private static string StyleLabel(NamingStyle style) => style switch
+    {
+        NamingStyle.PascalCase => "PascalCase",
+        NamingStyle.CamelCase => "camelCase",
+        NamingStyle.KebabCase => "kebab-case",
+        NamingStyle.SnakeCase => "snake_case",
+        NamingStyle.Lowercase => "lowercase",
+        _ => "Words with spaces",
+    };
+
     private string _basePublisher = string.Empty;
     private int _baseIdFrom;
     private int _baseIdTo;
@@ -241,6 +371,10 @@
         || _description != _baseDescription
         || _url != _baseUrl
         || _logoPath != _baseLogoPath
+        || _folderStyle != _baseFolderStyle
+        || _repositoryStyle != _baseRepositoryStyle
+        || _prefixMode != _basePrefixMode
+        || _prefix != _basePrefix
         || _pendingLogoBytes is not null
         || _removeLogo;
 
@@ -260,6 +394,10 @@
         _description = _baseDescription = config.Settings.DefaultCoreDescription;
         _url = _baseUrl = config.Settings.DefaultUrl ?? string.Empty;
         _logoPath = _baseLogoPath = config.Settings.DefaultLogo ?? string.Empty;
+        _folderStyle = _baseFolderStyle = config.Settings.NamingFolderStyle;
+        _repositoryStyle = _baseRepositoryStyle = config.Settings.NamingRepositoryStyle;
+        _prefixMode = _basePrefixMode = config.Settings.ExtensionPrefixMode;
+        _prefix = _basePrefix = config.Settings.ExtensionPrefix ?? string.Empty;
         _logo = config.Logo;
         _pendingLogoBytes = null;
         _pendingLogoContentType = null;
@@ -328,6 +466,11 @@
                 DefaultCoreDescription: _description,
                 DefaultUrl: _url,
                 DefaultLogo: _logoPath));
+            await Config.SaveNamingAsync(new OrganizationNamingInput(
+                FolderStyle: _folderStyle,
+                RepositoryStyle: _repositoryStyle,
+                ExtensionPrefixMode: _prefixMode,
+                ExtensionPrefix: _prefix));
             // Settings landed; now apply the logo change (if any). Both calls
             // touch the same org-config cache, so a partial failure here still
             // leaves the settings save committed - surface the error so the

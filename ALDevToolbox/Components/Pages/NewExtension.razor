@@ -478,7 +478,7 @@
                                     @* Spaces come out of the file name, exactly as the generator
                                        emits it - naming a file that is not in the ZIP sends the
                                        user hunting. *@
-                                    <code class="code">@($"{CustomerNaming.Apply(_workspaceContext.WorkspaceName, NamingStyle.PascalCase)}.code-workspace")</code>
+                                    <code class="code">@($"{CustomerNaming.Apply(_workspaceContext.WorkspaceName, FolderStyle)}.code-workspace")</code>
                                     file into your existing workspace, replacing the old workspace
                                     file. The new <code class="code">folders</code> array already lists every
                                     extension plus the new one.
@@ -605,6 +605,13 @@
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
 
     private OrganizationConfig? _orgConfig;
+
+    /// <summary>
+    /// The organisation's folder naming style, or the default while the config
+    /// is still loading. Only names a workspace this extension is joining -
+    /// the extension's own folder comes from its name.
+    /// </summary>
+    private NamingStyle FolderStyle => _orgConfig?.Settings.NamingFolderStyle ?? NamingStyle.PascalCase;
 
     /// <summary>
     /// Field-keyed problems from the last submit attempt. See
@@ -1051,7 +1058,7 @@
 
     private PreviewNode BuildSiblingWorkspacePreview(WorkspaceImportContext context)
     {
-        var rootName = CustomerNaming.Apply(context.WorkspaceName, NamingStyle.PascalCase) is { Length: > 0 } folder
+        var rootName = CustomerNaming.Apply(context.WorkspaceName, FolderStyle) is { Length: > 0 } folder
             ? folder
             : "Workspace";
 

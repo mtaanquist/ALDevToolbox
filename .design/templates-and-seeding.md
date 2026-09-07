@@ -142,7 +142,6 @@ publisher = "Consortio IT"
 target = "Cloud"
 application = "27.0.0.0"        # pre-fill; user can override on New Workspace
 platform = "1.0.0.0"            # pre-fill; user can override on New Workspace
-extension_prefix = "CRONUS"       # pre-fill; user can override on New Workspace
 url = "https://www.consortio.dk/"
 logo = "../.assets/images/logo.png"
 features = ["TranslationFile", "NoImplicitWith"]
@@ -292,7 +291,7 @@ Canonical names are snake_case to match the rest of the TOML schema. Legacy came
 | `{{short_name}}`        | The short name typed on the form, or the customer name when blank |
 | `{{module_name}}`       | Module's `extension_name` (PascalCase) for module-cloned extensions |
 | `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`                    |
-| `{{extension_prefix}}`  | Per-workspace short identifier from the plan, e.g. "CRO"   |
+| `{{extension_prefix}}`  | Resolved from the organisation's prefix policy, e.g. "CRO" (see `customer-naming.md`) |
 | `{{affix}}`             | `defaults.affix` when `affixType ∈ {Prefix, Suffix}`; empty when `None`. Replaces the pre-unified `{{prefix}}` / `{{suffix}}`. |
 | `{{namespace}}`         | The folder path, dot-separated                             |
 | `{{guid}}`              | A fresh GUID per call                                      |

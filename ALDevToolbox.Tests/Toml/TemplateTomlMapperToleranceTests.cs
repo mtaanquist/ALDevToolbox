@@ -129,6 +129,21 @@ path = "pageextensions"
 """;
 
     [Fact]
+    public void A_template_still_carrying_the_retired_extension_prefix_key_imports()
+    {
+        // The prefix moved onto organisation settings (#757). A template.toml
+        // exported before that still has the key in [defaults]; importing it
+        // must not fail, and the value is simply not used.
+        var toml = CustomerTemplateToml;
+        toml.Should().Contain("extension_prefix", "the fixture is the pre-#757 shape this test is about");
+
+        var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
+
+        parsed.Key.Should().Be("runtime-new");
+        parsed.DefaultsJson.Should().NotContain("extension_prefix");
+    }
+
+    [Fact]
     public void Customer_template_parses_metadata_and_defaults()
     {
         var parsed = TemplateTomlMapper.FromToml(CustomerTemplateToml, deprecated: false);
@@ -137,7 +152,6 @@ path = "pageextensions"
         var defaults = JsonSerializer.Deserialize<TemplateDefaults>(parsed.DefaultsJson)!;
         defaults.Application.Should().Be("27.5.0.0");
         defaults.Platform.Should().Be("1.0.0.0");
-        defaults.ExtensionPrefix.Should().Be("TEST");
         defaults.Affix.Should().Be("TEST");
         defaults.AffixType.Should().Be(AffixType.Prefix);
         defaults.Publisher.Should().Be("Test Publisher");

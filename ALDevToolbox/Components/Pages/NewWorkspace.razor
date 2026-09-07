@@ -173,15 +173,26 @@
                             }
                             <FieldError Field="ShortName" Errors="_errors" />
                         </div>
-                        <div class="field">
-                            <label class="field__label" for="ws-prefix">Extension prefix</label>
-                            <input class="input" id="ws-prefix" type="text" name="ExtensionPrefix" placeholder="e.g. CRONUS"
-                                   value="@ExtensionPrefix" @oninput="OnExtensionPrefixInput" />
-                            <span class="field__hint">
-                                Added to the names of generated extensions (e.g. <code class="code">CRONUS Core</code>).
-                                Different from the AL object-name affix set on the template itself.
-                            </span>
-                        </div>
+                        @* Only asked for when the organisation leaves the choice
+                           per workspace. Under the other two policies the prefix
+                           is already decided, and the endpoint resolves it
+                           server-side either way - see ExtensionPrefixPolicy. *@
+                        @if (ShowExtensionPrefix)
+                        {
+                            <div class="field">
+                                <label class="field__label" for="ws-prefix">Extension prefix</label>
+                                @* The placeholder is what an empty field will be
+                                   generated with, so clearing the field shows the
+                                   value it falls back to instead of nothing. *@
+                                <input class="input" id="ws-prefix" type="text" name="ExtensionPrefix"
+                                       placeholder="@(string.IsNullOrWhiteSpace(ExtensionPrefixFallback) ? "e.g. CRONUS" : ExtensionPrefixFallback)"
+                                       value="@ExtensionPrefix" @oninput="OnExtensionPrefixInput" />
+                                <span class="field__hint">
+                                    Starts the name of every extension in this workspace, as in
+                                    <code class="code">CRONUS Core</code>.
+                                </span>
+                            </div>
+                        }
                         <div class="field field--full">
                             <label class="field__label" for="ws-brief">Short description</label>
                             <input class="input" id="ws-brief" type="text" name="Brief" placeholder="One line, shown in app.json"
@@ -805,15 +816,32 @@
     private string? _standardsSummary;
 
     /// <summary>
-    /// The prefix in the field, or the short name while the template offers no
-    /// prefix of its own and the user has not typed one - so an organisation
-    /// with no prefix convention still gets "CRO Core" rather than "Core".
-    /// Once the user types, what they typed stands.
+    /// Whether this organisation asks for a prefix per workspace at all. The
+    /// other two policies already know the answer, so the field is not shown.
+    /// </summary>
+    private bool ShowExtensionPrefix =>
+        _orgConfig is null || ExtensionPrefixPolicy.IsAskedFor(_orgConfig.Settings.ExtensionPrefixMode);
+
+    /// <summary>
+    /// The prefix this workspace will be generated with. What the user typed
+    /// once they have typed something; otherwise whatever the organisation's
+    /// policy resolves to - the org's own value, or the short name, so a
+    /// workspace still gets "CRO Core" rather than " Core". The server resolves
+    /// this again from the same rule, so a hidden field cannot smuggle a value
+    /// past the organisation's policy.
     /// </summary>
     private string ExtensionPrefix =>
-        _extensionPrefixEdited || !string.IsNullOrWhiteSpace(_extensionPrefix)
-            ? _extensionPrefix
-            : _shortName.Trim();
+        _extensionPrefixEdited ? _extensionPrefix : ExtensionPrefixFallback;
+
+    /// <summary>
+    /// What an untouched (or emptied) prefix field generates: the
+    /// organisation's own prefix when it has one, the customer's short name
+    /// otherwise. The same rule the server applies.
+    /// </summary>
+    private string ExtensionPrefixFallback =>
+        _orgConfig is null
+            ? _shortName.Trim()
+            : ExtensionPrefixPolicy.Resolve(_orgConfig.Settings, null, _shortName, _workspaceName);
 
     private void OnExtensionPrefixInput(ChangeEventArgs e)
     {
@@ -829,7 +857,15 @@
     /// </summary>
     private string RepositoryName => _repositoryNameEdited
         ? _repositoryName
-        : GitHubWorkspaceRepositoryService.SuggestName(_workspaceName);
+        : GitHubWorkspaceRepositoryService.SuggestName(_workspaceName, RepositoryStyle);
+
+    /// <summary>The organisation's repository naming style, or the default while the config loads.</summary>
+    private NamingStyle RepositoryStyle =>
+        _orgConfig?.Settings.NamingRepositoryStyle ?? NamingStyle.KebabCase;
+
+    /// <summary>The organisation's folder naming style, or the default while the config loads.</summary>
+    private NamingStyle FolderStyle =>
+        _orgConfig?.Settings.NamingFolderStyle ?? NamingStyle.PascalCase;
 
     /// <summary>
     /// Field-keyed problems from the last submit attempt, straight from
@@ -1102,14 +1138,6 @@
         _templateKey = template.Key;
         _coreIdRangeFrom = template.CoreIdRangeFrom;
         _coreIdRangeTo = template.CoreIdRangeTo;
-        // Pre-fill the friendly extension-name prefix from the template's
-        // defaults. The user can override per workspace - this only seeds the
-        // initial value when switching templates.
-        // A template switch re-seeds the prefix, so whatever was typed against
-        // the old template is gone either way - and a new template with no
-        // prefix of its own falls back to the short name again.
-        _extensionPrefix = template.Defaults.ExtensionPrefix;
-        _extensionPrefixEdited = false;
         // Populate the optional-extension checkbox list. Switching templates
         // wipes prior selections; required entries (Required = true) are
         // emitted unconditionally and don't surface here.
@@ -1195,7 +1223,7 @@
     /// root; the server refuses that name anyway.
     /// </summary>
     private string PreviewRootName =>
-        CustomerNaming.Apply(_workspaceName, NamingStyle.PascalCase) is { Length: > 0 } folder
+        CustomerNaming.Apply(_workspaceName, FolderStyle) is { Length: > 0 } folder
             ? folder
             : "Workspace";
 

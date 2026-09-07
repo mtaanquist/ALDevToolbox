@@ -7,7 +7,7 @@ namespace ALDevToolbox.Domain.ValueObjects;
 /// values are the default starting state of a workspace plan: some merge
 /// verbatim into every generated <c>app.json</c> (publisher, target, features,
 /// supportedLocales, resourceExposurePolicy), some pre-fill the New Workspace
-/// form (application, platform, extension_prefix). See
+/// form (application, platform). See
 /// <c>.design/templates-and-seeding.md</c> for the split.
 /// </summary>
 public class TemplateDefaults
@@ -33,15 +33,6 @@ public class TemplateDefaults
     /// </summary>
     [JsonPropertyName("platform")]
     public string Platform { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Pre-fills the per-workspace extension-prefix on the New Workspace form
-    /// (e.g. <c>CRONUS</c> → renders extension names like <c>CRONUS Core</c>). User
-    /// can override per workspace. Distinct from <see cref="Affix"/>: this is
-    /// the friendly extension-name prefix, not the AL object-name affix.
-    /// </summary>
-    [JsonPropertyName("extension_prefix")]
-    public string ExtensionPrefix { get; set; } = string.Empty;
 
     [JsonPropertyName("url")]
     public string? Url { get; set; }
