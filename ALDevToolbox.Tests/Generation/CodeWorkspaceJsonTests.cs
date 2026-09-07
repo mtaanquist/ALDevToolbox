@@ -293,7 +293,7 @@ public sealed class CodeWorkspaceJsonTests : IDisposable
         using var doc = JsonDocument.Parse(ReadEntry(entry!));
         doc.RootElement.GetProperty("settings")
             .GetProperty("al.workspaceShortName").GetString()
-            .Should().Be("AcmeCustomer");
+            .Should().Be("Acme Customer");
     }
 
     [Fact]

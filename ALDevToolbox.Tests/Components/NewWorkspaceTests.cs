@@ -110,9 +110,10 @@ public sealed class NewWorkspaceTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             var fields = cut.FindAll("input[name='WorkspaceName'], input[name='ShortName']");
+            // In document order: the abbreviation is read after the name it
+            // abbreviates.
             fields.Select(f => f.GetAttribute("name"))
-                .Should().Equal("WorkspaceName", "ShortName",
-                    "the abbreviation is read after the name it abbreviates");
+                .Should().Equal(new[] { "WorkspaceName", "ShortName" });
 
             var shortName = cut.Find("input[name='ShortName']");
             shortName.HasAttribute("required").Should().BeFalse(

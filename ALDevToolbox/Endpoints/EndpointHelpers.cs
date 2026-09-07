@@ -298,7 +298,11 @@ internal static class EndpointHelpers
 
         return key switch
         {
-            "WorkspaceName" => "Workspace name",
+            // The New Workspace form asks for the customer, not a workspace
+            // name; the plan property keeps its old name (CLAUDE.md's spine
+            // rule), so the label is where the two meet.
+            "WorkspaceName" => "Customer",
+            "ShortName" => "Short name",
             "ExtensionName" => "Extension name",
             "Publisher" => "Publisher",
             "CustomerName" => "Customer",
