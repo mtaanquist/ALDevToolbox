@@ -100,6 +100,8 @@ public sealed class GitHubTools
         string name,
         [Description("Whether the new repository is private. Defaults to true.")]
         bool isPrivate = true,
+        [Description("Optional. The id of an existing solution (from list_solutions) to register the new repository on. Leave it out to create a new solution named after the customer.")]
+        int? solutionId = null,
         CancellationToken ct = default)
     {
         try
@@ -108,7 +110,7 @@ public sealed class GitHubTools
             // the membership check and the credential split are inherited rather
             // than restated - see "Keeping MCP parity with the web UI" in PROJECT.md.
             var created = await _workspaces.CreateAsync(
-                plan.ToDomain(), (name ?? string.Empty).Trim(), isPrivate, ct);
+                plan.ToDomain(), (name ?? string.Empty).Trim(), isPrivate, solutionId, ct);
             return RepositoryCreationResult.From(created);
         }
         catch (Exception ex) when (IsGitHubRefusal(ex))

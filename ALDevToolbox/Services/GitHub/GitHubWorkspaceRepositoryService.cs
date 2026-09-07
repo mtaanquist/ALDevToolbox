@@ -5,6 +5,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Generation;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Services.GitHub;
@@ -30,13 +31,33 @@ namespace ALDevToolbox.Services.GitHub;
 /// GUIDs - a download that quietly disagreed with the repository beside it.
 /// The web page ignores it.
 /// </param>
+/// <param name="SolutionId">
+/// The solution the repository was registered on (issue #759), or null when
+/// registering it failed - in which case <paramref name="SolutionWarning"/>
+/// says so.
+/// </param>
+/// <param name="SolutionName">That solution's name, for the success state to link.</param>
+/// <param name="SolutionCreated">
+/// True when the solution was created for this customer rather than picked. The
+/// success state says "created" or "registered on" accordingly.
+/// </param>
+/// <param name="SolutionWarning">
+/// Why the repository is not on a solution, in words the person who pressed the
+/// button can act on - or null when it is. The repository exists and is
+/// committed by the time this can be set, so it is a warning on a success
+/// rather than a failure, the same shape as <paramref name="StandardsWarning"/>.
+/// </param>
 public sealed record GitHubWorkspaceRepository(
     GitHubRepositorySummary Repository,
     int FileCount,
     string ArchiveFileName,
     byte[] Archive,
     int StandardsFileCount = 0,
-    string? StandardsWarning = null);
+    string? StandardsWarning = null,
+    int? SolutionId = null,
+    string? SolutionName = null,
+    bool SolutionCreated = false,
+    string? SolutionWarning = null);
 
 /// <summary>
 /// Creates a repository in the connected GitHub organisation and puts a freshly
@@ -73,6 +94,9 @@ public sealed class GitHubWorkspaceRepositoryService
     /// <summary>Error key for problems with GitHub itself rather than with one field.</summary>
     public const string RepositoryField = "GitHubRepository";
 
+    /// <summary>Error key for problems with the solution the caller chose to register on.</summary>
+    public const string SolutionField = "SolutionId";
+
     /// <summary>
     /// GitHub's own rule for a repository name: letters, digits, and the three
     /// punctuation marks it keeps, up to 100 characters, and never <c>.</c> or
@@ -99,6 +123,8 @@ public sealed class GitHubWorkspaceRepositoryService
     private readonly GitHubAccessService _access;
     private readonly GitHubAppClient _github;
     private readonly GitHubRepositoryStandardsService _standards;
+    private readonly ProjectService _projects;
+    private readonly OrganizationConfigService _orgConfig;
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<GitHubWorkspaceRepositoryService> _logger;
@@ -110,6 +136,8 @@ public sealed class GitHubWorkspaceRepositoryService
         GitHubAccessService access,
         GitHubAppClient github,
         GitHubRepositoryStandardsService standards,
+        ProjectService projects,
+        OrganizationConfigService orgConfig,
         AppDbContext db,
         IOrganizationContext orgContext,
         ILogger<GitHubWorkspaceRepositoryService> logger)
@@ -120,6 +148,8 @@ public sealed class GitHubWorkspaceRepositoryService
         _access = access;
         _github = github;
         _standards = standards;
+        _projects = projects;
+        _orgConfig = orgConfig;
         _db = db;
         _orgContext = orgContext;
         _logger = logger;
@@ -156,11 +186,23 @@ public sealed class GitHubWorkspaceRepositoryService
     /// <para>The organisation is never a parameter: it is the one this
     /// toolbox organisation connected, so a caller naming a repository cannot
     /// aim it anywhere else.</para>
+    ///
+    /// <para>The repository is also what registers the customer as a solution
+    /// (issue #759): <paramref name="solutionId"/> names one to add it to, and
+    /// leaving it out creates one named after the customer. That happens last,
+    /// after the repository exists, and a failure there is a warning on the
+    /// result rather than an exception - see
+    /// <c>.design/customer-naming.md</c>.</para>
     /// </summary>
-    /// <exception cref="PlanValidationException">The plan, the name, or the caller's access is not good enough.</exception>
+    /// <param name="solutionId">
+    /// An existing solution to register the new repository on, which the caller
+    /// must be allowed to manage. Null creates one for the customer.
+    /// </param>
+    /// <exception cref="PlanValidationException">The plan, the name, the solution, or the caller's access is not good enough.</exception>
     /// <exception cref="GitHubApiException">GitHub refused one of the calls that fill the repository.</exception>
     public async Task<GitHubWorkspaceRepository> CreateAsync(
-        ProjectPlan plan, string repositoryName, bool isPrivate, CancellationToken ct = default)
+        ProjectPlan plan, string repositoryName, bool isPrivate, int? solutionId = null,
+        CancellationToken ct = default)
     {
         var userId = RequireUserId();
 
@@ -180,6 +222,17 @@ public sealed class GitHubWorkspaceRepositoryService
             throw Refuse(NameField,
                 "GitHub repository names can only contain letters, digits, hyphens, underscores and full "
                 + "stops, and can be at most 100 characters long.");
+        }
+
+        // A solution the caller may not add a repository to is a refusal like
+        // any other, so it is ruled out here rather than after a repository
+        // exists that has nowhere to go. Same answer whether it is somebody
+        // else's or gone: an id they cannot act on.
+        if (solutionId is { } chosen && !await _projects.CanManageAsync(chosen, ct))
+        {
+            throw Refuse(SolutionField,
+                "You cannot add a repository to that solution. Pick a different customer, or ask "
+                + "whoever owns the solution to add the repository for you.");
         }
 
         // Why-not first, so the answer names the thing the caller can change.
@@ -241,17 +294,83 @@ public sealed class GitHubWorkspaceRepositoryService
         // commit, so "the files we generated" stays an honest description of
         // the first one.
         var standards = await ApplyStandardsAsync(token, repository, userId, ct);
-        await RecordAsync(repository, plan, files.Count, ct);
+        // Last, because a solution with no repository is the orphan the whole
+        // ordering exists to avoid.
+        var solution = await RegisterSolutionAsync(plan, repository, solutionId, ct);
+        await RecordAsync(repository, plan, files.Count, solution.Id, ct);
 
         _logger.LogInformation(
             "User {UserId} created the repository {RepoFullName} from workspace '{Workspace}' "
-            + "(template '{Template}', {FileCount} files, {Visibility}).",
+            + "(template '{Template}', {FileCount} files, {Visibility}, solution {SolutionId}).",
             userId, repository.FullName, plan.WorkspaceName, plan.TemplateKey, files.Count,
-            isPrivate ? "private" : "public");
+            isPrivate ? "private" : "public", solution.Id);
 
         return new GitHubWorkspaceRepository(
             repository, files.Count, archiveName, archiveBytes,
-            standards.FileCount, standards.Warning);
+            standards.FileCount, standards.Warning,
+            solution.Id, solution.Name, solution.Created, solution.Warning);
+    }
+
+    /// <summary>
+    /// Registers the new repository on the customer's solution (issue #759):
+    /// on the one the caller picked, or on one created for the customer.
+    ///
+    /// <para><strong>Nothing here may throw.</strong> The repository exists and
+    /// holds the workspace by the time this runs, so a solution that would not
+    /// save has to come back as a sentence beside a success - the same shape as
+    /// a refused ruleset. The likeliest cause is a name another solution already
+    /// uses, which is a thing the person can sort out in a moment and not a
+    /// reason to lose the repository they just made.</para>
+    ///
+    /// <para>The clone URL is what gets stored, because that is the shape the
+    /// solution editor validates and what the build pipeline clones - the same
+    /// row a person typing the repository in by hand would have produced.</para>
+    /// </summary>
+    private async Task<(int? Id, string? Name, bool Created, string? Warning)> RegisterSolutionAsync(
+        ProjectPlan plan, GitHubRepositorySummary repository, int? solutionId, CancellationToken ct)
+    {
+        var row = new ProjectRepositoryInput(
+            RepositoryProvider.GitHub, repository.CloneUrl, repository.Name);
+        try
+        {
+            if (solutionId is { } id)
+            {
+                return (id, await _projects.AddRepositoryAsync(id, row, ct), false, null);
+            }
+
+            var name = plan.WorkspaceName.Trim();
+            var created = await _projects.CreateProjectAsync(new ProjectInput(
+                name,
+                string.IsNullOrWhiteSpace(plan.ShortName) ? null : plan.ShortName!.Trim(),
+                await DefaultCountryAsync(ct),
+                [row]),
+                ct);
+            return (created, name, true, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "{RepoFullName} was created but could not be registered on a solution.",
+                repository.FullName);
+            return (null, null, false,
+                "The repository is ready, but it is not on a solution yet. Add it from Solutions, on "
+                + "that customer's Repositories tab.");
+        }
+    }
+
+    /// <summary>
+    /// The country code a solution created from here compiles against. The New
+    /// Workspace form never asks for one, so this is the organisation's own
+    /// first import country - the same pre-fill the untracked-repositories panel
+    /// offers - and the worldwide base when it has none. Either way it is one
+    /// field on the solution's own page, changed in a moment, and a solution
+    /// that refused to save over it would be worse than a guess.
+    /// </summary>
+    private async Task<string> DefaultCountryAsync(CancellationToken ct)
+    {
+        var settings = (await _orgConfig.GetCurrentAsync(ct)).Settings;
+        return OrganizationConfigService.ParseAutoImportCountries(settings.AutoImportCountry)
+            .FirstOrDefault() ?? "w1";
     }
 
     /// <summary>
@@ -531,13 +650,17 @@ public sealed class GitHubWorkspaceRepositoryService
     /// toolbox" has an answer months later.
     ///
     /// <para>Written by hand rather than by <c>AuditInterceptor</c> because
-    /// nothing of ours changed - the row this describes lives on GitHub. That
-    /// is also why <c>EntityId</c> is zero and the repository's full name
-    /// carries the identity: there is no primary key of ours to point at, and
-    /// an id from GitHub would read as one.</para>
+    /// nothing of ours changed - the row this describes lives on GitHub, which
+    /// is why the repository's full name carries the identity: an id from
+    /// GitHub would read as a primary key of ours.</para>
+    ///
+    /// <para><c>EntityId</c> is the solution the repository was registered on
+    /// (issue #759), which is the one row of ours this act does touch, and zero
+    /// when registering it failed. Never an id from GitHub.</para>
     /// </summary>
     private async Task RecordAsync(
-        GitHubRepositorySummary repository, ProjectPlan plan, int fileCount, CancellationToken ct)
+        GitHubRepositorySummary repository, ProjectPlan plan, int fileCount, int? solutionId,
+        CancellationToken ct)
     {
         _db.AuditLog.Add(new AuditLogEntry
         {
@@ -546,14 +669,15 @@ public sealed class GitHubWorkspaceRepositoryService
             ChangedByUserId = _orgContext.CurrentUserId,
             OrganizationId = _orgContext.CurrentOrganizationId,
             EntityType = AuditEntityType.GitHubRepository,
-            EntityId = 0,
+            EntityId = solutionId ?? 0,
             Action = AuditAction.Created,
             EntityName = repository.FullName,
         });
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation(
-            "Recorded {RepoFullName} in the audit log for workspace '{Workspace}' ({FileCount} files).",
-            repository.FullName, plan.WorkspaceName, fileCount);
+            "Recorded {RepoFullName} in the audit log for workspace '{Workspace}' "
+            + "({FileCount} files, solution {SolutionId}).",
+            repository.FullName, plan.WorkspaceName, fileCount, solutionId);
     }
 
     /// <summary>
