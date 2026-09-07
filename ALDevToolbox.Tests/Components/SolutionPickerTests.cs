@@ -116,7 +116,7 @@ public sealed class SolutionPickerTests : IDisposable
         {
             var rows = cut.FindAll("[role='option']");
             rows.Should().HaveCount(2, "the match, plus the offer to create what was typed");
-            rows[0].TextContent.Should().Contain("CRONUS Denmark").And.Contain("CRO");
+            rows[0].TextContent.Should().Contain("CRONUS Denmark").And.Contain("Short name CRO");
         });
     }
 
@@ -140,6 +140,12 @@ public sealed class SolutionPickerTests : IDisposable
         await cut.InvokeAsync(() => cut.Find("[role='option']").Click());
         cut.WaitForAssertion(() => created.Should().BeTrue(
             "choosing the row records the intent; the solution itself is created later"));
+
+        // And the field says so where a sighted user can see it, not only in the
+        // live region - the whole point of the state.
+        cut.Markup.Should().Contain(
+            "New solution. \"Jorgensen Mobler\" will be added when you create the repository.");
+        cut.FindAll("button").Should().Contain(b => b.TextContent.Contains("Undo"));
     }
 
     /// <summary>
@@ -211,5 +217,81 @@ public sealed class SolutionPickerTests : IDisposable
 
         cut.WaitForAssertion(() => cut.FindAll("[role='option']").Should().BeEmpty());
         cut.Find("input").GetAttribute("value").Should().Be("CRONUS");
+    }
+
+    /// <summary>
+    /// Undo takes the create choice back without touching the name: the person
+    /// changed their mind about registering the customer, not about who it is.
+    /// </summary>
+    [Fact]
+    public async Task Undo_takes_back_the_create_choice_and_leaves_the_name()
+    {
+        var created = true;
+        var cut = RenderPicker(onCreate: b => created = b);
+        cut.Find("input").Focus();
+        cut.Find("input").Input("Jorgensen Mobler");
+        cut.WaitForAssertion(() => cut.FindAll("[role='option']").Should().ContainSingle());
+        await cut.InvokeAsync(() => cut.Find("[role='option']").Click());
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("will be added when you create the repository"));
+
+        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Undo")).Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            created.Should().BeFalse();
+            cut.Markup.Should().NotContain("will be added when you create the repository");
+            cut.Find("input").GetAttribute("value").Should().Be("Jorgensen Mobler");
+        });
+    }
+
+    /// <summary>
+    /// A customer with nothing set up yet says so, rather than counting to zero.
+    /// </summary>
+    [Fact]
+    public async Task A_solution_with_no_repositories_says_it_is_not_set_up_yet()
+    {
+        await SeedSolutionAsync("CRONUS Denmark");
+
+        var cut = RenderPicker();
+        cut.Find("input").Focus();
+        cut.Find("input").Input("CRONUS");
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("[role='option']")[0].TextContent.Should().Contain("Not set up yet"));
+    }
+
+    /// <summary>
+    /// The list is short by design, so a search that matches more than it shows
+    /// has to say so - otherwise the customer who is missing looks unregistered.
+    /// </summary>
+    [Fact]
+    public async Task A_search_matching_more_than_the_list_shows_says_so()
+    {
+        for (var i = 1; i <= 10; i++) await SeedSolutionAsync($"CRONUS {i:00}");
+
+        var cut = RenderPicker();
+        cut.Find("input").Focus();
+        cut.Find("input").Input("CRONUS");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("[role='option']").Should().HaveCount(9, "eight solutions, then the create row");
+            cut.Markup.Should().Contain("More solutions match. Keep typing to narrow the list.");
+        });
+    }
+
+    [Fact]
+    public async Task Picking_a_solution_says_whose_details_the_field_is_using()
+    {
+        await SeedSolutionAsync("CRONUS Denmark", "CRO");
+
+        var cut = RenderPicker();
+        cut.Find("input").Focus();
+        cut.Find("input").Input("CRONUS");
+        cut.WaitForAssertion(() => cut.FindAll("[role='option']").Should().NotBeEmpty());
+        await cut.InvokeAsync(() => cut.FindAll("[role='option']")[0].Click());
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain(
+            "Using CRONUS Denmark's saved details. Use Change customer to pick someone else."));
     }
 }

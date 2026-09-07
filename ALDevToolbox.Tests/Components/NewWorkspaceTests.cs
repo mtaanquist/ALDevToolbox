@@ -498,8 +498,12 @@ public sealed class NewWorkspaceTests : IDisposable
             cut.Find("input[name='TenantId']").GetAttribute("value").Should().Be(tenantId.ToString());
             cut.Find("input[name='SolutionId']").GetAttribute("value").Should().NotBeEmpty(
                 "the choice has to survive a failed submit");
-            cut.Markup.Should().Contain("https://github.com/cronus-dk/core",
+            cut.Markup.Should().Contain("Existing work for CRONUS Denmark",
                 "a second workspace for the same customer should be a visible choice, not an accident");
+            cut.Markup.Should().Contain("cronus-dk/core", "the repository is named the way GitHub names it");
+            // The two fields the pick filled in say where their value came from,
+            // rather than looking like something this person typed.
+            cut.Markup.Should().Contain("From CRONUS Denmark's saved details.");
         });
 
         // Clearing takes back what the pick filled in, and nothing else.

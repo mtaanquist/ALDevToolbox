@@ -24,6 +24,9 @@
 *@
 
 <div class="solution-picker" @onfocusout="OnFocusOutAsync">
+    @* The control and its list are one positioned block, so the list hangs off
+       the box rather than off the state line below it. *@
+    <div class="solution-picker__control">
     @if (Selected is null)
     {
         <input class="input solution-picker__input" id="@InputId" name="@InputName" type="text"
@@ -46,7 +49,7 @@
                    type="text" readonly value="@Value" aria-label="@Label" />
             <button type="button" class="btn btn--sm solution-picker__clear" disabled="@Disabled"
                     @onclick="ClearAsync">
-                <Icon Name="x" Width="14" Height="14" />
+                <Icon Name="search" Width="14" Height="14" />
                 <span>Change customer</span>
             </button>
         </span>
@@ -70,15 +73,15 @@
                     role="option" aria-selected="@(index == _highlight)"
                     @onclick="() => SelectAsync(option)">
                     <span class="solution-picker__row-name">@option.Name</span>
+                    @* Named rather than bare: an abbreviation on its own beside
+                       a customer's name reads as a second name. *@
                     <span class="solution-picker__row-sub">
                         @if (!string.IsNullOrWhiteSpace(option.ShortName))
                         {
-                            <span>@option.ShortName</span>
+                            <span>Short name @option.ShortName</span>
+                            <span aria-hidden="true">·</span>
                         }
-                        <span>
-                            @option.Repositories.Count
-                            @(option.Repositories.Count == 1 ? "repository" : "repositories")
-                        </span>
+                        <span>@RepositoryLine(option)</span>
                     </span>
                 </li>
             }
@@ -94,7 +97,40 @@
                     </span>
                 </li>
             }
+            @if (_moreThanShown)
+            {
+                @* Not an option: there is nothing to pick here, only the fact
+                   that the list is not the whole list. *@
+                <li class="solution-picker__more" role="presentation">
+                    More solutions match. Keep typing to narrow the list.
+                </li>
+            }
         </ul>
+    }
+    </div>
+
+    @* The state of the field, said in the open. The live region below tells a
+       screen-reader user the same thing; neither is a substitute for the other. *@
+    @if (Selected is { } chosen)
+    {
+        <span class="field__hint">
+            Using @chosen.Name's saved details. Use Change customer to pick someone else.
+        </span>
+    }
+    else if (CreateNew && Value.Trim() is { Length: > 0 } newName)
+    {
+        <span class="solution-picker__new">
+            <Icon Name="plus" Width="14" Height="14" />
+            <span>New solution. "@newName" will be added when you create the repository.</span>
+            <button type="button" class="btn btn--sm" disabled="@Disabled" @onclick="UndoCreateAsync">
+                <Icon Name="rotate-ccw" Width="14" Height="14" />
+                <span>Undo</span>
+            </button>
+        </span>
+    }
+    else if (!string.IsNullOrWhiteSpace(Hint))
+    {
+        <span class="field__hint">@Hint</span>
     }
 
     @* What typing just did, out loud: the list appears without the page moving
@@ -136,6 +172,9 @@
     /// <summary>What the input is called, for the read-only state's accessible name.</summary>
     [Parameter] public string Label { get; set; } = "Customer";
 
+    /// <summary>The line under the control while the name is still free text.</summary>
+    [Parameter] public string? Hint { get; set; }
+
     [Parameter] public string? Placeholder { get; set; }
     [Parameter] public int MaxLength { get; set; } = 100;
     [Parameter] public bool Required { get; set; }
@@ -159,6 +198,21 @@
     /// no solution already goes by that name.
     /// </summary>
     private bool _offersCreate;
+
+    /// <summary>True when the search matched more solutions than the list shows.</summary>
+    private bool _moreThanShown;
+
+    /// <summary>
+    /// What one row says about the work already on a solution. "Not set up yet"
+    /// rather than "0 repositories": nothing there is a state of the customer,
+    /// not a count.
+    /// </summary>
+    private static string RepositoryLine(SolutionOption option) => option.Repositories.Count switch
+    {
+        0 => "Not set up yet",
+        1 => "1 repository",
+        var n => $"{n} repositories",
+    };
 
     public void Dispose()
     {
@@ -236,7 +290,10 @@
         {
             await using var scope = Scopes.CreateAsyncScope();
             var projects = scope.ServiceProvider.GetRequiredService<ProjectService>();
-            var rows = await projects.ListSolutionOptionsAsync(Value);
+            // One more than the list shows, so "more match" is a fact rather
+            // than a guess, without counting the whole table.
+            var rows = await projects.ListSolutionOptionsAsync(Value, MaxResults + 1);
+            _moreThanShown = rows.Count > MaxResults;
             _matches = rows.Take(MaxResults).ToList();
             _loaded = true;
         }
@@ -244,6 +301,7 @@
         {
             Logger.LogWarning(ex, "Could not list the solutions for the solution picker.");
             _matches = new List<SolutionOption>();
+            _moreThanShown = false;
         }
 
         var typed = Value.Trim();
@@ -318,9 +376,17 @@
         _pressingRow = false;
         _open = false;
         _highlight = -1;
-        _announcement = $"{Value.Trim()} will be created as a new solution.";
+        _announcement = $"New solution. {Value.Trim()} will be added when you create the repository.";
         CreateNew = true;
         await CreateNewChanged.InvokeAsync(true);
+    }
+
+    /// <summary>Takes back the create choice, leaving the typed name to stand or be changed.</summary>
+    private async Task UndoCreateAsync()
+    {
+        CreateNew = false;
+        _announcement = string.Empty;
+        await CreateNewChanged.InvokeAsync(false);
     }
 
     private async Task ClearAsync()
@@ -328,6 +394,7 @@
         Selected = null;
         Value = string.Empty;
         _matches = new List<SolutionOption>();
+        _moreThanShown = false;
         _loaded = false;
         _announcement = string.Empty;
         await SelectedChanged.InvokeAsync(null);

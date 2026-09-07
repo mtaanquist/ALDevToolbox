@@ -132,7 +132,7 @@
                 </section>
 
                 <section class="form-sec">
-                    <div class="form-sec__head"><span class="section-label">Project</span></div>
+                    <div class="form-sec__head"><span class="section-label">Customer</span></div>
                     <div class="form-grid">
                         <div class="field">
                             <label class="field__label" for="ws-name">Customer <span class="req">*</span></label>
@@ -142,13 +142,13 @@
                                .design/customer-naming.md. *@
                             <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Customer"
                                             Placeholder="e.g. CRONUS A/S" MaxLength="100" Required="true"
+                                            Hint="The customer's name. Pick their solution if it exists, or type a new name to create one."
                                             Value="@_workspaceName" ValueChanged="OnCustomerNameChangedAsync"
                                             Selected="_solution" SelectedChanged="OnSolutionSelectedAsync"
                                             CreateNew="_createSolution" CreateNewChanged="OnCreateSolutionChanged" />
                             @* Carried through a failed submit so the choice made
                                before the round trip is still the choice after it. *@
                             <input type="hidden" name="SolutionId" value="@(_solutionId?.ToString() ?? string.Empty)" />
-                            <span class="field__hint">The customer's name as it should appear. Folder and file names are derived from it.</span>
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
                         <div class="field">
@@ -156,10 +156,21 @@
                             <input class="input" id="ws-short" type="text" name="ShortName" placeholder="e.g. CRO"
                                    maxlength="50"
                                    value="@_shortName" @oninput="OnShortNameInput" />
-                            <span class="field__hint">
-                                Optional. A short form used in extension names, for example
-                                <code class="code">CRO Core</code>. Leave blank to use the full name.
-                            </span>
+                            @if (_shortNameFromSolution && _solution is { } shortNameSource)
+                            {
+                                <span class="field__hint">
+                                    From @shortNameSource.Name's saved details. Change it here if this
+                                    workspace needs something different.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="field__hint">
+                                    Optional. A short form of the customer's name for extension names, for
+                                    example <code class="code">CRO Core</code>. Also the default for the
+                                    extension prefix. Leave blank to use the full name.
+                                </span>
+                            }
                             <FieldError Field="ShortName" Errors="_errors" />
                         </div>
                         <div class="field">
@@ -189,11 +200,21 @@
                                    placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
                                    title="GUID in 8-4-4-4-12 hex form."
                                    value="@_tenantId" @oninput="OnTenantIdInput" />
-                            <span class="field__hint">
-                                The customer's Microsoft Entra (Azure AD) tenant ID, so the generated
-                                debug configuration targets the right tenant. Optional - leave it blank
-                                if you don't have it yet.
-                            </span>
+                            @if (_tenantIdFromSolution && _solution is { } tenantSource)
+                            {
+                                <span class="field__hint">
+                                    From @tenantSource.Name's saved details. Change it here if this
+                                    workspace needs something different.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="field__hint">
+                                    The customer's Microsoft Entra (Azure AD) tenant ID, so the generated
+                                    debug configuration targets the right tenant. Optional - leave it blank
+                                    if you don't have it yet.
+                                </span>
+                            }
                         </div>
                     </div>
                 </section>
@@ -586,16 +607,22 @@
                         <div class="card">
                             <div class="card__head">
                                 <div>
-                                    <h4 class="card__title">@solution.Name already has
-                                        @(solution.Repositories.Count == 1 ? "a repository" : "repositories")</h4>
+                                    <h4 class="card__title">Existing work for @solution.Name</h4>
                                 </div>
                             </div>
                             <div class="card__body">
+                                <p>
+                                    You have set this customer up before. Another workspace is fine, but
+                                    check these first in case what you need is already there.
+                                </p>
                                 <ul class="ws-solution-repos">
                                     @foreach (var repo in solution.Repositories)
                                     {
                                         <li>
-                                            <a href="@repo.Url" target="_blank" rel="noopener">@repo.DisplayName</a>
+                                            <a href="@repo.Url" target="_blank" rel="noopener">
+                                                @RepositoryLabel(repo)
+                                                <span class="u-sr">(opens in a new tab)</span>
+                                            </a>
                                         </li>
                                     }
                                 </ul>
@@ -706,6 +733,29 @@
         }
         OnPlanChanged();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// How one of the customer's repositories is named on screen: the
+    /// owner/name it is known by on GitHub or Azure DevOps, taken from its URL,
+    /// falling back to whatever it was given as a display name.
+    /// </summary>
+    private static string RepositoryLabel(SolutionRepositoryOption repo)
+    {
+        if (Uri.TryCreate(repo.Url, UriKind.Absolute, out var uri))
+        {
+            var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 2)
+            {
+                var name = segments[^1];
+                if (name.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+                // Azure DevOps spells its clone URLs org/project/_git/repo, so
+                // the segment before the name is a marker, not an owner.
+                var owner = segments[^2] == "_git" && segments.Length >= 3 ? segments[^3] : segments[^2];
+                return $"{owner}/{name}";
+            }
+        }
+        return repo.DisplayName;
     }
 
     private void OnCreateSolutionChanged(bool createNew)

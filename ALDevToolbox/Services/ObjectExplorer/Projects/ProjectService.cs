@@ -85,8 +85,13 @@ public sealed class ProjectService
     /// agent. See <c>.design/customer-naming.md</c>.
     /// </summary>
     /// <param name="search">Optional substring matched against the name; blank returns all.</param>
+    /// <param name="limit">
+    /// Most rows to return. The picker shows a short list and asks the user to
+    /// narrow it, so it reads one more than it shows and never pulls a whole
+    /// organisation's solutions over a keystroke.
+    /// </param>
     public async Task<List<SolutionOption>> ListSolutionOptionsAsync(
-        string? search = null, CancellationToken ct = default)
+        string? search = null, int? limit = null, CancellationToken ct = default)
     {
         var snapshot = await _access.GetSnapshotAsync(ct);
         var query = _db.OeProjects
@@ -99,6 +104,8 @@ public sealed class ProjectService
             var term = search.Trim();
             query = query.Where(p => EF.Functions.ILike(p.Name, $"%{term}%"));
         }
+
+        if (limit is > 0) query = query.OrderBy(p => p.Name).Take(limit.Value);
 
         return await query
             .OrderBy(p => p.Name)
