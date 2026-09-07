@@ -1,0 +1,336 @@
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.Extensions.DependencyInjection
+@implements IDisposable
+@inject IServiceScopeFactory Scopes
+@inject ILogger<SolutionPicker> Logger
+
+@*
+    The customer combobox (issue #758). The consultant types the customer's name
+    once: if the customer is already a solution here, picking it carries over
+    what the solution already knows (the short name, the tenant, the
+    repositories); if it is not, the last row offers to make it one, and the
+    typed name stands.
+
+    Nothing is created here. The create row only records the intent - the
+    solution comes into being when the repository does. See
+    .design/customer-naming.md, "The Solution picker".
+
+    The read runs in this component's own service scope rather than the page's:
+    a component is mounted during its host page's first render, which Blazor
+    does while that page's own OnInitializedAsync may still be awaiting the
+    database, and one AppDbContext allows one operation at a time. The same
+    answer RepositoryPicker reached, for the same reason.
+*@
+
+<div class="solution-picker" @onfocusout="OnFocusOutAsync">
+    @if (Selected is null)
+    {
+        <input class="input solution-picker__input" id="@InputId" name="@InputName" type="text"
+               role="combobox" aria-expanded="@(_open ? "true" : "false")"
+               aria-controls="@ListId" aria-autocomplete="list"
+               aria-activedescendant="@(_open && _highlight >= 0 ? OptionId(_highlight) : null)"
+               autocomplete="off" spellcheck="false"
+               placeholder="@Placeholder" maxlength="@MaxLength"
+               required="@Required" disabled="@Disabled"
+               value="@Value"
+               @oninput="OnInputAsync" @onfocus="OnFocusAsync" @onkeydown="OnKeyDownAsync"
+               @onkeydown:preventDefault="_swallowKey" />
+    }
+    else
+    {
+        @* Picked: the name is the solution's, so it is shown rather than typed.
+           Still an input, and still named, because the form posts it. *@
+        <span class="solution-picker__chosen">
+            <input class="input solution-picker__input solution-picker__input--chosen" id="@InputId" name="@InputName"
+                   type="text" readonly value="@Value" aria-label="@Label" />
+            <button type="button" class="btn btn--sm solution-picker__clear" disabled="@Disabled"
+                    @onclick="ClearAsync">
+                <Icon Name="x" Width="14" Height="14" />
+                <span>Change customer</span>
+            </button>
+        </span>
+    }
+
+    @if (_open && Selected is null)
+    {
+        @* Pressing on a row must not close the list before the click lands:
+           focusout fires first, and a list that closed there would take the row
+           out of the document with the click still on its way. *@
+        <ul class="solution-picker__list" id="@ListId" role="listbox" aria-label="Solutions"
+            @onmousedown="() => _pressingRow = true" @onmousedown:preventDefault="true">
+            @for (var i = 0; i < _matches.Count; i++)
+            {
+                var index = i;
+                var option = _matches[i];
+                @* The highlight is aria-selected, and the sheet styles that
+                   attribute: one source of truth for "this is the row Enter
+                   takes", rather than a class that has to be kept in step. *@
+                <li id="@OptionId(index)" class="solution-picker__row"
+                    role="option" aria-selected="@(index == _highlight)"
+                    @onclick="() => SelectAsync(option)">
+                    <span class="solution-picker__row-name">@option.Name</span>
+                    <span class="solution-picker__row-sub">
+                        @if (!string.IsNullOrWhiteSpace(option.ShortName))
+                        {
+                            <span>@option.ShortName</span>
+                        }
+                        <span>
+                            @option.Repositories.Count
+                            @(option.Repositories.Count == 1 ? "repository" : "repositories")
+                        </span>
+                    </span>
+                </li>
+            }
+            @if (_offersCreate)
+            {
+                var createIndex = _matches.Count;
+                <li id="@OptionId(createIndex)" class="solution-picker__row solution-picker__row--create"
+                    role="option" aria-selected="@(createIndex == _highlight)"
+                    @onclick="CreateAsync">
+                    <span class="solution-picker__row-name">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Create "@Value.Trim()" as a new solution</span>
+                    </span>
+                </li>
+            }
+        </ul>
+    }
+
+    @* What typing just did, out loud: the list appears without the page moving
+       and without focus leaving the box. *@
+    <span class="u-sr" role="status" aria-live="polite">@_announcement</span>
+</div>
+
+@code {
+    /// <summary>How many solutions the list offers before the user has to narrow it.</summary>
+    private const int MaxResults = 8;
+
+    /// <summary>How long typing settles before the list is re-read. Same feel as the repository picker.</summary>
+    private const int DebounceMilliseconds = 200;
+
+    /// <summary>The customer's name: what the user typed, or the name of the solution they picked.</summary>
+    [Parameter] public string Value { get; set; } = string.Empty;
+
+    /// <summary>Raised on every keystroke, and with the solution's name when one is picked.</summary>
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    /// <summary>The picked solution, or null while the name is free text.</summary>
+    [Parameter] public SolutionOption? Selected { get; set; }
+
+    /// <summary>Raised with the picked solution, and with null when the pick is cleared.</summary>
+    [Parameter] public EventCallback<SolutionOption?> SelectedChanged { get; set; }
+
+    /// <summary>True once the user has asked for the typed name to become a new solution.</summary>
+    [Parameter] public bool CreateNew { get; set; }
+
+    /// <summary>Raised when the create row is chosen, and with false when the choice is undone.</summary>
+    [Parameter] public EventCallback<bool> CreateNewChanged { get; set; }
+
+    /// <summary>The input's id, so the caller's own label points at it.</summary>
+    [Parameter] public string InputId { get; set; } = "solution-picker";
+
+    /// <summary>The input's form-post name, so a caller inside a native form still posts the value.</summary>
+    [Parameter] public string? InputName { get; set; }
+
+    /// <summary>What the input is called, for the read-only state's accessible name.</summary>
+    [Parameter] public string Label { get; set; } = "Customer";
+
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public int MaxLength { get; set; } = 100;
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private List<SolutionOption> _matches = new();
+    private bool _open;
+    private bool _loaded;
+    private int _highlight = -1;
+    private bool _swallowKey;
+    /// <summary>True between pressing on a row and the click it produces - see the note on the list.</summary>
+    private bool _pressingRow;
+    private string _announcement = string.Empty;
+    private CancellationTokenSource? _debounce;
+
+    private string ListId => $"{InputId}-list";
+    private string OptionId(int index) => $"{InputId}-option-{index}";
+
+    /// <summary>
+    /// Whether the create row belongs on the list: there is something typed, and
+    /// no solution already goes by that name.
+    /// </summary>
+    private bool _offersCreate;
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+    }
+
+    private async Task OnFocusAsync()
+    {
+        _open = true;
+        if (!_loaded) await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Closes the list when focus leaves the control. Clicks on a row cannot get
+    /// here: the list suppresses its own mousedown, so focus never leaves the box
+    /// on the way to a row.
+    /// </summary>
+    private Task OnFocusOutAsync()
+    {
+        if (_pressingRow)
+        {
+            _pressingRow = false;
+            return Task.CompletedTask;
+        }
+
+        _open = false;
+        _highlight = -1;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnInputAsync(ChangeEventArgs e)
+    {
+        Value = e.Value?.ToString() ?? string.Empty;
+        await ValueChanged.InvokeAsync(Value);
+
+        // Typing over a create choice withdraws it: the flag names one typed
+        // name, and this is no longer that name.
+        if (CreateNew)
+        {
+            CreateNew = false;
+            await CreateNewChanged.InvokeAsync(false);
+        }
+
+        _open = true;
+        _highlight = -1;
+
+        // Publish the new source before tearing the old one down, so a dispose
+        // racing this never sees a field pointing at a disposed source.
+        var cts = new CancellationTokenSource();
+        var previous = _debounce;
+        _debounce = cts;
+        previous?.Cancel();
+        previous?.Dispose();
+        try
+        {
+            await Task.Delay(DebounceMilliseconds, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Re-reads the solutions this person may see for the text in the box. A
+    /// failure leaves the list empty with the create row still on it - the rest
+    /// of the form works without ever opening this.
+    /// </summary>
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            await using var scope = Scopes.CreateAsyncScope();
+            var projects = scope.ServiceProvider.GetRequiredService<ProjectService>();
+            var rows = await projects.ListSolutionOptionsAsync(Value);
+            _matches = rows.Take(MaxResults).ToList();
+            _loaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not list the solutions for the solution picker.");
+            _matches = new List<SolutionOption>();
+        }
+
+        var typed = Value.Trim();
+        _offersCreate = typed.Length > 0
+            && !_matches.Any(m => string.Equals(m.Name, typed, StringComparison.OrdinalIgnoreCase));
+        _announcement = _matches.Count switch
+        {
+            0 => typed.Length == 0 ? string.Empty : $"No solutions match \"{typed}\".",
+            1 => "1 solution matches.",
+            _ => $"{_matches.Count} solutions match.",
+        };
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Arrow keys walk the list (the create row included), Enter takes the
+    /// highlighted row, Escape puts the list away. Arrow and Enter are swallowed
+    /// so they neither move the caret nor submit the form around this control.
+    /// </summary>
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        var count = _matches.Count + (_offersCreate ? 1 : 0);
+        _swallowKey = false;
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _swallowKey = true;
+                if (!_open) { _open = true; if (!_loaded) await ReloadAsync(); }
+                if (count > 0) _highlight = (_highlight + 1) % count;
+                break;
+            case "ArrowUp":
+                _swallowKey = true;
+                if (count > 0) _highlight = _highlight <= 0 ? count - 1 : _highlight - 1;
+                break;
+            case "Enter":
+                if (!_open || _highlight < 0) return;
+                _swallowKey = true;
+                if (_highlight < _matches.Count) await SelectAsync(_matches[_highlight]);
+                else await CreateAsync();
+                break;
+            case "Escape":
+                _open = false;
+                _highlight = -1;
+                break;
+        }
+    }
+
+    private async Task SelectAsync(SolutionOption option)
+    {
+        _pressingRow = false;
+        _open = false;
+        _highlight = -1;
+        _announcement = $"{option.Name} selected.";
+        Value = option.Name;
+        Selected = option;
+        await ValueChanged.InvokeAsync(option.Name);
+        await SelectedChanged.InvokeAsync(option);
+        if (CreateNew)
+        {
+            CreateNew = false;
+            await CreateNewChanged.InvokeAsync(false);
+        }
+    }
+
+    /// <summary>
+    /// Takes the create row. Nothing is created here - the typed name stands and
+    /// the caller is told this customer is new. See .design/customer-naming.md.
+    /// </summary>
+    private async Task CreateAsync()
+    {
+        _pressingRow = false;
+        _open = false;
+        _highlight = -1;
+        _announcement = $"{Value.Trim()} will be created as a new solution.";
+        CreateNew = true;
+        await CreateNewChanged.InvokeAsync(true);
+    }
+
+    private async Task ClearAsync()
+    {
+        Selected = null;
+        Value = string.Empty;
+        _matches = new List<SolutionOption>();
+        _loaded = false;
+        _announcement = string.Empty;
+        await SelectedChanged.InvokeAsync(null);
+        await ValueChanged.InvokeAsync(string.Empty);
+    }
+}

@@ -1,0 +1,86 @@
+/* The customer combobox. Everything structural comes from the design system -
+   .input, .btn - so what is local here is the geometry a typeahead needs: the
+   list that hangs under the box, and its rows. Unlike the repository picker,
+   this one overlays: it sits in the middle of a long form, where pushing the
+   rest of the fields down on every keystroke would be the more disruptive of
+   the two. */
+
+.solution-picker {
+    position: relative;
+    display: block;
+}
+
+.solution-picker__input {
+    width: 100%;
+}
+
+/* Picked: the name and the way back to searching, on one row. */
+.solution-picker__chosen {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.solution-picker__input--chosen {
+    background: var(--surface-2);
+    color: var(--ink-2);
+}
+
+.solution-picker__clear {
+    flex: none;
+}
+
+.solution-picker__list {
+    position: absolute;
+    z-index: 20;
+    left: 0;
+    right: 0;
+    top: calc(100% + var(--space-1));
+    list-style: none;
+    margin: 0;
+    padding: var(--space-1);
+    display: grid;
+    gap: 2px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-control);
+    box-shadow: var(--shadow-lg);
+}
+
+.solution-picker__row {
+    display: grid;
+    gap: 2px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--r-control);
+    color: var(--ink-2);
+    cursor: pointer;
+}
+
+.solution-picker__row:hover,
+.solution-picker__row[aria-selected="true"] {
+    background: var(--surface-2);
+}
+
+.solution-picker__row-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: var(--fw-medium);
+}
+
+.solution-picker__row-sub {
+    display: flex;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+/* The last row is an act, not a match, so it reads as one. */
+.solution-picker__row--create {
+    border-top: 1px solid var(--border);
+    border-radius: 0 0 var(--r-control) var(--r-control);
+    color: var(--primary);
+}

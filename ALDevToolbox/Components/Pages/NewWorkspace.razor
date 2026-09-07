@@ -17,6 +17,7 @@
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Generation
 @using ALDevToolbox.Services.GitHub
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Services.Organizations
 @using ALDevToolbox.Services.Templates
 
@@ -135,10 +136,18 @@
                     <div class="form-grid">
                         <div class="field">
                             <label class="field__label" for="ws-name">Customer <span class="req">*</span></label>
-                            <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS A/S"
-                                   required maxlength="100"
-                                   @bind="_workspaceName" @bind:event="oninput"
-                                   @bind:after="OnPlanChanged" />
+                            @* The customer is typed once. A customer already on
+                               file here fills in what it knows; a new one is
+                               offered as a new solution. See
+                               .design/customer-naming.md. *@
+                            <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Customer"
+                                            Placeholder="e.g. CRONUS A/S" MaxLength="100" Required="true"
+                                            Value="@_workspaceName" ValueChanged="OnCustomerNameChangedAsync"
+                                            Selected="_solution" SelectedChanged="OnSolutionSelectedAsync"
+                                            CreateNew="_createSolution" CreateNewChanged="OnCreateSolutionChanged" />
+                            @* Carried through a failed submit so the choice made
+                               before the round trip is still the choice after it. *@
+                            <input type="hidden" name="SolutionId" value="@(_solutionId?.ToString() ?? string.Empty)" />
                             <span class="field__hint">The customer's name as it should appear. Folder and file names are derived from it.</span>
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
@@ -146,8 +155,7 @@
                             <label class="field__label" for="ws-short">Short name</label>
                             <input class="input" id="ws-short" type="text" name="ShortName" placeholder="e.g. CRO"
                                    maxlength="50"
-                                   @bind="_shortName" @bind:event="oninput"
-                                   @bind:after="OnPlanChanged" />
+                                   value="@_shortName" @oninput="OnShortNameInput" />
                             <span class="field__hint">
                                 Optional. A short form used in extension names, for example
                                 <code class="code">CRO Core</code>. Leave blank to use the full name.
@@ -180,7 +188,7 @@
                                    pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
                                    placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
                                    title="GUID in 8-4-4-4-12 hex form."
-                                   @bind="_tenantId" @bind:event="oninput" />
+                                   value="@_tenantId" @oninput="OnTenantIdInput" />
                             <span class="field__hint">
                                 The customer's Microsoft Entra (Azure AD) tenant ID, so the generated
                                 debug configuration targets the right tenant. Optional - leave it blank
@@ -569,6 +577,31 @@
                             }
                         </div>
                     </div>
+
+                    @* What this customer already has. A second workspace for the
+                       same customer is a fine thing to want - it just should not
+                       happen by accident. *@
+                    @if (_solution is { Repositories.Count: > 0 } solution)
+                    {
+                        <div class="card">
+                            <div class="card__head">
+                                <div>
+                                    <h4 class="card__title">@solution.Name already has
+                                        @(solution.Repositories.Count == 1 ? "a repository" : "repositories")</h4>
+                                </div>
+                            </div>
+                            <div class="card__body">
+                                <ul class="ws-solution-repos">
+                                    @foreach (var repo in solution.Repositories)
+                                    {
+                                        <li>
+                                            <a href="@repo.Url" target="_blank" rel="noopener">@repo.DisplayName</a>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    }
                 </aside>
             </div>
         </form>
@@ -618,6 +651,80 @@
     private string _tenantId = string.Empty;
 
     private OrganizationConfig? _orgConfig;
+
+    // The customer as a Solution (issue #758). Either an existing one was
+    // picked, or the typed name was marked as a new one; both are carried for
+    // the repository step, which is what actually registers it.
+    private SolutionOption? _solution;
+    private int? _solutionId;
+    private bool _createSolution;
+    /// <summary>
+    /// True while the short name / tenant ID on screen are the picked solution's
+    /// rather than this person's, so clearing the pick takes back what the pick
+    /// filled in and leaves anything they typed themselves alone.
+    /// </summary>
+    private bool _shortNameFromSolution;
+    private bool _tenantIdFromSolution;
+
+    private Task OnCustomerNameChangedAsync(string value)
+    {
+        _workspaceName = value;
+        OnPlanChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Carries over what the picked solution already knows. Clearing the pick
+    /// takes those values back out again - but only those: a short name typed
+    /// afterwards is the user's, and stays.
+    /// </summary>
+    private Task OnSolutionSelectedAsync(SolutionOption? solution)
+    {
+        _solution = solution;
+        _solutionId = solution?.Id;
+
+        if (solution is null)
+        {
+            if (_shortNameFromSolution) _shortName = string.Empty;
+            if (_tenantIdFromSolution) _tenantId = string.Empty;
+            _shortNameFromSolution = false;
+            _tenantIdFromSolution = false;
+            OnPlanChanged();
+            return Task.CompletedTask;
+        }
+
+        _createSolution = false;
+        if (!string.IsNullOrWhiteSpace(solution.ShortName))
+        {
+            _shortName = solution.ShortName!;
+            _shortNameFromSolution = true;
+        }
+        if (solution.BcTenantId is { } tenantId)
+        {
+            _tenantId = tenantId.ToString();
+            _tenantIdFromSolution = true;
+        }
+        OnPlanChanged();
+        return Task.CompletedTask;
+    }
+
+    private void OnCreateSolutionChanged(bool createNew)
+    {
+        _createSolution = createNew;
+    }
+
+    private void OnShortNameInput(ChangeEventArgs e)
+    {
+        _shortName = e.Value?.ToString() ?? string.Empty;
+        _shortNameFromSolution = false;
+        OnPlanChanged();
+    }
+
+    private void OnTenantIdInput(ChangeEventArgs e)
+    {
+        _tenantId = e.Value?.ToString() ?? string.Empty;
+        _tenantIdFromSolution = false;
+    }
 
     // The GitHub half (issue #622). _gitHub is answered from the database, so
     // the card renders its guidance even when GitHub itself is unreachable;
