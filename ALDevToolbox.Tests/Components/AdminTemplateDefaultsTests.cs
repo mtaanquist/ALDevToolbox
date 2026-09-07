@@ -125,15 +125,23 @@ public sealed class AdminTemplateDefaultsTests : IDisposable
         cut.Find("#cfg-folder-style").Change(nameof(NamingStyle.KebabCase));
         cut.Find(".form-actions .btn--primary").Click();
 
-        await using (var check = _db.NewContext())
+        // The click hands off to an async save; poll rather than assume it has
+        // landed by the time the call returns.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        OrganizationSettings row;
+        while (true)
         {
-            var row = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            await using var check = _db.NewContext();
+            row = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
                 .FirstAsync(check.OrganizationSettings);
-            row.NamingFolderStyle.Should().Be(NamingStyle.KebabCase);
-            row.NamingRepositoryStyle.Should().Be(NamingStyle.SnakeCase);
-            row.ExtensionPrefixMode.Should().Be(ExtensionPrefixMode.Fixed);
-            row.ExtensionPrefix.Should().Be("PARTNER");
+            if (row.NamingFolderStyle == NamingStyle.KebabCase || DateTime.UtcNow > deadline) break;
+            await Task.Delay(100);
         }
+
+        row.NamingFolderStyle.Should().Be(NamingStyle.KebabCase);
+        row.NamingRepositoryStyle.Should().Be(NamingStyle.SnakeCase);
+        row.ExtensionPrefixMode.Should().Be(ExtensionPrefixMode.Fixed);
+        row.ExtensionPrefix.Should().Be("PARTNER");
     }
 
     [Fact]
