@@ -27,6 +27,8 @@ record ProjectPlan(
 
 The walk concatenates the emittable extension list in this order: template-required `WorkspaceExtension` rows (always emitted) → optional template-declared extensions whose `Path` appears in `SelectedExtensionPaths` (in template `Ordering`) → one cloned extension per `SelectedModuleKeys` entry (in selection order). `{{extension_prefix}}` and `{{affix}}` (with `defaults.affixType`) drive mustache substitution. There is no Core-vs-module split; "Core" is just the conventional `path` of the first required template extension. There is no `IncludeForNav` toggle either — ForNAV is a normal catalogue module that templates declare under `[[template.default_modules]]`.
 
+The naming rules for `WorkspaceName` (the customer name), the short name, the derived folder and the `{{short_name}}` / `{{workspace_folder}}` variables are being reworked under `customer-naming.md`; that document wins where the two disagree until its slices land and this one is rewritten.
+
 For the **New Extension** flow, the inputs are slightly different — see [Standalone extension generation](#standalone-extension-generation) at the bottom.
 
 ## Output

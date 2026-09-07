@@ -75,6 +75,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `architecture.md` — stack and layering decisions, request flow.
 - `domain-model.md` — the **generator core** of the schema: templates, unified extensions, modules, the catalogue, organisations and accounts, audit. It is not a full data dictionary — the tools that came later document their own tables in their own docs (see the subsystem table below), and `AppDbContext` is the authoritative list either way.
 - `generation-engine.md` — what the ZIP must look like and how to build it.
+- `customer-naming.md` — how the customer name typed on New Workspace becomes the folder, repository, extension and Solution names, and how Create repository registers the Solution.
 - `templates-and-seeding.md` — TOML schema and the seed contract.
 - `auth-and-audit.md` — how the password gate and audit interceptor work.
 - `teams-and-visibility.md` — teams, their managers, and the per-project visibility model they grant.
