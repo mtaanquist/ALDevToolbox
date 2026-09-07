@@ -339,7 +339,7 @@ public sealed class NewWorkspaceTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".card__head .switch").TextContent.Should().Contain("Example files");
+            cut.Find(".card__head .switch").TextContent.Should().Contain("Include example files");
             cut.Find("input[type='hidden'][name='IncludeExamples']")
                 .GetAttribute("value").Should().Be("true", "the option defaults to on");
             cut.Markup.Should().NotContain("Include example AL files",

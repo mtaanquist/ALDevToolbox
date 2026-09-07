@@ -202,7 +202,60 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Accessibility helpers (M21) ---------- */
 
+/* Text for screen readers only, where a purely visual treatment carries
+   meaning a sighted user gets for free - e.g. the struck-through rows in the
+   generated-folder preview. Clipped rather than hidden, so it is still in the
+   accessibility tree. */
 
+.u-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---------- Generated-folder preview: rows the ZIP will not contain ---------- */
+
+/* A file the generator will skip stays in the tree, so the "Include example
+   files" toggle in the preview card head visibly costs something rather than
+   the tree quietly shrinking. Muted and struck through; the row keeps its
+   shape so nothing reflows when the toggle flips.
+
+   Global rather than scoped to FolderTreePreview because the row icon is an
+   <svg> the Icon component renders, which a scoped rule cannot reach; it also
+   has to land after pages-forms.css to beat .tree__row--file > .tree__ico.
+
+   --ink-3, not --ink-4: tokens.css marks ink-4 as large-text-only (3.9:1) and
+   these rows are small mono text. */
+
+.tree__row--excluded .tree__name,
+.tree__row--excluded .tree__ico {
+    color: var(--ink-3);
+}
+
+.tree__row--excluded .tree__name {
+    text-decoration: line-through;
+}
+
+/* The legend key for that treatment, shown only while something is struck
+   through. The sample carries the strike, so the key shows the thing it
+   names rather than describing it. */
+
+.tree__key--excluded svg {
+    color: var(--ink-3);
+}
+
+.tree__key-sample {
+    margin-right: var(--space-1);
+    font-family: var(--font-mono);
+    color: var(--ink-3);
+    text-decoration: line-through;
+}
 
 /* ---------- Live preview card head (New Workspace / New Extension) ---------- */
 
