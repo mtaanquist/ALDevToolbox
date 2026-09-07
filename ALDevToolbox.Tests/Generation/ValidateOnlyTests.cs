@@ -43,8 +43,8 @@ public sealed class ValidateOnlyTests : IDisposable
 
     [Theory]
     [InlineData("", "WorkspaceName")]
-    [InlineData("9Lives", "WorkspaceName")]          // must start with a letter
-    [InlineData("Bad-Name", "WorkspaceName")]        // no punctuation
+    [InlineData("!!!", "WorkspaceName")]             // nothing left to name a folder with
+    [InlineData("\tCRONUS", "WorkspaceName")]        // no control characters
     public async Task A_bad_workspace_name_is_reported_and_refused(string name, string expectedKey)
     {
         await SeedTemplateAsync();

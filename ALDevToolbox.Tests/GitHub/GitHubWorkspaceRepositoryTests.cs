@@ -380,7 +380,7 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         await using var _ = ctx;
 
         var act = () => service.CreateAsync(
-            WorkspacePlan() with { WorkspaceName = "9 Lives" }, RepoName, isPrivate: true);
+            WorkspacePlan() with { WorkspaceName = "!!!" }, RepoName, isPrivate: true);
 
         (await act.Should().ThrowAsync<PlanValidationException>())
             .Which.Errors.Should().ContainKey("WorkspaceName");
