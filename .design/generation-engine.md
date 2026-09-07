@@ -25,6 +25,8 @@ record ProjectPlan(
 );
 ```
 
+`WorkspaceName` is the customer's name as typed, in any script: required, 1 to 100 characters, no control characters, and at least one letter or digit once transliterated (so "!!!" is refused and "Jørgensen Møbler" is not). The folder name and the `.code-workspace` file name are derived from it by `CustomerNaming` — Unicode canonical decomposition plus a fixed table for the letters that do not decompose (ø → o, å → aa, ß → ss), then PascalCase — which is why the name itself needs no character rule of its own.
+
 The walk concatenates the emittable extension list in this order: template-required `WorkspaceExtension` rows (always emitted) → optional template-declared extensions whose `Path` appears in `SelectedExtensionPaths` (in template `Ordering`) → one cloned extension per `SelectedModuleKeys` entry (in selection order). `{{extension_prefix}}` and `{{affix}}` (with `defaults.affixType`) drive mustache substitution. There is no Core-vs-module split; "Core" is just the conventional `path` of the first required template extension. There is no `IncludeForNav` toggle either — ForNAV is a normal catalogue module that templates declare under `[[template.default_modules]]`.
 
 The naming rules for `WorkspaceName` (the customer name), the short name, the derived folder and the `{{short_name}}` / `{{workspace_folder}}` variables are being reworked under `customer-naming.md`; that document wins where the two disagree until its slices land and this one is rewritten.
@@ -108,7 +110,7 @@ What the template declares is what the ZIP contains — there are no static fall
         the folder ends up with no emitted files AND no child folders, drop a
         .gitkeep placeholder so empty directories survive the ZIP round-trip.
 5. Generate workspace-root files:
-     a. {{short_name}}.code-workspace (see below).
+     a. {{workspace_folder}}.code-workspace (see below).
      b. workspace.aldt.toml — the plan's form-post shape, so the New
         Workspace / New Extension pages can read a generated workspace back
         and regenerate it (WorkspaceConfigService).
@@ -204,8 +206,10 @@ Available variables (canonical names are snake_case to match the TOML schema):
 | Variable                | Source                                                                   |
 |-------------------------|--------------------------------------------------------------------------|
 | `{{name}}`              | The full extension name, e.g. "CRONUS Customer Core"                        |
-| `{{workspace_name}}`    | The workspace name from the plan, e.g. "CRONUS Customer"                    |
+| `{{workspace_name}}`    | The workspace name from the plan — the customer's name as typed, e.g. "Jørgensen Møbler" |
+| `{{customer_name}}`     | The same value as `{{workspace_name}}`, under the word the form uses. Prefer it in new content. |
 | `{{short_name}}`        | The workspace name with whitespace removed, e.g. "CRONUSCustomer"           |
+| `{{workspace_folder}}`  | The folder the workspace unpacks into: the workspace name transliterated into PascalCase, e.g. "JorgensenMobler". Use it wherever a path is needed. |
 | `{{module_name}}`       | For module-cloned extensions, the module's `extension_name` (PascalCase). For template-declared extensions, equals `{{name}}`. |
 | `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`. |
 | `{{extension_prefix}}`  | The plan's `ExtensionPrefix` — the per-workspace short identifier (e.g. "CRO"). |
@@ -307,7 +311,7 @@ MyExtension/
 Two exceptions:
 
 - **The org logo is not emitted.** It's an `organization_assets` row, not a file, and `app.json`'s `logo` field points at it with a `../`-relative path that assumes the workspace wrapper this flow doesn't produce.
-- **Sibling mode skips the workspace-root scope.** When the New Extension form has imported a `workspace.aldt.toml` and is scaffolding a sibling for an existing workspace, that workspace already carries these files at its own root; a second copy nested one level down would be noise. The sibling ZIP still carries the rewritten `{{short_name}}.code-workspace` at its root.
+- **Sibling mode skips the workspace-root scope.** When the New Extension form has imported a `workspace.aldt.toml` and is scaffolding a sibling for an existing workspace, that workspace already carries these files at its own root; a second copy nested one level down would be noise. The sibling ZIP still carries the rewritten `{{workspace_folder}}.code-workspace` at its root.
 
 The folder structure inside the extension reuses the template's **first** `WorkspaceExtension` row as the scaffold (typically the conventional `Core` extension). All other declared extensions / modules / dependencies are ignored: the user is dropping the result into an existing workspace and wants only a self-contained extension shell. The `app.json` `dependencies` array comes from the user-supplied list rather than the template; if they want to depend on something Core-like in their existing workspace, they pick it via the dependency picker that sources from `well_known_dependencies`.
 

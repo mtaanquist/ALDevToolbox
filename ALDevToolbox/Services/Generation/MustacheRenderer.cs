@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ALDevToolbox.Domain.ValueObjects;
 
 namespace ALDevToolbox.Services.Generation;
 
@@ -65,7 +66,12 @@ public sealed class MustacheRenderer
             {
                 "name" => ctx.Name,
                 "workspace_name" => ctx.WorkspaceName,
+                // The word on the form is "customer", so templates can use that
+                // word too. Same value as {{workspace_name}} - see
+                // .design/customer-naming.md.
+                "customer_name" => ctx.WorkspaceName,
                 "short_name" => ctx.ShortName,
+                "workspace_folder" => ctx.WorkspaceFolder,
                 "module_name" => ctx.ModuleName,
                 "publisher" => ctx.Publisher,
                 "extension_prefix" => ctx.ExtensionPrefix,
@@ -142,4 +148,13 @@ public record MustacheContext(
     string ApplicationVersion = "",
     string Runtime = "",
     string DependenciesArrayJson = "[]",
-    string IdRangesArrayJson = "[]");
+    string IdRangesArrayJson = "[]")
+{
+    /// <summary>
+    /// The folder (and <c>.code-workspace</c> file) name derived from
+    /// <see cref="WorkspaceName"/>. Computed rather than passed in so every
+    /// emit point agrees on it - see
+    /// <see cref="CustomerNaming"/> and <c>.design/customer-naming.md</c>.
+    /// </summary>
+    public string WorkspaceFolder => CustomerNaming.Apply(WorkspaceName, NamingStyle.PascalCase);
+}

@@ -58,8 +58,7 @@ public sealed class WorkspaceZipBuilder
         OrganizationConfig orgConfig,
         CancellationToken ct)
     {
-        var shortName = GenerationNaming.StripWhitespace(plan.WorkspaceName);
-        var rootFolder = shortName;
+        var rootFolder = CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase);
         var stream = new MemoryStream();
         var fileCount = 0;
 
@@ -96,7 +95,7 @@ public sealed class WorkspaceZipBuilder
             var workspaceJsonCtx = new MustacheContext(
                 Name: plan.WorkspaceName,
                 WorkspaceName: plan.WorkspaceName,
-                ShortName: shortName,
+                ShortName: rootFolder,
                 ModuleName: plan.WorkspaceName,
                 // Same resolved publisher the always-included files and each
                 // extension's app.json use (org default, template fallback).
@@ -105,7 +104,7 @@ public sealed class WorkspaceZipBuilder
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                 FolderPath: string.Empty,
                 TenantId: plan.TenantId);
-            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
+            WriteString(archive, $"{rootFolder}/{rootFolder}.code-workspace",
                 BuildCodeWorkspace(
                     orgConfig.Settings.CodeWorkspaceJson,
                     template.CodeWorkspaceJson,
@@ -145,7 +144,7 @@ public sealed class WorkspaceZipBuilder
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var folderName = GenerationNaming.StripWhitespace(plan.ExtensionName);
+        var folderName = CustomerNaming.Apply(plan.ExtensionName, NamingStyle.PascalCase);
         var stream = new MemoryStream();
         var fileCount = 0;
 
@@ -231,18 +230,18 @@ public sealed class WorkspaceZipBuilder
 
             if (sibling is not null)
             {
-                var workspaceFile = $"{GenerationNaming.StripWhitespace(sibling.WorkspaceName)}.code-workspace";
+                var workspaceFile = $"{CustomerNaming.Apply(sibling.WorkspaceName, NamingStyle.PascalCase)}.code-workspace";
                 var existing = sibling.ExistingFolders.ToList();
                 existing.Add(folderName);
 
                 // Rewriting the sibling workspace's .code-workspace file: pull
                 // the admin's JSON template from the org config so the result
                 // matches what the workspace was originally generated with.
-                var siblingShort = GenerationNaming.StripWhitespace(sibling.WorkspaceName);
+                var siblingFolder = CustomerNaming.Apply(sibling.WorkspaceName, NamingStyle.PascalCase);
                 var siblingCtx = new MustacheContext(
                     Name: sibling.WorkspaceName,
                     WorkspaceName: sibling.WorkspaceName,
-                    ShortName: siblingShort,
+                    ShortName: siblingFolder,
                     ModuleName: sibling.WorkspaceName,
                     // Matches the standalone extension's resolved publisher
                     // (org default, template fallback) — keep the rewritten
@@ -318,7 +317,7 @@ public sealed class WorkspaceZipBuilder
         return new MustacheContext(
             Name: ext.Name,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
+            ShortName: CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase),
             ModuleName: ext.ModuleName,
             Publisher: ext.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
@@ -584,7 +583,7 @@ public sealed class WorkspaceZipBuilder
         var ctx = new MustacheContext(
             Name: plan.WorkspaceName,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
+            ShortName: CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase),
             ModuleName: plan.WorkspaceName,
             Publisher: publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
