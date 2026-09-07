@@ -95,7 +95,7 @@ public sealed class WorkspaceZipBuilder
             var workspaceJsonCtx = new MustacheContext(
                 Name: plan.WorkspaceName,
                 WorkspaceName: plan.WorkspaceName,
-                ShortName: rootFolder,
+                ShortName: plan.EffectiveShortName,
                 ModuleName: plan.WorkspaceName,
                 // Same resolved publisher the always-included files and each
                 // extension's app.json use (org default, template fallback).
@@ -183,6 +183,9 @@ public sealed class WorkspaceZipBuilder
             var standaloneAsWorkspacePlan = new ProjectPlan(
                 TemplateKey: plan.TemplateKey,
                 WorkspaceName: plan.ExtensionName,
+                // A standalone extension has no customer behind it, so there is
+                // nothing to abbreviate: {{short_name}} renders the name itself.
+                ShortName: null,
                 ExtensionPrefix: string.Empty,
                 Brief: plan.Brief,
                 Description: plan.Description,
@@ -237,11 +240,10 @@ public sealed class WorkspaceZipBuilder
                 // Rewriting the sibling workspace's .code-workspace file: pull
                 // the admin's JSON template from the org config so the result
                 // matches what the workspace was originally generated with.
-                var siblingFolder = CustomerNaming.Apply(sibling.WorkspaceName, NamingStyle.PascalCase);
                 var siblingCtx = new MustacheContext(
                     Name: sibling.WorkspaceName,
                     WorkspaceName: sibling.WorkspaceName,
-                    ShortName: siblingFolder,
+                    ShortName: sibling.EffectiveShortName,
                     ModuleName: sibling.WorkspaceName,
                     // Matches the standalone extension's resolved publisher
                     // (org default, template fallback) — keep the rewritten
@@ -317,7 +319,7 @@ public sealed class WorkspaceZipBuilder
         return new MustacheContext(
             Name: ext.Name,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase),
+            ShortName: plan.EffectiveShortName,
             ModuleName: ext.ModuleName,
             Publisher: ext.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
@@ -583,7 +585,7 @@ public sealed class WorkspaceZipBuilder
         var ctx = new MustacheContext(
             Name: plan.WorkspaceName,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase),
+            ShortName: plan.EffectiveShortName,
             ModuleName: plan.WorkspaceName,
             Publisher: publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
@@ -658,7 +660,7 @@ public sealed class WorkspaceZipBuilder
     // ===== Workspace-level files =====
 
     /// <summary>
-    /// Builds <c>{{short_name}}.code-workspace</c> by layering three sources
+    /// Builds <c>{{workspace_folder}}.code-workspace</c> by layering three sources
     /// (Issue #61):
     /// <list type="number">
     ///   <item>The organisation base JSON template

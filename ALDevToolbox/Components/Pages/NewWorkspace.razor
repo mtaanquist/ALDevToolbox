@@ -134,7 +134,7 @@
                     <div class="form-sec__head"><span class="section-label">Project</span></div>
                     <div class="form-grid">
                         <div class="field">
-                            <label class="field__label" for="ws-name">Workspace name <span class="req">*</span></label>
+                            <label class="field__label" for="ws-name">Customer <span class="req">*</span></label>
                             <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS A/S"
                                    required maxlength="100"
                                    @bind="_workspaceName" @bind:event="oninput"
@@ -143,9 +143,21 @@
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
                         <div class="field">
+                            <label class="field__label" for="ws-short">Short name</label>
+                            <input class="input" id="ws-short" type="text" name="ShortName" placeholder="e.g. CRO"
+                                   maxlength="50"
+                                   @bind="_shortName" @bind:event="oninput"
+                                   @bind:after="OnPlanChanged" />
+                            <span class="field__hint">
+                                Optional. A short form used in extension names, for example
+                                <code class="code">CRO Core</code>. Leave blank to use the full name.
+                            </span>
+                            <FieldError Field="ShortName" Errors="_errors" />
+                        </div>
+                        <div class="field">
                             <label class="field__label" for="ws-prefix">Extension prefix</label>
                             <input class="input" id="ws-prefix" type="text" name="ExtensionPrefix" placeholder="e.g. CRONUS"
-                                   @bind="_extensionPrefix" @bind:event="oninput" />
+                                   value="@ExtensionPrefix" @oninput="OnExtensionPrefixInput" />
                             <span class="field__hint">
                                 Added to the names of generated extensions (e.g. <code class="code">CRONUS Core</code>).
                                 Different from the AL object-name affix set on the template itself.
@@ -576,6 +588,7 @@
     // current input.
     private string _templateKey = string.Empty;
     private string _workspaceName = string.Empty;
+    private string _shortName = string.Empty;
     private string _brief = string.Empty;
     private string _description = string.Empty;
     private int _coreIdRangeFrom;
@@ -583,6 +596,11 @@
     private string _applicationVersion = string.Empty;
     private string _runtimeVersion = string.Empty;
     private string _extensionPrefix = string.Empty;
+    /// <summary>
+    /// True once the user has typed a prefix themselves, after which the short
+    /// name stops steering it - the same rule the repository name follows.
+    /// </summary>
+    private bool _extensionPrefixEdited;
     private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
     /// <summary>
     /// Paths of optional template-declared extensions the user ticked. The
@@ -630,6 +648,24 @@
     private string? _standardsSummary;
 
     /// <summary>
+    /// The prefix in the field, or the short name while the template offers no
+    /// prefix of its own and the user has not typed one - so an organisation
+    /// with no prefix convention still gets "CRO Core" rather than "Core".
+    /// Once the user types, what they typed stands.
+    /// </summary>
+    private string ExtensionPrefix =>
+        _extensionPrefixEdited || !string.IsNullOrWhiteSpace(_extensionPrefix)
+            ? _extensionPrefix
+            : _shortName.Trim();
+
+    private void OnExtensionPrefixInput(ChangeEventArgs e)
+    {
+        _extensionPrefixEdited = true;
+        _extensionPrefix = e.Value?.ToString() ?? string.Empty;
+        OnPlanChanged();
+    }
+
+    /// <summary>
     /// The name in the field, or the one the workspace name suggests while the
     /// user has not typed one. One rule, shared with the service, so the name
     /// shown in "Creates org/name" is the name that gets created.
@@ -657,7 +693,7 @@
     /// <summary>Keys that have a <c>FieldError</c> slot in the markup above.</summary>
     private static readonly HashSet<string> FieldedKeys = new(StringComparer.Ordinal)
     {
-        "TemplateKey", "WorkspaceName", "CoreIdRangeFrom", "CoreIdRangeTo",
+        "TemplateKey", "WorkspaceName", "ShortName", "CoreIdRangeFrom", "CoreIdRangeTo",
         "ApplicationVersion", "RuntimeVersion",
     };
 
@@ -710,7 +746,8 @@
         var plan = new ProjectPlan(
             TemplateKey: _templateKey,
             WorkspaceName: _workspaceName.Trim(),
-            ExtensionPrefix: _extensionPrefix.Trim(),
+            ShortName: _shortName.Trim(),
+            ExtensionPrefix: ExtensionPrefix.Trim(),
             Brief: _brief.Trim(),
             Description: _description.Trim(),
             ApplicationVersion: application,
@@ -911,7 +948,11 @@
         // Pre-fill the friendly extension-name prefix from the template's
         // defaults. The user can override per workspace - this only seeds the
         // initial value when switching templates.
+        // A template switch re-seeds the prefix, so whatever was typed against
+        // the old template is gone either way - and a new template with no
+        // prefix of its own falls back to the short name again.
         _extensionPrefix = template.Defaults.ExtensionPrefix;
+        _extensionPrefixEdited = false;
         // Populate the optional-extension checkbox list. Switching templates
         // wipes prior selections; required entries (Required = true) are
         // emitted unconditionally and don't surface here.

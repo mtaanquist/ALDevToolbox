@@ -68,6 +68,7 @@ public class WorkspaceConfigService
             {
                 Template = plan.TemplateKey,
                 Name = plan.WorkspaceName,
+                ShortName = plan.ShortName ?? string.Empty,
                 Brief = plan.Brief,
                 Description = plan.Description,
                 ApplicationVersion = plan.ApplicationVersion,
@@ -279,6 +280,7 @@ public class WorkspaceConfigService
         return new ProjectPlan(
             TemplateKey: section.Template,
             WorkspaceName: section.Name,
+            ShortName: section.ShortName,
             ExtensionPrefix: section.ExtensionPrefix,
             Brief: section.Brief,
             Description: section.Description,
@@ -371,7 +373,15 @@ public class WorkspaceConfigService
     private class WorkspaceSection
     {
         public string Template { get; set; } = string.Empty;
+        /// <summary>The customer's name, as typed on the form.</summary>
         public string Name { get; set; } = string.Empty;
+        /// <summary>
+        /// The customer's abbreviated name, used in the extension names.
+        /// Empty on configs written before short names existed and on
+        /// workspaces whose customer name needed no abbreviating; either way
+        /// the reader falls back to <see cref="Name"/>.
+        /// </summary>
+        public string ShortName { get; set; } = string.Empty;
         public string Brief { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string ApplicationVersion { get; set; } = string.Empty;

@@ -55,6 +55,44 @@ public sealed class ValidateOnlyTests : IDisposable
     }
 
     [Fact]
+    public async Task An_over_long_short_name_is_reported_and_refused()
+    {
+        await SeedTemplateAsync();
+        var plan = PlanBuilder.WorkspacePlan(shortName: new string('A', 51));
+
+        (await NewService().ValidateWorkspaceAsync(plan)).Should().ContainKey("ShortName");
+        await AssertGenerateRefusesAsync(plan, "ShortName");
+    }
+
+    [Fact]
+    public async Task An_extension_name_over_200_characters_is_reported_and_refused()
+    {
+        // AppSourceCop AS0047. The name only exists once the template has been
+        // substituted, so the check runs inside the shared prepare step -
+        // which is exactly what makes the page see it too. See
+        // .design/customer-naming.md.
+        await SeedTemplateAsync();
+        var plan = PlanBuilder.WorkspacePlan(extensionPrefix: new string('P', 205));
+
+        var errors = await NewService().ValidateWorkspaceAsync(plan);
+        errors.Should().ContainKey("ShortName");
+        errors["ShortName"].Should().Be(
+            "The extension name would be longer than 200 characters, which Business Central "
+            + "refuses. Use a shorter short name.");
+        await AssertGenerateRefusesAsync(plan, "ShortName");
+    }
+
+    [Fact]
+    public async Task A_workspace_plan_carrying_a_short_name_reports_nothing()
+    {
+        await SeedTemplateAsync();
+
+        var errors = await NewService().ValidateWorkspaceAsync(PlanBuilder.WorkspacePlan(shortName: "CRO"));
+
+        errors.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task An_inverted_core_id_range_is_reported_and_refused()
     {
         await SeedTemplateAsync();

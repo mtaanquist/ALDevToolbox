@@ -686,6 +686,36 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateWorkspace_carries_the_short_name_into_the_plan()
+    {
+        // MCP parity (PROJECT.md): what the New Workspace form can say, the
+        // tool can say. The short name reaches the plan, so an agent's
+        // workspace is named the way a consultant's would be.
+        await SeedDefaultTemplateAsync();
+
+        var ctx = _db.NewContext();
+        var tools = NewWorkspaceTools(ctx);
+
+        var input = new ProjectPlanInput(
+            TemplateKey: "runtime-test",
+            WorkspaceName: "CRONUS A/S",
+            ExtensionPrefix: "CRO",
+            Brief: "Brief",
+            Description: "Description",
+            ApplicationVersion: "24.0.0.0",
+            RuntimeVersion: "15",
+            CoreIdRangeFrom: 90000,
+            CoreIdRangeTo: 90999,
+            ShortName: "CRO");
+
+        input.ToDomain().ShortName.Should().Be("CRO");
+        input.ToDomain().EffectiveShortName.Should().Be("CRO");
+
+        var result = await tools.GenerateWorkspaceAsync(input);
+        result.FileName.Should().Be("CRONUSAS.zip", "the folder still comes from the customer's name");
+    }
+
+    [Fact]
     public async Task GenerateWorkspace_surfaces_PlanValidationException_as_McpException()
     {
         await SeedDefaultTemplateAsync();

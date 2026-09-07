@@ -46,7 +46,7 @@ public class OrganizationSettings
 
     /// <summary>
     /// Admin-editable JSON template for the workspace's
-    /// <c>{{short_name}}.code-workspace</c> file. The generator runs mustache
+    /// <c>{{workspace_folder}}.code-workspace</c> file. The generator runs mustache
     /// substitution over it, then overlays a computed <c>folders</c> array
     /// before writing the file — so the admin owns <c>settings</c> and any
     /// other top-level keys, and the generator owns the folder list.

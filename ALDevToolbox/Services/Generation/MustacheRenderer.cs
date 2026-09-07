@@ -127,6 +127,12 @@ public sealed class MustacheRenderer
 public record MustacheContext(
     string Name,
     string WorkspaceName,
+    /// <summary>
+    /// What <c>{{short_name}}</c> renders to: the customer's abbreviated name
+    /// with its fallback already applied by the caller. It is a display value,
+    /// not a path - a file or folder name comes from
+    /// <see cref="WorkspaceFolder"/>.
+    /// </summary>
     string ShortName,
     string ModuleName,
     string Publisher,

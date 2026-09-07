@@ -29,6 +29,7 @@ internal static class GenerationEndpoints
             var plan = new ProjectPlan(
                 TemplateKey: form["TemplateKey"].ToString(),
                 WorkspaceName: form["WorkspaceName"].ToString().Trim(),
+                ShortName: form["ShortName"].ToString().Trim(),
                 ExtensionPrefix: form["ExtensionPrefix"].ToString().Trim(),
                 Brief: form["Brief"].ToString().Trim(),
                 Description: form["Description"].ToString().Trim(),
@@ -133,7 +134,9 @@ internal static class GenerationEndpoints
                     .Where(s => !string.IsNullOrEmpty(s))
                     .Select(s => s!)
                     .ToList();
-                sibling = new SiblingWorkspaceContext(workspaceName, workspaceModules, workspaceFolders);
+                var workspaceShortName = form["WorkspaceShortName"].ToString().Trim();
+                sibling = new SiblingWorkspaceContext(
+                    workspaceName, workspaceModules, workspaceFolders, workspaceShortName);
             }
 
             try

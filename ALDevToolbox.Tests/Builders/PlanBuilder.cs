@@ -8,6 +8,7 @@ public static class PlanBuilder
     public static ProjectPlan WorkspacePlan(
         string templateKey = "runtime-test",
         string workspaceName = "Acme Customer",
+        string? shortName = null,
         string extensionPrefix = "ACME",
         IReadOnlyList<string>? selectedModules = null,
         IReadOnlyList<string>? selectedExtensions = null,
@@ -17,6 +18,7 @@ public static class PlanBuilder
         string brief = "Test brief.") => new(
             TemplateKey: templateKey,
             WorkspaceName: workspaceName,
+            ShortName: shortName,
             ExtensionPrefix: extensionPrefix,
             Brief: brief,
             Description: "Test description.",

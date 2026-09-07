@@ -97,6 +97,61 @@ public sealed class NewWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_short_name_field_sits_under_the_customer_field_and_is_optional()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var fields = cut.FindAll("input[name='WorkspaceName'], input[name='ShortName']");
+            fields.Select(f => f.GetAttribute("name"))
+                .Should().Equal("WorkspaceName", "ShortName",
+                    "the abbreviation is read after the name it abbreviates");
+
+            var shortName = cut.Find("input[name='ShortName']");
+            shortName.HasAttribute("required").Should().BeFalse(
+                "a customer whose name is short enough needs no abbreviation");
+            shortName.GetAttribute("maxlength").Should().Be("50",
+                "the form mirrors the server's ceiling (see .design/customer-naming.md)");
+        });
+    }
+
+    [Fact]
+    public async Task The_prefix_follows_the_short_name_until_the_user_types_one()
+    {
+        // An organisation with no prefix convention should still get "CRO Core"
+        // rather than "Core", so a template with no prefix of its own hands the
+        // field over to the short name - until the user says otherwise.
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default();
+            template.Defaults.ExtensionPrefix = string.Empty;
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='ShortName']");
+
+        cut.Find("input[name='ShortName']").Input("CRO");
+        cut.WaitForAssertion(() =>
+            cut.Find("input[name='ExtensionPrefix']").GetAttribute("value").Should().Be("CRO"));
+
+        cut.Find("input[name='ExtensionPrefix']").Input("MINE");
+        cut.Find("input[name='ShortName']").Input("OTHER");
+
+        cut.WaitForAssertion(() =>
+            cut.Find("input[name='ExtensionPrefix']").GetAttribute("value").Should().Be("MINE",
+                "renaming the customer must not quietly undo a prefix the user chose"));
+    }
+
+    [Fact]
     public void Empty_template_set_renders_the_recovery_copy_pointing_at_admin()
     {
         var cut = _ctx.Render<NewWorkspace>();
