@@ -26,7 +26,9 @@ public static class MustacheVariableCatalog
     public static readonly IReadOnlyList<MustacheVariable> All = new MustacheVariable[]
     {
         new("workspace_name", "Workspace display name as the user typed it (e.g. \"CRONUS Customer\").", AvailableInAdminContent: true),
+        new("customer_name", "The same value as {{workspace_name}}, under the word the form uses (e.g. \"CRONUS Customer\").", AvailableInAdminContent: true),
         new("short_name", "Workspace name with whitespace stripped (e.g. \"CRONUSCustomer\"). Used in filenames.", AvailableInAdminContent: true),
+        new("workspace_folder", "Folder the workspace unpacks into, derived from the workspace name (e.g. \"CRONUSCustomer\"). Use it wherever a path is needed.", AvailableInAdminContent: true),
         new("publisher", "Organisation publisher from the configuration defaults.", AvailableInAdminContent: true),
         new("extension_prefix", "Extension prefix from the New Workspace form.", AvailableInAdminContent: true),
         new("affix", "Template affix when the template's affix type is not 'None'; empty otherwise.", AvailableInAdminContent: true),

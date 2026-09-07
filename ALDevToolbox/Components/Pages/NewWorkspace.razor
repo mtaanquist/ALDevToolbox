@@ -135,12 +135,11 @@
                     <div class="form-grid">
                         <div class="field">
                             <label class="field__label" for="ws-name">Workspace name <span class="req">*</span></label>
-                            <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS Customer"
-                                   pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
-                                   title="Letters, digits and spaces only; must start with a letter."
+                            <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS A/S"
+                                   required maxlength="100"
                                    @bind="_workspaceName" @bind:event="oninput"
                                    @bind:after="OnPlanChanged" />
-                            <span class="field__hint">Letters, digits and spaces only; must start with a letter.</span>
+                            <span class="field__hint">The customer's name as it should appear. Folder and file names are derived from it.</span>
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
                         <div class="field">
@@ -991,9 +990,16 @@
     /// tree the same way <c>GenerationService</c> does.
     /// </summary>
     /// <summary>The folder the ZIP unpacks into — shown under the preview's title.</summary>
-    private string PreviewRootName => string.IsNullOrWhiteSpace(_workspaceName)
-        ? "Workspace"
-        : StripWhitespace(_workspaceName);
+    /// <summary>
+    /// The folder the ZIP unpacks into, derived from the customer name exactly
+    /// as the generator derives it. A name with nothing to derive from (all
+    /// punctuation) falls back to the placeholder rather than showing an empty
+    /// root; the server refuses that name anyway.
+    /// </summary>
+    private string PreviewRootName =>
+        CustomerNaming.Apply(_workspaceName, NamingStyle.PascalCase) is { Length: > 0 } folder
+            ? folder
+            : "Workspace";
 
     /// <summary>
     /// The selected modules in the order the generator will emit them - which is
@@ -1104,6 +1110,4 @@
             rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths);
     }
 
-    private static string StripWhitespace(string value) =>
-        new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
 }

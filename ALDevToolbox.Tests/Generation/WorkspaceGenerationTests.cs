@@ -117,6 +117,23 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_customer_name_outside_ascii_still_gets_a_folder_and_a_workspace_file()
+    {
+        // The name a Danish consultant actually types. It used to be refused;
+        // now it is transliterated into the folder and the .code-workspace file
+        // name, and kept as typed everywhere a person reads it.
+        // See .design/customer-naming.md.
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan(workspaceName: "Jørgensen Møbler"));
+
+        zip.GetEntry("JorgensenMobler/JorgensenMobler.code-workspace").Should().NotBeNull();
+        zip.GetEntry("JorgensenMobler/Core/app.json").Should().NotBeNull();
+        zip.Entries.Should().OnlyContain(e => !e.FullName.Contains('ø'),
+            "nothing in the archive is named with a character the name was transliterated out of");
+    }
+
+    [Fact]
     public async Task Optional_extension_emits_only_when_user_selected()
     {
         var template = TemplateBuilder.Default();

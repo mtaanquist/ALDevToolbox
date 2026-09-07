@@ -25,9 +25,8 @@ namespace ALDevToolbox.Services.Generation;
 /// </remarks>
 public class GenerationService
 {
-    private static readonly Regex WorkspaceNameRegex = new(@"^[A-Za-z][A-Za-z0-9 ]*$", RegexOptions.Compiled);
     // Spaces are allowed: the display name (app.json "name") keeps them, while the
-    // folder name strips them via GenerationNaming.StripWhitespace. See issue #520.
+    // folder name is derived from it by CustomerNaming. See issue #520.
     private static readonly Regex ExtensionNameRegex = new(@"^[A-Za-z][A-Za-z0-9 ]*$", RegexOptions.Compiled);
 
     private readonly AppDbContext _db;
@@ -76,7 +75,7 @@ public class GenerationService
         var (template, extensions, orgConfig) = await PrepareWorkspaceAsync(plan, ct);
 
         var (stream, fileCount) = await _zipBuilder.BuildWorkspaceAsync(plan, template, extensions, orgConfig, ct);
-        var shortName = GenerationNaming.StripWhitespace(plan.WorkspaceName);
+        var folderName = CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase);
         stopwatch.Stop();
 
         _logger.LogInformation(
@@ -88,7 +87,7 @@ public class GenerationService
             stream.Length,
             stopwatch.ElapsedMilliseconds);
 
-        return new GeneratedArchive(stream, $"{shortName}.zip");
+        return new GeneratedArchive(stream, $"{folderName}.zip");
     }
 
     // ===== Standalone extension flow =====
@@ -406,8 +405,16 @@ public class GenerationService
     {
         var errors = new Dictionary<string, string>();
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.WorkspaceName) || !WorkspaceNameRegex.IsMatch(plan.WorkspaceName))
-            errors[nameof(plan.WorkspaceName)] = "Required. Letters, digits and spaces only; must start with a letter.";
+        // The customer name is typed as it should appear, in any script: the
+        // folder and file names are transliterated out of it by CustomerNaming
+        // rather than restricting what may be typed. All it has to carry is
+        // something to name with, and nothing a file name cannot hold.
+        // See .design/customer-naming.md.
+        if (string.IsNullOrWhiteSpace(plan.WorkspaceName)
+            || plan.WorkspaceName.Length > CustomerNaming.MaxLength
+            || plan.WorkspaceName.Any(char.IsControl)
+            || !CustomerNaming.HasNameCharacters(plan.WorkspaceName))
+            errors[nameof(plan.WorkspaceName)] = "Required. Give the customer's name, for example CRONUS A/S.";
         if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
         if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
         if (string.IsNullOrWhiteSpace(plan.ApplicationVersion)) errors[nameof(plan.ApplicationVersion)] = "Required.";
@@ -503,7 +510,7 @@ public class GenerationService
         var ctx = new MustacheContext(
             Name: source,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
+            ShortName: CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase),
             ModuleName: source,
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,

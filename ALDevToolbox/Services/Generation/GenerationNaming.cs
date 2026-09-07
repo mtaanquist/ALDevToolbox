@@ -1,21 +1,12 @@
-using System.Text.RegularExpressions;
-
 namespace ALDevToolbox.Services.Generation;
 
 /// <summary>
-/// Naming helpers shared by the generation pipeline. The workspace/extension
-/// "short name" (folder names, the <c>.code-workspace</c> file name) is the
-/// display name with all whitespace removed; both <c>GenerationService</c> and
-/// <c>WorkspaceZipBuilder</c> derive it, so the rule lives here once.
+/// Naming helpers shared by the generation pipeline. Folder and file names
+/// derived from the customer name live in <see cref="CustomerNaming"/>; what
+/// is left here is the publisher rule both generation paths read.
 /// </summary>
-public static partial class GenerationNaming
+public static class GenerationNaming
 {
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex WhitespaceRegex();
-
-    public static string StripWhitespace(string value) =>
-        WhitespaceRegex().Replace(value ?? string.Empty, string.Empty);
-
     /// <summary>
     /// Resolves the publisher that <c>{{publisher}}</c> renders to in the
     /// workspace flow. The canonical value is the org's configuration default
