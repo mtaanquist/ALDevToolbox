@@ -30,6 +30,20 @@ public static class CustomerNaming
     public const int MaxLength = 100;
 
     /// <summary>
+    /// The longest short name the form accepts. Long customer names are what
+    /// the short name exists to shorten, so the ceiling is well below the
+    /// customer name's own.
+    /// </summary>
+    public const int MaxShortNameLength = 50;
+
+    /// <summary>
+    /// The longest extension name Business Central accepts. AppSourceCop
+    /// AS0047 refuses anything longer; the platform stores the name as
+    /// Text[250], so this is the safe ceiling for both cases.
+    /// </summary>
+    public const int MaxExtensionNameLength = 200;
+
+    /// <summary>
     /// Letters that survive <see cref="NormalizationForm.FormD"/> intact
     /// because they have no canonical decomposition, and what each becomes.
     /// </summary>
@@ -72,6 +86,16 @@ public static class CustomerNaming
 
         return joined.Length <= MaxLength ? joined : joined[..MaxLength].TrimEnd('-', '_', ' ');
     }
+
+    /// <summary>
+    /// The short name to render, or <paramref name="customerName"/> when no
+    /// abbreviation was given. The short name is the consultant's own
+    /// abbreviation rather than a derivation, so leaving it out is not a
+    /// missing value - it means "the customer's name is short enough".
+    /// See <c>.design/customer-naming.md</c>.
+    /// </summary>
+    public static string ShortNameOrFallback(string? shortName, string customerName) =>
+        string.IsNullOrWhiteSpace(shortName) ? customerName : shortName.Trim();
 
     /// <summary>
     /// Whether <paramref name="name"/> still has at least one letter or digit

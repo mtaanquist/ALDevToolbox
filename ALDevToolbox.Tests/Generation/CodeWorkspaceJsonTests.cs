@@ -71,8 +71,34 @@ public sealed class CodeWorkspaceJsonTests : IDisposable
         // pulls the publisher from the template defaults).
         settings.GetProperty("al.ruleSetPath").GetString()
             .Should().Contain("Acme");
+        // {{short_name}} is the customer's abbreviated name - with no
+        // abbreviation on the plan it falls back to the name as typed, spaces
+        // and all. The folder name is {{workspace_folder}}'s job now.
         settings.GetProperty("al.workspace.short_name").GetString()
-            .Should().Be("AcmeCustomer");
+            .Should().Be("Acme Customer");
+    }
+
+    [Fact]
+    public async Task Short_name_renders_the_abbreviation_and_workspace_folder_stays_the_folder()
+    {
+        await SeedTemplateAsync(TemplateBuilder.Default());
+        await SetCodeWorkspaceJsonAsync("""
+            {
+              "settings": {
+                "al.workspace.short_name": "{{short_name}}",
+                "al.workspace.folder": "{{workspace_folder}}"
+              }
+            }
+            """);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan(shortName: "AC"));
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        using var doc = JsonDocument.Parse(ReadEntry(entry!));
+        var settings = doc.RootElement.GetProperty("settings");
+
+        settings.GetProperty("al.workspace.short_name").GetString().Should().Be("AC");
+        settings.GetProperty("al.workspace.folder").GetString().Should().Be("AcmeCustomer");
     }
 
     [Fact]
@@ -267,7 +293,7 @@ public sealed class CodeWorkspaceJsonTests : IDisposable
         using var doc = JsonDocument.Parse(ReadEntry(entry!));
         doc.RootElement.GetProperty("settings")
             .GetProperty("al.workspaceShortName").GetString()
-            .Should().Be("AcmeCustomer");
+            .Should().Be("Acme Customer");
     }
 
     [Fact]

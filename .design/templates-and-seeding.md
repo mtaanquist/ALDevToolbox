@@ -289,7 +289,7 @@ Canonical names are snake_case to match the rest of the TOML schema. Legacy came
 |-------------------------|------------------------------------------------------------|
 | `{{name}}`              | Full rendered extension name                               |
 | `{{workspace_name}}`    | The workspace name from the form                           |
-| `{{short_name}}`        | Workspace name with whitespace removed                     |
+| `{{short_name}}`        | The short name typed on the form, or the customer name when blank |
 | `{{module_name}}`       | Module's `extension_name` (PascalCase) for module-cloned extensions |
 | `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`                    |
 | `{{extension_prefix}}`  | Per-workspace short identifier from the plan, e.g. "CRO"   |

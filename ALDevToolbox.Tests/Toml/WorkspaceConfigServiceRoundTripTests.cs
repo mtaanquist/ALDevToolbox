@@ -28,6 +28,7 @@ public sealed class WorkspaceConfigServiceRoundTripTests : IDisposable
         var plan = new ProjectPlan(
             TemplateKey: "runtime-15",
             WorkspaceName: "Acme Customer",
+            ShortName: "AC",
             ExtensionPrefix: "ACME",
             Brief: "Brief copy",
             Description: "Longer description with [TOML]-unfriendly chars: \" ' \n line two",
@@ -57,6 +58,7 @@ public sealed class WorkspaceConfigServiceRoundTripTests : IDisposable
         parsed.Workspace.Should().NotBeNull();
         parsed.Workspace!.TemplateKey.Should().Be(plan.TemplateKey);
         parsed.Workspace.WorkspaceName.Should().Be(plan.WorkspaceName);
+        parsed.Workspace.ShortName.Should().Be(plan.ShortName);
         parsed.Workspace.ExtensionPrefix.Should().Be(plan.ExtensionPrefix);
         parsed.Workspace.Brief.Should().Be(plan.Brief);
         parsed.Workspace.Description.Should().Be(plan.Description);
@@ -124,6 +126,7 @@ public sealed class WorkspaceConfigServiceRoundTripTests : IDisposable
         var plan = new ProjectPlan(
             TemplateKey: "runtime-15",
             WorkspaceName: "X",
+            ShortName: null,
             ExtensionPrefix: "X",
             Brief: "", Description: "",
             ApplicationVersion: "24.0.0.0",
@@ -138,6 +141,37 @@ public sealed class WorkspaceConfigServiceRoundTripTests : IDisposable
         var toml = svc.BuildWorkspace(plan, Array.Empty<WorkspaceExtensionIdentity>());
 
         toml.Should().StartWith("# AL Dev Toolbox project config.");
+    }
+
+    [Fact]
+    public async Task A_config_written_before_short_names_existed_still_parses()
+    {
+        // Every workspace generated so far has a config with no short_name
+        // key. It has to keep importing - and the customer name is the right
+        // answer for it, which is the same fallback a blank short name gets.
+        await SeedTemplateAsync("runtime-15");
+
+        await using var ctx = _db.NewContext();
+        var parsed = await new WorkspaceConfigService(ctx).ParseAsync("""
+            schema_version = 1
+            kind = "workspace"
+
+            [workspace]
+            template = "runtime-15"
+            name = "CRONUS A/S"
+            brief = ""
+            description = ""
+            application_version = "24.0.0.0"
+            runtime_version = "15.2"
+            core_id_range_from = 80000
+            core_id_range_to = 80999
+            include_examples = true
+            extension_prefix = "CRO"
+            """);
+
+        parsed.Workspace.Should().NotBeNull();
+        parsed.Workspace!.ShortName.Should().BeEmpty();
+        parsed.Workspace.EffectiveShortName.Should().Be("CRONUS A/S");
     }
 
     private async Task SeedTemplateAsync(string key)

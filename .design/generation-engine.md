@@ -11,7 +11,8 @@ A `ProjectPlan` value object collected from the form:
 ```csharp
 record ProjectPlan(
     string TemplateKey,
-    string WorkspaceName,
+    string WorkspaceName,            // the customer's name, as typed
+    string? ShortName,               // the customer's name abbreviated; blank falls back to WorkspaceName
     string ExtensionPrefix,          // pre-filled from defaults.extension_prefix; user-editable
     string Brief,
     string Description,
@@ -26,6 +27,8 @@ record ProjectPlan(
 ```
 
 `WorkspaceName` is the customer's name as typed, in any script: required, 1 to 100 characters, no control characters, and at least one letter or digit once transliterated (so "!!!" is refused and "Jørgensen Møbler" is not). The folder name and the `.code-workspace` file name are derived from it by `CustomerNaming` — Unicode canonical decomposition plus a fixed table for the letters that do not decompose (ø → o, å → aa, ß → ss), then PascalCase — which is why the name itself needs no character rule of its own.
+
+`ShortName` is the customer's name abbreviated for the extension names ("JM" for "Jørgensen Møbler"): optional, at most 50 characters, no control characters, and used as typed. Blank means the customer name is used unchanged, so it is never a missing value. It is what `{{short_name}}` renders to, and the rendered extension names it feeds are checked against Business Central's 200-character ceiling (AppSourceCop AS0047) before anything is written - a plan that would exceed it is refused with the short name as the field to fix.
 
 The walk concatenates the emittable extension list in this order: template-required `WorkspaceExtension` rows (always emitted) → optional template-declared extensions whose `Path` appears in `SelectedExtensionPaths` (in template `Ordering`) → one cloned extension per `SelectedModuleKeys` entry (in selection order). `{{extension_prefix}}` and `{{affix}}` (with `defaults.affixType`) drive mustache substitution. There is no Core-vs-module split; "Core" is just the conventional `path` of the first required template extension. There is no `IncludeForNav` toggle either — ForNAV is a normal catalogue module that templates declare under `[[template.default_modules]]`.
 
@@ -113,7 +116,12 @@ What the template declares is what the ZIP contains — there are no static fall
      a. {{workspace_folder}}.code-workspace (see below).
      b. workspace.aldt.toml — the plan's form-post shape, so the New
         Workspace / New Extension pages can read a generated workspace back
-        and regenerate it (WorkspaceConfigService).
+        and regenerate it (WorkspaceConfigService). Its `[workspace]` section
+        carries `name` (the customer name) and `short_name` beside it, which
+        is how the New Extension sibling flow names "JM Banking" next to the
+        workspace's own "JM Core" rather than guessing from the folder. A
+        config written before short names existed has no key and falls back
+        to the customer name.
      c. README.md and .gitignore are workspace-root-scoped
         `organization_files` rows, seeded from PlatformOrganizationFiles.
         Neither is generator-built and neither is an embedded resource any
@@ -193,7 +201,7 @@ That JSON is not a constant. `WorkspaceZipBuilder.BuildCodeWorkspace` layers thr
 2. The optional per-template overlay, `runtime_templates.code_workspace_json`, edited on the template's own edit page. It deep-merges on the `settings` object and replaces wholesale on every other top-level key.
 3. The computed `folders` array, written last and always authoritative — the workspace has to point at the folders the generator actually emitted, whatever either layer pasted.
 
-Mustache substitution runs over each layer before the merge, so both can use `{{publisher}}`, `{{short_name}}` and the rest. A layer that doesn't parse as a JSON object raises a field-keyed `PlanValidationException` so the workspace and template error surfaces stay distinct.
+Mustache substitution runs over each layer before the merge, so both can use `{{publisher}}`, `{{workspace_folder}}` and the rest. A layer that doesn't parse as a JSON object raises a field-keyed `PlanValidationException` so the workspace and template error surfaces stay distinct.
 
 Each `folders` entry uses the extension's `path`, which is also its on-disk folder name. For a module clone that path is the module's `extension_name` (PascalCase), not its `key` — the key is the admin/URL slug and the dependency-reference target.
 
@@ -208,7 +216,7 @@ Available variables (canonical names are snake_case to match the TOML schema):
 | `{{name}}`              | The full extension name, e.g. "CRONUS Customer Core"                        |
 | `{{workspace_name}}`    | The workspace name from the plan — the customer's name as typed, e.g. "Jørgensen Møbler" |
 | `{{customer_name}}`     | The same value as `{{workspace_name}}`, under the word the form uses. Prefer it in new content. |
-| `{{short_name}}`        | The workspace name with whitespace removed, e.g. "CRONUSCustomer"           |
+| `{{short_name}}`        | The plan's `ShortName`, or the customer name when it is blank, e.g. "JM" or "Jørgensen Møbler". A display value, not a path. |
 | `{{workspace_folder}}`  | The folder the workspace unpacks into: the workspace name transliterated into PascalCase, e.g. "JorgensenMobler". Use it wherever a path is needed. |
 | `{{module_name}}`       | For module-cloned extensions, the module's `extension_name` (PascalCase). For template-declared extensions, equals `{{name}}`. |
 | `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`. |

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 
@@ -11,6 +12,7 @@ namespace ALDevToolbox.Services.Mcp.Dtos;
 /// </summary>
 public sealed record ProjectPlanInput(
     string TemplateKey,
+    [property: Description("The customer's name, as it should appear, e.g. Jørgensen Møbler.")]
     string WorkspaceName,
     string ExtensionPrefix,
     string Brief,
@@ -21,11 +23,14 @@ public sealed record ProjectPlanInput(
     int CoreIdRangeTo,
     bool IncludeExamples = true,
     IReadOnlyList<string>? SelectedExtensionPaths = null,
-    IReadOnlyList<string>? SelectedModuleKeys = null)
+    IReadOnlyList<string>? SelectedModuleKeys = null,
+    [property: Description("Optional short form of the customer's name used in extension names, e.g. JM. Leave out to use the full name.")]
+    string? ShortName = null)
 {
     public ProjectPlan ToDomain() => new(
         TemplateKey,
         WorkspaceName,
+        ShortName,
         ExtensionPrefix,
         Brief,
         Description,

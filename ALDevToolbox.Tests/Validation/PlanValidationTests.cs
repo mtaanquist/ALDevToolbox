@@ -30,6 +30,7 @@ public sealed class PlanValidationTests : IDisposable
         var plan = new ProjectPlan(
             TemplateKey: string.Empty,
             WorkspaceName: string.Empty,
+            ShortName: null,
             ExtensionPrefix: string.Empty,
             Brief: string.Empty,
             Description: string.Empty,
@@ -83,6 +84,22 @@ public sealed class PlanValidationTests : IDisposable
             .Should().ThrowAsync<PlanValidationException>()).Which;
 
         ex.Errors.Should().NotContainKey(nameof(plan.WorkspaceName));
+    }
+
+    [Fact]
+    public async Task Workspace_plan_with_an_over_long_short_name_keys_the_error_under_short_name()
+    {
+        var service = NewService();
+        // The short name exists to shorten long customer names, so a "short"
+        // name of 51 characters is a typo, not a preference.
+        // See .design/customer-naming.md.
+        var plan = PlanBuilder.WorkspacePlan(shortName: new string('A', 51));
+
+        var ex = (await service.Invoking(s => s.GenerateWorkspaceAsync(plan))
+            .Should().ThrowAsync<PlanValidationException>()).Which;
+
+        ex.Errors.Should().ContainKey(nameof(plan.ShortName));
+        ex.Errors[nameof(plan.ShortName)].Should().Be("At most 50 characters.");
     }
 
     [Fact]

@@ -190,6 +190,7 @@ public class GenerationService
 
         var extensions = BuildExtensionList(template, plan, modules, publisher);
         ValidateIdRanges(extensions);
+        ValidateExtensionNames(extensions);
 
         return (template, extensions, orgConfig);
     }
@@ -415,6 +416,12 @@ public class GenerationService
             || plan.WorkspaceName.Any(char.IsControl)
             || !CustomerNaming.HasNameCharacters(plan.WorkspaceName))
             errors[nameof(plan.WorkspaceName)] = "Required. Give the customer's name, for example CRONUS A/S.";
+        // The short name is only ever displayed, so the same "nothing a file
+        // name cannot hold" rule applies - it just has a tighter ceiling,
+        // because shortening long names is the whole point of it.
+        if (plan.ShortName is { } shortName
+            && (shortName.Length > CustomerNaming.MaxShortNameLength || shortName.Any(char.IsControl)))
+            errors[nameof(plan.ShortName)] = "At most 50 characters.";
         if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
         if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
         if (string.IsNullOrWhiteSpace(plan.ApplicationVersion)) errors[nameof(plan.ApplicationVersion)] = "Required.";
@@ -474,6 +481,30 @@ public class GenerationService
     }
 
     /// <summary>
+    /// Rejects the plan when a rendered extension name is longer than Business
+    /// Central will accept. The names only exist once the templates have been
+    /// substituted, which is why this runs here rather than in
+    /// <see cref="ValidateWorkspacePlan"/> - running it inside
+    /// <c>PrepareWorkspaceAsync</c> still means the page catches it before the
+    /// form posts, not on the way out of the generator.
+    ///
+    /// <para>Keyed on <c>ShortName</c> because that is the field the user can
+    /// do something about: the customer name is the customer's, the prefix is
+    /// the organisation's.</para>
+    /// </summary>
+    private static void ValidateExtensionNames(IReadOnlyList<EmittableExtension> extensions)
+    {
+        if (extensions.All(e => e.Name.Length <= CustomerNaming.MaxExtensionNameLength)) return;
+
+        throw new PlanValidationException(new Dictionary<string, string>
+        {
+            ["ShortName"] =
+                "The extension name would be longer than 200 characters, which Business Central "
+                + "refuses. Use a shorter short name.",
+        });
+    }
+
+    /// <summary>
     /// Walks the final extension list and rejects the plan when any two
     /// resolved id ranges overlap. Per <c>unified-extensions.md</c> a
     /// workspace's allocated ranges have to be disjoint or AL refuses to
@@ -505,19 +536,24 @@ public class GenerationService
     /// awareness — names are built before folder traversal). Builds an
     /// empty-FolderPath context and delegates to <see cref="MustacheRenderer.Render"/>.
     /// </summary>
+    /// <remarks>
+    /// The result is trimmed: the stock name templates read
+    /// <c>"{{extension_prefix}} Core"</c>, and an organisation that sets no
+    /// prefix would otherwise get an extension called " Core".
+    /// </remarks>
     private string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
     {
         var ctx = new MustacheContext(
             Name: source,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase),
+            ShortName: plan.EffectiveShortName,
             ModuleName: source,
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty,
             TenantId: plan.TenantId);
-        return _mustache.Render(source, ctx);
+        return _mustache.Render(source, ctx).Trim();
     }
 }
 
@@ -528,4 +564,14 @@ public record GeneratedArchive(MemoryStream Stream, string FileName);
 public record SiblingWorkspaceContext(
     string WorkspaceName,
     IReadOnlyList<string> ModuleKeys,
-    IReadOnlyList<string> ExistingFolders);
+    IReadOnlyList<string> ExistingFolders,
+    /// <summary>
+    /// The workspace's short name, read back from the settings it saved. Null
+    /// for a workspace generated before short names existed, which falls back
+    /// to the customer name.
+    /// </summary>
+    string? ShortName = null)
+{
+    /// <summary>The short name with its fallback applied - see <see cref="ProjectPlan.EffectiveShortName"/>.</summary>
+    public string EffectiveShortName => CustomerNaming.ShortNameOrFallback(ShortName, WorkspaceName);
+}
