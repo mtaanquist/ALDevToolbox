@@ -9,9 +9,11 @@ namespace ALDevToolbox.Data.Migrations
     /// name with its whitespace stripped" and started meaning the customer's
     /// abbreviated name, which is a display value and not a path. The job the
     /// old variable was doing belongs to <c>{{workspace_folder}}</c> now, so
-    /// the two places an organisation could only ever have meant a path get
-    /// rewritten: the <c>.code-workspace</c> JSON template, whose folder
-    /// entries and file name are paths, and the path of an organisation file.
+    /// the three places an organisation could only ever have meant a path get
+    /// rewritten: both layers of the <c>.code-workspace</c> JSON, whose folder
+    /// entries and file name are paths - the organisation's base template and
+    /// the per-template overlay merged on top of it - and the path of an
+    /// organisation file.
     ///
     /// <para>Prose uses of the variable inside a file's <em>content</em>
     /// ("Customizations made for {{short_name}}") are deliberately left alone -
@@ -29,6 +31,13 @@ namespace ALDevToolbox.Data.Migrations
         /// </summary>
         public const string RewriteSql = """
             UPDATE organization_settings
+               SET code_workspace_json = REPLACE(
+                       REPLACE(code_workspace_json, '{{short_name}}', '{{workspace_folder}}'),
+                       '{{shortName}}', '{{workspace_folder}}')
+             WHERE code_workspace_json LIKE '%{{short_name}}%'
+                OR code_workspace_json LIKE '%{{shortName}}%';
+
+            UPDATE runtime_templates
                SET code_workspace_json = REPLACE(
                        REPLACE(code_workspace_json, '{{short_name}}', '{{workspace_folder}}'),
                        '{{shortName}}', '{{workspace_folder}}')
