@@ -118,6 +118,19 @@ public sealed record WorkspaceResult(
 /// What GitHub refused while applying those standards, or null when nothing
 /// was. The repository exists either way.
 /// </param>
+/// <param name="SolutionId">
+/// The solution the repository was registered on (issue #759), or null when
+/// registering it failed - <paramref name="SolutionWarning"/> then says so.
+/// </param>
+/// <param name="SolutionName">That solution's name.</param>
+/// <param name="SolutionCreated">
+/// True when the solution was created for this customer, false when it was one
+/// the caller named.
+/// </param>
+/// <param name="SolutionWarning">
+/// Why the repository is not on a solution, or null when it is. The repository
+/// exists either way.
+/// </param>
 public sealed record RepositoryCreationResult(
     string RepositoryFullName,
     string HtmlUrl,
@@ -126,7 +139,11 @@ public sealed record RepositoryCreationResult(
     bool IsPrivate,
     int FileCount,
     int StandardsFileCount = 0,
-    string? StandardsWarning = null)
+    string? StandardsWarning = null,
+    int? SolutionId = null,
+    string? SolutionName = null,
+    bool SolutionCreated = false,
+    string? SolutionWarning = null)
 {
     /// <summary>
     /// The projection of a created repository, written once because two tools
@@ -141,7 +158,11 @@ public sealed record RepositoryCreationResult(
         IsPrivate: created.Repository.IsPrivate,
         FileCount: created.FileCount,
         StandardsFileCount: created.StandardsFileCount,
-        StandardsWarning: created.StandardsWarning);
+        StandardsWarning: created.StandardsWarning,
+        SolutionId: created.SolutionId,
+        SolutionName: created.SolutionName,
+        SolutionCreated: created.SolutionCreated,
+        SolutionWarning: created.SolutionWarning);
 }
 
 /// <summary>

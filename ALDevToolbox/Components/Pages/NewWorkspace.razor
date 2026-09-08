@@ -479,12 +479,31 @@
                                                 <span>Open it on GitHub</span>
                                             </a>
                                         </span>
+                                        @* Where the customer now lives, so the
+                                           consultant can go straight on to
+                                           builds and pipelines (#759). *@
+                                        @if (_createdRepo.SolutionId is { } solutionId)
+                                        {
+                                            <span>
+                                                @(_createdRepo.SolutionCreated ? "Created the solution" : "Registered on the solution")
+                                                <a href="@($"/solutions/{solutionId}")">@_createdRepo.SolutionName</a>.
+                                            </span>
+                                        }
                                         <span>
                                             Clone it with
                                             <code class="code">git clone @_createdRepo.Repository.CloneUrl</code>
                                         </span>
                                     </span>
                                 </p>
+                                @if (!string.IsNullOrEmpty(_createdRepo.SolutionWarning))
+                                {
+                                    @* The repository is there and holds the files;
+                                       only the customer's solution is missing. *@
+                                    <p class="alert alert--warn" role="status">
+                                        <Icon Name="triangle-alert" Width="16" Height="16" />
+                                        <span>@_createdRepo.SolutionWarning</span>
+                                    </p>
+                                }
                                 @if (!string.IsNullOrEmpty(_createdRepo.StandardsWarning))
                                 {
                                     @* The repository is there and holds the files; only
@@ -606,6 +625,10 @@
                                     </span>
                                 </div>
                                 <FieldError Field="GitHubRepository" Errors="_repoErrors" />
+                                @* The customer's solution is chosen a column
+                                   away, but this is the button that was pressed,
+                                   so this is where the refusal has to be. *@
+                                <FieldError Field="SolutionId" Errors="_repoErrors" />
                                 <button type="button" class="btn" disabled="@_repoBusy"
                                         @onclick="CreateRepositoryAsync">
                                     <Icon Name="folder-git-2" Width="15" Height="15" />
@@ -978,17 +1001,37 @@
         try
         {
             _createdRepo = await GitHubCreate.CreateAsync(
-                plan, RepositoryName, isPrivate: _repoVisibility != "public");
+                plan, RepositoryName, isPrivate: _repoVisibility != "public", solutionId: _solutionId);
+
+            // The customer is on file now, whichever way round it happened, so
+            // the picker stops offering to create them and shows the solution
+            // they are: a second press adds to that solution rather than trying
+            // to create it again.
+            if (_createdRepo is { SolutionId: { } registeredId, SolutionName: { } registeredName })
+            {
+                _solutionId = registeredId;
+                _createSolution = false;
+                _solution = new SolutionOption(
+                    registeredId,
+                    registeredName,
+                    string.IsNullOrWhiteSpace(_shortName) ? null : _shortName.Trim(),
+                    Guid.TryParse(_tenantId.Trim(), out var tenant) ? tenant : null,
+                    // No repositories listed on purpose: the card that lists
+                    // them exists to catch a customer set up before this
+                    // session, and the repository just made is already named in
+                    // the success state above it.
+                    []);
+            }
         }
         catch (PlanValidationException ex)
         {
             // Problems with the repository belong in this card; anything about
             // the plan itself belongs on the field that caused it.
             _repoErrors = ex.Errors
-                .Where(e => e.Key is "GitHubRepository" or "GitHubRepositoryName")
+                .Where(e => e.Key is "GitHubRepository" or "GitHubRepositoryName" or "SolutionId")
                 .ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
             var fieldErrors = ex.Errors
-                .Where(e => e.Key is not ("GitHubRepository" or "GitHubRepositoryName"))
+                .Where(e => e.Key is not ("GitHubRepository" or "GitHubRepositoryName" or "SolutionId"))
                 .ToDictionary(e => e.Key, e => e.Value);
             if (fieldErrors.Count > 0) SetErrors(fieldErrors);
         }

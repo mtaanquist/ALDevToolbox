@@ -362,7 +362,23 @@ Before creating, the user must be a member of the connected GitHub org
 generic error: name already taken, the installation lacks `administration:write`,
 the user is not an org member.
 
-The created repository is recorded in the audit log against the generation.
+**The repository is what registers the customer.** Once it exists and is
+filled, it is added to a solution: the one the Customer field points at, or one
+created for the customer when the field named a new name. That is the last step
+of the flow, after the standards, because a solution with no repository is the
+orphan the ordering exists to avoid - and because it is the only step whose
+failure is worth surviving. A solution that will not save (a name another
+solution already uses, most likely) leaves the repository standing and comes
+back as a warning beside the success, the same shape as a refused ruleset. The
+one refusal it *can* make up front is a solution the caller may not manage,
+which is checked with the other refusals before anything is created. The
+mechanics - which columns, which URL shape, what the created solution inherits -
+are in `customer-naming.md`.
+
+The created repository is recorded in the audit log against the generation, with
+the solution it was registered on as the entry's entity id: the repository lives
+on GitHub and has no id of ours, but the solution does, and it is the one row of
+ours the act touches.
 
 Four details settled while building it (`GitHubWorkspaceRepositoryService`).
 

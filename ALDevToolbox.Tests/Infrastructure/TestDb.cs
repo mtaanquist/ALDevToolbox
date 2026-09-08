@@ -422,7 +422,8 @@ public sealed class TestDb : IDisposable
         ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
             NewGitHubConnectionService(ctx, access), access, client,
-            NewGitHubRepositoryStandardsService(ctx), ctx, OrgContext,
+            NewGitHubRepositoryStandardsService(ctx), NewProjectService(ctx),
+            NewOrganizationConfigService(ctx), ctx, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
     /// <summary>
     /// GitHub Releases in both directions (#632): publishing a build's app files to a

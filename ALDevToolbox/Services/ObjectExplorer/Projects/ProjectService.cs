@@ -243,6 +243,80 @@ public sealed class ProjectService
     }
 
     /// <summary>
+    /// Adds one repository to a solution, leaving every other repository on it
+    /// alone. Returns the solution's name, for the success state that says where
+    /// the repository was registered.
+    ///
+    /// <para>Narrow on purpose. <see cref="UpdateProjectAsync"/> owns the whole
+    /// repository list because the editor posts the whole list; a caller holding
+    /// one repository it has just created - "Create repository" on New Workspace
+    /// (issue #759) - would have to read the others back and post them again to
+    /// use it, and anything edited in between would be overwritten by a list
+    /// that never knew about it.</para>
+    ///
+    /// <para>A repository the solution already has is a no-op rather than a
+    /// duplicate row: identity is provider plus normalised URL, the same rule
+    /// <see cref="ReconcileRepositories"/> applies, so a retry after a
+    /// half-failed create settles instead of piling up.</para>
+    /// </summary>
+    /// <exception cref="PlanValidationException">The solution is gone, or the URL is not one that provider serves.</exception>
+    /// <exception cref="ProjectAccessDeniedException">The caller may not manage this solution.</exception>
+    public async Task<string> AddRepositoryAsync(
+        int projectId, ProjectRepositoryInput repository, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        ArgumentNullException.ThrowIfNull(repository);
+
+        var project = await _db.OeProjects
+            .Include(c => c.Repositories)
+            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
+            ?? throw Validation("Name", "This solution no longer exists.");
+
+        await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
+
+        var url = (repository.Url ?? string.Empty).Trim();
+        if (url.Length == 0 || !IsValidProviderUrl(repository.Provider, url))
+        {
+            throw Validation("Url", repository.Provider == RepositoryProvider.AzureDevOps
+                ? "Use an https Azure DevOps URL (dev.azure.com or *.visualstudio.com)."
+                : "Use an https github.com URL.");
+        }
+        var display = (repository.DisplayName ?? string.Empty).Trim();
+        if (display.Length == 0)
+        {
+            display = url.TrimEnd('/').Split('/').LastOrDefault()?.Replace(".git", "") ?? url;
+        }
+
+        var normalised = GitHubPullRequestBuildWorker.NormaliseRepositoryUrl(url);
+        if (project.Repositories.Any(r => r.Provider == repository.Provider
+                && GitHubPullRequestBuildWorker.NormaliseRepositoryUrl(r.Url) == normalised))
+        {
+            _logger.LogInformation(
+                "Project {ProjectId} ({Name}) already has {Url}; nothing added.", project.Id, project.Name, url);
+            return project.Name;
+        }
+
+        project.Repositories.Add(new OeProjectRepository
+        {
+            OrganizationId = orgId,
+            ProjectId = project.Id,
+            Provider = repository.Provider,
+            Url = url,
+            DisplayName = display,
+        });
+        project.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Added {Url} to project {ProjectId} ({Name}).", url, project.Id, project.Name);
+
+        // The same warm the editor's save does, for the same reason: the
+        // pipeline editor should know this repository's extensions without
+        // anybody asking it to look.
+        await WarmDiscoveryAsync(project.Id, ct);
+        return project.Name;
+    }
+
+    /// <summary>
     /// Brings <paramref name="project"/>'s repository rows in line with the posted
     /// set, keeping the id of every repository that is still there.
     ///

@@ -231,8 +231,17 @@ detail page gets a **Short name** field with the same caption as the generator.
   visibility (`Public`, meaning everyone in the organisation, as every Solution
   starts today). The creating user owns it.
 
-Either way the audit entry for the generation names the Solution. The success
-card on the page links to it.
+A Solution also carries a country code to compile against, and this form never
+asks for one, so the created Solution takes the organisation's first import
+country - the same pre-fill the untracked-repositories panel offers - and `w1`
+when the organisation has none. It is one field on the Solution's own page; a
+Solution that refused to save over it would be a worse answer than a default.
+
+A `solutionId` the caller may not manage is refused up front, with the other
+refusals, before anything is created. Either way the audit entry for the
+generation names the Solution: it is the entry's entity id, which was zero
+before this because a repository on GitHub has no id of ours. The success card
+on the page links to it.
 
 The repository is created first because it is the step that can fail for
 reasons outside the tool (name taken, permissions), and a Solution with no
@@ -242,10 +251,14 @@ success, the same shape as `StandardsWarning`.
 
 ## MCP parity
 
-`generate_workspace` (`ProjectPlanInput`) gains `shortName` and `solutionId`
-alongside the existing `workspaceName`, whose description becomes "the
-customer's name". When `createRepository` is set, the result carries the
-Solution id and name the repository was registered under, created or existing.
+`generate_workspace` gains `shortName` (on `ProjectPlanInput`) and `solutionId`
+(beside `createRepository`, since it only means anything there) alongside the
+existing `workspaceName`, whose description becomes "the customer's name". When
+`createRepository` is set, the result carries the Solution id and name the
+repository was registered under, whether it was created, and the warning when it
+could not be. `create_repository` takes the same `solutionId`, because it calls
+the same service and would otherwise be the one way to make a repository that
+registers nothing.
 `list_solutions` gains `shortName` in its rows so an agent can see it.
 `extensionPrefix` follows the org mode as described above.
 

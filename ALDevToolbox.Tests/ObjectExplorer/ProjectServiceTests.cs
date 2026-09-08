@@ -101,6 +101,57 @@ public sealed class ProjectServiceTests : IDisposable
         loaded!.Repositories.Single().DisplayName.Should().Be("core");
     }
 
+    // --- Adding one repository (#759) --------------------------------------
+
+    [Fact]
+    public async Task Adding_a_repository_leaves_the_others_alone()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var id = await svc.CreateProjectAsync(NewInput("CRONUS A/S", "dk", null,
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/cronus-dk/core", "core")));
+
+        var name = await svc.AddRepositoryAsync(
+            id, new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/cronus-dk/retail.git", ""));
+
+        name.Should().Be("CRONUS A/S");
+        var loaded = await svc.GetProjectAsync(id);
+        loaded!.Repositories.Should().HaveCount(2);
+        // The blank display name falls back the same way the editor's does.
+        loaded.Repositories.Should().Contain(r => r.DisplayName == "retail");
+    }
+
+    [Fact]
+    public async Task Adding_a_repository_the_solution_already_has_changes_nothing()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var id = await svc.CreateProjectAsync(NewInput("CRONUS A/S", "dk", null,
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/cronus-dk/core", "core")));
+
+        // Same repository, spelled with the .git suffix - identity is provider
+        // plus normalised URL, so a retry settles instead of duplicating.
+        await svc.AddRepositoryAsync(
+            id, new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/cronus-dk/core.git", "core"));
+
+        var loaded = await svc.GetProjectAsync(id);
+        loaded!.Repositories.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Adding_a_repository_refuses_a_url_the_provider_does_not_serve()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var id = await svc.CreateProjectAsync(NewInput("CRONUS A/S"));
+
+        var act = () => svc.AddRepositoryAsync(
+            id, new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://gitlab.com/cronus-dk/core", "core"));
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Url");
+    }
+
     [Fact]
     public async Task Create_rejects_a_blank_country()
     {

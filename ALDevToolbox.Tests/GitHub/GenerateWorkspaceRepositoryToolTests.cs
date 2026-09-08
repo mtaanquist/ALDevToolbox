@@ -148,7 +148,64 @@ public sealed class GenerateWorkspaceRepositoryToolTests : IDisposable
             .Which.Message.Should().Contain("Connect your own GitHub account");
     }
 
+    [Fact]
+    public async Task With_no_solution_named_it_reports_the_one_it_created()
+    {
+        await ReadyAsync();
+        var (tools, ctx) = NewTools(WritableApi());
+        await using var _ = ctx;
+
+        var result = await tools.GenerateWorkspaceAsync(PlanInput(), createRepository: RepoName);
+
+        // An agent that created a repository has to be able to say where the
+        // customer now lives, the same as the page does (#759).
+        result.CreatedRepository!.SolutionId.Should().NotBeNull();
+        result.CreatedRepository.SolutionName.Should().Be("CRONUS Customer");
+        result.CreatedRepository.SolutionCreated.Should().BeTrue();
+        result.CreatedRepository.SolutionWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_named_solution_is_the_one_the_repository_lands_on()
+    {
+        await ReadyAsync();
+        var solutionId = await SeedSolutionAsync("CRONUS Denmark");
+        var (tools, ctx) = NewTools(WritableApi());
+        await using var _ = ctx;
+
+        var result = await tools.GenerateWorkspaceAsync(
+            PlanInput(), createRepository: RepoName, solutionId: solutionId);
+
+        result.CreatedRepository!.SolutionId.Should().Be(solutionId);
+        result.CreatedRepository.SolutionName.Should().Be("CRONUS Denmark");
+        result.CreatedRepository.SolutionCreated.Should().BeFalse();
+
+        await using var read = _db.NewContext();
+        var repo = await read.OeProjectRepositories.AsNoTracking()
+            .SingleAsync(r => r.ProjectId == solutionId);
+        repo.Url.Should().Be($"https://github.com/{Repo}.git");
+        repo.DisplayName.Should().Be(RepoName);
+    }
+
     // --- helpers ------------------------------------------------------------
+
+    /// <summary>One solution this caller owns, for the tool to name.</summary>
+    private async Task<int> SeedSolutionAsync(string name)
+    {
+        await using var ctx = _db.NewContext();
+        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = name,
+            DefaultArtifactCountry = "dk",
+            CreatedByUserId = UserId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+        return project.Id;
+    }
 
     private (WorkspaceTools Tools, ALDevToolbox.Data.AppDbContext Context) NewTools(FakeGitHubApi api)
     {
