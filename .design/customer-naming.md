@@ -5,9 +5,9 @@ generated output needs, and how that same act registers the customer as a
 Solution. Supersedes the "workspace name" rules in `generation-engine.md`, which
 this document rewrites in place as each slice lands.
 
-**Status:** specified, being implemented under the *Customer naming and Solution
-on-ramp* milestone. Where this document and the code still disagree, the code is
-behind.
+**Status:** shipped (#755-#760, PRs #763, #765, #762, #766, #768, #769). This
+document describes the current behaviour; `generation-engine.md` and
+`github-integration.md` carry the parts that belong to their subsystems.
 
 ## Why
 
