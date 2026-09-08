@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.DataProtection;
 using ALDevToolbox.Components.Pages;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
@@ -132,14 +133,12 @@ public sealed class NewWorkspaceTests : IDisposable
     [Fact]
     public async Task The_prefix_follows_the_short_name_until_the_user_types_one()
     {
-        // An organisation with no prefix convention should still get "CRO Core"
-        // rather than "Core", so a template with no prefix of its own hands the
-        // field over to the short name - until the user says otherwise.
+        // An organisation with no prefix of its own should still get "CRO Core"
+        // rather than "Core", so the field starts out following the short name -
+        // until the user says otherwise.
         await using (var seed = _db.NewContext())
         {
-            var template = TemplateBuilder.Default();
-            template.Defaults.ExtensionPrefix = string.Empty;
-            seed.RuntimeTemplates.Add(template);
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
             await seed.SaveChangesAsync();
         }
 
@@ -156,6 +155,61 @@ public sealed class NewWorkspaceTests : IDisposable
         cut.WaitForAssertion(() =>
             cut.Find("input[name='ExtensionPrefix']").GetAttribute("value").Should().Be("MINE",
                 "renaming the customer must not quietly undo a prefix the user chose"));
+    }
+
+    [Theory]
+    // The prefix field is only asked for when the organisation leaves the
+    // choice per workspace (#757). Under the other two policies the answer is
+    // already known, so the field is not on the form at all.
+    [InlineData(ExtensionPrefixMode.Hidden, false)]
+    [InlineData(ExtensionPrefixMode.Fixed, false)]
+    [InlineData(ExtensionPrefixMode.PerWorkspace, true)]
+    public async Task The_prefix_field_follows_the_organisations_prefix_policy(
+        ExtensionPrefixMode mode, bool expectField)
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            seed.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ExtensionPrefixMode = mode,
+                ExtensionPrefix = mode == ExtensionPrefixMode.Fixed ? "PARTNER" : null,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']");
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("input[name='ExtensionPrefix']").Any().Should().Be(expectField));
+    }
+
+    [Fact]
+    public async Task The_prefix_hint_names_the_value_an_empty_field_will_generate()
+    {
+        // The fallback is stated in words rather than smuggled into the
+        // placeholder, so a consultant can see what leaving the field alone
+        // will actually name the extensions (#757 review).
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='ShortName']");
+        cut.Find("input[name='ShortName']").Input("JM");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("input[name='ExtensionPrefix']").GetAttribute("placeholder")
+                .Should().Be("e.g. CRONUS");
+            cut.Find("#ws-prefix").ParentElement!.QuerySelector(".field__hint")!
+                .TextContent.Should().Contain("Leave blank to use").And.Contain("JM");
+        });
     }
 
     [Fact]

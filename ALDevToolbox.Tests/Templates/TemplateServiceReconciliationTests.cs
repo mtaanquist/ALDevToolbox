@@ -352,7 +352,6 @@ public sealed class TemplateServiceWriteSideTests : IDisposable
                 Publisher = "Acme",
                 Application = "24.0.0.0",
                 Platform = "1.0.0.0",
-                ExtensionPrefix = "ACME",
                 AffixType = AffixType.None,
             }),
             AppSourceCopJson: JsonSerializer.Serialize(new AppSourceCopSettings()),

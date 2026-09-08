@@ -14,6 +14,7 @@ public sealed record ProjectPlanInput(
     string TemplateKey,
     [property: Description("The customer's name, as it should appear, e.g. Jørgensen Møbler.")]
     string WorkspaceName,
+    [property: Description("The word every generated extension's name starts with, e.g. JM in 'JM Core'. Only applies when your organisation leaves the prefix to each workspace; when it fixes one, or uses none, this is ignored and extensionPrefix in the result says what was used instead.")]
     string ExtensionPrefix,
     string Brief,
     string Description,
@@ -90,13 +91,20 @@ public sealed record DependencyEntryInput(string DepId, string DepName, string D
 /// result (issue #622). As above, the ZIP alongside it is the one that was
 /// committed, not a second generation with different extension GUIDs.
 /// </param>
+/// <param name="ExtensionPrefix">
+/// The prefix the generated extension names actually carry, once the
+/// organisation's prefix policy has had its say (#757) - which is not
+/// necessarily the one the caller passed. Null for <c>generate_extension</c>,
+/// which names one extension outright.
+/// </param>
 public sealed record WorkspaceResult(
     string FileName,
     string ContentBase64,
     int SizeBytes,
     string Sha256,
     RepositoryDeliveryResult? AddedToRepository = null,
-    RepositoryCreationResult? CreatedRepository = null);
+    RepositoryCreationResult? CreatedRepository = null,
+    string? ExtensionPrefix = null);
 
 /// <summary>
 /// The repository a <c>generate_*</c> tool created, when it was asked to put

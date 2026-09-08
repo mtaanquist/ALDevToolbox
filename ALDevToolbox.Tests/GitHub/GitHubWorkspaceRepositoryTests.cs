@@ -432,6 +432,18 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         GitHubWorkspaceRepositoryService.SuggestName(workspaceName).Should().Be(expected);
     }
 
+    [Theory]
+    // The style is the organisation's (#757); the default above is only the
+    // default. Whatever it is set to, the suggestion follows it.
+    [InlineData(NamingStyle.SnakeCase, "jorgensen_mobler")]
+    [InlineData(NamingStyle.Lowercase, "jorgensenmobler")]
+    [InlineData(NamingStyle.PascalCase, "JorgensenMobler")]
+    public void The_suggested_name_follows_the_organisations_repository_style(
+        NamingStyle style, string expected)
+    {
+        GitHubWorkspaceRepositoryService.SuggestName("Jørgensen Møbler", style).Should().Be(expected);
+    }
+
     // --- repository standards (#628) ----------------------------------------
 
     [Fact]

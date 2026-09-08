@@ -54,6 +54,39 @@ public class OrganizationSettings
     public string CodeWorkspaceJson { get; set; } = OrganizationDefaults.CodeWorkspaceJson;
 
     /// <summary>
+    /// How the customer's name is turned into the workspace folder and the
+    /// <c>.code-workspace</c> file name. Defaults to
+    /// <see cref="NamingStyle.PascalCase"/> - what the generator did before the
+    /// style was a setting. See <c>.design/customer-naming.md</c>.
+    /// </summary>
+    public NamingStyle NamingFolderStyle { get; set; } = NamingStyle.PascalCase;
+
+    /// <summary>
+    /// How the customer's name is turned into the suggested repository name.
+    /// Defaults to <see cref="NamingStyle.KebabCase"/>.
+    /// <see cref="NamingStyle.None"/> is never offered here - a repository name
+    /// cannot contain spaces.
+    /// </summary>
+    public NamingStyle NamingRepositoryStyle { get; set; } = NamingStyle.KebabCase;
+
+    /// <summary>
+    /// Whether the extension prefix is asked for per workspace, fixed for the
+    /// whole organisation, or not used at all. See
+    /// <see cref="ValueObjects.ExtensionPrefixMode"/> for what each means.
+    /// </summary>
+    public ExtensionPrefixMode ExtensionPrefixMode { get; set; } = ExtensionPrefixMode.PerWorkspace;
+
+    /// <summary>
+    /// The organisation's own extension prefix: the value used for every
+    /// workspace under <see cref="ValueObjects.ExtensionPrefixMode.Fixed"/>, and
+    /// the pre-fill under
+    /// <see cref="ValueObjects.ExtensionPrefixMode.PerWorkspace"/>. Null means
+    /// the organisation has no such value, in which case the customer's short
+    /// name stands in.
+    /// </summary>
+    public string? ExtensionPrefix { get; set; }
+
+    /// <summary>
     /// Admin-authored Markdown shown to MCP agents by the
     /// <c>get_cookbook_guidance</c> tool before they call
     /// <c>suggest_recipe</c>. Empty by default; the guidance tool always

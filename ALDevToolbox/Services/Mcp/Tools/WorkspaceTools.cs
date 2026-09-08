@@ -96,6 +96,11 @@ public sealed class WorkspaceTools
     {
         try
         {
+            var domainPlan = plan.ToDomain();
+            // What the prefix resolved to under the organisation's policy, so
+            // the agent is told the names it is getting rather than the ones it
+            // asked for. The generator applies the same rule internally.
+            var prefix = await _generation.ResolveExtensionPrefixAsync(domainPlan, ct);
             if (!string.IsNullOrWhiteSpace(createRepository))
             {
                 // Routed through the same service the New Workspace page uses,
@@ -105,12 +110,12 @@ public sealed class WorkspaceTools
                 // repository, never an owner, so an agent cannot aim it at an
                 // organisation the page would not offer.
                 var created = await _repositories.CreateAsync(
-                    plan.ToDomain(), createRepository!.Trim(), repositoryPrivate, solutionId, ct);
-                return BuildCreatedResult(created);
+                    domainPlan, createRepository!.Trim(), repositoryPrivate, solutionId, ct);
+                return BuildCreatedResult(created) with { ExtensionPrefix = prefix };
             }
 
-            var archive = await _generation.GenerateWorkspaceAsync(plan.ToDomain(), ct);
-            try { return BuildResult(archive); }
+            var archive = await _generation.GenerateWorkspaceAsync(domainPlan, ct);
+            try { return BuildResult(archive) with { ExtensionPrefix = prefix }; }
             finally { archive.Stream.Dispose(); }
         }
         catch (PlanValidationException ex)
