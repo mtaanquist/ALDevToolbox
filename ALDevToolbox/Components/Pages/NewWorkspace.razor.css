@@ -38,3 +38,14 @@
     white-space: normal;
     overflow-wrap: anywhere;
 }
+
+/* The picked customer's existing repositories (#758). A plain list of links -
+   this is something to notice on the way past, not a control. */
+.ws-solution-repos {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+}

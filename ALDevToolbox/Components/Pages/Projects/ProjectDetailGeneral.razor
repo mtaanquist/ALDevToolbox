@@ -32,6 +32,18 @@
                 <small class="field__hint">Labels each build, e.g. "CRONUS A/S on BC 26.0".</small>
             </section>
             <section class="field">
+                <label class="field__label" for="proj-short-name">Short name</label>
+                @* maxlength mirrors ProjectService.ValidateAsync, which mirrors
+                   the generator's own ceiling. *@
+                <input id="proj-short-name" type="text" class="input" maxlength="50" @bind="Edit.ShortName" @bind:after="MarkDirty"
+                       disabled="@(Saving || !CanManage)" placeholder="e.g. CRO" />
+                <FieldError Field="ShortName" Errors="Errors" />
+                <small class="field__hint">
+                    Optional. A short form used in extension names, for example
+                    <code class="code">CRO Core</code>. Leave blank to use the full name.
+                </small>
+            </section>
+            <section class="field">
                 <label class="field__label" for="proj-country">Country code</label>
                 <input id="proj-country" type="text" class="input" maxlength="20" pattern="[A-Za-z0-9]{2,10}" required style="max-width:220px"
                        @bind="Edit.Country" @bind:after="MarkDirty" disabled="@(Saving || !CanManage)" placeholder="e.g. dk or w1" />

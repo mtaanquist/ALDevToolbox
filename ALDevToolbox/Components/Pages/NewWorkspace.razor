@@ -17,6 +17,7 @@
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Generation
 @using ALDevToolbox.Services.GitHub
+@using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Services.Organizations
 @using ALDevToolbox.Services.Templates
 
@@ -131,27 +132,45 @@
                 </section>
 
                 <section class="form-sec">
-                    <div class="form-sec__head"><span class="section-label">Project</span></div>
+                    <div class="form-sec__head"><span class="section-label">Customer</span></div>
                     <div class="form-grid">
                         <div class="field">
                             <label class="field__label" for="ws-name">Customer <span class="req">*</span></label>
-                            <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS A/S"
-                                   required maxlength="100"
-                                   @bind="_workspaceName" @bind:event="oninput"
-                                   @bind:after="OnPlanChanged" />
-                            <span class="field__hint">The customer's name as it should appear. Folder and file names are derived from it.</span>
+                            @* The customer is typed once. A customer already on
+                               file here fills in what it knows; a new one is
+                               offered as a new solution. See
+                               .design/customer-naming.md. *@
+                            <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Customer"
+                                            Placeholder="e.g. CRONUS A/S" MaxLength="100" Required="true"
+                                            Hint="The customer's name. Pick their solution if it exists, or type a new name to create one."
+                                            Value="@_workspaceName" ValueChanged="OnCustomerNameChangedAsync"
+                                            Selected="_solution" SelectedChanged="OnSolutionSelectedAsync"
+                                            CreateNew="_createSolution" CreateNewChanged="OnCreateSolutionChanged" />
+                            @* Carried through a failed submit so the choice made
+                               before the round trip is still the choice after it. *@
+                            <input type="hidden" name="SolutionId" value="@(_solutionId?.ToString() ?? string.Empty)" />
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
                         <div class="field">
                             <label class="field__label" for="ws-short">Short name</label>
                             <input class="input" id="ws-short" type="text" name="ShortName" placeholder="e.g. CRO"
                                    maxlength="50"
-                                   @bind="_shortName" @bind:event="oninput"
-                                   @bind:after="OnPlanChanged" />
-                            <span class="field__hint">
-                                Optional. A short form used in extension names, for example
-                                <code class="code">CRO Core</code>. Leave blank to use the full name.
-                            </span>
+                                   value="@_shortName" @oninput="OnShortNameInput" />
+                            @if (_shortNameFromSolution && _solution is { } shortNameSource)
+                            {
+                                <span class="field__hint">
+                                    From @shortNameSource.Name's saved details. Change it here if this
+                                    workspace needs something different.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="field__hint">
+                                    Optional. A short form of the customer's name for extension names, for
+                                    example <code class="code">CRO Core</code>. Also the default for the
+                                    extension prefix. Leave blank to use the full name.
+                                </span>
+                            }
                             <FieldError Field="ShortName" Errors="_errors" />
                         </div>
                         <div class="field">
@@ -180,12 +199,22 @@
                                    pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
                                    placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
                                    title="GUID in 8-4-4-4-12 hex form."
-                                   @bind="_tenantId" @bind:event="oninput" />
-                            <span class="field__hint">
-                                The customer's Microsoft Entra (Azure AD) tenant ID, so the generated
-                                debug configuration targets the right tenant. Optional - leave it blank
-                                if you don't have it yet.
-                            </span>
+                                   value="@_tenantId" @oninput="OnTenantIdInput" />
+                            @if (_tenantIdFromSolution && _solution is { } tenantSource)
+                            {
+                                <span class="field__hint">
+                                    From @tenantSource.Name's saved details. Change it here if this
+                                    workspace needs something different.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="field__hint">
+                                    The customer's Microsoft Entra (Azure AD) tenant ID, so the generated
+                                    debug configuration targets the right tenant. Optional - leave it blank
+                                    if you don't have it yet.
+                                </span>
+                            }
                         </div>
                     </div>
                 </section>
@@ -569,6 +598,37 @@
                             }
                         </div>
                     </div>
+
+                    @* What this customer already has. A second workspace for the
+                       same customer is a fine thing to want - it just should not
+                       happen by accident. *@
+                    @if (_solution is { Repositories.Count: > 0 } solution)
+                    {
+                        <div class="card">
+                            <div class="card__head">
+                                <div>
+                                    <h4 class="card__title">Existing work for @solution.Name</h4>
+                                </div>
+                            </div>
+                            <div class="card__body">
+                                <p>
+                                    You have set this customer up before. Another workspace is fine, but
+                                    check these first in case what you need is already there.
+                                </p>
+                                <ul class="ws-solution-repos">
+                                    @foreach (var repo in solution.Repositories)
+                                    {
+                                        <li>
+                                            <a href="@repo.Url" target="_blank" rel="noopener">
+                                                @RepositoryLabel(repo)
+                                                <span class="u-sr">(opens in a new tab)</span>
+                                            </a>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    }
                 </aside>
             </div>
         </form>
@@ -618,6 +678,103 @@
     private string _tenantId = string.Empty;
 
     private OrganizationConfig? _orgConfig;
+
+    // The customer as a Solution (issue #758). Either an existing one was
+    // picked, or the typed name was marked as a new one; both are carried for
+    // the repository step, which is what actually registers it.
+    private SolutionOption? _solution;
+    private int? _solutionId;
+    private bool _createSolution;
+    /// <summary>
+    /// True while the short name / tenant ID on screen are the picked solution's
+    /// rather than this person's, so clearing the pick takes back what the pick
+    /// filled in and leaves anything they typed themselves alone.
+    /// </summary>
+    private bool _shortNameFromSolution;
+    private bool _tenantIdFromSolution;
+
+    private Task OnCustomerNameChangedAsync(string value)
+    {
+        _workspaceName = value;
+        OnPlanChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Carries over what the picked solution already knows. Clearing the pick
+    /// takes those values back out again - but only those: a short name typed
+    /// afterwards is the user's, and stays.
+    /// </summary>
+    private Task OnSolutionSelectedAsync(SolutionOption? solution)
+    {
+        _solution = solution;
+        _solutionId = solution?.Id;
+
+        if (solution is null)
+        {
+            if (_shortNameFromSolution) _shortName = string.Empty;
+            if (_tenantIdFromSolution) _tenantId = string.Empty;
+            _shortNameFromSolution = false;
+            _tenantIdFromSolution = false;
+            OnPlanChanged();
+            return Task.CompletedTask;
+        }
+
+        _createSolution = false;
+        if (!string.IsNullOrWhiteSpace(solution.ShortName))
+        {
+            _shortName = solution.ShortName!;
+            _shortNameFromSolution = true;
+        }
+        if (solution.BcTenantId is { } tenantId)
+        {
+            _tenantId = tenantId.ToString();
+            _tenantIdFromSolution = true;
+        }
+        OnPlanChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// How one of the customer's repositories is named on screen: the
+    /// owner/name it is known by on GitHub or Azure DevOps, taken from its URL,
+    /// falling back to whatever it was given as a display name.
+    /// </summary>
+    private static string RepositoryLabel(SolutionRepositoryOption repo)
+    {
+        if (Uri.TryCreate(repo.Url, UriKind.Absolute, out var uri))
+        {
+            var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 2)
+            {
+                var name = segments[^1];
+                if (name.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+                // Azure DevOps spells its clone URLs org/project/_git/repo, so
+                // the segment before the name is a marker, not an owner.
+                var owner = segments[^2] == "_git" && segments.Length >= 3 ? segments[^3] : segments[^2];
+                return $"{owner}/{name}";
+            }
+        }
+        return repo.DisplayName;
+    }
+
+    private void OnCreateSolutionChanged(bool createNew)
+    {
+        _createSolution = createNew;
+    }
+
+    private void OnShortNameInput(ChangeEventArgs e)
+    {
+        _shortName = e.Value?.ToString() ?? string.Empty;
+        _shortNameFromSolution = false;
+        OnPlanChanged();
+    }
+
+    private void OnTenantIdInput(ChangeEventArgs e)
+    {
+        _tenantId = e.Value?.ToString() ?? string.Empty;
+        _tenantIdFromSolution = false;
+    }
 
     // The GitHub half (issue #622). _gitHub is answered from the database, so
     // the card renders its guidance even when GitHub itself is unreachable;

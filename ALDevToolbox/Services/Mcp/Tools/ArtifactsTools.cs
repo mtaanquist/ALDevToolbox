@@ -40,7 +40,7 @@ public sealed class ArtifactsTools
     }
 
     [McpServerTool(Name = "list_solutions", ReadOnly = true)]
-    [Description("Lists the solutions you can see in the organisation — each points at one or more Git repositories that get compiled into downloadable .app files. Returns each solution's id, name, owner, repository count, and a summary of its newest build (status, BC version). Private solutions you are not on the team for are not listed. Use the id with list_solution_builds.")]
+    [Description("Lists the solutions you can see in the organisation — each points at one or more Git repositories that get compiled into downloadable .app files. Returns each solution's id, name, short name (the abbreviation used in extension names, may be empty), owner, repository count, and a summary of its newest build (status, BC version). Private solutions you are not on the team for are not listed. Use the id with list_solution_builds.")]
     public async Task<IReadOnlyList<ProjectArtifactsRow>> ListProjectsAsync(
         [Description("Optional substring to filter by solution name, owner, or repository name.")] string? search = null,
         CancellationToken ct = default)

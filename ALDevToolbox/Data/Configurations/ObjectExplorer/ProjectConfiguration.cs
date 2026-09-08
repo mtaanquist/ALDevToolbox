@@ -13,6 +13,7 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<OeProject>
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
         entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+        entity.Property(e => e.ShortName).HasColumnName("short_name").HasMaxLength(50);
         entity.Property(e => e.DefaultArtifactCountry).HasColumnName("default_artifact_country").HasMaxLength(20);
         entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();

@@ -56,6 +56,12 @@ public sealed class NewWorkspaceTests : IDisposable
         // The page offers to create the workspace as a GitHub repository
         // (#622), so its services have to resolve even on a deployment with no
         // GitHub App - which is exactly the state these tests render in.
+        // The Customer field is a picker over the org's solutions (#758), and it
+        // reads through its own service scope, so its chain has to resolve here.
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryService>();
+        _ctx.Services.AddSingleton(new ALDevToolbox.Services.ObjectExplorer.Projects.ProjectDiscoveryQueue());
         _db.AddGitHubServices(_ctx.Services);
         _ctx.Services.AddDataProtection();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
@@ -415,5 +421,129 @@ public sealed class NewWorkspaceTests : IDisposable
                 "the listener that attribute binds would start the spinner on a "
                 + "submit the page cancels, and nothing would ever clear it");
         });
+    }
+
+    // --- The customer as a solution (#758) ---------------------------------
+
+    /// <summary>
+    /// Seeds one solution with everything a pick can carry over, so the test
+    /// below can say the whole handover happened rather than part of it.
+    /// </summary>
+    private async Task<Guid> SeedSolutionAsync(string name, string shortName)
+    {
+        var tenantId = Guid.NewGuid();
+        await using var seed = _db.NewContext();
+        seed.Users.Add(new ALDevToolbox.Domain.Entities.User
+        {
+            Id = 9770,
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = "tester@example.com",
+            DisplayName = "tester@example.com",
+            PasswordHash = "x",
+            Role = ALDevToolbox.Domain.Entities.UserRole.User,
+            Status = ALDevToolbox.Domain.Entities.UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        });
+        seed.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = name,
+            ShortName = shortName,
+            BcTenantId = tenantId,
+            DefaultArtifactCountry = "dk",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Repositories =
+            {
+                new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectRepository
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub,
+                    Url = "https://github.com/cronus-dk/core",
+                    DisplayName = "core",
+                },
+            },
+        });
+        await seed.SaveChangesAsync();
+        return tenantId;
+    }
+
+    /// <summary>
+    /// The point of the picker: a customer already on file is typed once. What
+    /// the solution knows - the abbreviation and the tenant - arrives with it,
+    /// and its repositories are on screen before a second one gets created by
+    /// accident.
+    /// </summary>
+    [Fact]
+    public async Task Picking_a_customer_fills_in_what_that_solution_already_knows()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+        var tenantId = await SeedSolutionAsync("CRONUS Denmark", "CRO");
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']");
+        cut.Find("input[name='WorkspaceName']").Focus();
+        cut.Find("input[name='WorkspaceName']").Input("CRONUS");
+        cut.WaitForAssertion(() => cut.FindAll("[role='option']").Should().NotBeEmpty());
+        await cut.InvokeAsync(() => cut.FindAll("[role='option']")[0].Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("input[name='WorkspaceName']").GetAttribute("value").Should().Be("CRONUS Denmark");
+            cut.Find("input[name='ShortName']").GetAttribute("value").Should().Be("CRO");
+            cut.Find("input[name='TenantId']").GetAttribute("value").Should().Be(tenantId.ToString());
+            cut.Find("input[name='SolutionId']").GetAttribute("value").Should().NotBeEmpty(
+                "the choice has to survive a failed submit");
+            cut.Markup.Should().Contain("Existing work for CRONUS Denmark",
+                "a second workspace for the same customer should be a visible choice, not an accident");
+            cut.Markup.Should().Contain("cronus-dk/core", "the repository is named the way GitHub names it");
+            // The two fields the pick filled in say where their value came from,
+            // rather than looking like something this person typed.
+            cut.Markup.Should().Contain("From CRONUS Denmark's saved details.");
+        });
+
+        // Clearing takes back what the pick filled in, and nothing else.
+        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Change customer")).Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("input[name='WorkspaceName']").GetAttribute("value").Should().BeEmpty();
+            cut.Find("input[name='ShortName']").GetAttribute("value").Should().BeEmpty();
+            cut.Find("input[name='TenantId']").GetAttribute("value").Should().BeEmpty();
+            cut.Find("input[name='SolutionId']").GetAttribute("value").Should().BeEmpty();
+        });
+    }
+
+    /// <summary>
+    /// A short name typed after the pick is this person's, not the solution's,
+    /// so clearing the pick must leave it where it is.
+    /// </summary>
+    [Fact]
+    public async Task Clearing_the_customer_leaves_a_short_name_the_user_typed_themselves()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+        await SeedSolutionAsync("CRONUS Denmark", "CRO");
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']");
+        cut.Find("input[name='WorkspaceName']").Focus();
+        cut.Find("input[name='WorkspaceName']").Input("CRONUS");
+        cut.WaitForAssertion(() => cut.FindAll("[role='option']").Should().NotBeEmpty());
+        await cut.InvokeAsync(() => cut.FindAll("[role='option']")[0].Click());
+        cut.WaitForAssertion(() =>
+            cut.Find("input[name='ShortName']").GetAttribute("value").Should().Be("CRO"));
+
+        cut.Find("input[name='ShortName']").Input("MINE");
+        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Change customer")).Click());
+
+        cut.WaitForAssertion(() =>
+            cut.Find("input[name='ShortName']").GetAttribute("value").Should().Be("MINE"));
     }
 }

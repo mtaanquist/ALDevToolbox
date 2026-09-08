@@ -110,7 +110,7 @@ public sealed class ProjectRepositoryReconcileTests : IDisposable
     // --- Fixture -----------------------------------------------------------
 
     private static ProjectInput NewInput(string name, string url, string displayName) =>
-        new(name, "dk", [new ProjectRepositoryInput(RepositoryProvider.GitHub, url, displayName)]);
+        new(name, null, "dk", [new ProjectRepositoryInput(RepositoryProvider.GitHub, url, displayName)]);
 
     private async Task<int> RepositoryIdAsync(int projectId)
     {

@@ -44,6 +44,16 @@ public class OeProject
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Optional abbreviation of <see cref="Name"/>, used where the full customer
+    /// name makes an unwieldy extension name ("JM Core" rather than "Jørgensen
+    /// Møbler Core"). Blank means the full name is used unchanged. The generator
+    /// reads it when a workspace is started from this solution; nothing derived
+    /// from the name (folder, repository) ever uses it. See
+    /// <c>.design/customer-naming.md</c>.
+    /// </summary>
+    public string? ShortName { get; set; }
+
+    /// <summary>
     /// BC localisation/country the project's builds compile against (e.g.
     /// <c>dk</c>, or <c>w1</c> for the worldwide base). Required on create/edit
     /// since the multi-country auto-import change removed the org-wide fallback —

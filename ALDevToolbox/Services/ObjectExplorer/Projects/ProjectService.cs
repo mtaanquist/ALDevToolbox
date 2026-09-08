@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Generation;
 using ALDevToolbox.Services.GitHub;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
@@ -76,6 +77,51 @@ public sealed class ProjectService
     }
 
     /// <summary>
+    /// The solutions the current user may see, as the generator's Solution picker
+    /// needs them: the name to search on, the short name and tenant id it pre-fills
+    /// from, and the repositories it lists so a second workspace for the same
+    /// customer is a visible choice. Private solutions the caller has no grant on
+    /// are left out entirely, the same rule <c>list_solutions</c> applies to an
+    /// agent. See <c>.design/customer-naming.md</c>.
+    /// </summary>
+    /// <param name="search">Optional substring matched against the name; blank returns all.</param>
+    /// <param name="limit">
+    /// Most rows to return. The picker shows a short list and asks the user to
+    /// narrow it, so it reads one more than it shows and never pulls a whole
+    /// organisation's solutions over a keystroke.
+    /// </param>
+    public async Task<List<SolutionOption>> ListSolutionOptionsAsync(
+        string? search = null, int? limit = null, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var query = _db.OeProjects
+            .AsNoTracking()
+            .Where(p => p.DeletedAt == null)
+            .Where(ProjectAccess.VisibleProjectPredicate(snapshot));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(p => EF.Functions.ILike(p.Name, $"%{term}%"));
+        }
+
+        if (limit is > 0) query = query.OrderBy(p => p.Name).Take(limit.Value);
+
+        return await query
+            .OrderBy(p => p.Name)
+            .Select(p => new SolutionOption(
+                p.Id,
+                p.Name,
+                p.ShortName,
+                p.BcTenantId,
+                p.Repositories
+                    .OrderBy(r => r.DisplayName)
+                    .Select(r => new SolutionRepositoryOption(r.DisplayName, r.Url))
+                    .ToList()))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
     /// A single active project with its repositories, or null when not found in this
     /// org. Throws <see cref="ProjectAccessDeniedException"/> when the project is
     /// Private and the caller has no grant on it; the detail page renders that as
@@ -119,13 +165,14 @@ public sealed class ProjectService
     public async Task<int> CreateProjectAsync(ProjectInput input, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
-        var (name, country, repos) = await ValidateAsync(input, existingId: null, orgId, ct);
+        var (name, shortName, country, repos) = await ValidateAsync(input, existingId: null, orgId, ct);
 
         var now = DateTime.UtcNow;
         var project = new OeProject
         {
             OrganizationId = orgId,
             Name = name,
+            ShortName = shortName,
             DefaultArtifactCountry = country,
             // The creator owns the project: they (or an org Admin) manage repos,
             // settings, builds, and deletion. See .design/artifacts.md.
@@ -168,7 +215,7 @@ public sealed class ProjectService
     public async Task UpdateProjectAsync(int id, ProjectInput input, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
-        var (name, country, repos) = await ValidateAsync(input, existingId: id, orgId, ct);
+        var (name, shortName, country, repos) = await ValidateAsync(input, existingId: id, orgId, ct);
 
         var project = await _db.OeProjects
             .Include(c => c.Repositories)
@@ -180,6 +227,7 @@ public sealed class ProjectService
         await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
 
         project.Name = name;
+        project.ShortName = shortName;
         project.DefaultArtifactCountry = country;
         project.UpdatedAt = DateTime.UtcNow;
 
@@ -509,7 +557,7 @@ public sealed class ProjectService
     /// Validates the input and returns the normalised name/country/repos. Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
-    private async Task<(string Name, string? Country, IReadOnlyList<ProjectRepositoryInput> Repos)> ValidateAsync(
+    private async Task<(string Name, string? ShortName, string? Country, IReadOnlyList<ProjectRepositoryInput> Repos)> ValidateAsync(
         ProjectInput input, int? existingId, int orgId, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
@@ -539,6 +587,15 @@ public sealed class ProjectService
             {
                 errors["Name"] = "Another solution already uses this name.";
             }
+        }
+
+        // The short name is only ever displayed, so it carries the generator's
+        // rule and no other: short enough to shorten with, and nothing a file
+        // name cannot hold. See .design/customer-naming.md.
+        var shortName = (input.ShortName ?? string.Empty).Trim();
+        if (shortName.Length > CustomerNaming.MaxShortNameLength || shortName.Any(char.IsControl))
+        {
+            errors["ShortName"] = "At most 50 characters.";
         }
 
         // Required: builds compile against this localisation's base symbols, and
@@ -584,7 +641,7 @@ public sealed class ProjectService
         }
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
-        return (name, country, normalised);
+        return (name, shortName.Length == 0 ? null : shortName, country, normalised);
     }
 
     /// <summary>True when <paramref name="url"/> is an https URL on a host the provider serves.</summary>
@@ -688,8 +745,23 @@ public sealed class ProjectService
 /// <summary>Form-post shape for a project and its repositories. The repo list is owned wholesale by the editor.</summary>
 public sealed record ProjectInput(
     string Name,
+    string? ShortName,
     string? DefaultArtifactCountry,
     IReadOnlyList<ProjectRepositoryInput> Repositories);
+
+/// <summary>
+/// One solution as the generator's Solution picker sees it: what it searches on
+/// and what picking it pre-fills. See <c>.design/customer-naming.md</c>.
+/// </summary>
+public sealed record SolutionOption(
+    int Id,
+    string Name,
+    string? ShortName,
+    Guid? BcTenantId,
+    IReadOnlyList<SolutionRepositoryOption> Repositories);
+
+/// <summary>One of a solution's repositories, as the picker lists it.</summary>
+public sealed record SolutionRepositoryOption(string DisplayName, string Url);
 
 /// <summary>One repository row from the project editor.</summary>
 public sealed record ProjectRepositoryInput(

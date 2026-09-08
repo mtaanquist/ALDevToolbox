@@ -51,6 +51,34 @@ public sealed class ProjectDetailSectionTests : IDisposable
     }
 
     /// <summary>
+    /// The abbreviation the generator puts in extension names lives beside the
+    /// name it abbreviates, and is written by the page's one Save like the rest
+    /// of General. See <c>.design/customer-naming.md</c>.
+    /// </summary>
+    [Fact]
+    public void The_short_name_sits_on_General_and_is_optional()
+    {
+        var edit = new ProjectDetail.EditModel { Name = "CRONUS Denmark" };
+        var dirty = 0;
+
+        var cut = _ctx.Render<ProjectDetailGeneral>(p => p
+            .Add(c => c.Id, 7)
+            .Add(c => c.CanManage, true)
+            .Add(c => c.Edit, edit)
+            .Add(c => c.OnDirty, () => dirty++));
+
+        var field = cut.Find("#proj-short-name");
+        field.HasAttribute("required").Should().BeFalse(
+            "a customer whose name is short enough needs no abbreviation");
+        field.GetAttribute("maxlength").Should().Be("50",
+            "the form mirrors the server's ceiling");
+
+        field.Change("CRO");
+        edit.ShortName.Should().Be("CRO");
+        dirty.Should().Be(1);
+    }
+
+    /// <summary>
     /// Deleting is the page's write - its failure message belongs in the
     /// page-level alert and its success navigates away - so the tab only asks.
     /// The confirmation stays two steps.
