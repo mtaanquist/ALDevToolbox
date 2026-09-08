@@ -10,6 +10,7 @@ using Bunit;
 using Bunit.TestDoubles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ALDevToolbox.Services.Operations;
 
@@ -31,6 +32,14 @@ public sealed class AdminTranslationMemoryTests : IDisposable
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
 
+    /// <summary>
+    /// Keeps what the page logged. The page catches its own load failures, so
+    /// without this a search that threw is indistinguishable from a slow one -
+    /// which is what left #764 undiagnosable for two CI runs (same reasoning
+    /// as #739).
+    /// </summary>
+    private readonly CapturingLoggerProvider _logs = new();
+
     public AdminTranslationMemoryTests()
     {
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
@@ -44,9 +53,10 @@ public sealed class AdminTranslationMemoryTests : IDisposable
         _ctx.Services.AddScoped<TranslationMemoryService>();
         _ctx.Services.AddScoped<TranslationMemoryIngestService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
-        _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
+        _ctx.Services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(
+            Microsoft.Extensions.Logging.LoggerFactory.Create(b => b.AddProvider(_logs)));
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
-            typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+            typeof(Microsoft.Extensions.Logging.Logger<>));
         _db.AddStorageServices(_ctx.Services);
         _db.AddGitHubServices(_ctx.Services, ConnectedApi());
         _ctx.Services.AddScoped<ALDevToolbox.Services.Organizations.OrganizationConfigService>();
@@ -82,14 +92,32 @@ public sealed class AdminTranslationMemoryTests : IDisposable
         var cut = _ctx.Render<AdminTranslationMemory>();
         cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().ContainSingle());
 
+        // The first suspect for #764 was #739's shape - a search starting while
+        // the page's own hydration was still on the wire, on the one scoped
+        // DbContext. Measurement says no: the page probes GitHub *after* the
+        // list loads, but ComponentBase renders nothing between the two, so by
+        // the time a row exists the context is idle (checked with every read
+        // artificially slowed, and it was idle every time). This makes that a
+        // stated precondition rather than an assumption, and would catch a
+        // future load that renders before it has finished.
+        _db.CommandTracker.WaitUntilIdle(TimeSpan.FromSeconds(10)).Should().BeTrue(
+            "the page has to be idle before the search is submitted");
+
         cut.Find(".filter-bar__search").Input("nothing-like-this-exists");
         cut.Find(".filter-bar button[type=submit]").Click();
 
-        cut.WaitForAssertion(() =>
-        {
-            cut.Markup.Should().Contain("Nothing matches");
-            cut.Find(".empty-state__action").TextContent.Should().Contain("Clear filters");
-        });
+        // Wait for the search to reach *either* outcome, then assert it was the
+        // one we want. Waiting only for "Nothing matches" meant a failed search
+        // burned the full 30-second bUnit timeout and reported nothing but "the
+        // assertion did not pass".
+        cut.WaitForAssertion(() => cut.Markup.Should().Match(
+            m => m.Contains("Nothing matches") || m.Contains("could not be loaded"),
+            "the search renders the empty state or the failure banner when it finishes"));
+
+        cut.Markup.Should().Contain("Nothing matches",
+            "the search must succeed; the page reported a failure instead. What it logged:\n"
+            + _logs.ErrorsForFailureMessage());
+        cut.Find(".empty-state__action").TextContent.Should().Contain("Clear filters");
 
         cut.Find(".empty-state__action").Click();
 
