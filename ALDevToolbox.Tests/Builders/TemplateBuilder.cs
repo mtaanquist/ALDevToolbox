@@ -33,7 +33,6 @@ public static class TemplateBuilder
             Target = "Cloud",
             Application = "24.0.0.0",
             Platform = "1.0.0.0",
-            ExtensionPrefix = "ACME",
             Features = new List<string> { "TranslationFile" },
             SupportedLocales = new List<string> { "en-US" },
             Affix = "ACME",

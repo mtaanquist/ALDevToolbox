@@ -130,14 +130,15 @@ public sealed class GitHubWorkspaceRepositoryService
 
     /// <summary>
     /// The repository name a customer called <paramref name="workspaceName"/>
-    /// suggests: the transliterated name in lowercase kebab-case, which is both
-    /// a legal GitHub name and the shape people actually name repositories, and
-    /// which "Jørgensen Møbler" can reach as well as "CRONUS" can. Only a
-    /// suggestion - the user can type anything the rule above allows.
+    /// suggests: the transliterated name in the organisation's repository
+    /// style, which "Jørgensen Møbler" can reach as well as "CRONUS" can. The
+    /// style defaults to lowercase kebab-case, which is both a legal GitHub
+    /// name and the shape people actually name repositories. Only a suggestion
+    /// - the user can type anything the rule above allows.
     /// See <see cref="Generation.CustomerNaming"/>.
     /// </summary>
-    public static string SuggestName(string? workspaceName) =>
-        CustomerNaming.Apply(workspaceName, NamingStyle.KebabCase);
+    public static string SuggestName(string? workspaceName, NamingStyle style = NamingStyle.KebabCase) =>
+        CustomerNaming.Apply(workspaceName, style);
 
     /// <summary>
     /// Generates <paramref name="plan"/> and creates
@@ -274,7 +275,11 @@ public sealed class GitHubWorkspaceRepositoryService
         await using var stream = archive.Stream;
         stream.Position = 0;
 
-        var root = CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase) + "/";
+        // The archive is named after the workspace folder it nests everything
+        // under, so the prefix to strip comes off the name the generator just
+        // used rather than being derived a second time (and possibly in a
+        // different style than the organisation has set).
+        var root = Path.GetFileNameWithoutExtension(archive.FileName) + "/";
         var files = new List<GitHubCommitFile>();
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true))
         {

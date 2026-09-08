@@ -58,7 +58,8 @@ public sealed class WorkspaceZipBuilder
         OrganizationConfig orgConfig,
         CancellationToken ct)
     {
-        var rootFolder = CustomerNaming.Apply(plan.WorkspaceName, NamingStyle.PascalCase);
+        var folderStyle = orgConfig.Settings.NamingFolderStyle;
+        var rootFolder = CustomerNaming.Apply(plan.WorkspaceName, folderStyle);
         var stream = new MemoryStream();
         var fileCount = 0;
 
@@ -82,7 +83,7 @@ public sealed class WorkspaceZipBuilder
             // per-extension subset gets written inside each extension folder
             // by WriteExtension below.
             var includedFiles = FilterIncluded(orgConfig.Files, template);
-            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template, publisher, ct);
+            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template, publisher, folderStyle, ct);
 
             // Per-extension folders.
             foreach (var ext in extensions)
@@ -103,7 +104,8 @@ public sealed class WorkspaceZipBuilder
                 ExtensionPrefix: plan.ExtensionPrefix,
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                 FolderPath: string.Empty,
-                TenantId: plan.TenantId);
+                TenantId: plan.TenantId,
+                FolderStyle: folderStyle);
             WriteString(archive, $"{rootFolder}/{rootFolder}.code-workspace",
                 BuildCodeWorkspace(
                     orgConfig.Settings.CodeWorkspaceJson,
@@ -222,7 +224,8 @@ public sealed class WorkspaceZipBuilder
                 // the root files resolves to the same value rather than to the
                 // org default the workspace flow uses.
                 fileCount += WriteOrgFiles(
-                    archive, folderName, includedFiles, standaloneAsWorkspacePlan, template, plan.Publisher, ct);
+                    archive, folderName, includedFiles, standaloneAsWorkspacePlan, template, plan.Publisher,
+                    orgConfig.Settings.NamingFolderStyle, ct);
             }
 
             var substitutionCtx = BuildExtensionMustacheContext(standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
@@ -233,7 +236,8 @@ public sealed class WorkspaceZipBuilder
 
             if (sibling is not null)
             {
-                var workspaceFile = $"{CustomerNaming.Apply(sibling.WorkspaceName, NamingStyle.PascalCase)}.code-workspace";
+                var siblingFolderStyle = orgConfig.Settings.NamingFolderStyle;
+                var workspaceFile = $"{CustomerNaming.Apply(sibling.WorkspaceName, siblingFolderStyle)}.code-workspace";
                 var existing = sibling.ExistingFolders.ToList();
                 existing.Add(folderName);
 
@@ -252,7 +256,8 @@ public sealed class WorkspaceZipBuilder
                         orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher),
                     ExtensionPrefix: string.Empty,
                     Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-                    FolderPath: string.Empty);
+                    FolderPath: string.Empty,
+                    FolderStyle: siblingFolderStyle);
                 WriteString(archive, workspaceFile,
                     BuildCodeWorkspace(
                         orgConfig.Settings.CodeWorkspaceJson,
@@ -336,7 +341,8 @@ public sealed class WorkspaceZipBuilder
             ApplicationVersion: ext.Application,
             Runtime: ext.Runtime,
             DependenciesArrayJson: deps.ToJsonString(CompactJsonOptions),
-            IdRangesArrayJson: idRanges.ToJsonString(CompactJsonOptions));
+            IdRangesArrayJson: idRanges.ToJsonString(CompactJsonOptions),
+            FolderStyle: orgConfig.Settings.NamingFolderStyle);
     }
 
     /// <summary>
@@ -578,6 +584,7 @@ public sealed class WorkspaceZipBuilder
         ProjectPlan plan,
         RuntimeTemplate template,
         string publisher,
+        NamingStyle folderStyle,
         CancellationToken ct)
     {
         if (files.Count == 0) return 0;
@@ -591,7 +598,8 @@ public sealed class WorkspaceZipBuilder
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty,
-            TenantId: plan.TenantId);
+            TenantId: plan.TenantId,
+            FolderStyle: folderStyle);
         foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();

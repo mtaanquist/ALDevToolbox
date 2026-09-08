@@ -13,7 +13,7 @@ record ProjectPlan(
     string TemplateKey,
     string WorkspaceName,            // the customer's name, as typed
     string? ShortName,               // the customer's name abbreviated; blank falls back to WorkspaceName
-    string ExtensionPrefix,          // pre-filled from defaults.extension_prefix; user-editable
+    string ExtensionPrefix,          // resolved from the org's extension_prefix_mode; see customer-naming.md
     string Brief,
     string Description,
     string ApplicationVersion,
@@ -217,10 +217,10 @@ Available variables (canonical names are snake_case to match the TOML schema):
 | `{{workspace_name}}`    | The workspace name from the plan — the customer's name as typed, e.g. "Jørgensen Møbler" |
 | `{{customer_name}}`     | The same value as `{{workspace_name}}`, under the word the form uses. Prefer it in new content. |
 | `{{short_name}}`        | The plan's `ShortName`, or the customer name when it is blank, e.g. "JM" or "Jørgensen Møbler". A display value, not a path. |
-| `{{workspace_folder}}`  | The folder the workspace unpacks into: the workspace name transliterated into PascalCase, e.g. "JorgensenMobler". Use it wherever a path is needed. |
+| `{{workspace_folder}}`  | The folder the workspace unpacks into: the workspace name transliterated into the org's `naming_folder_style` (PascalCase by default), e.g. "JorgensenMobler". Use it wherever a path is needed. |
 | `{{module_name}}`       | For module-cloned extensions, the module's `extension_name` (PascalCase). For template-declared extensions, equals `{{name}}`. |
 | `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`. |
-| `{{extension_prefix}}`  | The plan's `ExtensionPrefix` — the per-workspace short identifier (e.g. "CRO"). |
+| `{{extension_prefix}}`  | The plan's `ExtensionPrefix`, resolved server-side from the organisation's `extension_prefix_mode`: the short name (`Hidden`), the org's own value (`Fixed`), or what the form carried (`PerWorkspace`). See `customer-naming.md`. |
 | `{{affix}}`             | `defaults.affix` when `defaults.affixType` is `Prefix` or `Suffix`; empty string when `AffixType.None`. Replaces the pre-unified `{{prefix}}` / `{{suffix}}`. |
 | `{{namespace}}`         | The current folder's path, dot-separated, e.g. `src/codeunits` → `src.codeunits`. Used for AL `namespace` declarations. |
 | `{{guid}}`              | A freshly generated GUID per substitution call. Use sparingly — prefer hand-authored GUIDs in example files. |

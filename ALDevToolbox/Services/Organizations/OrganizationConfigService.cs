@@ -262,6 +262,65 @@ public class OrganizationConfigService
     }
 
     /// <summary>
+    /// Persists the organisation's naming conventions: how a customer's name
+    /// becomes the workspace folder and the suggested repository name, and how
+    /// the extension prefix is decided. Kept off
+    /// <see cref="SaveSettingsAsync"/> so the configuration import - which
+    /// carries no naming block - cannot quietly reset them.
+    /// See <c>.design/customer-naming.md</c>.
+    /// </summary>
+    public async Task SaveNamingAsync(OrganizationNamingInput input, CancellationToken ct = default)
+    {
+        ValidateNaming(input);
+        var orgId = RequireOrganizationId();
+
+        var row = await GetOrCreateSettingsAsync(orgId, ct);
+        row.NamingFolderStyle = input.FolderStyle;
+        row.NamingRepositoryStyle = input.RepositoryStyle;
+        row.ExtensionPrefixMode = input.ExtensionPrefixMode;
+        row.ExtensionPrefix = string.IsNullOrWhiteSpace(input.ExtensionPrefix)
+            ? null
+            : input.ExtensionPrefix.Trim();
+        row.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        InvalidateCache(orgId);
+
+        _logger.LogInformation(
+            "Updated naming settings for org {OrgId} (folder={FolderStyle}, repository={RepositoryStyle}, prefixMode={PrefixMode}).",
+            orgId, row.NamingFolderStyle, row.NamingRepositoryStyle, row.ExtensionPrefixMode);
+    }
+
+    internal static void ValidateNaming(OrganizationNamingInput input)
+    {
+        var errors = new Dictionary<string, string>();
+        // A repository name cannot contain spaces, which is the one thing the
+        // None style produces.
+        if (input.RepositoryStyle == NamingStyle.None)
+        {
+            errors[nameof(input.RepositoryStyle)] =
+                "Repository names cannot contain spaces. Pick one of the other styles.";
+        }
+        var prefix = input.ExtensionPrefix?.Trim() ?? string.Empty;
+        if (prefix.Length > MaxExtensionPrefixLength)
+        {
+            errors[nameof(input.ExtensionPrefix)] = $"At most {MaxExtensionPrefixLength} characters.";
+        }
+        if (input.ExtensionPrefixMode == ExtensionPrefixMode.Fixed && prefix.Length == 0)
+        {
+            errors[nameof(input.ExtensionPrefix)] =
+                "Enter the prefix every extension name should start with, for example JM.";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    /// <summary>
+    /// Cap on the organisation's own extension prefix. Matches the short name's
+    /// ceiling - both end up in front of an extension name.
+    /// </summary>
+    public const int MaxExtensionPrefixLength = 50;
+
+    /// <summary>
     /// Persists the admin-edited <c>.code-workspace</c> JSON template. The
     /// generator overlays the computed <c>folders</c> array onto whatever is
     /// stored here, so the admin owns <c>settings</c> and any other top-level
@@ -529,6 +588,16 @@ public record OrganizationConfig(
     OrganizationSettings Settings,
     OrganizationAsset? Logo,
     IReadOnlyList<OrganizationFile> Files);
+
+/// <summary>
+/// The Naming section of the Defaults page: the two derived-name styles and the
+/// extension-prefix policy. See <c>.design/customer-naming.md</c>.
+/// </summary>
+public record OrganizationNamingInput(
+    NamingStyle FolderStyle,
+    NamingStyle RepositoryStyle,
+    ExtensionPrefixMode ExtensionPrefixMode,
+    string? ExtensionPrefix = null);
 
 /// <summary>Form-post shape for the Defaults section of <c>/admin/configuration</c>.</summary>
 public record OrganizationSettingsInput(

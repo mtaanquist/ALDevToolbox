@@ -37,6 +37,27 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.DefaultCoreDescription).HasColumnName("default_core_description").IsRequired();
         entity.Property(e => e.CodeWorkspaceJson).HasColumnName("code_workspace_json").IsRequired();
         entity.Property(e => e.CookbookGuidance).HasColumnName("cookbook_guidance").IsRequired();
+        // Naming conventions (#757). Stored as text like local_login_policy so a
+        // psql session shows "PascalCase" rather than an integer nobody can
+        // decode, and so adding a style later can't renumber the stored values.
+        // HasSentinel on each: the store default only exists to backfill the
+        // rows that predate these columns. Without a sentinel EF treats the
+        // CLR default (PascalCase, Hidden - both 0) as "not set" and lets the
+        // store default overwrite it, so an org that picks Hidden would keep
+        // being saved as PerWorkspace. An out-of-range sentinel is never a real
+        // choice, so every real choice is written explicitly.
+        entity.Property(e => e.NamingFolderStyle)
+            .HasColumnName("naming_folder_style").HasConversion<string>().HasMaxLength(32)
+            .IsRequired().HasDefaultValue(NamingStyle.PascalCase).HasSentinel((NamingStyle)(-1));
+        entity.Property(e => e.NamingRepositoryStyle)
+            .HasColumnName("naming_repository_style").HasConversion<string>().HasMaxLength(32)
+            .IsRequired().HasDefaultValue(NamingStyle.KebabCase).HasSentinel((NamingStyle)(-1));
+        entity.Property(e => e.ExtensionPrefixMode)
+            .HasColumnName("extension_prefix_mode").HasConversion<string>().HasMaxLength(32)
+            .IsRequired().HasDefaultValue(ExtensionPrefixMode.PerWorkspace).HasSentinel((ExtensionPrefixMode)(-1));
+        // Nullable: "the organisation has no prefix of its own" is a different
+        // thing from an empty one, and the resolver falls back to the short name.
+        entity.Property(e => e.ExtensionPrefix).HasColumnName("extension_prefix").HasMaxLength(50);
         entity.Property(e => e.RequireStrongAuth).HasColumnName("require_strong_auth").IsRequired();
         entity.Property(e => e.AutoJoinVerifiedDomainUsers).HasColumnName("auto_join_verified_domain_users").IsRequired();
         entity.Property(e => e.MachineTranslationProvider)

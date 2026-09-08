@@ -486,6 +486,45 @@ public sealed class WorkspaceGenerationTests : IDisposable
         ex.Which.Errors.Keys.Should().Contain(k => k.Contains("IdRange"));
     }
 
+    [Fact]
+    public async Task The_folder_and_workspace_file_follow_the_organisations_folder_style()
+    {
+        await SetNamingAsync(folderStyle: NamingStyle.Lowercase);
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan(workspaceName: "Jørgensen Møbler"));
+
+        // Transliterated, then joined in the organisation's style. The
+        // extension folders inside keep the paths the template declares (#757).
+        zip.GetEntry("jorgensenmobler/Core/app.json").Should().NotBeNull();
+        zip.GetEntry("jorgensenmobler/jorgensenmobler.code-workspace").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_fixed_organisation_prefix_beats_the_one_the_caller_passed()
+    {
+        await SetNamingAsync(prefixMode: ExtensionPrefixMode.Fixed, prefix: "PARTNER");
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan(extensionPrefix: "TYPED"));
+
+        var appJson = JsonDocument.Parse(ReadEntry(zip.GetEntry("AcmeCustomer/Core/app.json")!));
+        appJson.RootElement.GetProperty("name").GetString().Should().Be("PARTNER Core");
+    }
+
+    [Fact]
+    public async Task With_no_prefix_convention_the_short_name_names_the_extensions()
+    {
+        await SetNamingAsync(prefixMode: ExtensionPrefixMode.Hidden);
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        using var zip = await GenerateAsync(
+            PlanBuilder.WorkspacePlan(shortName: "JM", extensionPrefix: "TYPED"));
+
+        var appJson = JsonDocument.Parse(ReadEntry(zip.GetEntry("AcmeCustomer/Core/app.json")!));
+        appJson.RootElement.GetProperty("name").GetString().Should().Be("JM Core");
+    }
+
     // ===== helpers =====
 
     private GenerationService NewService()
@@ -542,6 +581,28 @@ public sealed class WorkspaceGenerationTests : IDisposable
     {
         var archive = await NewService().GenerateWorkspaceAsync(plan);
         return new ZipArchive(archive.Stream, ZipArchiveMode.Read, leaveOpen: false);
+    }
+
+    /// <summary>
+    /// Writes the organisation's naming block (#757). Separate from
+    /// <see cref="SetOrgPublisherAsync"/> because a test needs one or the
+    /// other, and the settings row is unique per organisation.
+    /// </summary>
+    private async Task SetNamingAsync(
+        NamingStyle folderStyle = NamingStyle.PascalCase,
+        ExtensionPrefixMode prefixMode = ExtensionPrefixMode.PerWorkspace,
+        string? prefix = null)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.OrganizationSettings.Add(new OrganizationSettings
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            NamingFolderStyle = folderStyle,
+            ExtensionPrefixMode = prefixMode,
+            ExtensionPrefix = prefix,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
     }
 
     private async Task SetOrgPublisherAsync(string publisher)

@@ -109,9 +109,15 @@ public class DefaultsSeed
     /// <summary>Pre-fills the <c>platform</c> field on New Workspace.</summary>
     public string Platform { get; set; } = string.Empty;
 
-    /// <summary>Pre-fills the per-workspace short identifier (e.g. <c>"CRONUS"</c> → <c>"CRONUS Core"</c>).</summary>
+    /// <summary>
+    /// Retired (#757): the extension prefix is an organisation setting, not a
+    /// template one, and is edited under Administration -> Defaults. The
+    /// property stays so a <c>template.toml</c> written before the move still
+    /// imports - the value is accepted and ignored. Null by default so it is
+    /// never written back out.
+    /// </summary>
     [TomlPropertyName("extension_prefix")]
-    public string ExtensionPrefix { get; set; } = string.Empty;
+    public string? ExtensionPrefix { get; set; }
 
     public string? Url { get; set; }
     public string? Logo { get; set; }
