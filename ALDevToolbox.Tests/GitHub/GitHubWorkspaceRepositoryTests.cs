@@ -432,6 +432,18 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         GitHubWorkspaceRepositoryService.SuggestName(workspaceName).Should().Be(expected);
     }
 
+    [Theory]
+    // The style is the organisation's (#757); the default above is only the
+    // default. Whatever it is set to, the suggestion follows it.
+    [InlineData(NamingStyle.SnakeCase, "jorgensen_mobler")]
+    [InlineData(NamingStyle.Lowercase, "jorgensenmobler")]
+    [InlineData(NamingStyle.PascalCase, "JorgensenMobler")]
+    public void The_suggested_name_follows_the_organisations_repository_style(
+        NamingStyle style, string expected)
+    {
+        GitHubWorkspaceRepositoryService.SuggestName("Jørgensen Møbler", style).Should().Be(expected);
+    }
+
     // --- repository standards (#628) ----------------------------------------
 
     [Fact]
@@ -597,6 +609,162 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         entry.EntityName.Should().Be(Repo);
     }
 
+    // --- The customer as a solution (#759) ---------------------------------
+
+    [Fact]
+    public async Task A_chosen_solution_gets_the_new_repository()
+    {
+        await ReadyAsync();
+        var solutionId = await SeedSolutionAsync("CRONUS Customer", ownedByCaller: true);
+        var (service, ctx) = NewService(WritableApi());
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(
+            WorkspacePlan(), RepoName, isPrivate: true, solutionId: solutionId);
+
+        created.SolutionId.Should().Be(solutionId);
+        created.SolutionName.Should().Be("CRONUS Customer");
+        created.SolutionCreated.Should().BeFalse();
+        created.SolutionWarning.Should().BeNull();
+
+        await using var read = _db.NewContext();
+        var repo = await read.OeProjectRepositories.AsNoTracking()
+            .SingleAsync(r => r.ProjectId == solutionId);
+        // The clone URL and the repository's own name, so the row is the one a
+        // person adding it by hand would have typed - discovery and the build
+        // pipeline read it the same way either way.
+        repo.Provider.Should().Be(RepositoryProvider.GitHub);
+        repo.Url.Should().Be($"https://github.com/{Repo}.git");
+        repo.DisplayName.Should().Be(RepoName);
+    }
+
+    [Fact]
+    public async Task With_no_solution_chosen_the_customer_becomes_one()
+    {
+        await ReadyAsync();
+        var (service, ctx) = NewService(WritableApi());
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(
+            WorkspacePlan(shortName: "CRO"), RepoName, isPrivate: true);
+
+        created.SolutionCreated.Should().BeTrue();
+        created.SolutionName.Should().Be("CRONUS Customer");
+        created.SolutionWarning.Should().BeNull();
+
+        await using var read = _db.NewContext();
+        var solution = await read.OeProjects.AsNoTracking()
+            .Include(p => p.Repositories)
+            .SingleAsync(p => p.Id == created.SolutionId);
+        solution.Name.Should().Be("CRONUS Customer");
+        solution.ShortName.Should().Be("CRO");
+        // Public and owned by whoever pressed the button: what every solution
+        // starts as, so this on-ramp leaves nothing to explain later.
+        solution.Visibility.Should().Be(
+            ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectVisibility.Public);
+        solution.CreatedByUserId.Should().Be(UserId);
+        solution.Repositories.Should().ContainSingle()
+            .Which.Url.Should().Be($"https://github.com/{Repo}.git");
+    }
+
+    [Fact]
+    public async Task A_solution_the_caller_cannot_manage_is_refused_before_anything_is_created()
+    {
+        await ReadyAsync();
+        var solutionId = await SeedSolutionAsync("Somebody else's customer", ownedByCaller: false);
+        var api = WritableApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var act = () => service.CreateAsync(
+            WorkspacePlan(), RepoName, isPrivate: true, solutionId: solutionId);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey(GitHubWorkspaceRepositoryService.SolutionField);
+        // The whole point of ruling it out up front: no repository is left
+        // behind with nowhere to go.
+        api.Calls.Should().NotContain(c => c.Contains($"/orgs/{OrgLogin}/repos"));
+    }
+
+    [Fact]
+    public async Task A_solution_that_will_not_save_is_a_warning_on_a_success()
+    {
+        await ReadyAsync();
+        // Another solution already carries this customer's name, which the
+        // solution validator refuses - the likeliest way this step fails.
+        await SeedSolutionAsync("CRONUS Customer", ownedByCaller: false);
+        var (service, ctx) = NewService(WritableApi());
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // The repository exists and holds the files by this point; losing it
+        // over a name clash would be the worst answer available.
+        created.Repository.FullName.Should().Be(Repo);
+        created.FileCount.Should().BeGreaterThan(0);
+        created.SolutionId.Should().BeNull();
+        created.SolutionWarning.Should().NotBeNullOrEmpty();
+        created.SolutionWarning!.Should().Contain("Solutions");
+
+        await using var read = _db.NewContext();
+        var entry = await read.AuditLog.AsNoTracking()
+            .SingleAsync(e => e.EntityType == AuditEntityType.GitHubRepository);
+        entry.EntityName.Should().Be(Repo);
+        entry.EntityId.Should().Be(0, "there is no solution for the entry to name");
+    }
+
+    [Fact]
+    public async Task The_audit_entry_names_the_solution_the_repository_was_registered_on()
+    {
+        await ReadyAsync();
+        var (service, ctx) = NewService(WritableApi());
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        await using var read = _db.NewContext();
+        var entry = await read.AuditLog.AsNoTracking()
+            .SingleAsync(e => e.EntityType == AuditEntityType.GitHubRepository);
+        entry.EntityName.Should().Be(Repo);
+        entry.EntityId.Should().Be(created.SolutionId!.Value);
+    }
+
+    /// <summary>
+    /// One solution to point at, either this caller's or somebody else's - the
+    /// difference between a customer they may add a repository to and one they
+    /// may not.
+    /// </summary>
+    private async Task<int> SeedSolutionAsync(string name, bool ownedByCaller)
+    {
+        await using var ctx = _db.NewContext();
+        if (!ownedByCaller)
+        {
+            ctx.Users.Add(new User
+            {
+                Id = UserId + 1,
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "other@cronus.example",
+                DisplayName = "Other Person",
+                PasswordHash = "x",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = name,
+            DefaultArtifactCountry = "dk",
+            CreatedByUserId = ownedByCaller ? UserId : UserId + 1,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+        return project.Id;
+    }
+
     /// <summary>
     /// A GitHub that also answers the two reads and the one write the standards
     /// phase makes: where the branch is, what tree that commit points at, and
@@ -628,8 +796,8 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         return (_db.NewGitHubWorkspaceRepositoryService(ctx, client, access), ctx);
     }
 
-    private static ProjectPlan WorkspacePlan() => PlanBuilder.WorkspacePlan(
-        workspaceName: "CRONUS Customer", extensionPrefix: "CRONUS");
+    private static ProjectPlan WorkspacePlan(string? shortName = null) => PlanBuilder.WorkspacePlan(
+        workspaceName: "CRONUS Customer", shortName: shortName, extensionPrefix: "CRONUS");
 
     private static string BodyOf(FakeGitHubApi api, string method, string pathSuffix) =>
         api.Bodies

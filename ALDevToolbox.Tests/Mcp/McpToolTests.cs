@@ -716,6 +716,46 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateWorkspace_ignores_the_prefix_an_agent_passes_when_the_organisation_fixes_one()
+    {
+        // MCP parity (PROJECT.md): the prefix policy is the organisation's, so
+        // the tool obeys it exactly as the form does - and reports back the
+        // prefix the extensions actually carry (#757).
+        await SeedDefaultTemplateAsync();
+        await using (var seed = _db.NewContext())
+        {
+            seed.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ExtensionPrefixMode = ALDevToolbox.Domain.ValueObjects.ExtensionPrefixMode.Fixed,
+                ExtensionPrefix = "PARTNER",
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var tools = NewWorkspaceTools(ctx);
+
+        var result = await tools.GenerateWorkspaceAsync(new ProjectPlanInput(
+            TemplateKey: "runtime-test",
+            WorkspaceName: "CRONUS A/S",
+            ExtensionPrefix: "TYPED",
+            Brief: "Brief",
+            Description: "Description",
+            ApplicationVersion: "24.0.0.0",
+            RuntimeVersion: "15",
+            CoreIdRangeFrom: 90000,
+            CoreIdRangeTo: 90999));
+
+        // What the extensions are called, not what the agent asked for. The
+        // generated names themselves are covered end to end in
+        // WorkspaceGenerationTests; here the point is that the tool reports the
+        // prefix that won.
+        result.ExtensionPrefix.Should().Be("PARTNER");
+    }
+
+    [Fact]
     public async Task GenerateWorkspace_surfaces_PlanValidationException_as_McpException()
     {
         await SeedDefaultTemplateAsync();

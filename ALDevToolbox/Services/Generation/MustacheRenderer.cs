@@ -154,7 +154,14 @@ public record MustacheContext(
     string ApplicationVersion = "",
     string Runtime = "",
     string DependenciesArrayJson = "[]",
-    string IdRangesArrayJson = "[]")
+    string IdRangesArrayJson = "[]",
+    /// <summary>
+    /// The organisation's folder naming style, which
+    /// <see cref="WorkspaceFolder"/> applies. Passed in rather than read from
+    /// the settings row here so this record stays a plain value - the emit
+    /// points that build a context already hold the org config.
+    /// </summary>
+    NamingStyle FolderStyle = NamingStyle.PascalCase)
 {
     /// <summary>
     /// The folder (and <c>.code-workspace</c> file) name derived from
@@ -162,5 +169,5 @@ public record MustacheContext(
     /// emit point agrees on it - see
     /// <see cref="CustomerNaming"/> and <c>.design/customer-naming.md</c>.
     /// </summary>
-    public string WorkspaceFolder => CustomerNaming.Apply(WorkspaceName, NamingStyle.PascalCase);
+    public string WorkspaceFolder => CustomerNaming.Apply(WorkspaceName, FolderStyle);
 }

@@ -193,7 +193,6 @@ public static class TemplateTomlMapper
         Target = defaults.Target,
         Application = defaults.Application,
         Platform = defaults.Platform,
-        ExtensionPrefix = defaults.ExtensionPrefix,
         Url = defaults.Url,
         Logo = defaults.Logo,
         Features = defaults.Features.ToList(),
@@ -384,7 +383,9 @@ public static class TemplateTomlMapper
             Target = seed.Defaults.Target,
             Application = seed.Defaults.Application,
             Platform = seed.Defaults.Platform,
-            ExtensionPrefix = seed.Defaults.ExtensionPrefix,
+            // seed.Defaults.ExtensionPrefix is deliberately not read: the prefix
+            // moved onto organisation settings (#757). An older file carrying
+            // the key still imports; the value is ignored.
             Url = seed.Defaults.Url,
             Logo = seed.Defaults.Logo,
             Features = seed.Defaults.Features.ToList(),
@@ -545,12 +546,6 @@ target = "Cloud"
 # [[extensions]] handle mixed-version setups.
 application = "26.0.0.0"
 platform = "1.0.0.0"
-
-# Friendly extension-name prefix for this workspace — substitutes into
-# {{extension_prefix}} in the [[extensions]] name template below (so
-# "CRONUS" produces "CRONUS Core"). Users can override per workspace.
-# Distinct from `affix`, which controls AL object names.
-extension_prefix = ""
 
 # Optional URL written into every app.json.
 # url = "https://example.com"

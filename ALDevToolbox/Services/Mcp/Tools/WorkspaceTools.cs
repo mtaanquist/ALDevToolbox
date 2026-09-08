@@ -83,17 +83,24 @@ public sealed class WorkspaceTools
     }
 
     [McpServerTool(Name = "generate_workspace", ReadOnly = false, Idempotent = false)]
-    [Description("Generates a new BC workspace as a ZIP. Pass the template key from list_templates, the workspace details, and the Core ID range. The ZIP is returned inline as base64-encoded contentBase64 alongside its file name, size, and SHA-256. Set createRepository to also create a repository for it in your organisation's connected GitHub organisation and commit the generated files to it.")]
+    [Description("Generates a new BC workspace as a ZIP. Pass the template key from list_templates, the workspace details, and the Core ID range. The ZIP is returned inline as base64-encoded contentBase64 alongside its file name, size, and SHA-256. Set createRepository to also create a repository for it in your organisation's connected GitHub organisation and commit the generated files to it; that repository is registered on a solution, either the one solutionId names or a new one named after the customer.")]
     public async Task<WorkspaceResult> GenerateWorkspaceAsync(
         ProjectPlanInput plan,
         [Description("Optional. A repository name (no owner - it is created in the GitHub organisation your organisation has connected, and nowhere else). When set, the repository is created and the generated files are committed to it; createdRepository in the result carries its link. You have to be a member of that GitHub organisation.")]
         string? createRepository = null,
         [Description("Whether a repository created by createRepository is private. Defaults to true.")]
         bool repositoryPrivate = true,
+        [Description("Optional. The id of an existing solution (from list_solutions) to register the new repository on. Leave it out to create a new solution named after the customer. Only used with createRepository.")]
+        int? solutionId = null,
         CancellationToken ct = default)
     {
         try
         {
+            var domainPlan = plan.ToDomain();
+            // What the prefix resolved to under the organisation's policy, so
+            // the agent is told the names it is getting rather than the ones it
+            // asked for. The generator applies the same rule internally.
+            var prefix = await _generation.ResolveExtensionPrefixAsync(domainPlan, ct);
             if (!string.IsNullOrWhiteSpace(createRepository))
             {
                 // Routed through the same service the New Workspace page uses,
@@ -103,12 +110,12 @@ public sealed class WorkspaceTools
                 // repository, never an owner, so an agent cannot aim it at an
                 // organisation the page would not offer.
                 var created = await _repositories.CreateAsync(
-                    plan.ToDomain(), createRepository!.Trim(), repositoryPrivate, ct);
-                return BuildCreatedResult(created);
+                    domainPlan, createRepository!.Trim(), repositoryPrivate, solutionId, ct);
+                return BuildCreatedResult(created) with { ExtensionPrefix = prefix };
             }
 
-            var archive = await _generation.GenerateWorkspaceAsync(plan.ToDomain(), ct);
-            try { return BuildResult(archive); }
+            var archive = await _generation.GenerateWorkspaceAsync(domainPlan, ct);
+            try { return BuildResult(archive) with { ExtensionPrefix = prefix }; }
             finally { archive.Stream.Dispose(); }
         }
         catch (PlanValidationException ex)
