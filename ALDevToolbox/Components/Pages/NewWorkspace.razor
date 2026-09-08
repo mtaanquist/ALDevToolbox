@@ -181,15 +181,20 @@
                         {
                             <div class="field">
                                 <label class="field__label" for="ws-prefix">Extension prefix</label>
-                                @* The placeholder is what an empty field will be
-                                   generated with, so clearing the field shows the
-                                   value it falls back to instead of nothing. *@
                                 <input class="input" id="ws-prefix" type="text" name="ExtensionPrefix"
-                                       placeholder="@(string.IsNullOrWhiteSpace(ExtensionPrefixFallback) ? "e.g. CRONUS" : ExtensionPrefixFallback)"
+                                       placeholder="e.g. CRONUS"
                                        value="@ExtensionPrefix" @oninput="OnExtensionPrefixInput" />
                                 <span class="field__hint">
                                     Starts the name of every extension in this workspace, as in
                                     <code class="code">CRONUS Core</code>.
+                                    @* What an emptied field will actually generate, said in
+                                       words rather than hidden in the placeholder. *@
+                                    @if (!string.IsNullOrWhiteSpace(ExtensionPrefixFallback))
+                                    {
+                                        <text>
+                                            Leave blank to use <code class="code">@ExtensionPrefixFallback</code>.
+                                        </text>
+                                    }
                                 </span>
                             </div>
                         }

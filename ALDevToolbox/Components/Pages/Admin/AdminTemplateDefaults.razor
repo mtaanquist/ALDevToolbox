@@ -118,17 +118,18 @@
 
         @* Naming (#757). The two derived names and the extension prefix are an
            organisation convention, so they are set once here rather than on
-           every workspace. The example under each picker is the same
-           CustomerNaming call the generator makes, so what an admin reads is
-           what the generator will write. See .design/customer-naming.md. *@
+           every workspace. Each style option is labelled with the name it
+           produces, run through the same CustomerNaming the generator uses, so
+           what an admin reads is what the generator will write.
+           See .design/customer-naming.md. *@
         <section class="card">
             <div class="card__head">
                 <div>
                     <h2 class="card__title">Naming</h2>
                     <p class="card__sub">
                         How a customer's name becomes the names in a generated
-                        workspace. Applies to every workspace your organisation
-                        generates from now on.
+                        workspace. Applies to workspaces generated from now on.
+                        Anything already downloaded is unchanged.
                     </p>
                 </div>
             </div>
@@ -137,18 +138,20 @@
                     <div class="field">
                         <label class="field__label" for="cfg-folder-style">Workspace folder name</label>
                         <span class="select-wrap">
+                            @* Each option shows what it does to one customer's
+                               name, run through the generator's own CustomerNaming
+                               so the label cannot drift from the result. *@
                             <select class="select" id="cfg-folder-style" @bind="_folderStyle">
                                 @foreach (var style in FolderStyles)
                                 {
-                                    <option value="@style">@StyleLabel(style)</option>
+                                    <option value="@style">@StyleOption(style)</option>
                                 }
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
                         <span class="field__hint">
-                            A customer called @ExampleCustomer gets the folder
-                            <code class="code">@CustomerNaming.Apply(ExampleCustomer, _folderStyle)</code>,
-                            with a matching <code class="code">.code-workspace</code> file inside it.
+                            Examples are for a customer called @ExampleCustomer. The
+                            <code class="code">.code-workspace</code> file inside takes the same name.
                         </span>
                     </div>
 
@@ -158,40 +161,34 @@
                             <select class="select" id="cfg-repo-style" @bind="_repositoryStyle">
                                 @foreach (var style in RepositoryStyles)
                                 {
-                                    <option value="@style">@StyleLabel(style)</option>
+                                    <option value="@style">@StyleOption(style)</option>
                                 }
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
                         <span class="field__hint">
-                            The same customer gets the repository
-                            <code class="code">@CustomerNaming.Apply(ExampleCustomer, _repositoryStyle)</code>.
-                            Suggested on the form - the consultant can still type another name.
+                            Suggested on New Workspace - the consultant can still type another name.
                         </span>
                     </div>
 
                     <div class="field">
-                        <label class="field__label" for="cfg-prefix-mode">Extension prefix</label>
+                        <label class="field__label" for="cfg-prefix-mode">Where the extension prefix comes from</label>
                         <span class="select-wrap">
                             <select class="select" id="cfg-prefix-mode" @bind="_prefixMode">
-                                <option value="@ExtensionPrefixMode.Hidden">Not used</option>
-                                <option value="@ExtensionPrefixMode.Fixed">Same for every workspace</option>
-                                <option value="@ExtensionPrefixMode.PerWorkspace">Chosen per workspace</option>
+                                <option value="@ExtensionPrefixMode.Hidden">The customer's short name</option>
+                                <option value="@ExtensionPrefixMode.Fixed">Always the same word</option>
+                                <option value="@ExtensionPrefixMode.PerWorkspace">Decided on each workspace</option>
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <span class="field__hint">
-                            The word every extension name starts with, as in
-                            <code class="code">CRONUS Core</code>. Choose <strong>Not used</strong> and
-                            each customer's own short name starts the name instead.
-                        </span>
+                        <span class="field__hint">@PrefixModeHint</span>
                     </div>
 
                     @if (_prefixMode != ExtensionPrefixMode.Hidden)
                     {
                         <div class="field">
                             <label class="field__label" for="cfg-prefix">
-                                Prefix
+                                @(_prefixMode == ExtensionPrefixMode.Fixed ? "Prefix to use" : "Suggested prefix")
                                 @if (_prefixMode == ExtensionPrefixMode.Fixed)
                                 {
                                     <span class="req">*</span>
@@ -199,12 +196,15 @@
                             </label>
                             <input class="input" id="cfg-prefix" type="text" placeholder="e.g. CRONUS"
                                    maxlength="@OrganizationConfigService.MaxExtensionPrefixLength"
+                                   required="@(_prefixMode == ExtensionPrefixMode.Fixed)"
                                    @bind="_prefix" @bind:event="oninput" />
                             <span class="field__hint">
                                 @(_prefixMode == ExtensionPrefixMode.Fixed
-                                    ? "Used for every workspace, so extensions are named after your organisation rather than the customer."
-                                    : "Fills the field on the New Workspace form. Leave blank to fill it with the customer's short name instead.")
+                                    ? "Extension names are the same for every customer, as in JM Core."
+                                    : "Fills the field on New Workspace. Leave blank to fill it with the customer's short name instead.")
+                                Up to @OrganizationConfigService.MaxExtensionPrefixLength characters.
                             </span>
+                            <FieldError Field="@nameof(OrganizationNamingInput.ExtensionPrefix)" Errors="_errors" />
                         </div>
                     }
                 </div>
@@ -304,6 +304,15 @@
     private string? _okMessage;
     private string? _errMessage;
 
+    /// <summary>
+    /// Field-keyed problems from the last save attempt, straight from
+    /// <see cref="PlanValidationException.Errors"/>, so a refusal is shown
+    /// beside the field that caused it rather than only in the alert at the top
+    /// of a page longer than a viewport - the same contract New Workspace uses.
+    /// </summary>
+    private IReadOnlyDictionary<string, string> _errors =
+        new Dictionary<string, string>();
+
     private string _publisher = string.Empty;
     private int _idFrom;
     private int _idTo;
@@ -336,6 +345,15 @@
     private static readonly NamingStyle[] RepositoryStyles =
         Enum.GetValues<NamingStyle>().Where(s => s != NamingStyle.None).ToArray();
 
+    /// <summary>
+    /// What one option does, shown as the result first and the convention's
+    /// name second: "JorgensenMobler (PascalCase)". The result is computed
+    /// through <see cref="CustomerNaming"/>, the generator's own code, so a
+    /// label can never promise something the generator would not write.
+    /// </summary>
+    private static string StyleOption(NamingStyle style) =>
+        $"{CustomerNaming.Apply(ExampleCustomer, style)} ({StyleLabel(style)})";
+
     private static string StyleLabel(NamingStyle style) => style switch
     {
         NamingStyle.PascalCase => "PascalCase",
@@ -343,7 +361,20 @@
         NamingStyle.KebabCase => "kebab-case",
         NamingStyle.SnakeCase => "snake_case",
         NamingStyle.Lowercase => "lowercase",
-        _ => "Words with spaces",
+        // Not "as typed": accented letters are still transliterated and runs of
+        // punctuation still collapse. The example beside it shows both.
+        _ => "plain words",
+    };
+
+    /// <summary>What the picked prefix policy means, in one sentence.</summary>
+    private string PrefixModeHint => _prefixMode switch
+    {
+        ExtensionPrefixMode.Hidden =>
+            "Extension names start with each customer's short name, as in JM Core.",
+        ExtensionPrefixMode.Fixed =>
+            "Every extension name starts with the same word, whatever the customer.",
+        _ =>
+            "The consultant sets the prefix when creating the workspace; you can suggest a starting value below.",
     };
 
     private string _basePublisher = string.Empty;
@@ -456,6 +487,7 @@
         _saving = true;
         _errMessage = null;
         _okMessage = null;
+        _errors = new Dictionary<string, string>();
         try
         {
             await Config.SaveSettingsAsync(new OrganizationSettingsInput(
@@ -487,6 +519,7 @@
         }
         catch (PlanValidationException ex)
         {
+            _errors = ex.Errors;
             _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
         }
         catch (Exception ex)

@@ -188,6 +188,31 @@ public sealed class NewWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_prefix_hint_names_the_value_an_empty_field_will_generate()
+    {
+        // The fallback is stated in words rather than smuggled into the
+        // placeholder, so a consultant can see what leaving the field alone
+        // will actually name the extensions (#757 review).
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='ShortName']");
+        cut.Find("input[name='ShortName']").Input("JM");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("input[name='ExtensionPrefix']").GetAttribute("placeholder")
+                .Should().Be("e.g. CRONUS");
+            cut.Find("#ws-prefix").ParentElement!.QuerySelector(".field__hint")!
+                .TextContent.Should().Contain("Leave blank to use").And.Contain("JM");
+        });
+    }
+
+    [Fact]
     public void Empty_template_set_renders_the_recovery_copy_pointing_at_admin()
     {
         var cut = _ctx.Render<NewWorkspace>();

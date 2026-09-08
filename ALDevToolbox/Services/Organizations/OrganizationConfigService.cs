@@ -309,7 +309,7 @@ public class OrganizationConfigService
         if (input.ExtensionPrefixMode == ExtensionPrefixMode.Fixed && prefix.Length == 0)
         {
             errors[nameof(input.ExtensionPrefix)] =
-                "Give the prefix every workspace should use, or choose another option above.";
+                "Enter the prefix every extension name should start with, for example JM.";
         }
         if (errors.Count > 0) throw new PlanValidationException(errors);
     }
