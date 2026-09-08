@@ -1,6 +1,7 @@
 @page "/admin/translation-memory"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
+@implements IDisposable
 @using ALDevToolbox.Services.Translation
 @using ALDevToolbox.Services.GitHub
 @inject TranslationMemoryService Memory
@@ -93,9 +94,20 @@
         </button>
     </form>
 
+    @if (_loadError is not null)
+    {
+        <p class="alert alert--warn tr-mem-load-error" role="status">
+            <Icon Name="circle-alert" Width="16" Height="16" />
+            <span>@_loadError</span>
+        </p>
+    }
+
     @if (_result is null)
     {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        @if (_loadError is null)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
     }
     else if (_result.Items.Count == 0)
     {
@@ -241,6 +253,18 @@
     private MemorySearchResult? _result;
     private ConfirmDialog? _confirm;
 
+    private string? _loadError;
+
+    /// <summary>
+    /// One database operation at a time. Everything here runs on the circuit's
+    /// single scoped <c>AppDbContext</c>, which allows one operation at a time,
+    /// and nothing stops someone pressing Search twice, or voting while a
+    /// search is still running: the second one starts on a busy context and EF
+    /// throws. Same reason as the reload gate on the Object Explorer's module
+    /// page (#739 is the same hazard on the template editor).
+    /// </summary>
+    private readonly SemaphoreSlim _dbGate = new(1, 1);
+
     private bool _canRefreshFromRepositories;
     private bool _refreshing;
     private bool _refreshFailed;
@@ -255,7 +279,7 @@
         // report that is worse than no button.
         try
         {
-            var access = await Repositories.GetAccessAsync();
+            var access = await GuardedAsync(() => Repositories.GetAccessAsync());
             _canRefreshFromRepositories = access.Readiness
                 is GitHubRepositoryReadiness.NotLinked
                 or GitHubRepositoryReadiness.LinkNeedsRepair
@@ -279,7 +303,7 @@
         _refreshMessage = null;
         try
         {
-            var summary = await Ingest.IngestCurrentOrganisationAsync();
+            var summary = await GuardedAsync(() => Ingest.IngestCurrentOrganisationAsync());
             _refreshFailed = summary.RepositoriesFailed > 0;
             _refreshMessage = Describe(summary);
             await LoadAsync();
@@ -361,21 +385,44 @@
     {
         try
         {
-            _result = await Memory.SearchAsync(new MemorySearchQuery(
+            _result = await GuardedAsync(() => Memory.SearchAsync(new MemorySearchQuery(
                 Text: _text, TargetLanguage: _targetLang, Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
-                Origin: _origin, IncludeDeleted: _includeDeleted, Skip: _skip, Take: _pageSize));
+                Origin: _origin, IncludeDeleted: _includeDeleted, Skip: _skip, Take: _pageSize)));
+            _loadError = null;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Translation memory search failed.");
+            // Say so. A failed search that leaves the previous list on screen
+            // looks to the user like a search that matched everything.
+            _loadError = "The list could not be loaded just now. Try again in a moment.";
         }
     }
+
+    /// <summary>
+    /// Runs one database operation, waiting for any the page already has in
+    /// flight. See <see cref="_dbGate"/> for why the page needs this.
+    /// </summary>
+    private async Task<T> GuardedAsync<T>(Func<Task<T>> operation)
+    {
+        await _dbGate.WaitAsync();
+        try
+        {
+            return await operation();
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
+    }
+
+    public void Dispose() => _dbGate.Dispose();
 
     private async Task VoteAsync(long entryId, int direction)
     {
         try
         {
-            await Memory.VoteAsync(entryId, direction);
+            await GuardedAsync(async () => { await Memory.VoteAsync(entryId, direction); return 0; });
             await LoadAsync();
         }
         catch (Exception ex)
@@ -390,7 +437,7 @@
         if (!await _confirm.OpenAsync()) return;
         try
         {
-            await Memory.DeleteAsync(e.Id);
+            await GuardedAsync(async () => { await Memory.DeleteAsync(e.Id); return 0; });
             await LoadAsync();
         }
         catch (Exception ex)
@@ -403,7 +450,7 @@
     {
         try
         {
-            await Memory.RestoreAsync(entryId);
+            await GuardedAsync(async () => { await Memory.RestoreAsync(entryId); return 0; });
             await LoadAsync();
         }
         catch (Exception ex)
