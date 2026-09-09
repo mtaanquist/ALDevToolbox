@@ -1,0 +1,22 @@
+# Package versions are pinned exactly in both .csproj files (no wildcards), so
+# a NuGet patch release can no longer change what CI restores under our feet.
+# Dependabot is how those pins move: one grouped PR a week, which also
+# regenerates packages.lock.json, so a bump is a reviewable diff rather than a
+# surprise on main. See the Restore step in build.yml for why locked mode is
+# not used.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      nuget:
+        patterns:
+          - "*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
