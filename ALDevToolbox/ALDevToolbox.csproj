@@ -90,15 +90,16 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <!-- TOTP (RFC 6238) primitives — pure managed, no native deps. -->
     <PackageReference Include="Otp.NET" Version="1.4.1" />
-    <!-- QR PNG for the TOTP setup page so we don't ship a JS QR library.
-         Deliberately held at 1.6.*: 1.7+ takes a hard dependency on
-         System.Drawing.Common, which drags System.Drawing.Common.dll and
-         Microsoft.Win32.SystemEvents.dll into the published output. Both are
-         Windows-only, and we publish a Linux container. TotpService renders via
-         PngByteQRCode (fully managed), so the newer versions buy us nothing —
-         only the Micro/art QR styles we don't use. Revisit if we ever need
-         those, and check the transitive graph again when you do. -->
-    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <!-- QR PNG for the TOTP setup page so we don't ship a JS QR library. This
+         is the library Microsoft's own Blazor TOTP guidance uses, and its PNG
+         writer lives in the core assembly with no package dependencies at all,
+         so nothing Windows-only can reach the Linux container.
+         It replaced QRCoder, which had to be held at 1.6.* because 1.7+ took an
+         unconditional dependency on System.Drawing.Common — Windows-only since
+         .NET 6, and it threw PlatformNotSupportedException on Linux. QRCoder
+         1.6.0 scoped that to a net6.0-windows7.0 target and later dropped the
+         split, so every Dependabot run wanted to step over the pin (#780). -->
+    <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.2.1" />
     <PackageReference Include="Tomlyn" Version="2.10.1" />
   </ItemGroup>
 
