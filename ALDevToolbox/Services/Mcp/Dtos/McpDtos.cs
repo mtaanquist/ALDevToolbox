@@ -121,6 +121,8 @@ public sealed record WorkspaceResult(
 /// <param name="SolutionId">
 /// The solution the repository was registered on (issue #759), or null when
 /// registering it failed - <paramref name="SolutionWarning"/> then says so.
+/// Null too, with no warning, for an organisation that has Solutions switched
+/// off: it is registered on one only when the organisation uses them (#772).
 /// </param>
 /// <param name="SolutionName">That solution's name.</param>
 /// <param name="SolutionCreated">

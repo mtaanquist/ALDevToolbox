@@ -83,14 +83,14 @@ public sealed class WorkspaceTools
     }
 
     [McpServerTool(Name = "generate_workspace", ReadOnly = false, Idempotent = false)]
-    [Description("Generates a new BC workspace as a ZIP. Pass the template key from list_templates, the workspace details, and the Core ID range. The ZIP is returned inline as base64-encoded contentBase64 alongside its file name, size, and SHA-256. Set createRepository to also create a repository for it in your organisation's connected GitHub organisation and commit the generated files to it; that repository is registered on a solution, either the one solutionId names or a new one named after the customer.")]
+    [Description("Generates a new BC workspace as a ZIP. Pass the template key from list_templates, the workspace details, and the Core ID range. The ZIP is returned inline as base64-encoded contentBase64 alongside its file name, size, and SHA-256. Set createRepository to also create a repository for it in your organisation's connected GitHub organisation and commit the generated files to it; when the organisation has Solutions enabled, that repository is also registered on a solution, either the one solutionId names or a new one named after the customer.")]
     public async Task<WorkspaceResult> GenerateWorkspaceAsync(
         ProjectPlanInput plan,
         [Description("Optional. A repository name (no owner - it is created in the GitHub organisation your organisation has connected, and nowhere else). When set, the repository is created and the generated files are committed to it; createdRepository in the result carries its link. You have to be a member of that GitHub organisation.")]
         string? createRepository = null,
         [Description("Whether a repository created by createRepository is private. Defaults to true.")]
         bool repositoryPrivate = true,
-        [Description("Optional. The id of an existing solution (from list_solutions) to register the new repository on. Leave it out to create a new solution named after the customer. Only used with createRepository.")]
+        [Description("Optional. The id of an existing solution (from list_solutions) to register the new repository on. Leave it out to create a new solution named after the customer. Only used with createRepository, and only when the organisation has Solutions enabled - passing one while it is switched off is refused.")]
         int? solutionId = null,
         CancellationToken ct = default)
     {

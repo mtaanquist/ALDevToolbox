@@ -187,6 +187,59 @@ public sealed class GenerateWorkspaceRepositoryToolTests : IDisposable
         repo.DisplayName.Should().Be(RepoName);
     }
 
+    [Fact]
+    public async Task With_solutions_switched_off_it_creates_the_repository_and_no_solution()
+    {
+        await ReadyAsync();
+        await DisableSolutionsForOrgAsync();
+        var (tools, ctx) = NewTools(WritableApi());
+        await using var _ = ctx;
+
+        var result = await tools.GenerateWorkspaceAsync(PlanInput(), createRepository: RepoName);
+
+        result.CreatedRepository!.RepositoryFullName.Should().Be(Repo);
+        result.CreatedRepository.SolutionId.Should().BeNull();
+        result.CreatedRepository.SolutionName.Should().BeNull();
+        result.CreatedRepository.SolutionCreated.Should().BeFalse();
+        result.CreatedRepository.SolutionWarning.Should().BeNull();
+
+        await using var read = _db.NewContext();
+        (await read.OeProjects.AsNoTracking().AnyAsync()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Naming_a_solution_while_they_are_switched_off_is_a_validation_error()
+    {
+        await ReadyAsync();
+        var solutionId = await SeedSolutionAsync("CRONUS Denmark");
+        await DisableSolutionsForOrgAsync();
+        var api = WritableApi();
+        var (tools, ctx) = NewTools(api);
+        await using var _ = ctx;
+
+        // An agent is told why rather than having the argument ignored - and
+        // an MCP request learns the organisation's switched-off tools from the
+        // organisation row, since its principal carries no such claim.
+        var act = () => tools.GenerateWorkspaceAsync(
+            PlanInput(), createRepository: RepoName, solutionId: solutionId);
+
+        (await act.Should().ThrowAsync<McpException>())
+            .Which.Message.Should().Contain("Validation failed").And.Contain("switched off");
+        api.Calls.Should().NotContain(c => c.Contains($"/orgs/{OrgLogin}/repos"));
+    }
+
+    /// <summary>
+    /// Switches Solutions off for the acting organisation, the way an org Admin
+    /// does on the Administration tools page.
+    /// </summary>
+    private async Task DisableSolutionsForOrgAsync()
+    {
+        await using var ctx = _db.NewContext();
+        var org = await ctx.Organizations.SingleAsync(o => o.Id == TestDb.DefaultOrgId);
+        org.DisabledTools = new List<string> { nameof(ALDevToolbox.Domain.Tools.ToolKey.Projects) };
+        await ctx.SaveChangesAsync();
+    }
+
     // --- helpers ------------------------------------------------------------
 
     /// <summary>One solution this caller owns, for the tool to name.</summary>

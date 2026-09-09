@@ -243,6 +243,19 @@ generation names the Solution: it is the entry's entity id, which was zero
 before this because a repository on GitHub has no id of ours. The success card
 on the page links to it.
 
+**None of this happens when the organisation does not use Solutions.** The tool
+can be switched off site-wide by a SiteAdmin or per organisation by an org Admin,
+and when it is, Solutions is not in the sidebar and `/solutions/*` is a 404 - so
+registering one would file the customer somewhere nobody in that organisation can
+look. New Workspace then shows the plain Customer text box rather than the picker,
+`CreateAsync` skips the registration entirely (no `SolutionId`, no
+`SolutionCreated`, no warning, and the audit entry's entity id stays zero), and a
+`solutionId` passed anyway - by MCP, which is the only surface that still can - is
+refused on the `SolutionId` field before anything is created. The question is
+asked once, by `Services/Tools/ToolEnablement`, which combines the site toggle
+with the acting organisation's own opt-out exactly as the sidebar and the route
+gate do (issue #772).
+
 The repository is created first because it is the step that can fail for
 reasons outside the tool (name taken, permissions), and a Solution with no
 repository is exactly the orphan the ordering exists to avoid. A repository

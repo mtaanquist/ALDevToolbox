@@ -93,14 +93,16 @@ public sealed class GitHubTools
         "takes a name and not an owner - and the generated files are committed to it. You have to be a " +
         "member of that GitHub organisation; a call from someone who is not, or from an account that has " +
         "not connected its GitHub account, is refused and nothing is created. A name the organisation " +
-        "already uses is refused too. Use generate_workspace instead when you want the workspace as a ZIP.")]
+        "already uses is refused too. The repository is registered on a solution only when the " +
+        "organisation has Solutions enabled. Use generate_workspace instead when you want the workspace " +
+        "as a ZIP.")]
     public async Task<RepositoryCreationResult> CreateRepositoryAsync(
         ProjectPlanInput plan,
         [Description("The repository name, without an owner. Letters, digits, hyphens, underscores and full stops, at most 100 characters.")]
         string name,
         [Description("Whether the new repository is private. Defaults to true.")]
         bool isPrivate = true,
-        [Description("Optional. The id of an existing solution (from list_solutions) to register the new repository on. Leave it out to create a new solution named after the customer.")]
+        [Description("Optional. The id of an existing solution (from list_solutions) to register the new repository on. Leave it out to create a new solution named after the customer. Only applies when the organisation has Solutions enabled - passing one while it is switched off is refused.")]
         int? solutionId = null,
         CancellationToken ct = default)
     {

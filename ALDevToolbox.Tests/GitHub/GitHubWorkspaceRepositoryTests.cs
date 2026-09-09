@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.GitHub;
@@ -729,6 +730,87 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         entry.EntityId.Should().Be(created.SolutionId!.Value);
     }
 
+    // --- Solutions switched off for the organisation (#772) ----------------
+
+    [Fact]
+    public async Task With_solutions_switched_off_the_repository_is_created_and_nothing_is_registered()
+    {
+        await ReadyAsync();
+        await DisableSolutionsForOrgAsync();
+        var (service, ctx) = NewService(WritableApi());
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(shortName: "CRO"), RepoName, isPrivate: true);
+
+        created.Repository.FullName.Should().Be(Repo);
+        created.FileCount.Should().BeGreaterThan(0);
+        // Not a failure and not a warning: this organisation asked not to have
+        // Solutions, so there is nothing to report about one.
+        created.SolutionId.Should().BeNull();
+        created.SolutionName.Should().BeNull();
+        created.SolutionCreated.Should().BeFalse();
+        created.SolutionWarning.Should().BeNull();
+
+        await using var read = _db.NewContext();
+        (await read.OeProjects.AsNoTracking().AnyAsync()).Should().BeFalse();
+        var entry = await read.AuditLog.AsNoTracking()
+            .SingleAsync(e => e.EntityType == AuditEntityType.GitHubRepository);
+        entry.EntityId.Should().Be(0, "there is no solution for the entry to name");
+    }
+
+    [Fact]
+    public async Task A_solution_named_while_solutions_are_switched_off_is_refused_before_anything_is_created()
+    {
+        await ReadyAsync();
+        var solutionId = await SeedSolutionAsync("CRONUS Customer", ownedByCaller: true);
+        await DisableSolutionsForOrgAsync();
+        var api = WritableApi();
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var act = () => service.CreateAsync(
+            WorkspacePlan(), RepoName, isPrivate: true, solutionId: solutionId);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey(GitHubWorkspaceRepositoryService.SolutionField);
+        ex.Which.Errors[GitHubWorkspaceRepositoryService.SolutionField]
+            .Should().Contain("switched off");
+        // Refused up front, like every other refusal: no repository is left
+        // behind by an argument the organisation cannot honour.
+        api.Calls.Should().NotContain(c => c.Contains($"/orgs/{OrgLogin}/repos"));
+    }
+
+    [Fact]
+    public async Task Solutions_switched_off_site_wide_stops_the_registration_too()
+    {
+        await ReadyAsync();
+        var siteToggles = TestDb.EverythingEnabled();
+        siteToggles.Set(new[] { ToolKey.Projects });
+        var (service, ctx) = NewService(WritableApi(), siteToggles);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        created.Repository.FullName.Should().Be(Repo);
+        created.SolutionId.Should().BeNull();
+        created.SolutionWarning.Should().BeNull();
+
+        await using var read = _db.NewContext();
+        (await read.OeProjects.AsNoTracking().AnyAsync()).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Switches Solutions off for the acting organisation, the way an org Admin
+    /// does on the Administration tools page.
+    /// </summary>
+    private async Task DisableSolutionsForOrgAsync()
+    {
+        await using var ctx = _db.NewContext();
+        var org = await ctx.Organizations.SingleAsync(o => o.Id == TestDb.DefaultOrgId);
+        org.DisabledTools = new List<string> { nameof(ToolKey.Projects) };
+        await ctx.SaveChangesAsync();
+    }
+
     /// <summary>
     /// One solution to point at, either this caller's or somebody else's - the
     /// difference between a customer they may add a repository to and one they
@@ -788,12 +870,13 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
 
     // --- helpers ------------------------------------------------------------
 
-    private (GitHubWorkspaceRepositoryService Service, AppDbContext Context) NewService(FakeGitHubApi api)
+    private (GitHubWorkspaceRepositoryService Service, AppDbContext Context) NewService(
+        FakeGitHubApi api, ALDevToolbox.Services.Tools.IToolAvailability? toolAvailability = null)
     {
         var ctx = _db.NewContext();
         var client = _db.NewGitHubAppClient(ctx, api);
         var access = _db.NewGitHubAccessService(ctx, client);
-        return (_db.NewGitHubWorkspaceRepositoryService(ctx, client, access), ctx);
+        return (_db.NewGitHubWorkspaceRepositoryService(ctx, client, access, toolAvailability), ctx);
     }
 
     private static ProjectPlan WorkspacePlan(string? shortName = null) => PlanBuilder.WorkspacePlan(

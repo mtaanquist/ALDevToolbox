@@ -31,11 +31,12 @@ public sealed class NewWorkspaceTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
+    private readonly Bunit.TestDoubles.BunitAuthorizationContext _auth;
 
     public NewWorkspaceTests()
     {
-        var auth = _ctx.AddAuthorization();
-        auth.SetAuthorized("tester@example.com");
+        _auth = _ctx.AddAuthorization();
+        _auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
@@ -570,6 +571,75 @@ public sealed class NewWorkspaceTests : IDisposable
             cut.Find("input[name='SolutionId']").GetAttribute("value").Should().BeEmpty();
         });
     }
+
+    // --- Organisations that do not use Solutions (#772) --------------------
+
+    /// <summary>
+    /// A consultant whose organisation uses the toolbox only to generate
+    /// workspaces gets the field as it was before the picker: type the
+    /// customer's name and carry on. Offering to pick or create a solution
+    /// would point at a tool their organisation has switched off, and nothing
+    /// would be registered even if they used it.
+    /// </summary>
+    [Fact]
+    public async Task With_solutions_switched_off_the_customer_field_is_a_plain_box()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+        await SeedSolutionAsync("CRONUS Denmark", "CRO");
+        SwitchSolutionsOff();
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']");
+
+        cut.WaitForAssertion(() =>
+        {
+            var input = cut.Find("input[name='WorkspaceName']");
+            // The rules the server applies, unchanged from the picker's own box.
+            input.HasAttribute("required").Should().BeTrue();
+            input.GetAttribute("maxlength").Should().Be("100");
+            input.GetAttribute("placeholder").Should().Be("e.g. CRONUS A/S");
+            input.HasAttribute("role").Should().BeFalse("a plain text box is not a combobox");
+            cut.FindAll(".solution-picker").Should().BeEmpty();
+            cut.FindAll("input[name='SolutionId']").Should().BeEmpty(
+                "nothing is registered, so there is nothing to post");
+        });
+    }
+
+    [Fact]
+    public async Task With_solutions_switched_off_typing_a_known_customer_offers_nothing_to_pick()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+        await SeedSolutionAsync("CRONUS Denmark", "CRO");
+        SwitchSolutionsOff();
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']");
+        cut.Find("input[name='WorkspaceName']").Input("CRONUS");
+
+        // Typing is just typing: no list opens, because there is no list to
+        // open, and the value the form posts is what was typed.
+        cut.WaitForAssertion(() =>
+            cut.Find("input[name='WorkspaceName']").GetAttribute("value").Should().Be("CRONUS"));
+        cut.FindAll("[role='option']").Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Switches Solutions off for the signed-in user's organisation, the way an
+    /// org Admin does - the page reads it off the auth claim, as the sidebar
+    /// does.
+    /// </summary>
+    private void SwitchSolutionsOff() => _auth.SetClaims(
+        new System.Security.Claims.Claim(
+            ALDevToolbox.Endpoints.EndpointHelpers.DisabledToolsClaim,
+            nameof(ALDevToolbox.Domain.Tools.ToolKey.Projects)));
 
     /// <summary>
     /// A short name typed after the pick is this person's, not the solution's,
