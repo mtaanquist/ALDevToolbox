@@ -154,6 +154,7 @@ public sealed class TemplateImportService
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
                     .ThenInclude(m => m.Dependencies.OrderBy(dep => dep.Ordering))
+            .Include(t => t.RootFolders.OrderBy(f => f.Ordering))
             .Include(t => t.DefaultApplicationVersion)
             .FirstOrDefaultAsync(ct);
         if (source is null)
@@ -224,6 +225,18 @@ public sealed class TemplateImportService
             WorkspaceExtensions = source.WorkspaceExtensions
                 .OrderBy(e => e.Ordering)
                 .Select(e => CloneWorkspaceExtension(e, actingOrgId))
+                .ToList(),
+            // Root folders are just paths — nothing to remap into the acting
+            // org the way a module or an application version needs, so they
+            // copy straight across.
+            RootFolders = source.RootFolders
+                .OrderBy(f => f.Ordering)
+                .Select(f => new RuntimeTemplateRootFolder
+                {
+                    OrganizationId = actingOrgId,
+                    Path = f.Path,
+                    Ordering = f.Ordering,
+                })
                 .ToList(),
         };
 

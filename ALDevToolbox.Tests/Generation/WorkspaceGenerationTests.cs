@@ -542,6 +542,94 @@ public sealed class WorkspaceGenerationTests : IDisposable
             NullLogger<GenerationService>.Instance);
     }
 
+    // ===== Empty root folders =====
+
+    [Fact]
+    public async Task Declared_root_folders_ship_as_empty_directories()
+    {
+        var template = TemplateBuilder.Default();
+        template.RootFolders.Add(new RuntimeTemplateRootFolder
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            Path = ".alpackages",
+            Ordering = 0,
+        });
+        template.RootFolders.Add(new RuntimeTemplateRootFolder
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            Path = "docs/decisions",
+            Ordering = 1,
+        });
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        // A ZIP carries no empty directory, so the placeholder is what makes
+        // the folder exist on disk and survive a git commit.
+        zip.GetEntry("AcmeCustomer/.alpackages/.gitkeep").Should().NotBeNull();
+        zip.GetEntry("AcmeCustomer/docs/decisions/.gitkeep").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Root_folder_that_an_included_file_already_fills_gets_no_placeholder()
+    {
+        // SeedTemplateAsync opts the template into every org file the fixture
+        // seeds, which includes the ruleset at .assets/rulesets/... — so
+        // .assets is in the ZIP with real content and a placeholder beside it
+        // would be litter.
+        var template = TemplateBuilder.Default();
+        template.RootFolders.Add(new RuntimeTemplateRootFolder
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            Path = ".assets",
+            Ordering = 0,
+        });
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        zip.GetEntry("AcmeCustomer/.assets/rulesets/Company.ruleset.json").Should().NotBeNull();
+        zip.GetEntry("AcmeCustomer/.assets/.gitkeep").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Root_folders_stay_out_of_the_code_workspace_folders_array()
+    {
+        // .alpackages holds no app.json; listing it would have the AL
+        // extension try to load an app that isn't there.
+        var template = TemplateBuilder.Default();
+        template.RootFolders.Add(new RuntimeTemplateRootFolder
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            Path = ".alpackages",
+            Ordering = 0,
+        });
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        entry.Should().NotBeNull();
+        using var reader = new StreamReader(entry!.Open());
+        using var doc = JsonDocument.Parse(await reader.ReadToEndAsync());
+        var folders = doc.RootElement.GetProperty("folders")
+            .EnumerateArray()
+            .Select(f => f.GetProperty("path").GetString())
+            .ToList();
+        folders.Should().NotContain(".alpackages");
+        folders.Should().Contain("Core");
+    }
+
+    [Fact]
+    public async Task Template_with_no_root_folders_generates_exactly_as_before()
+    {
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        zip.Entries.Should().NotContain(e => e.FullName.EndsWith("/.alpackages/.gitkeep", StringComparison.Ordinal));
+    }
+
     private async Task SeedTemplateAsync(RuntimeTemplate template, params Module[] modules)
     {
         await using var ctx = _db.NewContext();

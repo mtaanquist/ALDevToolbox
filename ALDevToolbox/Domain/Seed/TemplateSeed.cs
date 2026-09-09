@@ -89,6 +89,14 @@ public class TemplateMetaSeed
     /// templates default to emitting no org files until the admin ticks them.
     /// </summary>
     public List<string> IncludedFiles { get; set; } = new();
+
+    /// <summary>
+    /// Workspace-root-relative paths of the folders this template creates
+    /// empty, e.g. <c>.alpackages</c>. Paths may nest (<c>docs/decisions</c>).
+    /// Empty / missing means the workspace root holds only what the
+    /// extensions and the included files put there.
+    /// </summary>
+    public List<string> RootFolders { get; set; } = new();
 }
 
 /// <summary>One <c>[[template.default_modules]]</c> entry.</summary>

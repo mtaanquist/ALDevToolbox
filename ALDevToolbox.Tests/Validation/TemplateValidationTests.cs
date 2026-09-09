@@ -41,6 +41,17 @@ public sealed class TemplateValidationTests
         return errors;
     }
 
+    private static Dictionary<string, string> ValidateRootFolders(
+        string[] paths,
+        ExtensionAuthoring[]? extensions = null,
+        string[]? includedFiles = null)
+    {
+        var errors = new Dictionary<string, string>();
+        TemplateValidation.ValidateRootFolders(
+            paths, extensions ?? [Ext()], includedFiles ?? [], errors);
+        return errors;
+    }
+
     [Fact]
     public void A_well_formed_extension_produces_no_errors()
     {
@@ -216,5 +227,70 @@ public sealed class TemplateValidationTests
 
         errors.Should().ContainKey("Extensions[1].NameTemplate");
         errors.Keys.Should().NotContain(k => k.StartsWith("Extensions[0]"));
+    }
+
+    // ===== Empty root folders =====
+
+    [Fact]
+    public void Well_formed_root_folders_produce_no_errors()
+    {
+        ValidateRootFolders([".alpackages", "docs/decisions"]).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Blank_root_folder_is_keyed_by_its_index()
+    {
+        ValidateRootFolders([".alpackages", "  "])
+            .Should().ContainKey("RootFolders[1]");
+    }
+
+    [Fact]
+    public void Root_folder_with_a_parent_segment_is_refused()
+    {
+        // Zip-slip: a path that walks out of the workspace root.
+        ValidateRootFolders(["../elsewhere"])
+            .Should().ContainKey("RootFolders[0]");
+    }
+
+    [Fact]
+    public void Root_folder_with_a_leading_slash_is_refused()
+    {
+        ValidateRootFolders(["/.alpackages"])
+            .Should().ContainKey("RootFolders[0]");
+    }
+
+    [Fact]
+    public void Duplicate_root_folders_are_refused_case_insensitively()
+    {
+        // Windows treats the two as one folder.
+        ValidateRootFolders([".alpackages", ".ALPackages"])
+            .Should().ContainKey("RootFolders[1]");
+    }
+
+    [Fact]
+    public void Root_folder_colliding_with_an_extension_path_is_refused()
+    {
+        // The extension folder wins at generation time, so the admin would
+        // never see why their folder vanished.
+        ValidateRootFolders(["Core"], extensions: [Ext(path: "Core")])
+            .Should().ContainKey("RootFolders[0]");
+    }
+
+    [Fact]
+    public void Root_folder_an_included_file_already_fills_is_refused()
+    {
+        ValidateRootFolders(
+            [".assets"],
+            includedFiles: [".assets/rulesets/Company.ruleset.json"])
+            .Should().ContainKey("RootFolders[0]");
+    }
+
+    [Fact]
+    public void Root_folder_sharing_a_prefix_with_an_included_file_is_allowed()
+    {
+        // ".assets" must not be considered filled by ".assets-old/x.json" —
+        // the check runs on segment boundaries.
+        ValidateRootFolders([".assets"], includedFiles: [".assets-old/x.json"])
+            .Should().BeEmpty();
     }
 }

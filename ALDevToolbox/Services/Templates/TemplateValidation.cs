@@ -129,6 +129,80 @@ internal static class TemplateValidation
     }
 
     /// <summary>
+    /// Validates the template's declared empty root folders. Each is a
+    /// workspace-root-relative path that may nest, so it is checked segment by
+    /// segment against the same rule folder trees use. Two collisions are
+    /// refused rather than silently ignored: a path an extension already owns
+    /// (the extension wins, and the admin would never see why their folder
+    /// vanished), and a path that an always-included file already sits inside
+    /// (that folder is not empty, so declaring it does nothing).
+    /// </summary>
+    /// <param name="paths">The declared paths, in the admin's order.</param>
+    /// <param name="extensions">Extension paths already declared on the template.</param>
+    /// <param name="includedFilePaths">
+    /// Workspace-root-relative paths of the always-included files the template
+    /// opts into. Per-extension-scoped rows land inside an extension folder, so
+    /// callers pass only the workspace-root-scoped subset.
+    /// </param>
+    public static void ValidateRootFolders(
+        IReadOnlyList<string> paths,
+        IReadOnlyList<ExtensionAuthoring> extensions,
+        IReadOnlyList<string> includedFilePaths,
+        IDictionary<string, string> errors)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var extensionPaths = new HashSet<string>(
+            extensions.Select(e => e.Path?.Trim() ?? string.Empty), StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < paths.Count; i++)
+        {
+            var key = $"RootFolders[{i}]";
+            var path = paths[i]?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrEmpty(path))
+            {
+                errors[key] = "Folder name is required.";
+                continue;
+            }
+            if (path.StartsWith('/') || path.EndsWith('/'))
+            {
+                errors[key] = "Leave off the leading and trailing '/'.";
+                continue;
+            }
+
+            var segments = path.Split('/');
+            var badSegment = segments.FirstOrDefault(
+                seg => !PathSegmentRegex.IsMatch(seg) || seg == "." || seg == "..");
+            if (badSegment is not null)
+            {
+                errors[key] = "Use letters, digits and '/' to nest. No '..' segments.";
+                continue;
+            }
+
+            if (!seen.Add(path))
+            {
+                errors[key] = $"'{path}' is listed twice.";
+                continue;
+            }
+            if (extensionPaths.Contains(segments[0]))
+            {
+                errors[key] = $"'{segments[0]}' is already an extension folder. Pick a different name.";
+                continue;
+            }
+
+            // A file living at or under the folder fills it, so the folder
+            // would exist regardless and the row is a no-op. Compare on
+            // segment boundaries so ".assets" doesn't match ".assets-old".
+            var occupant = includedFilePaths.FirstOrDefault(
+                f => f.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase));
+            if (occupant is not null)
+            {
+                errors[key] = $"'{occupant}' already puts files in '{path}', so it is not empty. Remove this row.";
+            }
+        }
+    }
+
+    /// <summary>
     /// Recursively validates a folder/file tree: each folder/file path is a
     /// single safe segment, sibling folders are unique, and a folder carries no
     /// two files with the same name. Reused for module authoring

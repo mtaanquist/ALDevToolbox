@@ -111,6 +111,105 @@ public sealed class AdminTemplateEditTests : IDisposable
     }
 
     [Fact]
+    public async Task Empty_folders_card_renders_its_first_run_state_with_a_way_forward()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-empty", runtime: "15"));
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<AdminTemplateEdit>(p => p
+            .Add(c => c.Key, "runtime-empty"));
+
+        cut.WaitForAssertion(() =>
+        {
+            // A bare list with no next step is the failure mode the UX
+            // definition of done in CLAUDE.md calls out: the empty state has
+            // to name the action and offer the button.
+            cut.Markup.Should().Contain("No extra folders yet");
+            cut.Markup.Should().Contain("Add folder");
+            // .gitkeep is named on purpose: the admin sees that file in their
+            // own repository and has to write it into their ignore rules, so
+            // hiding it would leave them wondering what the stray dotfile is.
+            // What must not surface is anything from *this* codebase.
+            cut.Markup.Should().NotContain("RuntimeTemplateRootFolder");
+            cut.Markup.Should().NotContain("WriteRootFolders");
+        });
+    }
+
+    [Fact]
+    public async Task Declared_empty_folder_loads_into_its_input()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default(key: "runtime-folders", runtime: "15");
+            template.RootFolders.Add(new ALDevToolbox.Domain.Entities.RuntimeTemplateRootFolder
+            {
+                OrganizationId = template.OrganizationId,
+                Path = ".alpackages",
+                Ordering = 0,
+            });
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<AdminTemplateEdit>(p => p
+            .Add(c => c.Key, "runtime-folders"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().NotContain("No extra folders yet");
+            cut.FindAll("input[aria-label='Folder name or path']")
+                .Should().ContainSingle(i => i.GetAttribute("value") == ".alpackages");
+        });
+    }
+
+    [Fact]
+    public async Task Folder_the_templates_gitignore_excludes_is_flagged_with_the_lines_that_fix_it()
+    {
+        // The platform .gitignore ships with `.alpackages/`, and `.alpackages`
+        // is the headline reason to declare an empty folder — so without this
+        // warning the flagship case silently never reaches the repository.
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default(key: "runtime-ignored", runtime: "15");
+            template.RootFolders.Add(new ALDevToolbox.Domain.Entities.RuntimeTemplateRootFolder
+            {
+                OrganizationId = template.OrganizationId,
+                Path = ".alpackages",
+                Ordering = 0,
+            });
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+
+            var gitignore = await seed.OrganizationFiles.FirstAsync(f => f.Path == ".gitignore");
+            seed.Set<ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile>().Add(
+                new ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile
+                {
+                    OrganizationId = template.OrganizationId,
+                    RuntimeTemplateId = template.Id,
+                    OrganizationFileId = gitignore.Id,
+                    Ordering = 0,
+                });
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<AdminTemplateEdit>(p => p
+            .Add(c => c.Key, "runtime-ignored"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("excludes this with");
+            // Both lines are load-bearing: git cannot re-include anything
+            // under a directory excluded outright, so the first alone is not
+            // enough and neither is the negation.
+            cut.Markup.Should().Contain(".alpackages/*");
+            cut.Markup.Should().Contain("!.alpackages/.gitkeep");
+        });
+    }
+
+    [Fact]
     public void Unknown_template_key_renders_the_load_failed_copy_not_a_500()
     {
         var cut = _ctx.Render<AdminTemplateEdit>(p => p

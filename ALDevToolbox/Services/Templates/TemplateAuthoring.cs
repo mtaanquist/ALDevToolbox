@@ -48,7 +48,14 @@ public record TemplateAuthoring(
     /// rather than database id so the TOML round-trip stays portable across
     /// orgs / exports. The service resolves them to ids on save.
     /// </summary>
-    IReadOnlyList<string>? IncludedFilePaths = null);
+    IReadOnlyList<string>? IncludedFilePaths = null,
+    /// <summary>
+    /// Workspace-root-relative paths of the folders this template creates
+    /// empty (<c>.alpackages</c> and friends). Declared as plain paths — they
+    /// carry no content, so there is nothing else to round-trip. See
+    /// <see cref="Domain.Entities.RuntimeTemplateRootFolder"/>.
+    /// </summary>
+    IReadOnlyList<string>? RootFolderPaths = null);
 
 /// <summary>One declared extension in the authoring payload.</summary>
 public record ExtensionAuthoring(

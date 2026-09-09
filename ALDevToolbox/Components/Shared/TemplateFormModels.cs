@@ -66,6 +66,13 @@ public sealed class TemplateFormState
     /// </summary>
     public List<string> IncludedFilePaths { get; } = new();
 
+    /// <summary>
+    /// Folders this template creates empty at the workspace root. Rows are
+    /// objects rather than bare strings so each one keeps a stable identity
+    /// for <c>@key</c> while the admin edits, reorders and removes them.
+    /// </summary>
+    public List<RootFolderForm> RootFolders { get; } = new();
+
     /// <summary>Ordered <c>[[extensions]]</c> declarations under this template.</summary>
     public List<ExtensionForm> Extensions { get; } = new();
 
@@ -119,6 +126,10 @@ public sealed class TemplateFormState
         {
             foreach (var path in source.IncludedFilePaths) state.IncludedFilePaths.Add(path);
         }
+        if (source.RootFolderPaths is not null)
+        {
+            foreach (var path in source.RootFolderPaths) state.RootFolders.Add(new RootFolderForm { Path = path });
+        }
         foreach (var ext in source.Extensions) state.Extensions.Add(ExtensionForm.From(ext));
         return state;
     }
@@ -159,7 +170,13 @@ public sealed class TemplateFormState
             Extensions: Extensions.Select(e => e.ToAuthoring()).ToList(),
             CodeWorkspaceJson: string.IsNullOrWhiteSpace(CodeWorkspaceJson) ? null : CodeWorkspaceJson,
             IncludedFilePaths: IncludedFilePaths.ToList(),
-            DefaultApplicationVersionLatest: isLatest);
+            DefaultApplicationVersionLatest: isLatest,
+            // Blank rows are what an admin leaves behind after clearing an
+            // input; drop them rather than failing the save on them.
+            RootFolderPaths: RootFolders
+                .Select(f => f.Path?.Trim() ?? string.Empty)
+                .Where(p => p.Length > 0)
+                .ToList());
     }
 
     internal static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
@@ -277,6 +294,16 @@ public sealed class ExtensionForm
 }
 
 /// <summary>Mutable mirror of <see cref="FolderAuthoring"/>. Recursive — <see cref="Folders"/> nests.</summary>
+/// <summary>
+/// One row in the template editor's empty-folders list. A class rather than a
+/// bare string so the row survives being reordered with a stable
+/// <c>@key</c> and <c>@bind</c> has something to write into.
+/// </summary>
+public sealed class RootFolderForm
+{
+    public string Path { get; set; } = string.Empty;
+}
+
 public sealed class TemplateFolderForm
 {
     public string Path { get; set; } = string.Empty;
