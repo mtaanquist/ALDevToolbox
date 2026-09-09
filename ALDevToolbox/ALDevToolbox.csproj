@@ -75,15 +75,15 @@
          neither of which work with a user-pasted static bearer. The PAT
          bearer path stays in place for desktop/CLI clients. See
          .design/mcp-oauth.md and docs/mcp. -->
-    <PackageReference Include="OpenIddict.AspNetCore" Version="7.6.1" />
-    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.6.1" />
-    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="7.6.1" />
+    <PackageReference Include="OpenIddict.AspNetCore" Version="7.7.0" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.7.0" />
+    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="7.7.0" />
     <!-- Pinned to an exact patch (not 10.*) so the app and the test project
          always compile against the SAME EF Core version. Left floating, a new
          10.0.x patch can land in one project's restore before the other's and
          the mismatch fails the test build with CS1705. Bump in lockstep with
          the EF Core refs in ALDevToolbox.Tests.csproj. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
