@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
@@ -52,7 +53,7 @@ public sealed class TotpServiceTests : IDisposable
 
         enrollment.SecretBase32.Should().NotBeNullOrEmpty();
         enrollment.OtpAuthUri.Should().StartWith("otpauth://totp/");
-        enrollment.QrPng.Length.Should().BeGreaterThan(100);
+        AssertScannableQrPng(enrollment.QrPng);
 
         await using var read = _db.NewContext();
         var row = await read.UserTotpSecrets.IgnoreQueryFilters().SingleAsync(s => s.UserId == userId);
@@ -125,5 +126,31 @@ public sealed class TotpServiceTests : IDisposable
         (await read.UserTotpSecrets.IgnoreQueryFilters().CountAsync(s => s.UserId == userId)).Should().Be(0);
         (await read.UserRecoveryCodes.IgnoreQueryFilters().CountAsync(c => c.UserId == userId)).Should().Be(0);
         (await read.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == userId)).TotpEnabled.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Checks the enrolment PNG is a real image sized the way TotpService asks for
+    /// it. The dimensions carry the two settings a QR reader actually cares about:
+    /// the 6px-per-module scale, and the 4-module quiet zone the spec requires
+    /// (a symbol rendered with no quiet zone still decodes in some readers and
+    /// fails in others, which is the kind of break a length assertion misses).
+    /// </summary>
+    private static void AssertScannableQrPng(byte[] png)
+    {
+        png.Should().StartWith(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }, "output is a PNG");
+
+        // IHDR width/height are big-endian uint32s at offsets 16 and 20.
+        var width = BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(16, 4));
+        var height = BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(20, 4));
+
+        const int scale = 6, quietZoneModules = 4;
+        width.Should().Be(height, "a QR symbol is square");
+        (width % scale).Should().Be(0u, "each module renders as {0} pixels", scale);
+
+        // Smallest possible symbol is version 1 at 21 modules, plus the quiet
+        // zone on both sides. Anything under that lost the border.
+        var minimum = (uint)((21 + quietZoneModules * 2) * scale);
+        width.Should().BeGreaterThanOrEqualTo(minimum,
+            "the symbol must carry a {0}-module quiet zone on each side", quietZoneModules);
     }
 }
