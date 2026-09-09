@@ -95,6 +95,10 @@ public static class AppCoreRegistration
         services.AddSingleton<ALDevToolbox.Services.Tools.ToolAvailabilityState>();
         services.AddSingleton<ALDevToolbox.Services.Tools.IToolAvailability>(
             sp => sp.GetRequiredService<ALDevToolbox.Services.Tools.ToolAvailabilityState>());
+        // The site toggle plus the acting organisation's own opt-out, for the
+        // callers that are not a rendered page (MCP above all). Scoped: it
+        // holds the DbContext and caches the organisation's set per request.
+        services.AddScoped<ALDevToolbox.Services.Tools.ToolEnablement>();
         return services;
     }
 }

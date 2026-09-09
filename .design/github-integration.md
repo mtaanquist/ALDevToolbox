@@ -373,7 +373,9 @@ back as a warning beside the success, the same shape as a refused ruleset. The
 one refusal it *can* make up front is a solution the caller may not manage,
 which is checked with the other refusals before anything is created. The
 mechanics - which columns, which URL shape, what the created solution inherits -
-are in `customer-naming.md`.
+are in `customer-naming.md`, including what happens for an organisation that has
+the Solutions tool switched off: nothing is registered, and a caller that named a
+solution is refused.
 
 The created repository is recorded in the audit log against the generation, with
 the solution it was registered on as the entry's entity id: the repository lives

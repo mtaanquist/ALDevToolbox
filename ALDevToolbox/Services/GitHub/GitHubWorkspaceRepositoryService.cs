@@ -3,10 +3,12 @@ using System.Text;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Generation;
 using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Services.Organizations;
+using ALDevToolbox.Services.Tools;
 
 namespace ALDevToolbox.Services.GitHub;
 
@@ -125,6 +127,7 @@ public sealed class GitHubWorkspaceRepositoryService
     private readonly GitHubRepositoryStandardsService _standards;
     private readonly ProjectService _projects;
     private readonly OrganizationConfigService _orgConfig;
+    private readonly ToolEnablement _tools;
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<GitHubWorkspaceRepositoryService> _logger;
@@ -138,6 +141,7 @@ public sealed class GitHubWorkspaceRepositoryService
         GitHubRepositoryStandardsService standards,
         ProjectService projects,
         OrganizationConfigService orgConfig,
+        ToolEnablement tools,
         AppDbContext db,
         IOrganizationContext orgContext,
         ILogger<GitHubWorkspaceRepositoryService> logger)
@@ -150,6 +154,7 @@ public sealed class GitHubWorkspaceRepositoryService
         _standards = standards;
         _projects = projects;
         _orgConfig = orgConfig;
+        _tools = tools;
         _db = db;
         _orgContext = orgContext;
         _logger = logger;
@@ -225,11 +230,24 @@ public sealed class GitHubWorkspaceRepositoryService
                 + "stops, and can be at most 100 characters long.");
         }
 
+        // An organisation that has Solutions switched off gets a repository and
+        // nothing else: there is no Solutions surface for a solution to be seen
+        // on, so registering one would be inventing work the organisation asked
+        // not to have (issue #772). A caller that named one is told why, rather
+        // than having the id quietly ignored.
+        var solutionsEnabled = await _tools.IsEnabledAsync(ToolKey.Projects, ct);
+        if (!solutionsEnabled && solutionId is not null)
+        {
+            throw Refuse(SolutionField,
+                "Solutions are switched off for your organisation, so the repository cannot be "
+                + "registered on one.");
+        }
+
         // A solution the caller may not add a repository to is a refusal like
         // any other, so it is ruled out here rather than after a repository
         // exists that has nowhere to go. Same answer whether it is somebody
         // else's or gone: an id they cannot act on.
-        if (solutionId is { } chosen && !await _projects.CanManageAsync(chosen, ct))
+        if (solutionsEnabled && solutionId is { } chosen && !await _projects.CanManageAsync(chosen, ct))
         {
             throw Refuse(SolutionField,
                 "You cannot add a repository to that solution. Pick a different customer, or ask "
@@ -296,8 +314,11 @@ public sealed class GitHubWorkspaceRepositoryService
         // the first one.
         var standards = await ApplyStandardsAsync(token, repository, userId, ct);
         // Last, because a solution with no repository is the orphan the whole
-        // ordering exists to avoid.
-        var solution = await RegisterSolutionAsync(plan, repository, solutionId, ct);
+        // ordering exists to avoid. Skipped entirely when the organisation does
+        // not use Solutions.
+        var solution = solutionsEnabled
+            ? await RegisterSolutionAsync(plan, repository, solutionId, ct)
+            : default((int? Id, string? Name, bool Created, string? Warning));
         await RecordAsync(repository, plan, files.Count, solution.Id, ct);
 
         _logger.LogInformation(

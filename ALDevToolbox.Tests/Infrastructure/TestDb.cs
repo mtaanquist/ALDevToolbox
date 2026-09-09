@@ -416,15 +416,40 @@ public sealed class TestDb : IDisposable
             NullLogger<ALDevToolbox.Services.GitHub.GitHubExtensionDeliveryService>.Instance);
 
     /// <summary>"Create repository": generation, the membership gate, and the first commit.</summary>
+    /// <param name="toolAvailability">
+    /// The site-wide tool toggles the service asks before it registers a
+    /// solution. Defaults to everything enabled; hand in a state with
+    /// <c>Projects</c> switched off to exercise the site-disabled half of #772.
+    /// </param>
     public ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService NewGitHubWorkspaceRepositoryService(
         AppDbContext ctx,
         ALDevToolbox.Services.GitHub.GitHubAppClient client,
-        ALDevToolbox.Services.GitHub.GitHubAccessService access) =>
+        ALDevToolbox.Services.GitHub.GitHubAccessService access,
+        ALDevToolbox.Services.Tools.IToolAvailability? toolAvailability = null) =>
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
             NewGitHubConnectionService(ctx, access), access, client,
             NewGitHubRepositoryStandardsService(ctx), NewProjectService(ctx),
-            NewOrganizationConfigService(ctx), ctx, OrgContext,
+            NewOrganizationConfigService(ctx), NewToolEnablement(ctx, toolAvailability), ctx, OrgContext,
             NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
+
+    /// <summary>
+    /// The "is this tool switched on for the acting organisation" service. There
+    /// is no HttpContext in a test, so it answers from the organisation row -
+    /// which is what an MCP request does too.
+    /// </summary>
+    public ALDevToolbox.Services.Tools.ToolEnablement NewToolEnablement(
+        AppDbContext ctx, ALDevToolbox.Services.Tools.IToolAvailability? toolAvailability = null) =>
+        new(toolAvailability ?? EverythingEnabled(),
+            new Microsoft.AspNetCore.Http.HttpContextAccessor(), ctx, OrgContext);
+
+    /// <summary>A site-level toggle state with nothing switched off.</summary>
+    public static ALDevToolbox.Services.Tools.ToolAvailabilityState EverythingEnabled() =>
+        new(new AlwaysOnMcp());
+
+    private sealed class AlwaysOnMcp : ALDevToolbox.Services.Mcp.IMcpAvailability
+    {
+        public bool IsEnabled => true;
+    }
     /// <summary>
     /// GitHub Releases in both directions (#632): publishing a build's app files to a
     /// repository's Releases page, and staging a Release's files back as a build.
@@ -571,6 +596,23 @@ public sealed class TestDb : IDisposable
         services.AddScoped<ALDevToolbox.Services.GitHub.RepositoryDiscoveryService>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks>();
         services.AddScoped<ALDevToolbox.Services.GitHub.DependencyDriftService>();
+        // "Create repository" asks whether this organisation uses Solutions
+        // before it registers one (#772), so the toggles have to resolve too.
+        AddToolServices(services);
+    }
+
+    /// <summary>
+    /// The tool toggles and the service that reads them, with nothing switched
+    /// off site-wide. A test that wants a tool off either switches it off on the
+    /// organisation row or registers its own
+    /// <see cref="ALDevToolbox.Services.Tools.IToolAvailability"/> first.
+    /// </summary>
+    public static void AddToolServices(IServiceCollection services)
+    {
+        services.TryAddSingleton<ALDevToolbox.Services.Tools.IToolAvailability>(EverythingEnabled());
+        services.TryAddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor,
+            Microsoft.AspNetCore.Http.HttpContextAccessor>();
+        services.TryAddScoped<ALDevToolbox.Services.Tools.ToolEnablement>();
     }
 
     /// <summary>

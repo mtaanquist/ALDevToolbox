@@ -9,6 +9,7 @@
 @inject GitHubRepositoryService GitHubRepos
 @inject GitHubWorkspaceRepositoryService GitHubCreate
 @inject GitHubRepositoryStandardsService Standards
+@inject ToolEnablement Tools
 @inject ILogger<NewWorkspace> Logger
 @inject IJSRuntime JS
 @using ALDevToolbox.Components.Shared
@@ -20,6 +21,9 @@
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Services.Organizations
 @using ALDevToolbox.Services.Templates
+@using ALDevToolbox.Services.Tools
+@using ALDevToolbox.Domain.Tools
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>New workspace · AL Dev Toolbox</PageTitle>
 
@@ -139,16 +143,35 @@
                             @* The customer is typed once. A customer already on
                                file here fills in what it knows; a new one is
                                offered as a new solution. See
-                               .design/customer-naming.md. *@
-                            <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Customer"
-                                            Placeholder="e.g. CRONUS A/S" MaxLength="100" Required="true"
-                                            Hint="The customer's name. Pick their solution if it exists, or type a new name to create one."
-                                            Value="@_workspaceName" ValueChanged="OnCustomerNameChangedAsync"
-                                            Selected="_solution" SelectedChanged="OnSolutionSelectedAsync"
-                                            CreateNew="_createSolution" CreateNewChanged="OnCreateSolutionChanged" />
-                            @* Carried through a failed submit so the choice made
-                               before the round trip is still the choice after it. *@
-                            <input type="hidden" name="SolutionId" value="@(_solutionId?.ToString() ?? string.Empty)" />
+                               .design/customer-naming.md.
+
+                               An organisation that does not use Solutions gets
+                               the plain field instead: there is nothing to pick
+                               from and nothing would be registered, so offering
+                               the choice would only promise something that never
+                               happens (issue #772). *@
+                            @if (_solutionsEnabled)
+                            {
+                                <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Customer"
+                                                Placeholder="e.g. CRONUS A/S" MaxLength="100" Required="true"
+                                                Hint="The customer's name. Pick their solution if it exists, or type a new name to create one."
+                                                Value="@_workspaceName" ValueChanged="OnCustomerNameChangedAsync"
+                                                Selected="_solution" SelectedChanged="OnSolutionSelectedAsync"
+                                                CreateNew="_createSolution" CreateNewChanged="OnCreateSolutionChanged" />
+                                @* Carried through a failed submit so the choice made
+                                   before the round trip is still the choice after it. *@
+                                <input type="hidden" name="SolutionId" value="@(_solutionId?.ToString() ?? string.Empty)" />
+                            }
+                            else
+                            {
+                                <input class="input" id="ws-name" type="text" name="WorkspaceName"
+                                       placeholder="e.g. CRONUS A/S" required maxlength="100"
+                                       value="@_workspaceName" @oninput="OnCustomerNameInput" />
+                                <span class="field__hint">
+                                    The customer's name as it should appear. Folder and file names are
+                                    derived from it.
+                                </span>
+                            }
                             <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
                         <div class="field">
@@ -641,7 +664,7 @@
                     @* What this customer already has. A second workspace for the
                        same customer is a fine thing to want - it just should not
                        happen by accident. *@
-                    @if (_solution is { Repositories.Count: > 0 } solution)
+                    @if (_solutionsEnabled && _solution is { Repositories.Count: > 0 } solution)
                     {
                         <div class="card">
                             <div class="card__head">
@@ -676,6 +699,11 @@
 
 @code {
     [SupplyParameterFromQuery(Name = "template")] public string? PreselectedTemplate { get; set; }
+
+    // Cascaded by CascadingAuthenticationState. The signed-in principal carries
+    // the organisation's switched-off tools, which is how this page knows
+    // whether to offer Solutions - the same claim the sidebar reads.
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private List<RuntimeTemplate>? _templates;
     private List<ALDevToolbox.Domain.Entities.Module>? _modules;
@@ -718,6 +746,13 @@
 
     private OrganizationConfig? _orgConfig;
 
+    /// <summary>
+    /// Whether this organisation uses Solutions at all. When it does not, the
+    /// Customer field is a plain box, nothing is registered when a repository
+    /// is created, and the success state has no solution to link (issue #772).
+    /// </summary>
+    private bool _solutionsEnabled = true;
+
     // The customer as a Solution (issue #758). Either an existing one was
     // picked, or the typed name was marked as a new one; both are carried for
     // the repository step, which is what actually registers it.
@@ -731,6 +766,16 @@
     /// </summary>
     private bool _shortNameFromSolution;
     private bool _tenantIdFromSolution;
+
+    /// <summary>
+    /// The plain Customer field's own handler, for the organisations that do
+    /// not use Solutions and so never see the picker.
+    /// </summary>
+    private void OnCustomerNameInput(ChangeEventArgs e)
+    {
+        _workspaceName = e.Value?.ToString() ?? string.Empty;
+        OnPlanChanged();
+    }
 
     private Task OnCustomerNameChangedAsync(string value)
     {
@@ -1101,6 +1146,8 @@
         // lands in the gap depends on which of these reads happens to
         // complete synchronously, which is why it only ever showed up
         // intermittently. Publishing atomically closes the gap for good.
+        var solutionsEnabled = AuthStateTask is null
+            || Tools.IsEnabled(ToolKey.Projects, (await AuthStateTask).User);
         var templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         var modules = await Templates.GetModulesAsync(includeDeprecated: false);
         // Folder/file trees aren't pulled by the default reads - load them on
@@ -1133,6 +1180,7 @@
 
         // No await past this point: everything below runs before the renderer
         // gets another look at the component.
+        _solutionsEnabled = solutionsEnabled;
         _templates = templates;
         _modules = modules;
         _applicationVersions = applicationVersions;
