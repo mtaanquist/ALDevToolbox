@@ -46,7 +46,7 @@ jobs:
       - name: Log in to GHCR
         # Third-party actions pinned to full commit SHAs (mutable tags can be
         # force-moved; this job holds packages:write). Same rule as release.yml.
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
