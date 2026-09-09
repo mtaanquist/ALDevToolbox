@@ -4,7 +4,7 @@
     "net10.0": {
       "AWSSDK.S3": {
         "type": "Direct",
-        "requested": "[4.*, )",
+        "requested": "[4.0.103, )",
         "resolved": "4.0.103",
         "contentHash": "EdAz6+CfwELKXJF0KlUvLFORX5j0zTxadkSBfLMbTzYwhxvn3u7Fg6cZyQqixqqjMQE94H7gQP0kd1KXe9kfpw==",
         "dependencies": {
@@ -13,7 +13,7 @@
       },
       "Azure.Storage.Blobs": {
         "type": "Direct",
-        "requested": "[12.*, )",
+        "requested": "[12.29.2, )",
         "resolved": "12.29.2",
         "contentHash": "NeZmk7bphspT2BYn8XaNCTV4/9vQG+ea79F85MBTi2o2WiXIIJNsRBtFyeBrzK2HIk476rfSqLNwPt4vXgOEkQ==",
         "dependencies": {
@@ -35,7 +35,7 @@
       },
       "Fido2.AspNet": {
         "type": "Direct",
-        "requested": "[4.*, )",
+        "requested": "[4.0.1, )",
         "resolved": "4.0.1",
         "contentHash": "KupbLzUjy40wgQIW21sTl+KmlnJVdFqJqF7bGFhl/g2BzayagYvEl6yllIInZWsVu8AGHAO33OmeO8JZVH+z9w==",
         "dependencies": {
@@ -45,7 +45,7 @@
       },
       "MailKit": {
         "type": "Direct",
-        "requested": "[4.*, )",
+        "requested": "[4.17.0, )",
         "resolved": "4.17.0",
         "contentHash": "1nUAVLxM9fhT/78we6/AGsCesnpn5dRNLLeRqOfr52Wnk87pzVwo5YMTMyqnmoXrYc7piGhmayiMA/OgDluIjg==",
         "dependencies": {
@@ -66,7 +66,7 @@
       },
       "Microsoft.AspNetCore.Authentication.OpenIdConnect": {
         "type": "Direct",
-        "requested": "[10.*, )",
+        "requested": "[10.0.12, )",
         "resolved": "10.0.12",
         "contentHash": "UfkKr9EP+LBgnFfxwkfnZzta7XkalCroZWoxg2yW9dt8iPXO7bJYpcmyFIeM+FLcAlOKZeduP93XhuCcfWaYIQ==",
         "dependencies": {
@@ -92,7 +92,7 @@
       },
       "MimeKit": {
         "type": "Direct",
-        "requested": "[4.*, )",
+        "requested": "[4.17.0, )",
         "resolved": "4.17.0",
         "contentHash": "h/KXsCreJf8RpR/PSAtlbvYtZFndp9N8Wn1Bs248AL7ITyhn+AiIY5bLTvt60tbN2mu6g8KadtBNWygTji2lqg==",
         "dependencies": {
@@ -102,7 +102,7 @@
       },
       "ModelContextProtocol.AspNetCore": {
         "type": "Direct",
-        "requested": "[2.*, )",
+        "requested": "[2.2.0, )",
         "resolved": "2.2.0",
         "contentHash": "3JelDMuFIwFzXybsh6K30G6wXu5gmqKnuRnieqgBMuR0FkqqXRv4B+NYZuPgthSyNq5UwRyvv2U2VJBE3RD3PQ==",
         "dependencies": {
@@ -111,7 +111,7 @@
       },
       "Npgsql.EntityFrameworkCore.PostgreSQL": {
         "type": "Direct",
-        "requested": "[10.*, )",
+        "requested": "[10.0.3, )",
         "resolved": "10.0.3",
         "contentHash": "IPGrrZnRkuW7OlHDhUESZz4G5DLkW7Nej/O3Cx+0iTsgyU5XJxBgpsvTHLloo3WWuAKKbDHXBvWPVkX1deRh1Q==",
         "dependencies": {
@@ -157,13 +157,13 @@
       },
       "Otp.NET": {
         "type": "Direct",
-        "requested": "[1.4.*, )",
+        "requested": "[1.4.1, )",
         "resolved": "1.4.1",
         "contentHash": "UXjZ80T6BfVACJWmEcz4UFZ93hwX3STKojKvVpPk3qUhubjnLwIiZMsI4Hh91HhYxC0JlatNdNrVK2wkv4O9/Q=="
       },
       "QRCoder": {
         "type": "Direct",
-        "requested": "[1.6.*, )",
+        "requested": "[1.6.0, )",
         "resolved": "1.6.0",
         "contentHash": "XmPA81eo+oRxBuyVdswsSkTGTE1d3thfF11Z1PdD7oB56A6HU4G4AAOdySmGRMb/cljwlFTMWUtosGEnwpS6GA=="
       },
