@@ -42,9 +42,6 @@ permissions:
   contents: read
   issues: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   probe:
     runs-on: ubuntu-latest
