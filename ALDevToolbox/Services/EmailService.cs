@@ -57,6 +57,32 @@ public sealed class SmtpEmailService : IEmailService
                 "Email is not configured. Set SMTP via /site-admin/settings or the SMTP_* env vars before triggering email-driven flows.");
         }
 
+        var message = BuildMessage(resolved, toEmail, subject, htmlBody);
+
+        using var client = new SmtpClient();
+        var secure = resolved.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
+        await client.ConnectAsync(resolved.Host, resolved.Port, secure, ct);
+        if (!string.IsNullOrEmpty(resolved.User))
+        {
+            await client.AuthenticateAsync(resolved.User, resolved.Password ?? string.Empty, ct);
+        }
+        await client.SendAsync(message, ct);
+        await client.DisconnectAsync(quit: true, ct);
+
+        _logger.LogInformation("Sent email to {To} subject {Subject}.", toEmail, subject);
+    }
+
+    /// <summary>
+    /// Shapes the outgoing message. Split out of <see cref="SendAsync"/> so the
+    /// headers and body can be asserted without an SMTP server: a MimeKit change
+    /// that alters address or subject encoding still sends successfully and
+    /// surfaces only as mail that renders wrong, which no smoke test catches.
+    /// Transport (connect, authenticate, send) stays in <see cref="SendAsync"/>
+    /// and is still only exercised against a real server.
+    /// </summary>
+    internal static MimeMessage BuildMessage(
+        ResolvedSmtpSettings resolved, string toEmail, string subject, string htmlBody)
+    {
         var message = new MimeMessage();
         var fromAddress = MailboxAddress.Parse(resolved.From);
         if (!string.IsNullOrWhiteSpace(resolved.FromName))
@@ -70,18 +96,7 @@ public sealed class SmtpEmailService : IEmailService
         message.To.Add(MailboxAddress.Parse(toEmail));
         message.Subject = subject;
         message.Body = new TextPart("html") { Text = htmlBody };
-
-        using var client = new SmtpClient();
-        var secure = resolved.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
-        await client.ConnectAsync(resolved.Host, resolved.Port, secure, ct);
-        if (!string.IsNullOrEmpty(resolved.User))
-        {
-            await client.AuthenticateAsync(resolved.User, resolved.Password ?? string.Empty, ct);
-        }
-        await client.SendAsync(message, ct);
-        await client.DisconnectAsync(quit: true, ct);
-
-        _logger.LogInformation("Sent email to {To} subject {Subject}.", toEmail, subject);
+        return message;
     }
 
     private async Task<ResolvedSmtpSettings?> ResolveOnceAsync(CancellationToken ct)

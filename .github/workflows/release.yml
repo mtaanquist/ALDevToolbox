@@ -19,12 +19,6 @@ permissions:
   packages: write
   actions: read
 
-env:
-  # The docker/* and actions/checkout actions still ship on Node 20, which
-  # GitHub forces to Node 24 on 2026-06-16. Opt in early so the cutover is a
-  # non-event; drop this once those actions default to Node 24.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # Gate: don't publish a commit that hasn't passed CI. build.yml does NOT run
   # on the tag push (#729 excluded tags, because the run would duplicate one
