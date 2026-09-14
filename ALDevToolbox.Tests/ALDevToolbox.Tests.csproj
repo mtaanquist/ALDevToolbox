@@ -41,8 +41,8 @@
          10.*, but two projects floating independently can resolve to different
          patches when a new 10.0.x releases mid-restore -> CS1705. Keep this in
          lockstep with Microsoft.EntityFrameworkCore.Design in ALDevToolbox.csproj. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <!-- WebApplicationFactory boots Program.cs end-to-end so the routing layer
          is exercised. Used by Routing/EndpointAmbiguityTests to detect route
