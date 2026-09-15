@@ -14,7 +14,7 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260928000000_AddEmailOutbox")]
+    [Migration("20260929000000_AddEmailOutbox")]
     partial class AddEmailOutbox
     {
         /// <inheritdoc />
