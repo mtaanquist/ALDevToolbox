@@ -280,6 +280,7 @@ public class GenerationService
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
                 .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
             .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
+            .Include(t => t.RootFolders.OrderBy(f => f.Ordering))
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {

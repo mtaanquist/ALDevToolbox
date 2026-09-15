@@ -153,4 +153,55 @@ public sealed class ExtensionPreviewBuilderTests
         contents.Single(n => n.Name == "Source")
             .Children.Should().ContainSingle(c => c.Name == "Helper.al");
     }
+
+    // ===== Empty root folders in the workspace-root preview =====
+
+    [Fact]
+    public void BuildWorkspacePreview_shows_declared_root_folders_with_their_placeholder()
+    {
+        var children = new List<PreviewNode>();
+
+        var root = PreviewTreeBuilder.BuildWorkspacePreview(
+            "CRONUSCustomer", children, "workspace.aldt.toml",
+            workspaceRootPaths: Array.Empty<string>(),
+            emptyRootFolders: new[] { ".alpackages", "docs/decisions" });
+
+        var alpackages = root.Children.Single(n => n.Name == ".alpackages");
+        alpackages.Children.Should().ContainSingle(c => c.Name == ".gitkeep");
+        var docs = root.Children.Single(n => n.Name == "docs");
+        docs.Children.Single(n => n.Name == "decisions").Children
+            .Should().ContainSingle(c => c.Name == ".gitkeep");
+    }
+
+    [Fact]
+    public void BuildWorkspacePreview_skips_the_placeholder_when_a_root_file_fills_the_folder()
+    {
+        // Mirrors WorkspaceZipBuilder.WriteRootFolders: the folder is in the
+        // tree because of the file, so a placeholder beside it would be a lie
+        // about what the ZIP holds.
+        var children = new List<PreviewNode>();
+
+        var root = PreviewTreeBuilder.BuildWorkspacePreview(
+            "CRONUSCustomer", children, "workspace.aldt.toml",
+            workspaceRootPaths: new[] { ".assets/rulesets/Company.ruleset.json" },
+            emptyRootFolders: new[] { ".assets" });
+
+        var assets = root.Children.Single(n => n.Name == ".assets");
+        assets.Children.Should().NotContain(c => c.Name == ".gitkeep");
+        assets.Children.Single(n => n.Name == "rulesets").Children
+            .Should().ContainSingle(c => c.Name == "Company.ruleset.json");
+    }
+
+    [Fact]
+    public void BuildWorkspacePreview_without_root_folders_is_unchanged()
+    {
+        var children = new List<PreviewNode>();
+
+        var root = PreviewTreeBuilder.BuildWorkspacePreview(
+            "CRONUSCustomer", children, "workspace.aldt.toml",
+            workspaceRootPaths: Array.Empty<string>());
+
+        root.Children.Select(c => c.Name).Should()
+            .BeEquivalentTo(new[] { "CRONUSCustomer.code-workspace", "workspace.aldt.toml" });
+    }
 }

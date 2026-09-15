@@ -89,6 +89,47 @@ public sealed class StandaloneExtensionGenerationTests : IDisposable
         zip.GetEntry("CRONUSCustomer.code-workspace").Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task Root_folders_land_at_the_standalone_extension_folder_root()
+    {
+        await SeedTemplateAsync(TemplateWithRootFolder());
+
+        using var zip = await GenerateExtensionAsync(
+            PlanBuilder.ExtensionPlan(extensionName: "My Custom Feature"));
+
+        // Same rule as the workspace-root org files above: the extension
+        // folder is the root of what the user unzips, so the folders the
+        // template declares empty belong here too.
+        zip.GetEntry("MyCustomFeature/.alpackages/.gitkeep").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Sibling_extension_leaves_the_root_folders_to_the_existing_workspace()
+    {
+        await SeedTemplateAsync(TemplateWithRootFolder());
+
+        var archive = await NewService().GenerateExtensionAsync(
+            PlanBuilder.ExtensionPlan(extensionName: "My Custom Feature"),
+            new SiblingWorkspaceContext("CRONUS Customer", Array.Empty<string>(), new[] { "Core" }));
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read, leaveOpen: false);
+
+        // The workspace already has .alpackages at its own root; one nested a
+        // level down would not be the folder the compiler looks in.
+        zip.GetEntry("MyCustomFeature/.alpackages/.gitkeep").Should().BeNull();
+    }
+
+    private static RuntimeTemplate TemplateWithRootFolder()
+    {
+        var template = TemplateBuilder.Default();
+        template.RootFolders.Add(new RuntimeTemplateRootFolder
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            Path = ".alpackages",
+            Ordering = 0,
+        });
+        return template;
+    }
+
     // ===== helpers =====
 
     private GenerationService NewService()

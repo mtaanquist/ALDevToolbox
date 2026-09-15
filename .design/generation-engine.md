@@ -44,6 +44,8 @@ The structure of the ZIP — for a workspace called "CRONUS Customer" from a tem
 
 ```
 CRONUSCustomer/
+├── .alpackages/
+│   └── .gitkeep                          # folder declared empty by the template
 ├── .assets/
 │   ├── images/
 │   │   └── logo.png
@@ -73,6 +75,10 @@ CRONUSCustomer/
 ```
 
 What the template declares is what the ZIP contains — there are no static fallback folders. A folder declared with no files (and no children) ships with a single `.gitkeep` placeholder so the directory survives the ZIP round-trip.
+
+Root-level folders come from two places: every emitted extension contributes one named for its `path`, and the template's `runtime_template_root_folders` rows each contribute one that is *deliberately* empty. The second kind exists because every extension folder carries an `app.json`, so there was no way to declare a folder that holds nothing — the symbol cache an AL build writes into (`.alpackages`), a team's `docs/` convention. They carry a path and nothing else; a folder that needs content is an `organization_files` row whose path nests, the way the shared ruleset lives under `.assets/rulesets/`.
+
+**The placeholder only survives a commit if the repository's ignore rules allow it.** The platform `.gitignore` excludes `.alpackages/`, and git cannot re-include anything under a directory excluded outright — so a template declaring `.alpackages` ships the folder in the ZIP but git drops it. Keeping it needs the two-line form in the org's own `.gitignore` (`.alpackages/*` plus `!.alpackages/.gitkeep`), which is the organisation's ignore policy to set, not the generator's to rewrite. The template editor detects the clash per row and names both lines rather than letting an admin discover it from a repository that is missing the folder.
 
 ## Algorithm
 
@@ -134,6 +140,16 @@ What the template declares is what the ZIP contains — there are no static fall
         `mustache_enabled` is true, using the same context as per-extension
         files. The New Workspace live preview folds the same set into the
         workspace-root tree so what the user sees matches the ZIP.
+5b. Emit the template's declared empty root folders
+     (`runtime_template_root_folders`, WorkspaceZipBuilder.WriteRootFolders).
+     Each gets the same `.gitkeep` placeholder an empty leaf gets, since a ZIP
+     carries no empty directory and neither does git. A folder that one of the
+     workspace-root files from step 5d already lives inside is skipped — it is
+     in the ZIP either way, with real content rather than a placeholder. The
+     template validator refuses that overlap at save time; the check here is
+     the belt-and-braces half, because an admin can opt a template into a new
+     org file after declaring the folder. These folders do NOT appear in the
+     `.code-workspace` `folders` array — see below.
 6. Generate .assets:
      a. images/logo.{png|svg|jpg} — bytes from organization_assets for the
         acting org (M14). The file extension matches the asset's `content_type`.
@@ -204,6 +220,8 @@ That JSON is not a constant. `WorkspaceZipBuilder.BuildCodeWorkspace` layers thr
 Mustache substitution runs over each layer before the merge, so both can use `{{publisher}}`, `{{workspace_folder}}` and the rest. A layer that doesn't parse as a JSON object raises a field-keyed `PlanValidationException` so the workspace and template error surfaces stay distinct.
 
 Each `folders` entry uses the extension's `path`, which is also its on-disk folder name. For a module clone that path is the module's `extension_name` (PascalCase), not its `key` — the key is the admin/URL slug and the dependency-reference target.
+
+The array is built from the emitted extensions alone. The template's declared empty root folders are deliberately left out: each entry here is an AL app root, and pointing the AL extension at a folder with no `app.json` breaks the workspace. `MergeTemplateOverlay` already skips the `folders` key, so neither layer can add one either.
 
 ## Mustache substitution
 
@@ -302,6 +320,7 @@ The output is a single folder (no workspace wrapper, no `.code-workspace`), zipp
 
 ```
 MyExtension/
+├── .alpackages/.gitkeep          # folder the template declares empty, if any
 ├── .assets/
 │   └── rulesets/
 │       └── Company.ruleset.json  # workspace-root-scoped org file, if the template opts in
@@ -320,6 +339,8 @@ Two exceptions:
 
 - **The org logo is not emitted.** It's an `organization_assets` row, not a file, and `app.json`'s `logo` field points at it with a `../`-relative path that assumes the workspace wrapper this flow doesn't produce.
 - **Sibling mode skips the workspace-root scope.** When the New Extension form has imported a `workspace.aldt.toml` and is scaffolding a sibling for an existing workspace, that workspace already carries these files at its own root; a second copy nested one level down would be noise. The sibling ZIP still carries the rewritten `{{workspace_folder}}.code-workspace` at its root.
+
+The template's **declared empty root folders follow the workspace-root files exactly**: emitted in the normal standalone flow (the extension folder is the root of what the user unzips), skipped in sibling mode and when the caller is committing into a repository that already has a workspace root. A `.alpackages` one level down from the workspace root is not the folder the compiler looks in.
 
 The folder structure inside the extension reuses the template's **first** `WorkspaceExtension` row as the scaffold (typically the conventional `Core` extension). All other declared extensions / modules / dependencies are ignored: the user is dropping the result into an existing workspace and wants only a self-contained extension shell. The `app.json` `dependencies` array comes from the user-supplied list rather than the template; if they want to depend on something Core-like in their existing workspace, they pick it via the dependency picker that sources from `well_known_dependencies`.
 

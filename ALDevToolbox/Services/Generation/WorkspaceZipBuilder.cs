@@ -84,6 +84,10 @@ public sealed class WorkspaceZipBuilder
             // by WriteExtension below.
             var includedFiles = FilterIncluded(orgConfig.Files, template);
             fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template, publisher, folderStyle, ct);
+            // The template's declared empty folders (.alpackages and friends).
+            // After the org files so the "already has content" check sees the
+            // same set that was just written.
+            fileCount += WriteRootFolders(archive, rootFolder, template, includedFiles, ct);
 
             // Per-extension folders.
             foreach (var ext in extensions)
@@ -92,6 +96,9 @@ public sealed class WorkspaceZipBuilder
                 fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, orgConfig, includedFiles, ct);
             }
 
+            // Extensions only. The template's declared empty root folders stay
+            // out: each entry here is an AL app root, and pointing the AL
+            // extension at a folder with no app.json breaks the workspace.
             var folderNames = extensions.Select(e => e.Path).ToList();
             var workspaceJsonCtx = new MustacheContext(
                 Name: plan.WorkspaceName,
@@ -226,6 +233,9 @@ public sealed class WorkspaceZipBuilder
                 fileCount += WriteOrgFiles(
                     archive, folderName, includedFiles, standaloneAsWorkspacePlan, template, plan.Publisher,
                     orgConfig.Settings.NamingFolderStyle, ct);
+                // The template's empty root folders belong to the workspace
+                // root too, so they follow the same rule as the files above.
+                fileCount += WriteRootFolders(archive, folderName, template, includedFiles, ct);
             }
 
             var substitutionCtx = BuildExtensionMustacheContext(standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
@@ -358,6 +368,55 @@ public sealed class WorkspaceZipBuilder
             return orgConfig.Settings.DefaultLogo.Trim();
         }
         return string.Empty;
+    }
+
+    /// <summary>
+    /// Emits the folders the template declares as empty — the symbol cache an
+    /// AL build fills in (<c>.alpackages</c>), a team's <c>docs/</c>
+    /// convention. A ZIP has no way to carry a directory with nothing in it
+    /// and neither does git, so each gets the same <c>.gitkeep</c> placeholder
+    /// <see cref="EmitFolderTree"/> drops into an empty leaf.
+    /// <para>
+    /// A folder that one of the emitted workspace-root files already lives
+    /// inside is skipped: it exists in the ZIP either way, and a placeholder
+    /// beside real content is litter. The template validator refuses that
+    /// overlap at save time, so this is the belt-and-braces half — an admin can
+    /// opt a template into a new org file after declaring the folder.
+    /// </para>
+    /// These folders are deliberately absent from the <c>.code-workspace</c>
+    /// <c>folders</c> array: they hold no <c>app.json</c>, so listing them
+    /// would have the AL extension try to load a non-existent app. See
+    /// <see cref="BuildCodeWorkspace"/>, which builds that array from the
+    /// emitted extensions alone.
+    /// </summary>
+    private static int WriteRootFolders(
+        ZipArchive archive,
+        string rootFolder,
+        RuntimeTemplate template,
+        IReadOnlyList<OrganizationFile> includedFiles,
+        CancellationToken ct)
+    {
+        if (template.RootFolders.Count == 0) return 0;
+
+        var occupiedBy = includedFiles
+            .Where(f => f.Scope == Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot)
+            .Select(f => f.Path)
+            .ToList();
+
+        var written = 0;
+        foreach (var folder in template.RootFolders.OrderBy(f => f.Ordering))
+        {
+            ct.ThrowIfCancellationRequested();
+            var path = folder.Path?.Trim().Trim('/') ?? string.Empty;
+            // Zip-slip guard, mirroring NormaliseLogoPath: a row that somehow
+            // escaped validation must not be able to write outside the root.
+            if (path.Length == 0 || path.Split('/').Any(static s => s is ".." or ".")) continue;
+            if (occupiedBy.Any(f => f.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase))) continue;
+
+            WriteEmptyFile(archive, $"{rootFolder}/{path}/.gitkeep");
+            written++;
+        }
+        return written;
     }
 
     /// <summary>

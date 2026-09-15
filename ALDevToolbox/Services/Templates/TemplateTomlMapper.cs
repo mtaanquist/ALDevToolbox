@@ -134,6 +134,7 @@ public static class TemplateTomlMapper
                 .Select(k => new TemplateDefaultModuleSeed { Key = k })
                 .ToList(),
             IncludedFiles = authoring.IncludedFilePaths?.ToList() ?? new List<string>(),
+            RootFolders = authoring.RootFolderPaths?.ToList() ?? new List<string>(),
         },
         Defaults = BuildDefaultsSeed(defaults),
         AppSourceCop = new AppSourceCopSeed
@@ -174,6 +175,10 @@ public static class TemplateTomlMapper
                     .OrderBy(j => j.Ordering)
                     .Where(j => j.OrganizationFile is not null)
                     .Select(j => j.OrganizationFile!.Path)
+                    .ToList(),
+                RootFolders = template.RootFolders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => f.Path)
                     .ToList(),
             },
             Defaults = BuildDefaultsSeed(defaults),
@@ -436,6 +441,7 @@ public static class TemplateTomlMapper
                 ? null
                 : seed.WorkspaceSettings.Json,
             IncludedFilePaths: seed.Template.IncludedFiles.ToList(),
+            RootFolderPaths: seed.Template.RootFolders.ToList(),
             DefaultApplicationVersionLatest: string.Equals(
                 seed.Template.DefaultApplicationVersion,
                 ApplicationVersionService.LatestSentinel,
@@ -529,6 +535,11 @@ module_id_range_size = 200
 # Optional key from /admin/application-versions. When set, the New
 # Workspace form snaps application + runtime together to this entry.
 # default_application_version = ""
+
+# Folders every generated workspace gets at its top level, with nothing
+# in them - handy for a folder your tools fill in later. Use "/" to nest.
+# Uncomment and edit, or delete.
+# root_folders = [".alpackages"]
 
 [defaults]
 # Merged verbatim into every generated app.json; some fields also

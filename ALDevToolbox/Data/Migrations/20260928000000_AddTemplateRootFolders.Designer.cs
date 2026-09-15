@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928000000_AddTemplateRootFolders")]
+    partial class AddTemplateRootFolders
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -406,81 +409,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("bcquality_ingest_state", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.EmailOutboxMessage", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AttemptCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("attempt_count");
-
-                    b.Property<string>("BodyEncrypted")
-                        .HasColumnType("text")
-                        .HasColumnName("body_encrypted");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("LastError")
-                        .HasColumnType("text")
-                        .HasColumnName("last_error");
-
-                    b.Property<DateTime>("NextAttemptAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("next_attempt_at");
-
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<string>("Purpose")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("purpose");
-
-                    b.Property<DateTime?>("SentAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("sent_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("status");
-
-                    b.Property<string>("Subject")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("subject");
-
-                    b.Property<string>("ToEmail")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("to_email");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status", "CreatedAt")
-                        .HasDatabaseName("ix_email_outbox_status_created");
-
-                    b.HasIndex("Status", "NextAttemptAt")
-                        .HasDatabaseName("ix_email_outbox_status_next_attempt");
-
-                    b.HasIndex("Status", "SentAt")
-                        .HasDatabaseName("ix_email_outbox_status_sent");
-
-                    b.ToTable("email_outbox", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.GitHubRepositoryCandidate", b =>

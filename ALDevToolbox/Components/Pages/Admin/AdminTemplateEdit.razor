@@ -449,6 +449,100 @@
             </section>
 
             <section class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Empty folders</h2>
+                        <p class="card__sub">
+                            Folders every workspace gets, created empty &mdash; useful for a
+                            folder something else fills in later, like
+                            <code class="code">.alpackages</code>, where the compiler puts
+                            downloaded symbols. Git can't store an empty folder, so each one
+                            arrives holding a single empty <code class="code">.gitkeep</code>
+                            file to hold its place.
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn--sm" @onclick="AddRootFolder">
+                        <Icon Name="folder-plus" Width="14" Height="14" />
+                        <span>Add folder</span>
+                    </button>
+                </div>
+                <div class="card__body form-sec">
+                    @if (_form.RootFolders.Count == 0)
+                    {
+                        <div class="empty-state empty-state--quiet">
+                            <span class="empty-state__title">No extra folders yet</span>
+                            <span class="empty-state__text">
+                                Add one if a workspace should arrive with a folder ready and
+                                waiting, such as <code class="code">.alpackages</code>.
+                            </span>
+                            <button type="button" class="btn btn--sm" @onclick="AddRootFolder">
+                                <Icon Name="folder-plus" Width="14" Height="14" />
+                                <span>Add folder</span>
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="folder-editor__list">
+                            @for (var i = 0; i < _form.RootFolders.Count; i++)
+                            {
+                                var folderIndex = i;
+                                var folder = _form.RootFolders[folderIndex];
+                                <div class="folder-editor__row" @key="folder">
+                                    @* No reorder controls: the folders are emitted
+                                       independently of each other, so position changes
+                                       nothing a user would ever see. *@
+                                    <div class="folder-editor__row-head">
+                                        <div class="folder-editor__path">
+                                            @* Deliberately not `required`: a row left blank is
+                                               dropped on save, so blocking the whole form over
+                                               one the admin thought better of would be wrong. *@
+                                            <input class="input" type="text"
+                                                   placeholder="@(folderIndex == 0 ? ".alpackages" : "")"
+                                                   aria-label="Folder name or path"
+                                                   @bind="folder.Path" @bind:event="oninput" />
+                                            <FieldError Field="@($"RootFolders[{folderIndex}]")" Errors="_fieldErrors" />
+                                            @if (IgnoredByGitignore(folder.Path) is string rule)
+                                            {
+                                                @* Git will not commit a folder its ignore
+                                                   rules exclude, whatever is inside it. Say
+                                                   so here, with the exact replacement, rather
+                                                   than let the admin find out from a
+                                                   repository that is missing the folder.
+                                                   Both lines are needed: git cannot re-include
+                                                   anything under a directory the first form
+                                                   excludes outright. *@
+                                                var bare = folder.Path.Trim().Trim('/');
+                                                <p class="field__hint">
+                                                    Your <code class="code">.gitignore</code> excludes this with
+                                                    <code class="code">@rule</code>, so the folder won't reach the
+                                                    repository. Under
+                                                    <a href="/admin/templates/files">Templates &middot; Files</a>,
+                                                    replace that line with these two &mdash; the folder is kept,
+                                                    everything that lands in it is still ignored:
+                                                    <code class="code">@($"{bare}/*")</code> and
+                                                    <code class="code">@($"!{bare}/.gitkeep")</code>.
+                                                </p>
+                                            }
+                                        </div>
+                                        <button type="button" class="btn btn--sm"
+                                                @onclick="() => RemoveRootFolder(folderIndex)"
+                                                aria-label="Remove folder" title="Remove folder">
+                                            <Icon Name="trash-2" Width="12" Height="12" />
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                        <p class="field__hint">
+                            Use <code class="code">/</code> for a folder inside a folder, for
+                            example <code class="code">docs/decisions</code>.
+                        </p>
+                    }
+                </div>
+            </section>
+
+            <section class="card">
                 <div class="card__head"><h2 class="card__title">Extensions</h2></div>
                 <div class="card__body form-sec">
                     <TemplateExtensionsEditor Form="_form" Errors="_fieldErrors" />
@@ -868,6 +962,53 @@
         }
     }
 
+    // ===== Empty root folders =====
+
+    private void AddRootFolder() => _form?.RootFolders.Add(new RootFolderForm());
+
+    private void RemoveRootFolder(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.RootFolders.Count) _form.RootFolders.RemoveAt(index);
+    }
+
+    /// <summary>
+    /// Returns the line in the template's own <c>.gitignore</c> that excludes
+    /// <paramref name="path"/>, or null when nothing does. A folder git is
+    /// told to ignore stays out of the repository whatever placeholder the
+    /// generator puts inside it, and <c>.alpackages/</c> — the headline reason
+    /// to declare an empty folder at all — is in the platform default. So the
+    /// editor names the conflict instead of letting the admin discover it from
+    /// a repository that is missing the folder.
+    /// <para>
+    /// Deliberately not a gitignore engine: it matches a whole line equal to
+    /// the folder path, with an optional leading slash and trailing slash.
+    /// That is the shape a real ignore file uses for a directory, and being
+    /// wrong here costs a missing hint rather than a wrong refusal — nothing
+    /// is blocked either way.
+    /// </para>
+    /// </summary>
+    private string? IgnoredByGitignore(string? path)
+    {
+        var folder = path?.Trim().Trim('/');
+        if (string.IsNullOrEmpty(folder) || _form is null) return null;
+
+        foreach (var file in _availableOrgFiles)
+        {
+            if (!file.Path.EndsWith(".gitignore", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!_form.IncludedFilePaths.Contains(file.Path)) continue;
+
+            foreach (var raw in file.Content.Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith('#') || line.StartsWith('!')) continue;
+                if (string.Equals(line.Trim('/'), folder, StringComparison.OrdinalIgnoreCase)) return line;
+            }
+        }
+        return null;
+    }
+
+
     // ===== Save / delete / restore =====
 
     private async Task SaveAsync()
@@ -1231,7 +1372,10 @@
         // template key as the workspace short name placeholder. Shared with
         // New Workspace and New Extension so all three previews stay identical.
         return PreviewTreeBuilder.BuildWorkspacePreview(
-            rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths);
+            rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths,
+            // From the form rather than the saved row, so a folder the admin
+            // has just typed shows up in the preview before they hit save.
+            _form.RootFolders.Select(f => f.Path));
     }
 
     private static PreviewNode BuildExtensionPreview(ExtensionForm ext, IReadOnlyList<string> perExtensionFilePaths)

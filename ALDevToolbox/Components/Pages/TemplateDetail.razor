@@ -267,6 +267,20 @@
                 ext.Path,
                 ExtensionPreviewBuilder.BuildContents(ext.Folders, includeExamples: true, perExtensionPaths)));
         }
+        // The folders the template creates empty, each showing the placeholder
+        // the generator puts inside. Workspace-root-scoped included files can
+        // fill one, so pass them for the same skip the generator applies.
+        var workspaceRootPaths = template.IncludedFiles
+            .OrderBy(j => j.Ordering)
+            .Where(j => j.OrganizationFile is not null
+                && j.OrganizationFile.Scope == ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot)
+            .Select(j => j.OrganizationFile!.Path)
+            .ToList();
+        PreviewTreeBuilder.GraftEmptyFolders(
+            children,
+            template.RootFolders.OrderBy(f => f.Ordering).Select(f => f.Path),
+            workspaceRootPaths);
+
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(template.Key, PreviewNodeKind.Workspace, children));
     }

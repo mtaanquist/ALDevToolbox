@@ -207,6 +207,35 @@ public sealed class TemplateTomlMapperRoundTripTests
     }
 
     [Fact]
+    public void Round_trip_preserves_root_folders_in_order()
+    {
+        var template = TemplateBuilder.Default();
+        template.RootFolders = new List<RuntimeTemplateRootFolder>
+        {
+            new() { Ordering = 0, Path = ".alpackages" },
+            new() { Ordering = 1, Path = "docs/decisions" },
+        };
+
+        var toml = TemplateTomlMapper.ToToml(template);
+        var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
+
+        parsed.RootFolderPaths.Should().Equal(".alpackages", "docs/decisions");
+    }
+
+    [Fact]
+    public void Template_toml_without_root_folders_parses_to_an_empty_list()
+    {
+        // Every template.toml written before this key existed has to keep
+        // parsing, and to the same output it produced then.
+        var template = TemplateBuilder.Default();
+
+        var toml = TemplateTomlMapper.ToToml(template);
+        var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
+
+        parsed.RootFolderPaths.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Round_trip_preserves_per_extension_id_range_overrides()
     {
         var template = TemplateBuilder.Default();
