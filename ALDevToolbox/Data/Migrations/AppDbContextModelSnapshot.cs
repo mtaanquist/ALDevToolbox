@@ -477,6 +477,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("Status", "NextAttemptAt")
                         .HasDatabaseName("ix_email_outbox_status_next_attempt");
 
+                    b.HasIndex("Status", "SentAt")
+                        .HasDatabaseName("ix_email_outbox_status_sent");
+
                     b.ToTable("email_outbox", (string)null);
                 });
 

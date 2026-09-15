@@ -44,6 +44,11 @@ namespace ALDevToolbox.Data.Migrations
                 name: "ix_email_outbox_status_next_attempt",
                 table: "email_outbox",
                 columns: new[] { "status", "next_attempt_at" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_email_outbox_status_sent",
+                table: "email_outbox",
+                columns: new[] { "status", "sent_at" });
         }
 
         /// <inheritdoc />

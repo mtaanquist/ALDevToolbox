@@ -28,9 +28,16 @@ internal sealed class EmailOutboxMessageConfiguration : IEntityTypeConfiguration
         // The drain's only query: the due Pending rows, oldest first.
         entity.HasIndex(e => new { e.Status, e.NextAttemptAt })
             .HasDatabaseName("ix_email_outbox_status_next_attempt");
-        // The prune's two deletes, both `status = x AND <timestamp> < cutoff`.
+        // The stale write-off and the given-up delete, both
+        // `status = x AND created_at < cutoff`.
         entity.HasIndex(e => new { e.Status, e.CreatedAt })
             .HasDatabaseName("ix_email_outbox_status_created");
+        // The sent rows are read and deleted by when they were *sent*: the page's
+        // "went out in the last 24 hours" count and the delete that keeps that
+        // window's worth. The index above leads with created_at and does not
+        // serve either.
+        entity.HasIndex(e => new { e.Status, e.SentAt })
+            .HasDatabaseName("ix_email_outbox_status_sent");
 
         // No foreign key to organizations: the column is a label for the
         // operator's list, not a relationship, and a deleted organisation must

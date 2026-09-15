@@ -59,6 +59,13 @@ public interface IEmailService
 /// </summary>
 public sealed class SmtpEmailService : IEmailService
 {
+    /// <summary>
+    /// Ceiling on a single send, connect included. Short enough that a batch of
+    /// them still fits inside the drain's own deadline, and that an inline
+    /// send fails while the person who triggered it is still watching.
+    /// </summary>
+    public static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(30);
+
     private readonly SystemSettingsService _settings;
     private readonly ILogger<SmtpEmailService> _logger;
 
@@ -90,7 +97,15 @@ public sealed class SmtpEmailService : IEmailService
 
         var message = BuildMessage(resolved, toEmail, subject, htmlBody);
 
-        using var client = new SmtpClient();
+        using var client = new SmtpClient
+        {
+            // MailKit's default is two minutes, applied to the connect and to
+            // every command read. A relay that accepts the connection and then
+            // says nothing would hold this for that long per message - which is
+            // a stalled drain when the outbox sends a batch, and two minutes of
+            // a person staring at a code box on the inline paths.
+            Timeout = (int)SendTimeout.TotalMilliseconds,
+        };
         var secure = resolved.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
         await client.ConnectAsync(resolved.Host, resolved.Port, secure, ct);
         if (!string.IsNullOrEmpty(resolved.User))
@@ -98,7 +113,19 @@ public sealed class SmtpEmailService : IEmailService
             await client.AuthenticateAsync(resolved.User, resolved.Password ?? string.Empty, ct);
         }
         await client.SendAsync(message, ct);
-        await client.DisconnectAsync(quit: true, ct);
+
+        // Past this point the server has the message. A relay that drops the
+        // socket rather than answering QUIT must not turn a delivered email into
+        // a failure, because the caller's answer to a failure is to send it
+        // again. Disposing the client closes the socket either way.
+        try
+        {
+            await client.DisconnectAsync(quit: true, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Disconnecting from the mail server failed after the message was accepted.");
+        }
 
         _logger.LogInformation("Sent {Purpose} email to {To} subject {Subject}.", purpose, toEmail, subject);
     }

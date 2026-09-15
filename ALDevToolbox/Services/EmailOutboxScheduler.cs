@@ -1,3 +1,4 @@
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services.Workers;
 
 namespace ALDevToolbox.Services;
@@ -32,6 +33,16 @@ public sealed class EmailOutboxScheduler : PolledScheduler
     /// <summary>Messages one sweep will try. The rest wait for the next poll.</summary>
     private const int BatchSize = 25;
 
+    /// <summary>
+    /// Ceiling on one sweep. Each send is capped by
+    /// <see cref="SmtpEmailService.SendTimeout"/>, but a whole batch of slow
+    /// ones still adds up, and a tick that outruns its heartbeat bounds makes
+    /// /healthz/workers report this worker stalled with the wrong reason -
+    /// during exactly the outage it exists to work through. Whatever is left
+    /// when the deadline lands is still pending and comes round next poll.
+    /// </summary>
+    private static readonly TimeSpan SweepDeadline = TimeSpan.FromMinutes(5);
+
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ILogger<EmailOutboxScheduler> _logger;
@@ -44,8 +55,13 @@ public sealed class EmailOutboxScheduler : PolledScheduler
         WorkerHeartbeatRegistry heartbeats)
         : base(logger, heartbeats, nameof(EmailOutboxScheduler),
             pollInterval: PollInterval,
-            maxActiveDuration: TimeSpan.FromMinutes(10),
-            maxIdleSilence: TimeSpan.FromMinutes(3),
+            // Idle silence must sit ABOVE the longest legitimate tick: the base
+            // class ticks the heartbeat once per loop and does not exempt an
+            // active tick, so a shorter idle bound is the one that fires, and it
+            // reports "gone quiet" when the worker is in fact busy. Both bounds
+            // clear SweepDeadline plus a poll.
+            maxActiveDuration: TimeSpan.FromMinutes(6),
+            maxIdleSilence: TimeSpan.FromMinutes(10),
             disableEnvVar: "DISABLE_EMAIL_OUTBOX_SCHEDULER")
     {
         _services = services;
@@ -59,48 +75,87 @@ public sealed class EmailOutboxScheduler : PolledScheduler
         var outbox = scope.ServiceProvider.GetRequiredService<EmailOutbox>();
         var smtp = scope.ServiceProvider.GetRequiredService<SmtpEmailService>();
 
+        // The deadline is the sweep's own, not the host's: cancelling it must
+        // not read as shutdown, because the two mean different things to
+        // SendOneAsync below.
+        using var deadline = new CancellationTokenSource(SweepDeadline);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+
         // Before anything is sent: write off what has sat here too long. After a
         // long outage the queue holds messages whose links expired days ago, and
         // delivering those is worse than not delivering them.
         await outbox.ExpireStaleAsync(ct);
 
-        foreach (var message in await outbox.DueAsync(BatchSize, ct))
+        foreach (var message in await outbox.DueAsync(BatchSize, linked.Token))
         {
+            if (deadline.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "The email sweep hit its {Deadline:N0} minute deadline; the rest stay queued for the next poll.",
+                    SweepDeadline.TotalMinutes);
+                break;
+            }
             ct.ThrowIfCancellationRequested();
-            var body = outbox.TryReadBody(message);
-            if (body is null)
-            {
-                // Unreadable ciphertext, or a body already dropped. Neither gets
-                // better by trying again.
-                await outbox.RecordFailureAsync(
-                    message.Id,
-                    "The message body could not be read, so it can never be sent. This usually means the Data Protection key ring was replaced.",
-                    permanent: true,
-                    ct);
-                continue;
-            }
-
-            try
-            {
-                await smtp.SendAsync(message.ToEmail, message.Subject, body, message.Purpose, ct);
-                // Delivery is at-least-once: if the send lands and this update
-                // does not, the row stays pending and goes out twice. A second
-                // reset link is a smaller harm than a first one never arriving,
-                // which is the trade the other order would make.
-                await outbox.MarkSentAsync(message.Id, ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // Shutdown mid-sweep: leave the row pending for the next start.
-                throw;
-            }
-            catch (Exception ex)
-            {
-                await outbox.RecordFailureAsync(message.Id, ex.Message, permanent: false, ct);
-            }
+            await SendOneAsync(outbox, smtp, message, ct, linked.Token);
         }
 
         await PruneIfDueAsync(outbox, ct);
+    }
+
+    /// <summary>
+    /// One message: read the body, hand it to <paramref name="transport"/>, and
+    /// record how that went. Split out of the loop so the branches can be tested
+    /// against a fake transport - the drain deliberately holds the concrete
+    /// <see cref="SmtpEmailService"/> (resolving <see cref="IEmailService"/>
+    /// would give it the outbox decorator and queue the message again), and that
+    /// class is sealed, so without this seam nothing here is reachable from a
+    /// test without a live SMTP server.
+    /// </summary>
+    /// <param name="shutdownToken">
+    /// The host's. Cancelling it leaves the row pending for the next start.
+    /// </param>
+    /// <param name="sendToken">
+    /// The host's plus this sweep's deadline. Cancelling it because the deadline
+    /// landed is an ordinary failed attempt, so it backs off like any other.
+    /// </param>
+    internal static async Task SendOneAsync(
+        EmailOutbox outbox,
+        IEmailService transport,
+        EmailOutboxMessage message,
+        CancellationToken shutdownToken,
+        CancellationToken sendToken)
+    {
+        var body = outbox.TryReadBody(message);
+        if (body is null)
+        {
+            // Unreadable ciphertext, or a body already dropped. Neither gets
+            // better by trying again.
+            await outbox.RecordFailureAsync(
+                message.Id,
+                "The message body could not be read, so it can never be sent. This usually means the Data Protection key ring was replaced.",
+                permanent: true,
+                shutdownToken);
+            return;
+        }
+
+        try
+        {
+            await transport.SendAsync(message.ToEmail, message.Subject, body, message.Purpose, sendToken);
+            // Not the send token: a shutdown landing in the gap between a
+            // delivered message and this update would leave the row pending and
+            // send it a second time on the next start. The write is one indexed
+            // UPDATE, comfortably inside the host's shutdown timeout.
+            await outbox.MarkSentAsync(message.Id, CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+        {
+            // Shutdown mid-sweep: leave the row pending for the next start.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await outbox.RecordFailureAsync(message.Id, ex.Message, permanent: false, shutdownToken);
+        }
     }
 
     private async Task PruneIfDueAsync(EmailOutbox outbox, CancellationToken ct)

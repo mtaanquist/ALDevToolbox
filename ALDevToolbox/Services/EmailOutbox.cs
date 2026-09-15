@@ -35,10 +35,11 @@ public sealed class EmailOutbox
 
     /// <summary>
     /// Attempts before a message is given up on. Paired with
-    /// <see cref="Backoff"/> this spans a little over four hours, which outlasts
-    /// a relay restart or a rotated credential noticed the same morning. Past
-    /// that the tokens most of these messages carry have expired anyway, so
-    /// retrying is only noise in front of the operator's real problem.
+    /// <see cref="Backoff"/> the seven waits sum to 173 minutes, so a message is
+    /// tried across a little under three hours - long enough to outlast a relay
+    /// restart or a credential rotated and fixed the same morning. Past that the
+    /// tokens most of these messages carry have expired anyway, so retrying is
+    /// only noise in front of the operator's real problem.
     /// </summary>
     public const int MaxAttempts = 8;
 
@@ -172,7 +173,10 @@ public sealed class EmailOutbox
         var now = _clock.GetUtcNow().UtcDateTime;
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await db.EmailOutboxMessages
-            .Where(m => m.Id == id)
+            // Still pending, not merely this id: a row written off as stale (or,
+            // if anyone ever runs two drains, sent by the other) must not be
+            // flipped back to Sent carrying the other outcome's error text.
+            .Where(m => m.Id == id && m.Status == EmailOutboxStatus.Pending)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(m => m.Status, EmailOutboxStatus.Sent)
                 .SetProperty(m => m.SentAt, now)
@@ -216,10 +220,6 @@ public sealed class EmailOutbox
     }
 
     /// <summary>
-    /// Deletes rows past their retention. Returns the two counts so the sweep
-    /// can log something worth reading.
-    /// </summary>
-    /// <summary>
     /// Writes off messages that have sat unsent past <see cref="PendingRetention"/>,
     /// dropping their bodies. Returns how many. Note the limit of this as a
     /// safety net: it runs from the drain, so the one case it cannot cover is
@@ -246,6 +246,10 @@ public sealed class EmailOutbox
         return expired;
     }
 
+    /// <summary>
+    /// Deletes rows past their retention. Returns the two counts so the sweep
+    /// can log something worth reading.
+    /// </summary>
     public async Task<(int Sent, int Failed)> PruneAsync(CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -253,7 +257,11 @@ public sealed class EmailOutbox
         var failedCutoff = now - FailedRetention;
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var sent = await db.EmailOutboxMessages
-            .Where(m => m.Status == EmailOutboxStatus.Sent && m.CreatedAt < sentCutoff)
+            // By sent_at, not created_at: a message queued at noon and delivered
+            // at three would otherwise be deleted 21 hours after it went out,
+            // and SnapshotAsync counts the last day's sends by sent_at - so the
+            // header's "is mail working at all" figure would quietly under-report.
+            .Where(m => m.Status == EmailOutboxStatus.Sent && m.SentAt < sentCutoff)
             .ExecuteDeleteAsync(ct);
         var failed = await db.EmailOutboxMessages
             .Where(m => m.Status == EmailOutboxStatus.Failed && m.CreatedAt < failedCutoff)

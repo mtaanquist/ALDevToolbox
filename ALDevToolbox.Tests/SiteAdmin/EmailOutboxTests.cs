@@ -216,6 +216,57 @@ public sealed class EmailOutboxTests : IDisposable
         snapshot.SentLastDay.Should().Be(1);
     }
 
+    [Theory]
+    // The schedule itself, pinned. The delays sum to 173 minutes across the
+    // seven waits, which is what MaxAttempts is documented against; a test that
+    // only asserts "later than now" would let any of these drift.
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 5)]
+    [InlineData(4, 15)]
+    [InlineData(5, 30)]
+    [InlineData(6, 60)]
+    [InlineData(7, 60)]
+    [InlineData(8, 60)]
+    public void The_wait_after_each_attempt_follows_the_published_schedule(int attemptsMade, int expectedMinutes)
+        => EmailOutbox.DelayFor(attemptsMade).Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+
+    [Fact]
+    public async Task A_sent_message_is_kept_for_a_day_after_it_was_sent_not_after_it_was_queued()
+    {
+        // The two must agree: the page counts the last day's sends by sent_at,
+        // so pruning by created_at would delete rows the header is still
+        // counting and under-report the one figure that says mail is working.
+        var outbox = NewOutbox();
+        var id = await EnqueueOneAsync(outbox);
+        _clock.Advance(TimeSpan.FromHours(20));
+        await outbox.MarkSentAsync(id);
+
+        _clock.Advance(TimeSpan.FromHours(5));
+        (await outbox.PruneAsync()).Sent.Should().Be(0, "it was sent five hours ago, not 25");
+
+        _clock.Advance(EmailOutbox.SentRetention);
+        (await outbox.PruneAsync()).Sent.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_message_already_written_off_is_not_flipped_back_to_sent()
+    {
+        // The write-off and a send in flight can both land on one row. Whichever
+        // gets there first decides; the loser must not leave a Sent row carrying
+        // the other outcome's error text.
+        var outbox = NewOutbox();
+        var id = await EnqueueOneAsync(outbox);
+        _clock.Advance(EmailOutbox.PendingRetention + TimeSpan.FromMinutes(1));
+        await outbox.ExpireStaleAsync();
+
+        await outbox.MarkSentAsync(id);
+
+        var row = await RowAsync(id);
+        row.Status.Should().Be(EmailOutboxStatus.Failed);
+        row.LastError.Should().Contain("Never sent");
+    }
+
     [Fact]
     public async Task A_burst_of_waiting_messages_cannot_hide_the_failures()
     {
