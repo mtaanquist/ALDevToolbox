@@ -95,7 +95,8 @@ public static class PreviewTreeBuilder
         string rootName,
         IList<PreviewNode> children,
         string configFileName,
-        IEnumerable<string> workspaceRootPaths)
+        IEnumerable<string> workspaceRootPaths,
+        IEnumerable<string>? emptyRootFolders = null)
     {
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
         children.Add(PreviewNode.File(configFileName));
@@ -103,8 +104,33 @@ public static class PreviewTreeBuilder
         {
             GraftFile(children, path);
         }
+        GraftEmptyFolders(children, emptyRootFolders, workspaceRootPaths);
         return SortForDisplay(new PreviewNode(
             rootName, PreviewNodeKind.Workspace, children as IReadOnlyList<PreviewNode> ?? children.ToList()));
+    }
+
+    /// <summary>
+    /// Grafts the template's declared empty folders into the workspace root,
+    /// each showing the <c>.gitkeep</c> the generator drops inside it — the
+    /// same placeholder <c>ExtensionPreviewBuilder</c> shows for an empty leaf.
+    /// A folder that a workspace-root file already lives inside is skipped,
+    /// mirroring <c>WorkspaceZipBuilder.WriteRootFolders</c>: the folder is in
+    /// the tree either way, with real content rather than a placeholder.
+    /// </summary>
+    public static void GraftEmptyFolders(
+        IList<PreviewNode> siblings,
+        IEnumerable<string>? folderPaths,
+        IEnumerable<string> workspaceRootPaths)
+    {
+        if (folderPaths is null) return;
+        var occupied = workspaceRootPaths as IReadOnlyList<string> ?? workspaceRootPaths.ToList();
+        foreach (var raw in folderPaths)
+        {
+            var path = raw?.Trim().Trim('/') ?? string.Empty;
+            if (path.Length == 0) continue;
+            if (occupied.Any(f => f.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase))) continue;
+            GraftFile(siblings, $"{path}/.gitkeep");
+        }
     }
 
     /// <summary>

@@ -40,6 +40,10 @@ internal static class TenantTableCatalog
         "runtime_templates",
         "modules",
         "runtime_template_default_modules",
+        // Only references runtime_templates, so it sits with the sibling join
+        // above rather than down with runtime_template_included_files, which
+        // has to wait for organization_files.
+        "runtime_template_root_folders",
         "module_dependencies",
         "module_extension_folders",
         "module_extension_files",

@@ -156,4 +156,13 @@ public class RuntimeTemplate
     /// the files that belong with each template.
     /// </summary>
     public List<RuntimeTemplateIncludedFile> IncludedFiles { get; set; } = new();
+
+    /// <summary>
+    /// Folders this template puts at the workspace root that hold nothing —
+    /// <c>.alpackages</c> and friends. Extensions are the only other source of
+    /// root-level folders and each of those carries an <c>app.json</c>, so
+    /// this is the one way to declare an empty one. See
+    /// <see cref="RuntimeTemplateRootFolder"/>.
+    /// </summary>
+    public List<RuntimeTemplateRootFolder> RootFolders { get; set; } = new();
 }

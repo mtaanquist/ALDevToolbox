@@ -1429,7 +1429,8 @@
         // sort. Shared with the New Extension and Template Detail previews so
         // all three stay identical - see PreviewTreeBuilder.BuildWorkspacePreview.
         return PreviewTreeBuilder.BuildWorkspacePreview(
-            rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths);
+            rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths,
+            _selected?.RootFolders.OrderBy(f => f.Ordering).Select(f => f.Path));
     }
 
 }

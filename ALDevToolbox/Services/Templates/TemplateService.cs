@@ -71,6 +71,7 @@ public class TemplateService
                 .ThenInclude(d => d.Module!)
             .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
                 .ThenInclude(j => j.OrganizationFile!)
+            .Include(t => t.RootFolders.OrderBy(f => f.Ordering))
             .Include(t => t.DefaultApplicationVersion)
             .ToListAsync(ct);
 
@@ -115,6 +116,15 @@ public class TemplateService
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            // The template detail page previews the workspace this template
+            // generates, which needs both of these: the root folders it emits,
+            // and the included files, because a file landing inside a declared
+            // folder is what tells the preview to show real content there
+            // rather than a placeholder. IncludedFiles was missing here, so
+            // that preview was also silently dropping app.json.
+            .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
+                .ThenInclude(j => j.OrganizationFile!)
+            .Include(t => t.RootFolders.OrderBy(f => f.Ordering))
             .Include(t => t.DefaultApplicationVersion)
             .FirstOrDefaultAsync(ct);
 
@@ -137,6 +147,7 @@ public class TemplateService
                 .ThenInclude(d => d.Module!)
             .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
                 .ThenInclude(j => j.OrganizationFile!)
+            .Include(t => t.RootFolders.OrderBy(f => f.Ordering))
             .Include(t => t.DefaultApplicationVersion)
             .FirstOrDefaultAsync(ct);
 
@@ -177,7 +188,11 @@ public class TemplateService
                 .Where(j => j.OrganizationFile is not null)
                 .Select(j => j.OrganizationFile!.Path)
                 .ToList(),
-            DefaultApplicationVersionLatest: template.DefaultApplicationVersionLatest);
+            DefaultApplicationVersionLatest: template.DefaultApplicationVersionLatest,
+            RootFolderPaths: template.RootFolders
+                .OrderBy(f => f.Ordering)
+                .Select(f => f.Path)
+                .ToList());
     }
 
     public Task<List<Module>> GetModulesAsync(bool includeDeprecated = true, CancellationToken ct = default)
@@ -262,6 +277,14 @@ public class TemplateService
                     Ordering = i,
                 })
                 .ToList(),
+            RootFolders = NormaliseRootFolderPaths(input)
+                .Select((path, i) => new RuntimeTemplateRootFolder
+                {
+                    OrganizationId = orgId,
+                    Path = path,
+                    Ordering = i,
+                })
+                .ToList(),
         };
 
         _db.RuntimeTemplates.Add(template);
@@ -288,6 +311,7 @@ public class TemplateService
                 .ThenInclude(e => e.Dependencies)
             .Include(t => t.DefaultModules)
             .Include(t => t.IncludedFiles)
+            .Include(t => t.RootFolders)
             .FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -329,6 +353,7 @@ public class TemplateService
 
         ReconcileDefaultModules(existing, defaultModuleIds, orgId);
         ReconcileIncludedFiles(existing, includedFileIds, orgId);
+        ReconcileRootFolders(existing, NormaliseRootFolderPaths(input), orgId);
 
         await _db.SaveChangesAsync(ct);
 
@@ -417,6 +442,55 @@ public class TemplateService
             existing.IncludedFiles.Remove(row);
         }
     }
+
+    /// <summary>
+    /// Mirror of <see cref="ReconcileIncludedFiles"/> for the template's empty
+    /// root folders. Matches by <see cref="RuntimeTemplateRootFolder.Path"/>,
+    /// which is the row's natural identity, so reordering the list rewrites
+    /// only <c>Ordering</c> and leaves the primary keys alone.
+    /// </summary>
+    private static void ReconcileRootFolders(RuntimeTemplate existing, IReadOnlyList<string> paths, int orgId)
+    {
+        var existingByPath = existing.RootFolders
+            .ToDictionary(f => f.Path, StringComparer.Ordinal);
+
+        for (var i = 0; i < paths.Count; i++)
+        {
+            var path = paths[i];
+            if (existingByPath.TryGetValue(path, out var row))
+            {
+                if (row.Ordering != i) row.Ordering = i;
+            }
+            else
+            {
+                existing.RootFolders.Add(new RuntimeTemplateRootFolder
+                {
+                    OrganizationId = orgId,
+                    Ordering = i,
+                    Path = path,
+                });
+            }
+        }
+
+        var keep = new HashSet<string>(paths, StringComparer.Ordinal);
+        var toRemove = existing.RootFolders.Where(f => !keep.Contains(f.Path)).ToList();
+        foreach (var row in toRemove)
+        {
+            existing.RootFolders.Remove(row);
+        }
+    }
+
+    /// <summary>
+    /// Trims and drops blanks from the authoring payload's root-folder list.
+    /// The validator has already rejected anything malformed by the time this
+    /// runs; a blank row is what an admin leaves behind after clearing an
+    /// input they no longer want, so it is dropped rather than refused.
+    /// </summary>
+    private static List<string> NormaliseRootFolderPaths(TemplateAuthoring input) =>
+        (input.RootFolderPaths ?? Array.Empty<string>())
+            .Select(p => p?.Trim() ?? string.Empty)
+            .Where(p => p.Length > 0)
+            .ToList();
 
     // ===== Default ops =====
 
@@ -604,7 +678,12 @@ public class TemplateService
         TemplateValidation.ValidateExtensions(input.Extensions, errors);
         var defaultModuleIds = await ResolveDefaultModuleIdsAsync(input, errors, ct);
         var defaultApplicationVersionId = await ResolveApplicationVersionIdAsync(input, errors, ct);
-        var includedFileIds = await ResolveIncludedFileIdsAsync(input, errors, ct);
+        var (includedFileIds, workspaceRootPaths) = await ResolveIncludedFileIdsAsync(input, errors, ct);
+        // The root-folder rules need to know which included files land at the
+        // workspace root, because a file there fills a folder the template
+        // would otherwise be declaring as empty.
+        TemplateValidation.ValidateRootFolders(
+            input.RootFolderPaths ?? Array.Empty<string>(), input.Extensions, workspaceRootPaths, errors);
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
         return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId, includedFileIds);
@@ -613,13 +692,17 @@ public class TemplateService
     /// <summary>
     /// Resolves the per-template always-included file paths to organisation
     /// file ids. Unknown paths land in <paramref name="errors"/>; preserves
-    /// the caller's order (deduplicated by path).
+    /// the caller's order (deduplicated by path). Also returns the
+    /// workspace-root-scoped subset of those paths, which the root-folder
+    /// rules need — a per-extension-scoped row lands inside an extension
+    /// folder and so can never fill a workspace-root folder.
     /// </summary>
-    private async Task<IReadOnlyList<int>> ResolveIncludedFileIdsAsync(
+    private async Task<(IReadOnlyList<int> Ids, IReadOnlyList<string> WorkspaceRootPaths)> ResolveIncludedFileIdsAsync(
         TemplateAuthoring input, Dictionary<string, string> errors, CancellationToken ct)
     {
+        var empty = (Array.Empty<int>(), (IReadOnlyList<string>)Array.Empty<string>());
         var paths = input.IncludedFilePaths;
-        if (paths is null || paths.Count == 0) return Array.Empty<int>();
+        if (paths is null || paths.Count == 0) return empty;
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var orderedUnique = new List<string>();
@@ -628,12 +711,12 @@ public class TemplateService
             var trimmed = p?.Trim();
             if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed)) orderedUnique.Add(trimmed);
         }
-        if (orderedUnique.Count == 0) return Array.Empty<int>();
+        if (orderedUnique.Count == 0) return empty;
 
         var matched = await _db.OrganizationFiles
             .AsNoTracking()
             .Where(f => orderedUnique.Contains(f.Path))
-            .Select(f => new { f.Path, f.Id })
+            .Select(f => new { f.Path, f.Id, f.Scope })
             .ToListAsync(ct);
         var idByPath = matched.ToDictionary(m => m.Path, m => m.Id, StringComparer.Ordinal);
 
@@ -641,9 +724,13 @@ public class TemplateService
         if (missing.Count > 0)
         {
             errors[nameof(input.IncludedFilePaths)] = $"Unknown included file(s): {string.Join(", ", missing)}.";
-            return Array.Empty<int>();
+            return empty;
         }
-        return orderedUnique.Select(p => idByPath[p]).ToList();
+        var workspaceRootPaths = matched
+            .Where(m => m.Scope == OrganizationFileScope.WorkspaceRoot)
+            .Select(m => m.Path)
+            .ToList();
+        return (orderedUnique.Select(p => idByPath[p]).ToList(), workspaceRootPaths);
     }
 
     /// <summary>

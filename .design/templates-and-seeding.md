@@ -123,6 +123,17 @@ module_id_range_start = 91000
 module_id_range_size = 200
 is_default = false
 
+# Optional: folders the generated workspace gets at its top level with nothing
+# in them - the symbol cache an AL build fills in, a team's docs convention.
+# Every other root folder comes from an extension and carries an app.json, so
+# this is the only way to declare an empty one. Paths are workspace-root
+# relative and may nest ("docs/decisions"). Each ships a .gitkeep so the
+# directory survives a git commit, and none of them is added to the
+# .code-workspace folders array (they are not AL app roots). A path an
+# extension already owns, or one an included file already puts content in, is
+# refused at save time. Empty / missing means no extra root folders.
+root_folders = [".alpackages"]
+
 # Optional: default-selected catalogue modules. End-users can still opt out of
 # any entry; this only seeds the initial selection on the New Workspace form.
 # Unknown keys drop with a warning rather than failing the import.
@@ -328,3 +339,5 @@ Implementation: walk all active rows, serialise each template/module/catalogue b
 - Binary files inside template or module folders. v1 stores file content as UTF-8 text only; PNGs, ZIPs, or anything else non-text don't have a place in `workspace_extension_files` / `module_extension_files`. If we need binary template assets later, the likely shape is a separate `*_file_blobs` table or a URL-fetched asset; defer until there's a real ask.
 
 The org logo, default publisher / URL / logo / supported countries / ID range / brief / core description, and the always-included file library **are** admin-editable from `/admin/configuration` and live in the database (`organization_assets`, `organization_settings`, `organization_files`). Fresh orgs start without any of these rows — admins fill them in once they need them. Templates opt into specific organisation files via the `runtime_template_included_files` join (TOML field: `[template] included_files`) — a new file in the library is off-by-default until at least one template lists it.
+
+The empty root folders a template declares are its own rows rather than a join, in `runtime_template_root_folders` (TOML field: `[template] root_folders`) — they name a path and nothing else, so there is no shared library to opt into. `TemplateImportService` copies them straight across when an org forks a canonical template, since a path needs no remapping into the acting org.

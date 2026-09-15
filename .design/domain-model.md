@@ -231,6 +231,24 @@ Indexes:
 
 Same reconciler shape as `runtime_template_default_modules`: matches existing rows by `organization_file_id`. The `WorkspaceZipBuilder` filters `OrganizationConfig.Files` through this join at generation time; the New Workspace live preview folds the included files into the workspace-root tree so what the user sees is what they get.
 
+### `runtime_template_root_folders`
+
+The folders a template puts at the workspace root with nothing in them. Every other root-level folder comes from an emitted extension and carries an `app.json`, so this table is the only way to declare an empty one — the symbol cache an AL build fills in (`.alpackages`), a team's `docs/` convention. Not a join: each row names a path and nothing else, so there is no shared library to opt into.
+
+| Column                | Type             | Notes                                            |
+|-----------------------|------------------|--------------------------------------------------|
+| `id`                  | INTEGER PK       |                                                  |
+| `organization_id`     | INTEGER NOT NULL |                                                  |
+| `runtime_template_id` | INTEGER FK NOT NULL | → `runtime_templates.id`, cascade delete      |
+| `path`                | VARCHAR(400) NOT NULL | Workspace-root-relative, forward slashes, may nest. No leading slash, no `..`; a leading dot on a segment is expected. |
+| `ordering`            | INTEGER NOT NULL | Position in the admin's reorderable list         |
+
+Indexes:
+- `(organization_id, runtime_template_id, ordering)` for ordered enumeration.
+- `(runtime_template_id, path)` UNIQUE — a folder can't be listed twice on the same template.
+
+Same reconciler shape as the two joins above, matching existing rows by `path` (the natural identity here). `WorkspaceZipBuilder.WriteRootFolders` emits each with a `.gitkeep` inside, skipping any folder a workspace-root `organization_files` row already fills; the previews on New Workspace, New Extension and Template Detail fold the same set in. These folders are deliberately absent from the `.code-workspace` `folders` array — see `generation-engine.md`.
+
 ### `modules`
 
 | Column                   | Type             | Notes                                          |
