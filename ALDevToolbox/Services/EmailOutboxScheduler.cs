@@ -59,6 +59,11 @@ public sealed class EmailOutboxScheduler : PolledScheduler
         var outbox = scope.ServiceProvider.GetRequiredService<EmailOutbox>();
         var smtp = scope.ServiceProvider.GetRequiredService<SmtpEmailService>();
 
+        // Before anything is sent: write off what has sat here too long. After a
+        // long outage the queue holds messages whose links expired days ago, and
+        // delivering those is worse than not delivering them.
+        await outbox.ExpireStaleAsync(ct);
+
         foreach (var message in await outbox.DueAsync(BatchSize, ct))
         {
             ct.ThrowIfCancellationRequested();

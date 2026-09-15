@@ -168,7 +168,7 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `DISABLE_GITHUB_REPOSITORY_DISCOVERY_SCHEDULER` | `1` to disable the daily sweep that lists the connected GitHub organisation's repositories and offers the AL ones no solution tracks yet. | unset |
 | `DISABLE_TRANSLATION_MEMORY_INGEST_SCHEDULER` | `1` to disable the nightly pass that fills the translation memory from the `.xlf` files in each organisation's own repositories. | unset |
 | `DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER`       | `1` to disable the periodic prune of old login-attempt rows. | unset                |
-| `DISABLE_EMAIL_OUTBOX_SCHEDULER`              | `1` to stop sending queued transactional email (resets, invites, sign-in links). Messages still queue up; nothing goes out. | unset |
+| `DISABLE_EMAIL_OUTBOX_SCHEDULER`              | `1` to stop sending queued transactional email (resets, invites, sign-in links). Messages still queue up, nothing goes out, and nothing is cleaned up - queued messages keep their encrypted bodies until sending is switched back on. | unset |
 | `RELEASE_AUTO_IMPORT_HOUR_UTC`                | Hour (UTC, `0`-`23`) the release auto-import runs at.     | `4`                    |
 | `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated `https://` origins. Leave blank to disable the passkey UI. | unset |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_FROM_NAME` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails; `SMTP_FROM_NAME` is the display name shown beside the `From:` address. | none |

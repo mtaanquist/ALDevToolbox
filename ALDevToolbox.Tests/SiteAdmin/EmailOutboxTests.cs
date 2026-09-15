@@ -216,6 +216,53 @@ public sealed class EmailOutboxTests : IDisposable
         snapshot.SentLastDay.Should().Be(1);
     }
 
+    [Fact]
+    public async Task A_burst_of_waiting_messages_cannot_hide_the_failures()
+    {
+        // The failure list is the only thing telling an operator that email
+        // stopped working, and pending rows are always newer than the failures
+        // they came to find. One shared limit over both would let a flood of
+        // fresh rows push every failure off the page - and the page would then
+        // render its reassuring "nothing has failed" state.
+        var outbox = NewOutbox();
+        var failedId = await EnqueueOneAsync(outbox);
+        await outbox.RecordFailureAsync(failedId, "Connection refused", permanent: true);
+
+        for (var i = 0; i < 5; i++)
+        {
+            _clock.Advance(TimeSpan.FromSeconds(1));
+            await EnqueueOneAsync(outbox, EmailPurpose.MagicLink);
+        }
+
+        var snapshot = await outbox.SnapshotAsync(limit: 3);
+
+        snapshot.Failed.Should().ContainSingle().Which.Id.Should().Be(failedId);
+        snapshot.Waiting.Should().HaveCount(3, "the waiting list has its own limit");
+        snapshot.WaitingTotal.Should().Be(5, "so the page can say the list is a slice");
+        snapshot.FailedTotal.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_message_the_drain_never_reached_is_written_off_rather_than_sent_late()
+    {
+        // After a long outage the queue holds messages whose links expired days
+        // ago. Delivering those is worse than not delivering them, and until it
+        // happens the row is sitting on a live token.
+        var outbox = NewOutbox();
+        var id = await EnqueueOneAsync(outbox);
+
+        (await outbox.ExpireStaleAsync()).Should().Be(0, "it is not stale yet");
+
+        _clock.Advance(EmailOutbox.PendingRetention + TimeSpan.FromMinutes(1));
+        (await outbox.ExpireStaleAsync()).Should().Be(1);
+
+        var row = await RowAsync(id);
+        row.Status.Should().Be(EmailOutboxStatus.Failed);
+        row.BodyEncrypted.Should().BeNull();
+        row.LastError.Should().Contain("Never sent");
+        (await outbox.DueAsync(10)).Should().BeEmpty();
+    }
+
     private async Task<List<int>> RowIdsAsync()
     {
         await using var ctx = _db.NewContext();

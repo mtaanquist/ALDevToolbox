@@ -151,8 +151,14 @@ internal static class AdminUserEndpoints
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Invite email failed for invite {InviteId} to {Email}.", inviteId, emailAddr);
+                    // Not ex.Message any more: a send failure is now a failure to
+                    // *queue*, so what lands here is database text (constraint and
+                    // column names) rather than an SMTP reply, and this reader is an
+                    // org Admin. The exception stays in the log.
                     ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}="
-                        + Uri.EscapeDataString("Invite created but the email failed to send: " + ex.Message));
+                        + Uri.EscapeDataString(
+                            "The invite was created, but the email could not be sent. "
+                            + "Ask your site administrator to check the email settings."));
                     return;
                 }
                 ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.OkQuery}=invited");

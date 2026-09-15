@@ -77,8 +77,13 @@ public enum EmailOutboxStatus
 /// stores only a hash, so a read of that table yields nothing usable. That is
 /// why <see cref="BodyEncrypted"/> is Data-Protection ciphertext (same key ring
 /// as the SMTP password), why sent rows are pruned within a day, and why the
-/// body is dropped the moment a row is given up on. Only rows that are still
-/// trying to deliver hold a secret, and those are short-lived by construction.
+/// body is dropped the moment a row is sent or given up on. Only rows still
+/// trying to deliver hold a secret, and <see cref="Services.EmailOutbox.PendingRetention"/>
+/// bounds how long that lasts - including for a message the drain never reached,
+/// which is written off rather than delivered days late carrying a link that
+/// expired. The one case nothing bounds is the drain not running at all
+/// (<c>DISABLE_EMAIL_OUTBOX_SCHEDULER=1</c>, or a long outage): queued bodies
+/// then wait until it runs again.
 /// </para>
 /// </summary>
 public class EmailOutboxMessage

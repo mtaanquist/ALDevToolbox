@@ -119,6 +119,17 @@ public sealed class EmailOutbox
     }
 
     /// <summary>
+    /// How long a message may sit unsent before it is written off. The drain
+    /// gives up on a message it is actively trying within about four hours, so
+    /// a row older than this means the drain was not running at all - the
+    /// container was down, or the sweep was switched off. Two reasons not to
+    /// simply send it when the drain comes back: the token it carries expired
+    /// long ago, so the recipient would get a dead link, and until then the row
+    /// is sitting on a live secret nothing is bounding.
+    /// </summary>
+    public static readonly TimeSpan PendingRetention = TimeSpan.FromHours(24);
+
+    /// <summary>
     /// The pending messages due now, oldest first. Capped so one sweep can't sit
     /// on the SMTP connection indefinitely; the rest come round on the next poll.
     /// </summary>
@@ -208,6 +219,33 @@ public sealed class EmailOutbox
     /// Deletes rows past their retention. Returns the two counts so the sweep
     /// can log something worth reading.
     /// </summary>
+    /// <summary>
+    /// Writes off messages that have sat unsent past <see cref="PendingRetention"/>,
+    /// dropping their bodies. Returns how many. Note the limit of this as a
+    /// safety net: it runs from the drain, so the one case it cannot cover is
+    /// the drain never running at all.
+    /// </summary>
+    public async Task<int> ExpireStaleAsync(CancellationToken ct = default)
+    {
+        var cutoff = _clock.GetUtcNow().UtcDateTime - PendingRetention;
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var expired = await db.EmailOutboxMessages
+            .Where(m => m.Status == EmailOutboxStatus.Pending && m.CreatedAt < cutoff)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.Status, EmailOutboxStatus.Failed)
+                .SetProperty(m => m.BodyEncrypted, (string?)null)
+                .SetProperty(m => m.LastError,
+                    "Never sent: this sat in the queue for more than a day, by which time the link it carried had expired. Sending was probably switched off or the site was down."),
+                ct);
+        if (expired > 0)
+        {
+            _logger.LogWarning(
+                "Wrote off {Count} email(s) that sat unsent for more than {Hours} hours.",
+                expired, PendingRetention.TotalHours);
+        }
+        return expired;
+    }
+
     public async Task<(int Sent, int Failed)> PruneAsync(CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -234,30 +272,45 @@ public sealed class EmailOutbox
         var since = _clock.GetUtcNow().UtcDateTime - TimeSpan.FromDays(1);
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        // Left-joined to organizations for the label; neither table is scoped by
-        // the tenant filter, and the page is SiteAdmin-only, so there is nothing
-        // here to bypass.
-        var rows = await (
-            from m in db.EmailOutboxMessages.AsNoTracking()
-            where m.Status != EmailOutboxStatus.Sent
-            orderby m.CreatedAt descending, m.Id descending
-            join o in db.Organizations.AsNoTracking() on m.OrganizationId equals o.Id into orgs
-            from org in orgs.DefaultIfEmpty()
-            select new EmailOutboxRow(
-                m.Id, m.ToEmail, m.Purpose, m.Status, m.AttemptCount, m.LastError,
-                m.CreatedAt, m.NextAttemptAt, org == null ? null : org.Name))
-            .Take(limit)
-            .ToListAsync(ct);
+        // One query per status, each with its own limit. A single query over
+        // both and a split afterwards looks tidier and is wrong: pending rows
+        // are always newer than the failures an operator came to find, so a
+        // burst of them would take every slot and the page would render the
+        // reassuring "nothing has failed" state over a table full of failures.
+        var failed = await ListAsync(db, EmailOutboxStatus.Failed, limit, ct);
+        var waiting = await ListAsync(db, EmailOutboxStatus.Pending, limit, ct);
 
         var sentLastDay = await db.EmailOutboxMessages
             .AsNoTracking()
             .CountAsync(m => m.Status == EmailOutboxStatus.Sent && m.SentAt >= since, ct);
 
-        return new EmailOutboxSnapshot(
-            Failed: rows.Where(r => r.Status == EmailOutboxStatus.Failed).ToList(),
-            Waiting: rows.Where(r => r.Status == EmailOutboxStatus.Pending).ToList(),
-            SentLastDay: sentLastDay);
+        // Totals, so a truncated list can say it is truncated rather than
+        // quietly under-reporting.
+        var failedTotal = await db.EmailOutboxMessages
+            .AsNoTracking().CountAsync(m => m.Status == EmailOutboxStatus.Failed, ct);
+        var waitingTotal = await db.EmailOutboxMessages
+            .AsNoTracking().CountAsync(m => m.Status == EmailOutboxStatus.Pending, ct);
+
+        return new EmailOutboxSnapshot(failed, waiting, sentLastDay, failedTotal, waitingTotal);
     }
+
+    /// <summary>
+    /// One status's rows, newest first, with the organisation label. Left-joined
+    /// to organizations; neither table is scoped by the tenant filter, and the
+    /// caller is SiteAdmin-only, so there is nothing here to bypass.
+    /// </summary>
+    private static Task<List<EmailOutboxRow>> ListAsync(
+        AppDbContext db, EmailOutboxStatus status, int limit, CancellationToken ct) =>
+        (from m in db.EmailOutboxMessages.AsNoTracking()
+         where m.Status == status
+         orderby m.CreatedAt descending, m.Id descending
+         join o in db.Organizations.AsNoTracking() on m.OrganizationId equals o.Id into orgs
+         from org in orgs.DefaultIfEmpty()
+         select new EmailOutboxRow(
+             m.Id, m.ToEmail, m.Purpose, m.Status, m.AttemptCount, m.LastError,
+             m.CreatedAt, m.NextAttemptAt, org == null ? null : org.Name))
+        .Take(limit)
+        .ToListAsync(ct);
 
     /// <summary>Wait before the next attempt, given how many have been made.</summary>
     internal static TimeSpan DelayFor(int attemptsMade) =>
@@ -283,8 +336,13 @@ public sealed record EmailOutboxRow(
     DateTime NextAttemptAt,
     string? OrganizationName);
 
-/// <summary>The outbox as /site-admin/email reads it.</summary>
+/// <summary>
+/// The outbox as /site-admin/email reads it. The two lists are capped; the
+/// totals beside them are not, so the page can say when it is showing a slice.
+/// </summary>
 public sealed record EmailOutboxSnapshot(
     IReadOnlyList<EmailOutboxRow> Failed,
     IReadOnlyList<EmailOutboxRow> Waiting,
-    int SentLastDay);
+    int SentLastDay,
+    int FailedTotal,
+    int WaitingTotal);

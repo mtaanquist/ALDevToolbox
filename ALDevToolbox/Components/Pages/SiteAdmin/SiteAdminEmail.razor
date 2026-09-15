@@ -124,6 +124,12 @@
                         person waiting for the email, and not you. These cannot be sent again from here:
                         once the cause is fixed, ask the person to request the email again.
                     </p>
+                    @if (_snapshot.FailedTotal > _snapshot.Failed.Count)
+                    {
+                        <p class="card__sub">
+                            Showing the @_snapshot.Failed.Count most recent of @_snapshot.FailedTotal.
+                        </p>
+                    }
                 </div>
             </div>
 
@@ -197,6 +203,12 @@
                 <div>
                     <h2 class="card__title">Still waiting</h2>
                     <p class="card__sub">Sent within a minute or so, and tried again for a few hours if it does not get through.</p>
+                    @if (_snapshot.WaitingTotal > _snapshot.Waiting.Count)
+                    {
+                        <p class="card__sub">
+                            Showing the @_snapshot.Waiting.Count most recent of @_snapshot.WaitingTotal.
+                        </p>
+                    }
                 </div>
             </div>
 
