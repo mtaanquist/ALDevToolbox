@@ -1,6 +1,7 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Services;
@@ -12,13 +13,26 @@ public interface IEmailService
     Task<bool> IsConfiguredAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Sends an email. Throws when SMTP is not configured, and lets transport
-    /// failures propagate rather than swallowing them here. Note that every
-    /// caller currently catches and logs instead of rethrowing, so a throw
-    /// does not by itself reach the user — see the remarks on
-    /// <see cref="SmtpEmailService"/> for what each flow actually shows.
+    /// Sends an email, or queues it to be sent. Which one depends on
+    /// <paramref name="purpose"/>: the implementation the app injects is
+    /// <see cref="OutboxEmailService"/>, which hands a couple of purposes
+    /// straight to SMTP and writes the rest to <c>email_outbox</c> for
+    /// <see cref="EmailOutboxScheduler"/> to deliver and retry (issue #790).
+    ///
+    /// <para>
+    /// Throws when SMTP is not configured, and when the send (or the queue
+    /// write) fails. Every caller catches and logs rather than rethrowing, so a
+    /// throw does not by itself reach the user - see the remarks on
+    /// <see cref="SmtpEmailService"/> for what each flow shows.
+    /// </para>
     /// </summary>
-    Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default);
+    /// <param name="purpose">
+    /// The flow this message belongs to. Required, not inferred: it decides
+    /// whether the message is queued, and it is what an operator reads when a
+    /// send fails.
+    /// </param>
+    Task SendAsync(
+        string toEmail, string subject, string htmlBody, EmailPurpose purpose, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -27,19 +41,21 @@ public interface IEmailService
 /// env vars as fallback). Updates to the SiteAdmin SMTP form take effect on
 /// the next request without a restart.
 ///
-/// Failures throw, but every call site catches and logs a warning rather than
-/// rethrowing, so what the user sees is decided by the flow and not by this
-/// class. Three patterns: the email-MFA paths redirect to an error, so the user
-/// knows; invites and email-change fall back to showing the link inline, so the
-/// flow completes anyway; and the enumeration-resistant flows (signup
-/// verification, forgot password, magic link) deliberately return the same
-/// generic response whether the send worked or not, because the response must
-/// not betray whether the address exists.
+/// <para>
+/// This is the transport, not the service the app injects: DI gives callers
+/// <see cref="OutboxEmailService"/>, which queues most messages and leaves this
+/// class to be driven by <see cref="EmailOutboxScheduler"/>. Only the purposes
+/// in <see cref="EmailPurposes.SendsInline"/> reach it from a request thread.
+/// </para>
 ///
-/// The consequence worth knowing before trusting a send: on that last group a
-/// dead SMTP server is invisible to the user and to the operator alike, showing
-/// up only as a logged warning. Admin notifications and the SiteAdmin test email
-/// are log-only too.
+/// <para>
+/// Failures throw, and the caller decides what that means. For a queued message
+/// the caller is the drain, which backs off and retries, and a give-up lands on
+/// /site-admin/email for an operator to find (issue #790). For an inline one it
+/// is the flow itself: the email-MFA paths redirect to an error, and the
+/// SiteAdmin test email reports the exception text, because both exist to tell
+/// someone right now whether the send worked.
+/// </para>
 /// </summary>
 public sealed class SmtpEmailService : IEmailService
 {
@@ -62,7 +78,8 @@ public sealed class SmtpEmailService : IEmailService
     public async Task<bool> IsConfiguredAsync(CancellationToken ct = default) =>
         await ResolveOnceAsync(ct) is not null;
 
-    public async Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default)
+    public async Task SendAsync(
+        string toEmail, string subject, string htmlBody, EmailPurpose purpose, CancellationToken ct = default)
     {
         var resolved = await ResolveOnceAsync(ct);
         if (resolved is null)
@@ -83,7 +100,7 @@ public sealed class SmtpEmailService : IEmailService
         await client.SendAsync(message, ct);
         await client.DisconnectAsync(quit: true, ct);
 
-        _logger.LogInformation("Sent email to {To} subject {Subject}.", toEmail, subject);
+        _logger.LogInformation("Sent {Purpose} email to {To} subject {Subject}.", purpose, toEmail, subject);
     }
 
     /// <summary>

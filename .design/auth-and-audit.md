@@ -94,7 +94,13 @@ Every login attempt — successful or not — writes a row to `login_attempts` k
 
 When a signup arrives, `EmailService` (MailKit) emails every active admin in the target org. When an admin decides, the requester gets a one-line "approved" or "declined" email. SMTP is configured via env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD_FILE`, `SMTP_FROM`, `SMTP_USE_STARTTLS`. If any of those are missing, the page shows "Email is not configured; ask an admin." rather than swallowing the failure — fail loudly so misconfiguration is visible.
 
-Email send failures log a warning but do not roll back the underlying action. A failed approval email shouldn't unapprove the user.
+Email send failures do not roll back the underlying action. A failed approval email shouldn't unapprove the user.
+
+**Sending goes through an outbox** (issue #790). `IEmailService` resolves to `OutboxEmailService`, which writes the message to `email_outbox` and returns; `EmailOutboxScheduler` (a `PolledScheduler`, opt out with `DISABLE_EMAIL_OUTBOX_SCHEDULER=1`) sends it through `SmtpEmailService`, backs off on failure over about four hours, and gives up after that. Given-up messages are listed at `/site-admin/email`, which is the point of the whole thing: the enumeration-resistant flows (signup verification, forgot password, magic link) must answer the user identically whether or not the mail went out, so before the outbox a dead relay was invisible to the user *and* to the operator, showing up only as a logged warning. Two purposes still send inline, because someone is waiting on the answer and the flow already shows it: the email-MFA code and the SiteAdmin test email.
+
+Two consequences worth knowing. Message bodies carry live tokens — a queued reset body holds a working reset link, where `password_reset_tokens` holds only a hash — so the body column is Data-Protection ciphertext (same key ring as the SMTP password), sent rows are pruned within a day, and the body is dropped as soon as a message is sent or given up on; only messages still trying to deliver hold a secret. And the row is written through its own short-lived `DbContext` rather than the caller's, so a queued send is *not* atomic with the business change that triggered it; making it so means moving each enqueue inside its caller's transaction.
+
+`email_outbox` sits outside the tenant query filter, like `login_attempts` and `pending_signups`: it is written by pre-auth flows with no organisation in scope and read by a cross-org SiteAdmin page. Its `organization_id` is a label for that page, not a fence, and with no filter on the table its reads carry no `IgnoreQueryFilters()` bypass.
 
 ## Account self-service
 

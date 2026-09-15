@@ -115,13 +115,14 @@ public sealed class CredentialEmailLinkTests : IDisposable
 
     private sealed class CapturingEmailService : IEmailService
     {
-        public List<(string To, string Subject, string HtmlBody)> Sent { get; } = [];
+        public List<(string To, string Subject, string HtmlBody, EmailPurpose Purpose)> Sent { get; } = [];
 
         public Task<bool> IsConfiguredAsync(CancellationToken ct = default) => Task.FromResult(true);
 
-        public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default)
+        public Task SendAsync(
+            string toEmail, string subject, string htmlBody, EmailPurpose purpose, CancellationToken ct = default)
         {
-            Sent.Add((toEmail, subject, htmlBody));
+            Sent.Add((toEmail, subject, htmlBody, purpose));
             return Task.CompletedTask;
         }
     }

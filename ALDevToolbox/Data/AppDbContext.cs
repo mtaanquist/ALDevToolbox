@@ -134,6 +134,13 @@ public class AppDbContext : DbContext
     public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
+    // Transactional email waiting to be sent (issue #790). Written by pre-auth
+    // flows that have no organisation in scope and read by a cross-org SiteAdmin
+    // console, so deliberately NOT scoped by the tenant query filter - and with
+    // no filter on the table there is nothing for its reads to escape, so no
+    // IgnoreQueryFilters() belongs on its read path. The organization_id it does
+    // carry is a label for that console, never a fence.
+    public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
     public DbSet<Invite> Invites => Set<Invite>();
     public DbSet<UserTotpSecret> UserTotpSecrets => Set<UserTotpSecret>();
     public DbSet<UserRecoveryCode> UserRecoveryCodes => Set<UserRecoveryCode>();
@@ -339,7 +346,7 @@ public class AppDbContext : DbContext
         // NOTE (#701): the same "nothing to escape" rule covers every other
         // entity this method never scopes — Organization, PendingSignup,
         // LoginAttempt, SystemSettings, Backup, PerTenantBackup,
-        // OrganizationUsageSnapshot and OeFileContent. An IgnoreQueryFilters()
+        // OrganizationUsageSnapshot, EmailOutboxMessage and OeFileContent. An IgnoreQueryFilters()
         // on a query *rooted* at one of those is a no-op that still reads to a
         // reviewer as a deliberate tenant-fence crossing, so it does not belong
         // there. The exception is a query that reaches a filtered entity from

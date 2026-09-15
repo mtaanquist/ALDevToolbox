@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Account;
@@ -83,7 +84,7 @@ internal static class AccountMfaEndpoints
                     .Select(u => new { u.Email, u.DisplayName })
                     .FirstAsync(ct);
                 var (subject, body) = EmailTemplates.MfaEmailCode(user.DisplayName, code);
-                await emailSvc.SendAsync(user.Email, subject, body, ct);
+                await emailSvc.SendAsync(user.Email, subject, body, EmailPurpose.MfaCode, ct);
                 ctx.Response.Redirect($"/login/challenge?method=email&{RouteConstants.OkQuery}=sent");
             }
             catch (Exception ex)
@@ -203,7 +204,7 @@ internal static class AccountMfaEndpoints
                     .Select(u => new { u.Email, u.DisplayName })
                     .FirstAsync(ct);
                 var (subject, body) = EmailTemplates.MfaEmailCode(user.DisplayName, code);
-                await emailSvc.SendAsync(user.Email, subject, body, ct);
+                await emailSvc.SendAsync(user.Email, subject, body, EmailPurpose.MfaCode, ct);
                 ctx.Response.Redirect($"{RouteConstants.Account}?{RouteConstants.OkQuery}=email-mfa-sent");
             }
             catch (Exception ex)
