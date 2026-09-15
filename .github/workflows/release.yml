@@ -19,12 +19,6 @@ permissions:
   packages: write
   actions: read
 
-env:
-  # The docker/* and actions/checkout actions still ship on Node 20, which
-  # GitHub forces to Node 24 on 2026-06-16. Opt in early so the cutover is a
-  # non-event; drop this once those actions default to Node 24.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # Gate: don't publish a commit that hasn't passed CI. build.yml does NOT run
   # on the tag push (#729 excluded tags, because the run would duplicate one
@@ -99,7 +93,7 @@ jobs:
       # repo's casing doesn't matter to GHCR.
       - name: Derive image tags
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -118,10 +112,10 @@ jobs:
         run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Build and push
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: true
@@ -145,6 +139,6 @@ jobs:
       # GitHub Release had to be cut by hand — see CLAUDE.md "Releases and image
       # publishing".
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true

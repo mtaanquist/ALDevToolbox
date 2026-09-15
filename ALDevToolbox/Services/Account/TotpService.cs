@@ -4,15 +4,15 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Net.Codecrete.QrCodeGenerator;
 using OtpNet;
-using QRCoder;
 
 namespace ALDevToolbox.Services.Account;
 
 /// <summary>
 /// Result of <see cref="TotpService.BeginEnrollmentAsync"/>. The Base32 secret
 /// and <c>otpauth://</c> URI are the same value in two presentations; the QR
-/// PNG is rendered server-side via QRCoder so we don't ship a JS QR library.
+/// PNG is rendered server-side so we don't ship a JS QR library.
 /// All three are shown to the user once during setup.
 /// </summary>
 public sealed record TotpEnrollment(string SecretBase32, string OtpAuthUri, byte[] QrPng);
@@ -184,9 +184,10 @@ public sealed class TotpService
 
     private static byte[] RenderQr(string content)
     {
-        using var gen = new QRCodeGenerator();
-        using var data = gen.CreateQrCode(content, QRCodeGenerator.ECCLevel.Q);
-        var png = new PngByteQRCode(data);
-        return png.GetGraphic(6);
+        // Quartile is the error-correction level this page has always used.
+        // border is the quiet zone in modules: the QR spec wants 4, and this
+        // library defaults to 0, which produces a symbol some readers refuse.
+        var qr = QrCode.EncodeText(content, QrCode.Ecc.Quartile);
+        return qr.ToPngBitmap(border: 4, scale: 6);
     }
 }

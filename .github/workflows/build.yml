@@ -41,12 +41,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # actions/checkout and other JS actions still ship on Node 20, which GitHub
-  # forces to Node 24 on 2026-06-16. Opt in early so the cutover is a
-  # non-event; drop this once those actions default to Node 24.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # Decides whether the change touches anything that can affect compilation,
   # tests, or the image. Docs-only diffs (**.md, .design/**, docs/**, LICENSE)
