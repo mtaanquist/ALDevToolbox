@@ -752,9 +752,6 @@ public sealed class DeliveryServiceTests : IDisposable
         /// <summary>What the environment already has installed. Empty = every app is new to it.</summary>
         public List<BcInstalledApp> Installed { get; } = new();
 
-        /// <summary>Set to fail the installed-apps read.</summary>
-        public BcApiException? ListThrows;
-
         /// <summary>What the last upload was sent with, for the tests that pin the call.</summary>
         public string? LastSchedule;
         public string? LastSyncMode;
@@ -768,7 +765,6 @@ public sealed class DeliveryServiceTests : IDisposable
             string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
         {
             LastFamily = applicationFamily;
-            if (ListThrows is not null) throw ListThrows;
             return Task.FromResult((IReadOnlyList<BcInstalledApp>)Installed);
         }
 
