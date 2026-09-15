@@ -198,7 +198,7 @@ internal static class AccountAuthEndpoints
                 {
                     var verifyUrl = $"{publicOrigin.For(ctx)}/auth/signup/verify?token={Uri.EscapeDataString(start.LinkToken)}";
                     var (subject, body) = EmailTemplates.SignupVerification(verifyUrl, start.Code);
-                    await email.SendAsync(AuthService.NormaliseEmail(emailInput), subject, body, ct);
+                    await email.SendAsync(AuthService.NormaliseEmail(emailInput), subject, body, EmailPurpose.SignupVerification, ct);
                 }
             }
             catch (Exception ex)
@@ -363,7 +363,7 @@ internal static class AccountAuthEndpoints
                     var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
                     var url = $"{publicOrigin.For(ctx)}/reset-password?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.ForgotPassword(user.DisplayName, url);
-                    await email.SendAsync(user.Email, subject, body, ct);
+                    await email.SendAsync(user.Email, subject, body, EmailPurpose.PasswordReset, ct);
                 }
             }
             catch (Exception ex)
@@ -407,7 +407,7 @@ internal static class AccountAuthEndpoints
                         .FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
                     var url = $"{publicOrigin.For(ctx)}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.MagicLink(user.DisplayName, url);
-                    await email.SendAsync(user.Email, subject, body, ct);
+                    await email.SendAsync(user.Email, subject, body, EmailPurpose.MagicLink, ct);
                 }
             }
             catch (Exception ex)

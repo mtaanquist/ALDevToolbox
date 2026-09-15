@@ -51,6 +51,9 @@ public static class BackgroundWorkerRegistration
         // Periodic prune of old login_attempts rows so the table doesn't grow
         // unbounded (the rate-limiter only reads a ~15-minute window). See issue #403.
         services.AddHostedService<ALDevToolbox.Services.Account.LoginAttemptPruneScheduler>();
+        // Sends the queued transactional email, retries what fails, and prunes
+        // what it no longer needs to keep. See issue #790.
+        services.AddHostedService<ALDevToolbox.Services.EmailOutboxScheduler>();
         return services;
     }
 }

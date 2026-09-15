@@ -318,7 +318,7 @@ internal static class SiteAdminEndpoints
             try
             {
                 var (subject, body) = EmailTemplates.SiteAdminTest(recipient.DisplayName);
-                await email.SendAsync(recipient.Email, subject, body, ct);
+                await email.SendAsync(recipient.Email, subject, body, EmailPurpose.SiteAdminTest, ct);
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.OkQuery}=test-sent");
             }
             catch (Exception ex)

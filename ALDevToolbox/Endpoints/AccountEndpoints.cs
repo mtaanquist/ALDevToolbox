@@ -56,7 +56,7 @@ internal static class AccountEndpoints
             {
                 var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}{RouteConstants.AdminUsers}";
                 var (subject, body) = EmailTemplates.SignupPending(admin.DisplayName, user.Email, org.Name, url);
-                await email.SendAsync(admin.Email, subject, body, ct);
+                await email.SendAsync(admin.Email, subject, body, EmailPurpose.SignupPendingNotice, ct);
             }
         }
         catch (Exception ex)

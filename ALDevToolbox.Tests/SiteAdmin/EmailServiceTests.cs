@@ -1,3 +1,4 @@
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Configuration;
 using ALDevToolbox.Tests.Infrastructure;
@@ -50,7 +51,7 @@ public sealed class EmailServiceTests : IDisposable
         await ctx.SaveChangesAsync();
 
         var email = NewService();
-        var act = () => email.SendAsync("user@example.com", "Subject", "<p>Body</p>");
+        var act = () => email.SendAsync("user@example.com", "Subject", "<p>Body</p>", EmailPurpose.PasswordReset);
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*not configured*");
     }

@@ -50,7 +50,9 @@ public sealed class AdminUsersTests : IDisposable
     private sealed class StubEmailService : IEmailService
     {
         public Task<bool> IsConfiguredAsync(CancellationToken ct = default) => Task.FromResult(false);
-        public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SendAsync(
+            string toEmail, string subject, string htmlBody, EmailPurpose purpose, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     public void Dispose()

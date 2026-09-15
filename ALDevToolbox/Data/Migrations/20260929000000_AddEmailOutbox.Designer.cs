@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260929000000_AddEmailOutbox")]
+    partial class AddEmailOutbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -4421,43 +4424,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("runtime_template_included_files", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplateRootFolder", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("Ordering")
-                        .HasColumnType("integer")
-                        .HasColumnName("ordering");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<string>("Path")
-                        .IsRequired()
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)")
-                        .HasColumnName("path");
-
-                    b.Property<int>("RuntimeTemplateId")
-                        .HasColumnType("integer")
-                        .HasColumnName("runtime_template_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RuntimeTemplateId", "Path")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "RuntimeTemplateId", "Ordering");
-
-                    b.ToTable("runtime_template_root_folders", (string)null);
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.SignupRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -7056,25 +7022,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("RuntimeTemplate");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplateRootFolder", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.RuntimeTemplate", "RuntimeTemplate")
-                        .WithMany("RootFolders")
-                        .HasForeignKey("RuntimeTemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("RuntimeTemplate");
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.SignupRequest", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
@@ -7435,8 +7382,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("DefaultModules");
 
                     b.Navigation("IncludedFiles");
-
-                    b.Navigation("RootFolders");
 
                     b.Navigation("WorkspaceExtensions");
                 });
