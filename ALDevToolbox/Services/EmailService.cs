@@ -12,8 +12,11 @@ public interface IEmailService
     Task<bool> IsConfiguredAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Sends an email. Throws when SMTP is not configured so misconfiguration
-    /// is visible at the calling site rather than silently swallowed.
+    /// Sends an email. Throws when SMTP is not configured, and lets transport
+    /// failures propagate rather than swallowing them here. Note that every
+    /// caller currently catches and logs instead of rethrowing, so a throw
+    /// does not by itself reach the user — see the remarks on
+    /// <see cref="SmtpEmailService"/> for what each flow actually shows.
     /// </summary>
     Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default);
 }
@@ -24,8 +27,19 @@ public interface IEmailService
 /// env vars as fallback). Updates to the SiteAdmin SMTP form take effect on
 /// the next request without a restart.
 ///
-/// Failures throw and callers decide whether to surface the error to the
-/// user (forgot password) or log a warning and continue (admin notifications).
+/// Failures throw, but every call site catches and logs a warning rather than
+/// rethrowing, so what the user sees is decided by the flow and not by this
+/// class. Three patterns: the email-MFA paths redirect to an error, so the user
+/// knows; invites and email-change fall back to showing the link inline, so the
+/// flow completes anyway; and the enumeration-resistant flows (signup
+/// verification, forgot password, magic link) deliberately return the same
+/// generic response whether the send worked or not, because the response must
+/// not betray whether the address exists.
+///
+/// The consequence worth knowing before trusting a send: on that last group a
+/// dead SMTP server is invisible to the user and to the operator alike, showing
+/// up only as a logged warning. Admin notifications and the SiteAdmin test email
+/// are log-only too.
 /// </summary>
 public sealed class SmtpEmailService : IEmailService
 {
