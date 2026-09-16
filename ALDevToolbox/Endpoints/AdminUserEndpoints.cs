@@ -43,7 +43,7 @@ internal static class AdminUserEndpoints
                         var loginUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}{RouteConstants.Login}";
                         var (subject, body) = EmailTemplates.SignupDecided(
                             req.User.DisplayName, req.Organization.Name, approved: true, loginUrl);
-                        await email.SendAsync(req.User.Email, subject, body, ct);
+                        await email.SendAsync(req.User.Email, subject, body, EmailPurpose.SignupDecision, ct);
                     }
                 }
                 catch (Exception ex)
@@ -77,7 +77,7 @@ internal static class AdminUserEndpoints
                 {
                     var loginUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}{RouteConstants.Login}";
                     var (subject, body) = EmailTemplates.SignupDecided(requesterDisplay, orgName, approved: false, loginUrl);
-                    await email.SendAsync(requesterEmail, subject, body, ct);
+                    await email.SendAsync(requesterEmail, subject, body, EmailPurpose.SignupDecision, ct);
                 }
                 catch (Exception ex)
                 {
@@ -146,13 +146,19 @@ internal static class AdminUserEndpoints
                 var (subject, body) = EmailTemplates.Invite(inviter.DisplayName, orgName, roleLabel, message, url);
                 try
                 {
-                    await email.SendAsync(emailAddr.Trim(), subject, body, ct);
+                    await email.SendAsync(emailAddr.Trim(), subject, body, EmailPurpose.Invite, ct);
                 }
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Invite email failed for invite {InviteId} to {Email}.", inviteId, emailAddr);
+                    // Not ex.Message any more: a send failure is now a failure to
+                    // *queue*, so what lands here is database text (constraint and
+                    // column names) rather than an SMTP reply, and this reader is an
+                    // org Admin. The exception stays in the log.
                     ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}="
-                        + Uri.EscapeDataString("Invite created but the email failed to send: " + ex.Message));
+                        + Uri.EscapeDataString(
+                            "The invite was created, but the email could not be sent. "
+                            + "Ask your site administrator to check the email settings."));
                     return;
                 }
                 ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.OkQuery}=invited");
@@ -218,7 +224,7 @@ internal static class AdminUserEndpoints
                         var orgName = inviter.Organization?.Name ?? "your organisation";
                         var roleLabel = FormatRoleLabel(role);
                         var (subject, body) = EmailTemplates.Invite(inviter.DisplayName, orgName, roleLabel, message, url);
-                        await email.SendAsync(emailAddr.Trim(), subject, body, ct);
+                        await email.SendAsync(emailAddr.Trim(), subject, body, EmailPurpose.Invite, ct);
                     }
                     catch (Exception ex)
                     {
@@ -278,7 +284,7 @@ internal static class AdminUserEndpoints
                         var user = await db.Users.IgnoreQueryFilters().AsNoTracking()
                             .FirstAsync(u => u.Id == id, ct);
                         var (subject, body) = EmailTemplates.EmailChangeConfirm(user.DisplayName, url);
-                        await email.SendAsync(newEmail.Trim().ToLowerInvariant(), subject, body, ct);
+                        await email.SendAsync(newEmail.Trim().ToLowerInvariant(), subject, body, EmailPurpose.EmailChangeConfirmation, ct);
                     }
                     catch (Exception ex)
                     {

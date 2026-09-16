@@ -21,6 +21,7 @@ public sealed class TenantQueryFilterTests
     {
         ["organization_usage_snapshots"] = "Written and read off-request by the usage scheduler and the SiteAdmin storage page via raw SQL, both cross-org by design.",
         ["per_tenant_backups"] = "SiteAdmin-only surface, read across orgs; every method gates on RequireSiteAdmin() first.",
+        ["email_outbox"] = "Written by pre-auth flows with no organisation in scope and read by the SiteAdmin email page; its organization_id is a label for that page, not a fence. See issue #790.",
     };
 
     [Fact]

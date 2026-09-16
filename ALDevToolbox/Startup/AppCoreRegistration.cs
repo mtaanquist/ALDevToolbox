@@ -32,8 +32,18 @@ public static class AppCoreRegistration
         // middleware and BackupService share the same instance.
         services.AddSingleton<MaintenanceModeState>();
         // Email shares the AppDbContext lifetime (Scoped) so it can read the
-        // hybrid SMTP override from system_settings.
-        services.AddScoped<IEmailService, SmtpEmailService>();
+        // hybrid SMTP override from system_settings. Callers get the outbox
+        // decorator, not the transport: it writes most messages to email_outbox
+        // for EmailOutboxScheduler to deliver and retry, so a failed send is
+        // visible instead of a log warning nobody reads (issue #790).
+        // SmtpEmailService stays registered as itself because the decorator and
+        // the drain both send through it.
+        services.AddScoped<SmtpEmailService>();
+        services.AddScoped<EmailOutbox>();
+        services.AddScoped<IEmailService>(sp => new OutboxEmailService(
+            sp.GetRequiredService<SmtpEmailService>(),
+            sp.GetRequiredService<EmailOutbox>(),
+            sp.GetRequiredService<IOrganizationContext>()));
         return services;
     }
 

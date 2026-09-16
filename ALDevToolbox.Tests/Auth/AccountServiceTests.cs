@@ -522,7 +522,7 @@ public sealed class AccountServiceTests : IDisposable
 
         var ctx = _db.NewContext();
         var svc = NewPasswordReset(ctx);
-        var token = await svc.CreatePasswordResetTokenAsync("reset@example.com");
+        var token = await svc.CreatePasswordResetTokenAsync("reset@example.com", "10.0.0.1");
         token.Should().NotBeNull();
 
         await svc.ConsumePasswordResetTokenAsync(token!, "verylongnewpassword!");
@@ -533,11 +533,84 @@ public sealed class AccountServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Reset_requests_are_throttled_on_the_same_window_as_sign_in()
+    {
+        // Without a limit this is an unauthenticated way to make the site send
+        // mail to an address of the caller's choosing, as often as they like -
+        // and since #790 every request also writes a durable outbox row.
+        await SeedResettableUserAsync("throttle@example.com");
+        var ctx = _db.NewContext();
+        var svc = NewPasswordReset(ctx);
+
+        for (var i = 0; i < AuthService.MaxAttemptsPerEmail; i++)
+        {
+            (await svc.CreatePasswordResetTokenAsync("throttle@example.com", "10.0.0.1"))
+                .Should().NotBeNull("request {0} is inside the window", i + 1);
+        }
+
+        (await svc.CreatePasswordResetTokenAsync("throttle@example.com", "10.0.0.1"))
+            .Should().BeNull("the per-email window is spent");
+
+        _clock.Advance(AuthService.RateWindow + TimeSpan.FromSeconds(1));
+        (await svc.CreatePasswordResetTokenAsync("throttle@example.com", "10.0.0.1"))
+            .Should().NotBeNull("the window has passed");
+    }
+
+    [Fact]
+    public async Task An_unknown_address_still_costs_the_caller_an_attempt()
+    {
+        // Otherwise cycling addresses is free and the per-IP window never trips.
+        var ctx = _db.NewContext();
+        var svc = NewPasswordReset(ctx);
+
+        await svc.CreatePasswordResetTokenAsync("ghost@example.com", "10.0.0.9");
+
+        (await ctx.LoginAttempts.CountAsync(a => a.Ip == "10.0.0.9")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Asking_for_a_reset_cannot_lock_the_owner_out_of_sign_in()
+    {
+        // The trap in recording these at all: five consecutive *failures* lock
+        // an account, so if issuing a link counted as a failure, anyone who
+        // knows an email could lock its owner out by asking five times. Issuing
+        // records a success instead, which is why this passes.
+        await SeedResettableUserAsync("victim@example.com", password: "rightpasswordlong");
+        var ctx = _db.NewContext();
+        var svc = NewPasswordReset(ctx);
+        var auth = NewAuth(ctx);
+
+        for (var i = 0; i < AuthService.LockoutThreshold; i++)
+        {
+            (await svc.CreatePasswordResetTokenAsync("victim@example.com", "10.0.0.7")).Should().NotBeNull();
+        }
+
+        var (outcome, _) = await auth.TryLoginAsync("victim@example.com", "rightpasswordlong", "10.0.0.8");
+        outcome.Should().Be(LoginOutcome.Success);
+    }
+
+    private async Task SeedResettableUserAsync(string email, string password = "somelongpassword1")
+    {
+        await using var seed = _db.NewContext();
+        seed.Users.Add(new User
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = email,
+            PasswordHash = NewAuth(seed).HashPassword(password),
+            DisplayName = "Reset Subject",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = _clock.GetUtcNow().UtcDateTime,
+        });
+        await seed.SaveChangesAsync();
+    }
+
+    [Fact]
     public async Task Reset_token_for_unknown_email_returns_null_so_we_dont_leak_existence()
     {
         var ctx = _db.NewContext();
         var svc = NewPasswordReset(ctx);
-        var token = await svc.CreatePasswordResetTokenAsync("ghost@example.com");
+        var token = await svc.CreatePasswordResetTokenAsync("ghost@example.com", "10.0.0.1");
         token.Should().BeNull();
         (await ctx.PasswordResetTokens.AnyAsync()).Should().BeFalse();
     }
