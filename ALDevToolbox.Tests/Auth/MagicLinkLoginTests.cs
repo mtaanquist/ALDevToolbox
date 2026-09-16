@@ -141,7 +141,7 @@ public sealed class MagicLinkLoginTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = NewSvc(ctx);
 
-        var token = await svc.CreatePasswordResetTokenAsync("user@example.com");
+        var token = await svc.CreatePasswordResetTokenAsync("user@example.com", "10.0.0.1");
         token.Should().NotBeNull();
 
         Func<Task> act = () => svc.ConsumeMagicLoginTokenAsync(token!);
@@ -178,7 +178,7 @@ public sealed class MagicLinkLoginTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = NewSvc(ctx);
 
-        var resetToken = await svc.CreatePasswordResetTokenAsync("user@example.com");
+        var resetToken = await svc.CreatePasswordResetTokenAsync("user@example.com", "10.0.0.1");
         var magicToken = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
 
         var rows = await ctx.PasswordResetTokens.IgnoreQueryFilters().ToListAsync();

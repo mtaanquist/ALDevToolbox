@@ -144,7 +144,7 @@ public sealed class EntraLoginPolicyTests : IDisposable
         await using var ctx = _db.NewContext();
         var resets = new PasswordResetService(ctx, NewAuth(ctx), TimeProvider.System);
 
-        (await resets.CreatePasswordResetTokenAsync("mette@cronus.com")).Should().BeNull();
+        (await resets.CreatePasswordResetTokenAsync("mette@cronus.com", "10.0.0.1")).Should().BeNull();
     }
 
     [Fact]

@@ -30,31 +30,65 @@ public sealed class PasswordResetService
 
     /// <summary>
     /// Generates a single-use password reset token for the user with the
-    /// given email. Returns the plaintext token — the caller emails it. We
-    /// always return a token (even for unknown emails) so callers can render
-    /// the same "if that email exists, you'll get a link" copy without
-    /// branching on lookup outcome; the unknown-email token never lands in
-    /// the table.
+    /// given email. Returns the plaintext token — the caller emails it.
+    /// Returns <c>null</c> for unknown / disabled / Microsoft-only users and
+    /// for a throttled request, so <c>/forgot-password</c> can render the same
+    /// opaque "if that email exists" response regardless of outcome (no
+    /// email-enumeration leak).
+    ///
+    /// <para>
+    /// Rate limited on the same per-email / per-IP windows as password sign-in
+    /// and magic links (10 per email, 30 per IP, per 15 minutes), because
+    /// without one this endpoint is an unauthenticated way to make the site
+    /// send mail to an address of the caller's choosing, as often as they like.
+    /// <c>.design/auth-and-audit.md</c> described that limit long before there
+    /// was one; issue #790's outbox is what made the gap matter, since every
+    /// request now also writes a durable row.
+    /// </para>
+    ///
+    /// <para>
+    /// Every outcome is recorded in <c>login_attempts</c>, issued or not, so
+    /// the counter is honest — an attacker cycling unknown addresses has to
+    /// pay for them. Note what <c>succeeded: true</c> means on a row written
+    /// here: a reset link was issued, not that anyone signed in. It is
+    /// deliberate that issuing records a success rather than a failure, and
+    /// <see cref="CreateMagicLoginTokenAsync"/> does the same: five *failures*
+    /// in the window lock an account out of sign-in, so recording a failure
+    /// for a valid address would hand anyone who knows an email a way to lock
+    /// its owner out by asking for a reset five times.
+    /// </para>
     /// </summary>
-    public async Task<string?> CreatePasswordResetTokenAsync(string email, CancellationToken ct = default)
+    public async Task<string?> CreatePasswordResetTokenAsync(
+        string email, string ip, CancellationToken ct = default)
     {
         var normalised = AuthService.NormaliseEmail(email);
+        var now = _clock.GetUtcNow().UtcDateTime;
+
+        if (await _auth.IsRateLimitedAsync(normalised, ip, now, ct))
+        {
+            await _auth.RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return null;
+        }
+
         // Fence category 1 (pre-auth routing): password reset, before any cookie exists;
         // pinned to the typed email.
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == normalised, ct);
         if (user is null || user.Status == UserStatus.Disabled)
         {
+            await _auth.RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
             return null;
         }
         // Microsoft-only orgs have no password to reset (issue #552). The
-        // response stays the generic "check your email" either way.
+        // response stays the generic "check your email" either way. SiteAdmins
+        // are exempt from that policy (break-glass), so this branch cannot
+        // write failures against the one account that must stay reachable.
         if (await _auth.IsLocalLoginDisabledAsync(user, ct))
         {
+            await _auth.RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
             return null;
         }
 
         var (raw, hash) = TokenIssuer.Issue();
-        var now = _clock.GetUtcNow().UtcDateTime;
         _db.PasswordResetTokens.Add(new PasswordResetToken
         {
             UserId = user.Id,
@@ -64,6 +98,7 @@ public sealed class PasswordResetService
             ExpiresAt = now + ResetTokenLifetime,
         });
         await _db.SaveChangesAsync(ct);
+        await _auth.RecordAttemptAsync(normalised, ip, succeeded: true, now, ct);
         return raw;
     }
 

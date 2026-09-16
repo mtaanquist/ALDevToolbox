@@ -355,7 +355,7 @@ internal static class AccountAuthEndpoints
             var addr = form["Email"].ToString();
             try
             {
-                var token = await passwordReset.CreatePasswordResetTokenAsync(addr, ct);
+                var token = await passwordReset.CreatePasswordResetTokenAsync(addr, ResolveIp(ctx), ct);
                 if (token is not null)
                 {
                     // Fence category 1 (pre-auth routing): forgot-password, before any cookie exists;

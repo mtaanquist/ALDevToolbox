@@ -68,7 +68,7 @@ public sealed class CredentialChangeRevocationTests : IDisposable
         string token;
         await using (var ctx = _db.NewContext())
         {
-            token = (await NewPasswordReset(ctx).CreatePasswordResetTokenAsync(Email))!;
+            token = (await NewPasswordReset(ctx).CreatePasswordResetTokenAsync(Email, "10.0.0.1"))!;
         }
         token.Should().NotBeNull();
 

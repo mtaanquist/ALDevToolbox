@@ -85,7 +85,7 @@ Password policy: minimum 12 characters; no other rules. Length beats classes.
 - **Per-email rate limit**: max 10 attempts per 15 minutes.
 - **Per-IP rate limit**: max 30 attempts per 15 minutes.
 - **Lockout**: five consecutive failures with no intervening success locks the account for 15 minutes. Successful sign-in clears the streak.
-- **Forgot-password rate limit**: same per-email and per-IP windows so the SMTP relay isn't a spam vector. The response is identical regardless of whether the email is known.
+- **Forgot-password rate limit**: same per-email and per-IP windows so the SMTP relay isn't a spam vector, and every outcome is recorded in `login_attempts` so the counter is honest. Issuing a link records a *success* there, matching the magic-link path: five consecutive failures lock an account out of sign-in, so recording a failure for a valid address would let anyone who knows an email lock its owner out by asking for a reset five times. The response is identical regardless of whether the email is known. (This paragraph described the limit for some time before `PasswordResetService` actually applied one; #790 closed the gap.)
 - **Reset tokens** are stored as `sha256(token)`, expire after 1 hour, and are single-use (`consumed_at` is stamped on first use).
 
 Every login attempt — successful or not — writes a row to `login_attempts` keyed on email and IP. That table powers both the rate limit windows and the lockout query, against an injectable `TimeProvider` so tests can advance the clock without sleeping.
