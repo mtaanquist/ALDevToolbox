@@ -54,6 +54,12 @@ public enum EntraCompletionOutcome
     /// unverified claim would be account takeover, so the sign-in is refused.
     /// </summary>
     EmailNotVerified,
+    /// <summary>
+    /// The Entra identity was linked to a different local account between this
+    /// sign-in's lookup and its save. The winner keeps the identity; this
+    /// sign-in is refused rather than 500ing (issue #754).
+    /// </summary>
+    IdentityTakenElsewhere,
     /// <summary>Matched an account that is still pending approval.</summary>
     AccountPending,
     /// <summary>Matched an account that has been disabled.</summary>
@@ -279,11 +285,7 @@ public sealed class EntraSignInService
         var email = AuthService.NormaliseEmail(token.Email ?? string.Empty);
 
         // 1. Existing link — the fast path for every returning user.
-        // Fence category 1 (pre-auth routing): OIDC callback, no cookie yet; pinned to the
-        // token's (provider, issuer, subject).
-        var link = await _db.UserExternalLogins.IgnoreQueryFilters()
-            .Include(l => l.User!).ThenInclude(u => u.Organization)
-            .FirstOrDefaultAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
+        var link = await FindLinkAsync(tid, token.ObjectId, ct);
         if (link is not null)
         {
             // Fence category 1 (pre-auth routing): pinned to the linked user's own org.
@@ -360,9 +362,24 @@ public sealed class EntraSignInService
                 return await RefuseAsync(EntraCompletionOutcome.EmailNotVerified, email, ip, now,
                     $"tenant {tid} did not prove ownership of domain {domain ?? "(none)"}", ct);
             }
-            var newLink = AddLink(user.Id, tid, token.ObjectId, email, now);
-            _logger.LogInformation("Linked Entra identity {Tid}/{Oid} to existing user {Email} on first sign-in.", tid, token.ObjectId, email);
-            return await FinishStatusCheckedAsync(user, newLink, email, ip, now, ct);
+            // Saved on its own, ahead of FinishStatusCheckedAsync's bookkeeping,
+            // so a lost race is settled while the link insert is the only thing
+            // pending — otherwise the failed save takes the login attempt with it
+            // and re-entering would record it twice (issue #754).
+            var inserted = AddLink(user.Id, tid, token.ObjectId, email, now);
+            var settled = await SaveLinkSettlingRaceAsync(inserted, user.Id, tid, token.ObjectId, ct);
+            if (settled is null)
+            {
+                return await RefuseAsync(EntraCompletionOutcome.IdentityTakenElsewhere, email, ip, now,
+                    $"identity {tid}/{token.ObjectId} was claimed by another account mid-sign-in", ct);
+            }
+            if (ReferenceEquals(settled, inserted))
+            {
+                // Only when this request is the one that made the link; the
+                // adopted-winner case is already logged by the settler.
+                _logger.LogInformation("Linked Entra identity {Tid}/{Oid} to existing user {Email} on first sign-in.", tid, token.ObjectId, email);
+            }
+            return await FinishStatusCheckedAsync(user, settled, email, ip, now, ct);
         }
 
         // 4. JIT provisioning, through the same approval machinery as the
@@ -387,18 +404,51 @@ public sealed class EntraSignInService
         user.Organization = await _db.Organizations
             .FirstAsync(o => o.Id == resolved.OrganizationId, ct);
         _db.Users.Add(user);
-        await _db.SaveChangesAsync(ct);
-        _db.SignupRequests.Add(new SignupRequest
+        // The user, its signup request and its link go in together. Saving the
+        // user first left an Entra-only account with neither behind whenever the
+        // link lost a race, and the next sign-in then treated that orphan as the
+        // "existing local account" of step 3 (issue #754). Both rows reference
+        // the user through the navigation property rather than user.Id, which is
+        // still 0 until this save assigns it.
+        var signup = new SignupRequest
         {
             OrganizationId = resolved.OrganizationId,
-            UserId = user.Id,
+            User = user,
             Email = email,
             RequestedAt = now,
             Decision = autoActive ? SignupDecision.Approved : SignupDecision.Pending,
             DecidedAt = autoActive ? now : null,
-            DecidedByUserId = autoActive ? user.Id : null,
-        });
-        AddLink(user.Id, tid, token.ObjectId, email, now, lastLogin: autoActive ? now : null);
+        };
+        _db.SignupRequests.Add(signup);
+        var jitLink = AddLink(user.Id, tid, token.ObjectId, email, now, lastLogin: autoActive ? now : null);
+        jitLink.User = user;
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+            when (DbErrors.IsUniqueViolation(ex, UserExternalLoginConfiguration.IdentityIndexName))
+        {
+            // Nothing committed: all three inserts were one transaction. Detach
+            // them so they are not retried by the refusal's own save. The winner
+            // is always a different account here, because this user does not
+            // exist yet.
+            foreach (var orphan in new object[] { jitLink, signup, user })
+            {
+                _db.Entry(orphan).State = EntityState.Detached;
+            }
+            _logger.LogWarning(ex,
+                "Entra identity {Tid}/{Oid} was claimed by another account while provisioning {Email}; no account was created.",
+                tid, token.ObjectId, email);
+            return await RefuseAsync(EntraCompletionOutcome.IdentityTakenElsewhere, email, ip, now,
+                $"identity {tid}/{token.ObjectId} was claimed by another account mid-provisioning", ct);
+        }
+        // Self-approval is recorded after the fact: decided_by_user_id is a plain
+        // column with no navigation, so it cannot be fixed up by the save above.
+        if (autoActive)
+        {
+            signup.DecidedByUserId = user.Id;
+        }
         RecordAttempt(email, ip, autoActive, now);
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("JIT-provisioned {Email} into org {OrgId} via Entra tenant {Tid} (active={Active}).",
@@ -561,6 +611,58 @@ public sealed class EntraSignInService
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException(
             "No organisation in scope; the Microsoft account-linking flow only runs under an authenticated request.");
+
+    /// <summary>
+    /// The one read that resolves an Entra identity to its local link. Shared by
+    /// the returning-user fast path and by the race settlement below so the
+    /// tenant-fence bypass stays a single reviewable call site.
+    /// </summary>
+    /// <remarks>
+    /// Fence category 1 (pre-auth routing): OIDC callback, no cookie yet; pinned to the
+    /// token's (provider, issuer, subject).
+    /// </remarks>
+    private Task<UserExternalLogin?> FindLinkAsync(string tid, string objectId, CancellationToken ct) =>
+        _db.UserExternalLogins.IgnoreQueryFilters()
+            .Include(l => l.User!).ThenInclude(u => u.Organization)
+            .FirstOrDefaultAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == objectId, ct);
+
+    /// <summary>
+    /// Saves a freshly added link and settles the race where the same Entra
+    /// identity is linked by another request in between (issue #754). Returns the
+    /// link to carry on with: the one just inserted, or the winner when it turns
+    /// out to belong to <paramref name="userId"/> anyway, which is what a
+    /// double-submitted callback looks like. Returns null when the identity now
+    /// belongs to somebody else, which the caller refuses on.
+    /// </summary>
+    private async Task<UserExternalLogin?> SaveLinkSettlingRaceAsync(
+        UserExternalLogin link, int userId, string tid, string objectId, CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+            return link;
+        }
+        catch (DbUpdateException ex)
+            when (DbErrors.IsUniqueViolation(ex, UserExternalLoginConfiguration.IdentityIndexName))
+        {
+            // Same shape as LinkAsync's catch (#736): the row is always a fresh
+            // insert here, so detaching it leaves the context usable for the
+            // reload and for whatever the caller does next.
+            _db.Entry(link).State = EntityState.Detached;
+            var winner = await FindLinkAsync(tid, objectId, ct);
+            if (winner is not null && winner.UserId == userId)
+            {
+                _logger.LogInformation(
+                    "Entra identity {Tid}/{Oid} was linked to user {UserId} by a concurrent request; continuing with that link.",
+                    tid, objectId, userId);
+                return winner;
+            }
+            _logger.LogWarning(ex,
+                "Entra identity {Tid}/{Oid} was claimed by another account before user {UserId} could link it.",
+                tid, objectId, userId);
+            return null;
+        }
+    }
 
     private UserExternalLogin AddLink(int userId, string tid, string objectId, string email, DateTime now, DateTime? lastLogin = null)
     {
