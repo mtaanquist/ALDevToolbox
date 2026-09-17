@@ -161,6 +161,10 @@ jobs:
         # fresh-database-per-class are what fail on that. See #794.
         run: |
           dotnet tool install --global dotnet-ef --version 10.*
+          # The tools directory is not on the runner's PATH, which is why
+          # migration-forward-compat appends it to $GITHUB_PATH. That only
+          # affects later steps, so this one exports it in its own shell.
+          export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet ef migrations has-pending-model-changes \
             --project ALDevToolbox --startup-project ALDevToolbox \
             --no-build --configuration Release
