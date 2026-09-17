@@ -148,6 +148,23 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
+      - name: Check the model matches the snapshot
+        # Catches editing an entity or a configuration without generating a
+        # migration. It needs no database: the check compares the model EF
+        # builds against AppDbContextModelSnapshot.cs, and --no-build reuses
+        # the Release output from the step above.
+        #
+        # What it does NOT catch: a migration whose Up() contains changes that
+        # are not its own. This check passed on the corrupt migration in #790,
+        # because the snapshot did match the model; the extra AddColumn calls
+        # were the problem. `migration-forward-compat` and TestDb's
+        # fresh-database-per-class are what fail on that. See #794.
+        run: |
+          dotnet tool install --global dotnet-ef --version 10.*
+          dotnet ef migrations has-pending-model-changes \
+            --project ALDevToolbox --startup-project ALDevToolbox \
+            --no-build --configuration Release
+
       - name: Test
         # xUnit v3 runs on Microsoft.Testing.Platform (see global.json's `test`
         # section). VSTest options like --logger are not recognised there: the
