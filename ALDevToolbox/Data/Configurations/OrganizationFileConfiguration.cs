@@ -25,7 +25,11 @@ internal sealed class OrganizationFileConfiguration : IEntityTypeConfiguration<O
             .HasConversion(
                 v => v.ToString(),
                 v => Enum.Parse<OrganizationFileScope>(v))
+            // HasSentinel (#767): WorkspaceRoot is 0, so without it EF reads a
+            // file explicitly scoped to the workspace root as "not set" on insert
+            // and lets the store default answer for it.
             .HasDefaultValue(OrganizationFileScope.WorkspaceRoot)
+            .HasSentinel((OrganizationFileScope)(-1))
             .IsRequired();
         entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
