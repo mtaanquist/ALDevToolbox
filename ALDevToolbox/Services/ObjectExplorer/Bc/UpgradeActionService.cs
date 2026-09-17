@@ -103,7 +103,7 @@ public sealed class UpgradeActionService
         var now = _clock.GetUtcNow().UtcDateTime;
         var requestedBy = await AuditActor.ResolveAsync(_db, _orgContext.CurrentUserId, ct).ConfigureAwait(false);
 
-        var action = new EnvironmentUpgradeAction
+        var action = new OeEnvironmentUpgradeAction
         {
             OrganizationId = orgId,
             ProjectId = projectId,
@@ -397,7 +397,7 @@ public sealed record UpgradeActionRow(
         return actor[(bracket + 2)..^1];
     }
 
-    internal static UpgradeActionRow From(EnvironmentUpgradeAction a) => new(
+    internal static UpgradeActionRow From(OeEnvironmentUpgradeAction a) => new(
         a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
         a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
         a.CancelledBy, a.CancelledAt);

@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class EnvironmentUpgradeActionConfiguration : IEntityTypeConfiguration<EnvironmentUpgradeAction>
+internal sealed class EnvironmentUpgradeActionConfiguration : IEntityTypeConfiguration<OeEnvironmentUpgradeAction>
 {
-    public void Configure(EntityTypeBuilder<EnvironmentUpgradeAction> entity)
+    public void Configure(EntityTypeBuilder<OeEnvironmentUpgradeAction> entity)
     {
         entity.ToTable("oe_environment_upgrade_actions");
         entity.HasKey(e => e.Id);

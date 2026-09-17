@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
-using EnvironmentUpgradeAction = ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction;
 
 namespace ALDevToolbox.Data;
 
@@ -215,7 +214,7 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectBuildDiagnostic> OeProjectBuildDiagnostics => Set<OeProjectBuildDiagnostic>();
     // What the upgrade team did (or scheduled) to a customer's environment — the rows
     // behind the per-environment activity feed. See .design/saas-delivery.md.
-    public DbSet<EnvironmentUpgradeAction> OeEnvironmentUpgradeActions => Set<EnvironmentUpgradeAction>();
+    public DbSet<OeEnvironmentUpgradeAction> OeEnvironmentUpgradeActions => Set<OeEnvironmentUpgradeAction>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
@@ -334,7 +333,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectBuildArtifact>(modelBuilder);
         ScopeToOrganization<OeProjectBuildLog>(modelBuilder);
         ScopeToOrganization<OeProjectBuildDiagnostic>(modelBuilder);
-        ScopeToOrganization<EnvironmentUpgradeAction>(modelBuilder);
+        ScopeToOrganization<OeEnvironmentUpgradeAction>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever
