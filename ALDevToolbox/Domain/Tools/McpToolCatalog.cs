@@ -47,6 +47,8 @@ public static class McpToolCatalog
         // ---- Templates and generation ----
         new McpToolDescriptor("list_templates", Generation,
             "Lists the workspace templates your organisation can generate from.", false),
+        new McpToolDescriptor("get_template", Generation,
+            "Shows what one template will generate, so the assistant can offer its optional parts.", false),
         new McpToolDescriptor("list_modules", Generation,
             "Lists the optional modules that can be added to a workspace.", false),
         new McpToolDescriptor("list_well_known_dependencies", Generation,

@@ -655,6 +655,144 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTemplate_names_the_optional_extensions_generate_workspace_accepts()
+    {
+        // #792: the whole point. selectedExtensionPaths took a bare list of
+        // paths that nothing in the read surface listed, so an agent had to
+        // guess or generate once and read the ZIP back.
+        await using (var ctx = _db.NewContext())
+        {
+            var tpl = TemplateBuilder.Default("runtime-15");
+            tpl.WorkspaceExtensions.Add(new WorkspaceExtension
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Path = "Hotfix",
+                NameTemplate = "{{extension_prefix}} Hotfix",
+                Required = false,
+                Ordering = 1,
+                Runtime = "14",
+            });
+            tpl.RootFolders.Add(new RuntimeTemplateRootFolder
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Path = ".alpackages",
+                Ordering = 0,
+            });
+            ctx.RuntimeTemplates.Add(tpl);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var detail = await NewWorkspaceTools(ctx2).GetTemplateAsync("runtime-15");
+
+        detail.Key.Should().Be("runtime-15");
+        detail.Extensions.Select(e => e.Path).Should().Equal("Core", "Hotfix");
+
+        var core = detail.Extensions.Single(e => e.Path == "Core");
+        core.Required.Should().BeTrue("required extensions are generated whether or not they are named");
+        core.Runtime.Should().BeNull("Core does not override the template's runtime");
+
+        var hotfix = detail.Extensions.Single(e => e.Path == "Hotfix");
+        hotfix.Required.Should().BeFalse("this is the one an agent could not previously discover");
+        hotfix.NameTemplate.Should().Be("{{extension_prefix}} Hotfix");
+        hotfix.Runtime.Should().Be("14", "per-extension overrides are part of what the caller needs");
+
+        detail.RootFolders.Should().Equal(".alpackages");
+        detail.Defaults.Publisher.Should().Be("Acme");
+        detail.Defaults.AffixType.Should().Be("Prefix", "enums cross the wire as their names");
+    }
+
+    [Fact]
+    public async Task GetTemplate_refuses_a_key_list_templates_would_not_show()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var deleted = TemplateBuilder.Default("runtime-gone");
+            deleted.DeletedAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+            ctx.RuntimeTemplates.Add(deleted);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var tools = NewWorkspaceTools(ctx2);
+
+        // GetByKeyAsync does not filter soft-deleted rows, so without the
+        // tool's own guard this would answer for a template list_templates hides.
+        var soft = async () => await tools.GetTemplateAsync("runtime-gone");
+        await soft.Should().ThrowAsync<McpException>();
+
+        var missing = async () => await tools.GetTemplateAsync("no-such-template");
+        await missing.Should().ThrowAsync<McpException>();
+    }
+
+    [Fact]
+    public async Task GetTemplate_drops_a_default_module_that_has_been_deleted()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var live = new Module
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Key = "live", Name = "Live", ExtensionName = "Live",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            };
+            var gone = new Module
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Key = "gone", Name = "Gone", ExtensionName = "Gone",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                DeletedAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+            };
+            ctx.Modules.AddRange(live, gone);
+
+            var tpl = TemplateBuilder.Default("runtime-15");
+            tpl.DefaultModules.Add(new RuntimeTemplateDefaultModule
+            {
+                OrganizationId = TestDb.DefaultOrgId, Module = live, Ordering = 0,
+            });
+            tpl.DefaultModules.Add(new RuntimeTemplateDefaultModule
+            {
+                OrganizationId = TestDb.DefaultOrgId, Module = gone, Ordering = 1,
+            });
+            ctx.RuntimeTemplates.Add(tpl);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var detail = await NewWorkspaceTools(ctx2).GetTemplateAsync("runtime-15");
+
+        detail.DefaultModules.Select(m => m.Key).Should().Equal("live",
+            "New Workspace drops soft-deleted modules when it pre-selects this set, so a key the form "
+            + "would never tick is not one to hand an agent");
+    }
+
+    [Fact]
+    public async Task ListModules_carries_the_extension_name_each_module_produces()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.Modules.Add(new Module
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Key = "posting",
+                Name = "Posting",
+                ExtensionName = "Posting Engine",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var modules = await NewWorkspaceTools(ctx2).ListModulesAsync();
+
+        modules.Single(m => m.Key == "posting").ExtensionName.Should().Be(
+            "Posting Engine", "the key alone does not say what folder the module lands in");
+    }
+
+    [Fact]
     public async Task GenerateWorkspace_returns_inline_base64_zip_with_sha256()
     {
         await SeedDefaultTemplateAsync();
