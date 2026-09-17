@@ -45,14 +45,12 @@ internal sealed class ModuleSystemReferenceConfiguration : IEntityTypeConfigurat
             .HasForeignKey(e => e.SourceSymbolId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Primary "find system references" query: receiver triplet → matching rows,
-        // resolved through the recursive release-chain CTE (FindSystemReferencesAsync).
-        entity.HasIndex(e => new { e.TargetAppId, e.TargetObjectKind, e.TargetObjectId })
-            .HasDatabaseName("ix_oe_module_system_references_target_id");
-
-        // Name fallback when ObjectId is null (interfaces, some extensions).
-        entity.HasIndex(e => new { e.TargetAppId, e.TargetObjectKind, e.TargetObjectName })
-            .HasDatabaseName("ix_oe_module_system_references_target_name");
+        // The app-keyed (target_app_id, target_object_kind, target_object_id/name)
+        // pair that used to sit here is gone (#723). FindSystemReferencesAsync is
+        // their only reader and both its branches lead with
+        // module_id = ANY(<winning>), so the module-scoped pair below always won
+        // the plan; production reported a lifetime zero scans on both across
+        // 457 MB. Re-adding them means re-reading ReferenceQueryService first.
 
         // Module-scoped resolution: the C/AL import's id→name post-pass UPDATEs
         // every row in one module by (module_id, target_object_kind, target_object_id).
@@ -65,10 +63,10 @@ internal sealed class ModuleSystemReferenceConfiguration : IEntityTypeConfigurat
         // ix_oe_module_references_module_target_name analogue for system
         // references. FindSystemReferencesAsync matches a receiver across a
         // Release's visible module chain (module_id = ANY(<winning>)); without
-        // this the name-branch falls back to the app-keyed
-        // ix_oe_module_system_references_target_name and fans out across every
-        // imported Release (the app GUID is Release-stable). Partial on the
-        // null-id rows so it stays tiny. See ReferenceQueryService.
+        // this the name-branch has nothing module-scoped to seek on, and since
+        // #723 dropped the app-keyed pair there is no app-keyed fallback either.
+        // Partial on the null-id rows so it stays tiny, which is why it reads as
+        // 8 kB and zero scans while no such rows exist. See ReferenceQueryService.
         entity.HasIndex(e => new { e.ModuleId, e.TargetObjectKind, e.TargetObjectName })
             .HasDatabaseName("ix_oe_module_system_references_module_target_name")
             .HasFilter("\"target_object_id\" IS NULL");
