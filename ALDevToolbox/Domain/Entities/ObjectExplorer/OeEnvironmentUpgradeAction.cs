@@ -17,7 +17,7 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <see cref="ExecuteAfter"/> set, and <c>UpgradeActionWorker</c> fires it when it comes
 /// due. Cancel works right up until the worker claims the row.</para>
 /// </summary>
-public class EnvironmentUpgradeAction
+public class OeEnvironmentUpgradeAction
 {
     public int Id { get; set; }
 
@@ -115,7 +115,7 @@ public enum UpgradeActionStatus
     /// <summary>The change reached Business Central.</summary>
     Sent,
 
-    /// <summary>Business Central refused it, or it could no longer be done. <see cref="EnvironmentUpgradeAction.Outcome"/> says why.</summary>
+    /// <summary>Business Central refused it, or it could no longer be done. <see cref="OeEnvironmentUpgradeAction.Outcome"/> says why.</summary>
     Failed,
 
     /// <summary>Cancelled before it fired.</summary>
