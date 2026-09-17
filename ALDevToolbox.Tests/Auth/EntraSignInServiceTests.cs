@@ -4,6 +4,7 @@ using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Auth;
@@ -441,5 +442,112 @@ public sealed class EntraSignInServiceTests : IDisposable
 
         (await auth.HasStrongAuthAsync(userId)).Should().BeTrue(
             "MFA for a federated account is the Entra tenant's job; RequireStrongAuth must not trap it");
+    }
+
+    // ---- Concurrent-link races (issue #754) ----
+    //
+    // CompleteAsync looks the identity up, finds nothing, and inserts a link.
+    // Another request can claim the same (provider, issuer, subject) in between:
+    // two sign-ins for the same person in different tabs, or LinkAsync finishing
+    // in another organisation. The insert then violates the unique index. Before
+    // #754 nothing caught it, so the endpoint had no outcome to render and the
+    // visitor got the error page - having already spent the handshake's one-shot
+    // state, so they could not simply retry.
+
+    /// <summary>
+    /// Claims the Microsoft identity under test through a second context while
+    /// the context under test is saving, which is the only way to land between
+    /// <c>CompleteAsync</c>'s lookup and its insert. Mirrors the interceptor
+    /// <c>EntraLoginPolicyTests</c> uses for the <c>LinkAsync</c> half (#736).
+    /// </summary>
+    private sealed class ClaimIdentityDuringSaveInterceptor : SaveChangesInterceptor
+    {
+        private readonly TestDb _db;
+        private readonly int _winnerUserId;
+        private bool _claimed;
+
+        public ClaimIdentityDuringSaveInterceptor(TestDb db, int winnerUserId)
+        {
+            _db = db;
+            _winnerUserId = winnerUserId;
+        }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_claimed)
+            {
+                _claimed = true;
+                await using var other = _db.NewContext();
+                other.UserExternalLogins.Add(new UserExternalLogin
+                {
+                    UserId = _winnerUserId,
+                    Provider = EntraSignInService.ProviderName,
+                    Issuer = TenantA,
+                    Subject = Oid,
+                    DisplayIdentity = "winner@cronus.com",
+                    CreatedAt = DateTime.UtcNow,
+                });
+                await other.SaveChangesAsync(cancellationToken);
+            }
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Complete_refuses_when_another_account_claims_the_identity_mid_link()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
+        await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        var strangerId = await SeedUserAsync(TestDb.DefaultOrgId, "stranger@cronus.com");
+
+        await using var ctx = _db.NewContext(new ClaimIdentityDuringSaveInterceptor(_db, strangerId));
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "Mette@CRONUS.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.IdentityTakenElsewhere,
+            "the identity belongs to the account that won the race, and this sign-in must refuse rather than throw");
+        var link = await ctx.UserExternalLogins.IgnoreQueryFilters().AsNoTracking().SingleAsync();
+        link.UserId.Should().Be(strangerId, "the winner keeps the identity");
+    }
+
+    [Fact]
+    public async Task Complete_carries_on_when_the_same_account_won_the_link_race()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+
+        // The winner is the same user: what a double-submitted callback looks
+        // like. Adopting that link is better than refusing a sign-in that is,
+        // in substance, the one the visitor asked for.
+        await using var ctx = _db.NewContext(new ClaimIdentityDuringSaveInterceptor(_db, userId));
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "Mette@CRONUS.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success);
+        result.User!.Id.Should().Be(userId);
+        (await ctx.UserExternalLogins.IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(l => l.Issuer == TenantA && l.Subject == Oid))
+            .Should().Be(1, "the losing insert must not survive alongside the winner");
+    }
+
+    [Fact]
+    public async Task A_lost_jit_race_leaves_no_user_behind()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        var strangerId = await SeedUserAsync(TestDb.DefaultOrgId, "stranger@cronus.com");
+
+        await using var ctx = _db.NewContext(new ClaimIdentityDuringSaveInterceptor(_db, strangerId));
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "new@cronus.com", "New Person"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.IdentityTakenElsewhere);
+        // The whole point of folding the two saves into one: a half-provisioned
+        // account with no signup request and no link used to survive here, and
+        // the next sign-in would then treat it as step 3's "existing account".
+        (await ctx.Users.IgnoreQueryFilters().AsNoTracking().AnyAsync(u => u.Email == "new@cronus.com"))
+            .Should().BeFalse("nothing may be committed when the link loses");
+        (await ctx.SignupRequests.IgnoreQueryFilters().AsNoTracking().AnyAsync(r => r.Email == "new@cronus.com"))
+            .Should().BeFalse();
     }
 }
