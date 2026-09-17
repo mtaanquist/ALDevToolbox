@@ -25,7 +25,12 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<OeProject>
             .HasColumnName("visibility")
             .HasConversion<string>()
             .HasMaxLength(20)
+            // HasSentinel (#767): Public is the zero value, so an insert that
+            // chose it explicitly was indistinguishable from one that said
+            // nothing. Both mean Public today; only one of them still would if
+            // the store default ever changed.
             .HasDefaultValue(ProjectVisibility.Public)
+            .HasSentinel((ProjectVisibility)(-1))
             .IsRequired();
         entity.Property(e => e.DiscoveredExtensionsJson).HasColumnName("discovered_extensions_json");
         entity.Property(e => e.DiscoveredAt).HasColumnName("discovered_at");

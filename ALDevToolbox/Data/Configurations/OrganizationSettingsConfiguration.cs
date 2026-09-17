@@ -64,9 +64,12 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .HasColumnName("machine_translation_provider").IsRequired().HasDefaultValue("deepl");
         entity.Property(e => e.MachineTranslationApiKeyEncrypted)
             .HasColumnName("machine_translation_api_key_encrypted");
+        // HasSentinel for the same reason as the naming styles above (#767):
+        // MtTrigger.Off is 0, so without it EF reads an explicit Off on insert as
+        // "not set" and lets the store default decide.
         entity.Property(e => e.MachineTranslationTrigger)
             .HasColumnName("machine_translation_trigger").HasConversion<int>().IsRequired()
-            .HasDefaultValue(ALDevToolbox.Domain.ValueObjects.MtTrigger.Off);
+            .HasDefaultValue(ALDevToolbox.Domain.ValueObjects.MtTrigger.Off).HasSentinel((ALDevToolbox.Domain.ValueObjects.MtTrigger)(-1));
         entity.Property(e => e.AutoImportReleasesEnabled)
             .HasColumnName("auto_import_releases_enabled").IsRequired().HasDefaultValue(false);
         // 100 chars fits a generous comma-separated country list (codes are 2
@@ -91,9 +94,14 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .IsRequired();
         entity.Property(e => e.EntraClientId).HasColumnName("entra_client_id").HasMaxLength(64);
         entity.Property(e => e.EntraClientSecretEncrypted).HasColumnName("entra_client_secret_encrypted");
+        // HasSentinel as above (#767). AllowAll is the zero value, so an insert
+        // that sets it explicitly was indistinguishable from one that left it
+        // alone. Harmless while the store default is also AllowAll; a bug the
+        // moment either that default or the zero member changes.
         entity.Property(e => e.LocalLoginPolicy)
             .HasColumnName("local_login_policy").HasConversion<string>().HasMaxLength(32)
-            .IsRequired().HasDefaultValue(ALDevToolbox.Domain.ValueObjects.LocalLoginPolicy.AllowAll);
+            .IsRequired().HasDefaultValue(ALDevToolbox.Domain.ValueObjects.LocalLoginPolicy.AllowAll)
+            .HasSentinel((ALDevToolbox.Domain.ValueObjects.LocalLoginPolicy)(-1));
         // GitHub App connection. A null installation id is "not connected" and
         // is the master switch for every GitHub feature, so the other three
         // columns are only meaningful alongside it.
