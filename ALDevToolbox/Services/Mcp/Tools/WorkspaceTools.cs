@@ -58,6 +58,50 @@ public sealed class WorkspaceTools
             t.CoreIdRangeFrom, t.CoreIdRangeTo)).ToList();
     }
 
+    [McpServerTool(Name = "get_template", ReadOnly = true)]
+    [Description("Returns what one template will generate: the extensions it declares (and which are optional), the modules it pre-selects, the files and root folders every workspace gets, and its app.json defaults. Use it before generate_workspace to find the legal values for selectedExtensionPaths. Per-extension folder contents are not included.")]
+    public async Task<TemplateDetail> GetTemplateAsync(
+        [Description("Template key from list_templates.")] string templateKey,
+        CancellationToken ct = default)
+    {
+        var row = await _templates.GetByKeyAsync(templateKey, ct);
+        // GetByKeyAsync does not filter soft-deleted rows, but list_templates
+        // does, so refuse them here rather than answering for a template the
+        // caller could not have found (#792).
+        if (row is null || row.DeletedAt is not null)
+        {
+            throw new McpException(
+                $"Template '{templateKey}' not found, or not visible to your organisation. Use list_templates for the keys you can use.");
+        }
+
+        return new TemplateDetail(
+            row.Key, row.Name, row.Description, row.Runtime, row.IsDefault, row.Deprecated,
+            row.CoreIdRangeFrom, row.CoreIdRangeTo,
+            row.ModuleIdRangeStart, row.ModuleIdRangeSize,
+            row.WorkspaceExtensions.Select(e => new TemplateExtensionSummary(
+                e.Path, e.NameTemplate, e.Required, e.Application, e.Runtime,
+                e.IdRangeFrom, e.IdRangeTo)).ToList(),
+            // Soft-deleted modules drop out, matching what New Workspace does
+            // when it pre-selects this set: a key the form would never tick is
+            // not one to hand an agent. Deprecated ones stay, carrying the flag,
+            // because the template does still name them.
+            row.DefaultModules
+                .Where(d => d.Module is not null && d.Module.DeletedAt is null)
+                .Select(d => new ModuleSummary(
+                    d.Module!.Key, d.Module.Name, d.Module.ExtensionName, d.Module.Deprecated))
+                .ToList(),
+            row.IncludedFiles
+                .Where(f => f.OrganizationFile is not null)
+                .Select(f => new TemplateIncludedFileSummary(
+                    f.OrganizationFile!.Path, f.OrganizationFile.Scope.ToString()))
+                .ToList(),
+            row.RootFolders.Select(f => f.Path).ToList(),
+            new TemplateDefaultsSummary(
+                row.Defaults.Publisher, row.Defaults.Target, row.Defaults.Application,
+                row.Defaults.Platform, row.Defaults.Affix, row.Defaults.AffixType.ToString(),
+                row.Defaults.Features, row.Defaults.SupportedLocales));
+    }
+
     [McpServerTool(Name = "list_modules", ReadOnly = true)]
     [Description("Lists the optional modules (per-org named code blocks) that can be selected when generating a workspace.")]
     public async Task<IReadOnlyList<ModuleSummary>> ListModulesAsync(
@@ -69,7 +113,7 @@ public sealed class WorkspaceTools
         {
             rows = rows.Where(m => !m.Deprecated).ToList();
         }
-        return rows.Select(m => new ModuleSummary(m.Key, m.Name, m.Deprecated)).ToList();
+        return rows.Select(m => new ModuleSummary(m.Key, m.Name, m.ExtensionName, m.Deprecated)).ToList();
     }
 
     [McpServerTool(Name = "list_well_known_dependencies", ReadOnly = true)]

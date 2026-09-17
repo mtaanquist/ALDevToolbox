@@ -23,7 +23,9 @@ public sealed record ProjectPlanInput(
     int CoreIdRangeFrom,
     int CoreIdRangeTo,
     bool IncludeExamples = true,
+    [property: Description("Which of the template's optional extensions to generate, by path. get_template lists the legal values and says which are already required. Leave it out for the required ones only.")]
     IReadOnlyList<string>? SelectedExtensionPaths = null,
+    [property: Description("Which modules to generate, by key, from list_modules. Leave it out to use the template's own default modules, which get_template lists.")]
     IReadOnlyList<string>? SelectedModuleKeys = null,
     [property: Description("Optional short form of the customer's name used in extension names, e.g. JM. Leave out to use the full name.")]
     string? ShortName = null)
@@ -213,7 +215,69 @@ public sealed record TemplateSummary(
 public sealed record ModuleSummary(
     string Key,
     string Name,
+    [property: Description("The folder name and rendered AL extension name this module produces in a generated workspace.")]
+    string ExtensionName,
     bool Deprecated);
+
+/// <summary>
+/// What <c>get_template</c> returns: everything the New Workspace form knows
+/// when it renders, minus the per-extension folder trees, which need a separate
+/// hydration pass and nothing has asked for yet (#792).
+/// </summary>
+public sealed record TemplateDetail(
+    string Key,
+    string Name,
+    string? Description,
+    string Runtime,
+    bool IsDefault,
+    bool Deprecated,
+    int CoreIdRangeFrom,
+    int CoreIdRangeTo,
+    [property: Description("Where each module's ID range starts, and how wide it is.")]
+    int ModuleIdRangeStart,
+    int ModuleIdRangeSize,
+    [property: Description("The extensions this template declares. A path from here is what selectedExtensionPaths takes; the required ones are always generated whether or not you name them.")]
+    IReadOnlyList<TemplateExtensionSummary> Extensions,
+    [property: Description("The modules this template pre-selects. Pass their keys in selectedModuleKeys to keep them, or a different set from list_modules to replace them.")]
+    IReadOnlyList<ModuleSummary> DefaultModules,
+    [property: Description("Files added to every generated workspace, such as the ruleset and .gitignore.")]
+    IReadOnlyList<TemplateIncludedFileSummary> IncludedFiles,
+    [property: Description("Empty folders created at the workspace root, e.g. .alpackages.")]
+    IReadOnlyList<string> RootFolders,
+    TemplateDefaultsSummary Defaults);
+
+/// <summary>One extension a template declares.</summary>
+public sealed record TemplateExtensionSummary(
+    [property: Description("The value to pass in selectedExtensionPaths, e.g. Core.")]
+    string Path,
+    [property: Description("The extension's name before substitution, e.g. '{{prefix}} Core'.")]
+    string NameTemplate,
+    [property: Description("Required extensions are generated whether or not selectedExtensionPaths names them; the rest are opt-in.")]
+    bool Required,
+    [property: Description("Set only when this extension overrides the template's application version.")]
+    string? Application,
+    [property: Description("Set only when this extension overrides the template's runtime version.")]
+    string? Runtime,
+    [property: Description("Set only when this extension has its own ID range instead of one carved from the workspace's.")]
+    int? IdRangeFrom,
+    int? IdRangeTo);
+
+/// <summary>One always-included file.</summary>
+public sealed record TemplateIncludedFileSummary(
+    string Path,
+    [property: Description("WorkspaceRoot for a file at the top of the workspace, EveryExtension for one copied into each extension folder.")]
+    string Scope);
+
+/// <summary>The template's app.json defaults.</summary>
+public sealed record TemplateDefaultsSummary(
+    string Publisher,
+    string Target,
+    string Application,
+    string Platform,
+    string Affix,
+    string AffixType,
+    IReadOnlyList<string> Features,
+    IReadOnlyList<string> SupportedLocales);
 
 public sealed record WellKnownDependencySummary(
     string DepId,
