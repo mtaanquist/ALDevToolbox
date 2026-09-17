@@ -223,7 +223,7 @@ internal sealed class UpgradeActionTestFixture : IDisposable
         new("27.6", true, selected, "scheduled", "GA", selectedDateTime, latestSelectable, ignoresWindow, "Active", null, null);
 
     /// <summary>Reads one action row straight from the database, bypassing the service.</summary>
-    public async Task<EnvironmentUpgradeAction> ReadActionAsync(int actionId)
+    public async Task<OeEnvironmentUpgradeAction> ReadActionAsync(int actionId)
     {
         await using var ctx = Db.NewContext();
         return await ctx.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.Id == actionId);

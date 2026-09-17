@@ -1011,7 +1011,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oauth_consents", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeEnvironmentUpgradeAction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -5995,7 +5995,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction", b =>
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeEnvironmentUpgradeAction", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "CancelledByUser")
                         .WithMany()
