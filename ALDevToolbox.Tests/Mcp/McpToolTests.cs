@@ -763,7 +763,8 @@ public sealed class McpToolTests : IDisposable
         await using var ctx2 = _db.NewContext();
         var detail = await NewWorkspaceTools(ctx2).GetTemplateAsync("runtime-15");
 
-        detail.DefaultModules.Select(m => m.Key).Should().Equal("live",
+        detail.DefaultModules.Select(m => m.Key).Should().Equal(
+            new[] { "live" },
             "New Workspace drops soft-deleted modules when it pre-selects this set, so a key the form "
             + "would never tick is not one to hand an agent");
     }
