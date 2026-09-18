@@ -38,21 +38,18 @@
 <PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">@PageTitleText</h1>
-            <p class="page-head__sub">
-                @if (IsEdit)
-                {
-                    <span>You're editing the <code class="code">@Key</code> workspace template. Saved changes apply the next time someone generates a workspace from it.</span>
-                }
-                else
-                {
-                    <span>Set up a new workspace template - the shape, defaults, and extensions every workspace generated from it inherits. You can come back and tweak any of this later.</span>
-                }
-            </p>
-        </div>
-        <div class="page-head__actions">
+    <PageHead Title="@PageTitleText">
+        <SubtitleContent>
+            @if (IsEdit)
+            {
+                <span>You're editing the <code class="code">@Key</code> workspace template. Saved changes apply the next time someone generates a workspace from it.</span>
+            }
+            else
+            {
+                <span>Set up a new workspace template - the shape, defaults, and extensions every workspace generated from it inherits. You can come back and tweak any of this later.</span>
+            }
+        </SubtitleContent>
+        <Actions>
             <a class="btn btn--sm" href="/admin/templates">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to list</span>
@@ -62,8 +59,8 @@
                primary buttons on one screen. The form's own action row is
                .form-actions--sticky now, so it never leaves the viewport and the
                page head is back to navigation only. *@
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @if (IsEdit && _loadFailed)
     {

@@ -17,12 +17,11 @@
 <PageTitle>Manage · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Manage release</h1>
+    <PageHead Title="Manage release">
+        <SubtitleContent>
             @if (_release is not null)
             {
-                <p class="page-head__sub">
+                <text>
                     @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status, _release.Kind)
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
@@ -33,14 +32,16 @@
                     {
                         <span> · soft-deleted</span>
                     }
-                </p>
+                </text>
             }
-        </div>
-        <a class="btn btn--sm" href="/admin/object-explorer">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to releases</span>
-        </a>
-    </header>
+        </SubtitleContent>
+        <Actions>
+            <a class="btn btn--sm" href="/admin/object-explorer">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to releases</span>
+            </a>
+        </Actions>
+    </PageHead>
 
     @if (Status is { } status)
     {
@@ -62,15 +63,15 @@
 
     @if (_release is null)
     {
-        <div class="empty-state">
-            <span class="empty-state__icon"><Icon Name="file-question-mark" Width="21" Height="21" /></span>
-            <span class="empty-state__title">Release not found</span>
-            <span class="empty-state__text">It may have been permanently deleted.</span>
-            <a class="btn empty-state__action" href="/admin/object-explorer">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to releases</span>
-            </a>
-        </div>
+        <EmptyState Icon="file-question-mark" Title="Release not found">
+            <Text>It may have been permanently deleted.</Text>
+            <Action>
+                <a class="btn" href="/admin/object-explorer">
+                    <Icon Name="arrow-left" Width="14" Height="14" />
+                    <span>Back to releases</span>
+                </a>
+            </Action>
+        </EmptyState>
     }
     else
     {

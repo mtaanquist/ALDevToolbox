@@ -17,64 +17,76 @@
 
 <PageTitle>Add modules · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Add modules</h1>
-            @if (_release is not null)
-            {
-                <p class="page-head__sub">
-                    @_release.Label · @_release.ModuleCount module(s)
-                    @if (!string.IsNullOrEmpty(_release.BcVersion))
-                    {
-                        <span> · BC @_release.BcVersion</span>
-                    }
-                    <span> · @_release.Status</span>
-                </p>
-            }
-        </div>
+<EditPage Title="Add modules"
+          IsNotFound="@(_release is null || _release.Status != "ready")">
+    <SubtitleContent>
+        @if (_release is not null)
+        {
+            <text>
+                @_release.Label · @_release.ModuleCount module(s)
+                @if (!string.IsNullOrEmpty(_release.BcVersion))
+                {
+                    <span> · BC @_release.BcVersion</span>
+                }
+                <span> · @_release.Status</span>
+            </text>
+        }
+    </SubtitleContent>
+    <Actions>
         <a class="btn btn--sm" href="/object-explorer/release/@ReleaseId">
             <Icon Name="arrow-left" Width="14" Height="14" />
             <span>Back to release</span>
         </a>
-    </header>
-
-    @if (Status is { } status)
-    {
-        @if (status.IsError)
+    </Actions>
+    <Notices>
+        @if (Status is { } status)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
-                <span>@status.Message</span>
-            </p>
+            @if (status.IsError)
+            {
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>@status.Message</span>
+                </p>
+            }
+            else
+            {
+                <p class="alert alert--success" role="status">
+                    <Icon Name="circle-check" Width="16" Height="16" />
+                    <span>@status.Message</span>
+                </p>
+            }
+        }
+    </Notices>
+    <NotFound>
+        @* A release that is not there. This page is rendered once, on the server, so a
+           null release after the load is an answer, not a wait - it used to sit on
+           "Loading..." for ever. Same words as the Manage page. *@
+        @if (_release is null)
+        {
+            <EmptyState Icon="file-question-mark" Title="Release not found">
+                <Text>It may have been permanently deleted.</Text>
+                <Action>
+                    <a class="btn" href="/admin/object-explorer">
+                        <Icon Name="arrow-left" Width="14" Height="14" />
+                        <span>Back to releases</span>
+                    </a>
+                </Action>
+            </EmptyState>
         }
         else
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
-                <span>@status.Message</span>
+            <p class="alert alert--warn" role="status">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                This release is currently <strong>@_release!.Status</strong>.
+                Amends can only run against a <code>ready</code> release -
+                wait for the current import to finish, or restore the release
+                first from <a href="/admin/object-explorer">the admin index</a>.
+                </span>
             </p>
         }
-    }
-
-    @if (_release is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else if (_release.Status != "ready")
-    {
-        <p class="alert alert--warn" role="status">
-            <Icon Name="triangle-alert" Width="16" Height="16" />
-            <span>
-            This release is currently <strong>@_release.Status</strong>.
-            Amends can only run against a <code>ready</code> release -
-            wait for the current import to finish, or restore the release
-            first from <a href="/admin/object-explorer">the admin index</a>.
-            </span>
-        </p>
-    }
-    else
-    {
+    </NotFound>
+    <ChildContent>
         <section class="form-sec">
             <div class="form-sec__head"><span class="section-label">Add .app files</span></div>
             <p class="form-sec__cap">
@@ -142,9 +154,8 @@
             <div class="form-sec__head"><span class="section-label">Modules already in this release</span></div>
             @if (_modules is null || _modules.Count == 0)
             {
-                <div class="empty-state empty-state--quiet">
-                    <span class="empty-state__title">No modules in this release yet</span>
-                </div>
+                <EmptyState Title="No modules in this release yet" Quiet="true">
+                </EmptyState>
             }
             else
             {
@@ -171,8 +182,8 @@
                 </table>
             }
         </section>
-    }
-</div>
+    </ChildContent>
+</EditPage>
 
 @code {
     [Parameter] public int ReleaseId { get; set; }

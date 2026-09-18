@@ -1,0 +1,78 @@
+@*
+    The handoff's archetype 6, Admin edit (.design/handoff/PageAdminEdit.dc.html): a
+    page head with crumbs and the Save action, then the form column, then the
+    record's history.
+
+    Unlike a detail page, the head is always drawn - "Edit module" is known before
+    the module is - so loading and not-found replace only the body:
+
+      loading     a LoadingBlock
+      not found   NotFound: the record is gone, or never existed. No form, and no
+                  history, because there is nothing to have a history of.
+      editing     Notices, ChildContent, History
+
+    The form itself stays with the page. `.edit-col` is usually the <form> element,
+    and the @onsubmit belongs to whoever owns the model - so ChildContent is the
+    page's own <form class="edit-col">, not something this component wraps.
+
+    History is a slot, not a query. AuditHistoryPanel opens its own DbContext
+    through the factory because it loads while the page around it may be saving
+    (CLAUDE.md, #741); it must stay a sibling component, never a read folded into
+    the page's context. The slot only decides where it goes and when it shows.
+
+    A page with a sticky side panel (.gen__aside - the template editor's preview)
+    puts its own layout in ChildContent; that is a body, not a frame.
+*@
+
+<div class="page@(string.IsNullOrEmpty(PageClass) ? "" : " " + PageClass)">
+    <PageHead Title="@Title" Subtitle="@Subtitle" SubtitleContent="SubtitleContent"
+              Crumbs="Crumbs" Actions="Actions" ShowActions="ShowActions" Sticky="Sticky" />
+
+    @Notices
+
+    @if (IsLoading)
+    {
+        <LoadingBlock Text="@LoadingText" />
+    }
+    else if (IsNotFound)
+    {
+        @NotFound
+    }
+    else
+    {
+        @ChildContent
+        @History
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Subtitle { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    [Parameter] public RenderFragment? Crumbs { get; set; }
+
+    /// <summary>Back, Save, and whatever else acts on the whole record.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public bool ShowActions { get; set; } = true;
+
+    /// <summary>Keep the head, and so Save, in view while a long form scrolls.</summary>
+    [Parameter] public bool Sticky { get; set; }
+
+    /// <summary>Alerts between the head and the form, in every state: save results, query-string outcomes.</summary>
+    [Parameter] public RenderFragment? Notices { get; set; }
+
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string LoadingText { get; set; } = "Loading...";
+
+    [Parameter] public bool IsNotFound { get; set; }
+    [Parameter] public RenderFragment? NotFound { get; set; }
+
+    /// <summary>The form - normally the page's own <c>&lt;form class="edit-col"&gt;</c>.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The record's <c>AuditHistoryPanel</c>, under the form. Shown only while editing.</summary>
+    [Parameter] public RenderFragment? History { get; set; }
+
+    /// <summary>Extra class on the <c>.page</c> wrapper, for a page-scoped stylesheet to hang on.</summary>
+    [Parameter] public string? PageClass { get; set; }
+}
