@@ -42,94 +42,88 @@
 
 <PageTitle>@(_header?.Name ?? (Id is null ? "New solution" : "Solution")) · Solutions · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading solution...</span></div>
-    }
-    else if (_notFound)
-    {
-        <div class="empty-state">
-            <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
-            <h1 class="empty-state__title">This solution doesn't exist</h1>
-            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
-            <a class="btn btn--primary empty-state__action" href="/solutions"><Icon Name="arrow-left" Width="16" Height="16" /><span>All solutions</span></a>
-        </div>
-    }
-    else if (_providers.Count == 0)
-    {
-        <div class="empty-state">
-            <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
-            <h1 class="empty-state__title">No source-control providers yet</h1>
-            <p class="empty-state__text">
-                Your organisation hasn't enabled any source-control providers, so solutions can't be built.
-                An administrator turns them on under <a href="/admin/administration/repositories">Administration → Repositories</a>.
-            </p>
-            <a class="btn empty-state__action" href="/solutions"><Icon Name="arrow-left" Width="16" Height="16" /><span>All solutions</span></a>
-        </div>
-    }
-    else
-    {
+<DetailPage IsLoading="@(_loading)"
+            LoadingText="Loading solution..."
+            IsNotFound="@(_notFound || _providers.Count == 0)"
+            Title="@(Id is null ? "New solution" : _header?.Name)">
+    <NotFound>
+        @if (_notFound)
+        {
+            <EmptyState Icon="package" Title="This solution doesn't exist" Heading="true">
+                <Text>It may have been deleted. Head back to the list to pick another.</Text>
+                <Action>
+                    <a class="btn btn--primary" href="/solutions"><Icon Name="arrow-left" Width="16" Height="16" /><span>All solutions</span></a>
+                </Action>
+            </EmptyState>
+        }
+        else
+        {
+            <EmptyState Icon="package" Title="No source-control providers yet" Heading="true">
+                <Text>
+                    Your organisation hasn't enabled any source-control providers, so solutions can't be built.
+                    An administrator turns them on under <a href="/admin/administration/repositories">Administration → Repositories</a>.
+                </Text>
+                <Action>
+                    <a class="btn" href="/solutions"><Icon Name="arrow-left" Width="16" Height="16" /><span>All solutions</span></a>
+                </Action>
+            </EmptyState>
+        }
+    </NotFound>
+    <Crumbs>
+        <a href="/solutions">Solutions</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>@(Id is null ? "New solution" : _header?.Name)</span>
+    </Crumbs>
+    <TitleRow>
+        @* Which fence this solution is behind, on every tab. Nothing for
+           Public - the default needs no telling, and a badge on every
+           solution would stop meaning anything. The title row already
+           exists for a marker beside the name. *@
+        @if (VisibilityBadge is { } badge)
+        {
+            @* No status dot: the pill is a label for a setting, not a
+               run state, and the dot beside a title reads as a divider. *@
+            <span class="status-pill status-pill--muted"><span>@badge</span></span>
+        }
+    </TitleRow>
+    <SubtitleContent>
+        @if (Id is not null)
+        {
+            @($"{_edit.Repos.Count} repositor{(_edit.Repos.Count == 1 ? "y" : "ies")}")
+            @if (_header?.OwnerName is { } owner)
+            {
+                <text> · @owner</text>
+            }
+        }
+        else
+        {
+            <text>Name the solution and add its repositories, then save.</text>
+        }
+
+    </SubtitleContent>
+    <Actions>
+        <a class="btn" href="/solutions">
+            <Icon Name="arrow-left" Width="15" Height="15" />
+            <span>All solutions</span>
+        </a>
+        @* Save solution applies to General + Repositories. The Business Central and
+           Pipelines sections have their own save/actions, so the header primary is
+           hidden there to avoid implying it would save those edits. *@
+        @if (_canManage && _section is Section.General or Section.Repos)
+        {
+            @if (_dirty)
+            {
+                <span class="form-actions__note">Unsaved changes</span>
+            }
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                <Icon Name="@(Id is null ? "plus" : "save")" Width="15" Height="15" />
+                <span>@(_saving ? "Saving..." : Id is null ? "Create solution" : "Save solution")</span>
+            </button>
+        }
+    </Actions>
+    <ChildContent>
         @* Archetype: PageDetail.dc.html - crumbs outside the head. No state
            pill: a solution has no run state of its own. *@
-        <div class="page-head__crumbs">
-            <a href="/solutions">Solutions</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>@(Id is null ? "New solution" : _header?.Name)</span>
-        </div>
-
-        <div class="detail-head">
-            <div>
-                <div class="detail-head__title-row">
-                    <h1 class="detail-head__title">@(Id is null ? "New solution" : _header?.Name)</h1>
-                    @* Which fence this solution is behind, on every tab. Nothing for
-                       Public - the default needs no telling, and a badge on every
-                       solution would stop meaning anything. The title row already
-                       exists for a marker beside the name. *@
-                    @if (VisibilityBadge is { } badge)
-                    {
-                        @* No status dot: the pill is a label for a setting, not a
-                           run state, and the dot beside a title reads as a divider. *@
-                        <span class="status-pill status-pill--muted"><span>@badge</span></span>
-                    }
-                </div>
-                <p class="page-head__sub">
-                    @if (Id is not null)
-                    {
-                        @($"{_edit.Repos.Count} repositor{(_edit.Repos.Count == 1 ? "y" : "ies")}")
-                        @if (_header?.OwnerName is { } owner)
-                        {
-                            <text> · @owner</text>
-                        }
-                    }
-                    else
-                    {
-                        <text>Name the solution and add its repositories, then save.</text>
-                    }
-                </p>
-            </div>
-            <div class="page-head__actions">
-                <a class="btn" href="/solutions">
-                    <Icon Name="arrow-left" Width="15" Height="15" />
-                    <span>All solutions</span>
-                </a>
-                @* Save solution applies to General + Repositories. The Business Central and
-                   Pipelines sections have their own save/actions, so the header primary is
-                   hidden there to avoid implying it would save those edits. *@
-                @if (_canManage && _section is Section.General or Section.Repos)
-                {
-                    @if (_dirty)
-                    {
-                        <span class="form-actions__note">Unsaved changes</span>
-                    }
-                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
-                        <Icon Name="@(Id is null ? "plus" : "save")" Width="15" Height="15" />
-                        <span>@(_saving ? "Saving..." : Id is null ? "Create solution" : "Save solution")</span>
-                    </button>
-                }
-            </div>
-        </div>
-
         @if (_message is not null)
         {
             <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@_message</span></p>
@@ -208,8 +202,8 @@
                 }
             </div>
         </div>
-    }
-</div>
+    </ChildContent>
+</DetailPage>
 
 @code {
     [Parameter] public int? Id { get; set; }
