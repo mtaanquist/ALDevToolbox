@@ -23,7 +23,7 @@ public static class FleetRowState
             "updating" => "Update in progress",
             "preparing" => "Being prepared",
             "suspended" => "Suspended by Microsoft",
-            "softdeleted" => "Deleted, still restorable",
+            "softdeleted" => BcEnvironmentStatus.Humanise(row.Status),
             "" => "State not reported",
             _ => "In a state we don't recognise",
         };

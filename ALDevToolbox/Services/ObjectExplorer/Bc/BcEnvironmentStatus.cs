@@ -86,6 +86,9 @@ public static class BcEnvironmentStatus
     {
         if (string.IsNullOrWhiteSpace(status)) return string.Empty;
         var s = status.Trim();
+        // The one token with a settled name of its own: Business Central people say
+        // "soft-deleted", hyphenated, and every page has to say the same word (#806).
+        if (s.Equals("SoftDeleted", StringComparison.OrdinalIgnoreCase)) return "Soft-deleted";
         var sb = new System.Text.StringBuilder(s.Length + 4);
         for (var i = 0; i < s.Length; i++)
         {
