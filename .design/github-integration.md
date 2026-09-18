@@ -333,23 +333,58 @@ The repository name suggestion and the registration of the created repository on
 
 Generation is unchanged: in memory, synchronous. The repository is created with
 the installation token via `POST /orgs/{org}/repos` and `auto_init: false`, and
-then filled in two writes:
+then filled by **creating its default branch at a commit that already holds
+everything** - never by updating that branch. Issue #811 is why: an organisation
+ruleset targeting `~DEFAULT_BRANCH` applies from the instant the repository
+exists, and its `pull_request` rule refuses every *update* of that branch. The
+old shape (seed, then move the branch on to the workspace, then move it again
+for the standards) put one file in and lost the rest.
 
-1. **One file through the Contents API** (`PUT /repos/{owner}/{repo}/contents/{path}`
-   on the default branch), which creates the repository's initial commit. This is
-   not optional: a repository with no commits refuses *every* Git Data call with
-   `409 Conflict: Git Repository is empty.`, so blobs and trees have nothing to
-   attach to until something has committed. The Contents API is the one route
-   that works there. The seeded file is the generated `README.md` when the
-   template produces one, else `.gitignore`, else the first path in order - what
-   an initial commit conventionally holds, and always a file the generator
-   produced.
-2. **The workspace itself through the Git Data API** (blobs → tree → commit on
-   top of the seed commit → fast-forward `PATCH` of the `refs/heads/{default
-   branch}` ref). The tree is built from *nothing* and lists every generated
-   file, the seeded one included: layering onto the seed's tree would cost a
-   round trip and make "only files we generated" a property of what happened to
-   be there rather than of the tree.
+1. **One file through the Contents API** (`PUT /repos/{owner}/{repo}/contents/{path}`),
+   which creates the repository's initial commit. This is not optional: a
+   repository with no commits refuses *every* Git Data call with `409 Conflict:
+   Git Repository is empty.`, so blobs and trees have nothing to attach to until
+   something has committed. It goes onto a throwaway branch, `aldt/seed`, so the
+   default branch stays unborn and can be created outright. The seeded file is
+   the generated `README.md` when the template produces one, else `.gitignore`,
+   else the first path in order.
+2. **One root commit through the Git Data API** (blobs → tree from *nothing* →
+   commit with no parent), holding every generated file **and** the
+   organisation's standards files, the seeded one included. Standards win on a
+   shared path, which is what #628 already meant by applying them on top.
+3. **`POST /git/refs`** to create `refs/heads/{default branch}` at that commit -
+   a creation, not an update.
+4. **`PATCH /repos/{owner}/{repo}`** with `default_branch`. Seeding made
+   `aldt/seed` the default (on an empty repository the first branch to receive a
+   commit becomes it), and pointing the setting back is a change to the
+   repository, not to a ref.
+5. **Delete `aldt/seed`**, which by then is not the default branch.
+
+The result is a repository whose history is a single "Initial commit", which
+also reads better than the seed-plus-workspace-plus-standards trio it replaced.
+
+**And when GitHub refuses anyway.** That creation is not rule-checked is the
+reading of GitHub's behaviour the issue rests on, not something verified against
+a live organisation, so a rule violation (a 422 whose message opens "Repository
+rule violations found") on step 3 or 4 falls back inside the same operation:
+whatever was created is taken back, the same tree is committed onto
+`aldt/initial-workspace` parented on the branch that does exist, and a pull
+request is opened for it. The result says which route was taken and carries the
+pull request's URL, and the success card and the MCP result say so in their own
+words. Both routes are legitimate under the rule; only one needs a human to
+press merge. If GitHub refuses the pull request as well, the refusal names what
+is on the repository (the one seeded file) and points at the ZIP - the toolbox
+does not leave a failure the person cannot read.
+
+Adding the app to the ruleset's bypass list would also have worked and is
+deliberately not done: that list is for org admins unsticking a member, and the
+toolbox has to work within the rule rather than around it.
+
+`GET /repos/{owner}/{repo}/rules/branches/{branch}` is read once before any
+write and logged. It steers nothing - GitHub's own refusal is the authority, and
+attempting the direct route is how the primary path stays exercised - but it is
+what makes "why did my workspace arrive as a pull request" answerable from the
+log.
 
 Ordered, in-process, behind the Generate button's existing loading state. No
 queue.
@@ -393,7 +428,10 @@ who asked for it may have no access to it yet, so asking with their token would
 fail for a reason they could do nothing about. The commit is instead *credited*
 to them - author name and their `users.noreply.github.com` address, taken from
 their link - so the history still says who asked. The membership check is what
-their own token is for.
+their own token is for. This is also what makes the ruleset problem above the
+app's own to solve rather than the user's: every write in the fill, including
+the default-branch setting, is the app acting, so no rule can be got round by
+asking the person to do it themselves.
 
 **The workspace's folder comes off the paths.** The ZIP nests everything under
 the workspace folder because that folder is what a user unzips; a repository

@@ -23,6 +23,22 @@ public sealed class GitHubApiException : Exception
 
     /// <summary>GitHub's <c>documentation_url</c>, when the error body carried one.</summary>
     public string? DocumentationUrl { get; }
+
+    /// <summary>
+    /// True when GitHub refused the write because a ruleset or a branch
+    /// protection rule forbade it - "Repository rule violations found", which
+    /// it answers with a 422.
+    ///
+    /// <para>Matched on the two words rather than on the whole sentence:
+    /// GitHub appends the rules that fired ("Changes must be made through a
+    /// pull request.") and that tail is not something to depend on. The
+    /// distinction matters because the caller can often work within the rule -
+    /// see issue #811, where creating the repository's first commit falls back
+    /// to a pull request.</para>
+    /// </summary>
+    public bool IsRuleViolation =>
+        StatusCode == HttpStatusCode.UnprocessableEntity
+        && Message.Contains("rule violation", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

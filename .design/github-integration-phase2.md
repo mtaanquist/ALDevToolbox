@@ -173,12 +173,12 @@ ones their team already maintains by hand.
   emits; standards are applied to a repository regardless of template and never appear
   in a ZIP. A third `OrganizationFileScope` would have muddled the "Always-included
   files" page for both audiences.
-- **Applied after the workspace commit, as its own commit** ("Apply repository
-  standards"), on the installation token, then the ruleset via
-  `POST /repos/{owner}/{repo}/rulesets`. The second commit keeps "the files we
-  generated" an honest description of the first, and it is not skipped by the one-file
-  early return in `CommitAsync`. A standards file at a path the generator also produced
-  replaces it - the organisation's standard wins over the template.
+- **Applied in the same commit as the workspace**, on the installation token, then the
+  ruleset via `POST /repos/{owner}/{repo}/rulesets`. They arrived as a second commit of
+  their own until issue #811, which had to describe the whole repository in one commit so
+  the default branch could be *created* at it rather than updated; the ordering that
+  matters (files before ruleset) is unchanged. A standards file at a path the generator
+  also produced replaces it - the organisation's standard wins over the template.
 - **A ruleset refusal is a warning, not a failure.** By then the repository exists and is
   committed, so the success card says so and names what GitHub refused (typically the
   missing `administration: write` grant), rather than leaving a repository behind with
@@ -196,22 +196,17 @@ ones their team already maintains by hand.
 
 **As built**
 
-The standards phase is a third step in `GitHubWorkspaceRepositoryService.CreateAsync`,
-between the workspace commit and the audit record: `ApplyStandardsAsync` reads
-`GitHubRepositoryStandardsService.GetAsync`, and returns early when the organisation has
-configured nothing - so an organisation that never opens the page pays one query and no
-extra call to GitHub. The result record grew `StandardsFileCount` and `StandardsWarning`,
-and the MCP `RepositoryCreationResult` grew the same two, both defaulted so no existing
-caller had to change.
+`GitHubWorkspaceRepositoryService.CreateAsync` reads
+`GitHubRepositoryStandardsService.GetAsync` once, before it writes anything, and hands the
+files to the fill and the ruleset to the step after it - so an organisation that never
+opens the page pays one query and no extra call to GitHub. The result record grew
+`StandardsFileCount` and `StandardsWarning`, and the MCP `RepositoryCreationResult` grew
+the same two, both defaulted so no existing caller had to change.
 
-The standards commit is parented on the branch head *read back from GitHub*
-(`GET /git/ref/heads/{branch}`, then the commit's tree), not on a sha the workspace commit
-happened to compute. That is what makes it independent of how the workspace got there,
-including `CommitAsync`'s one-file shortcut, which returns without ever minting a second
-commit. That shortcut turns out to be unreachable through the generator - the smallest
-workspace it can produce is two files (`{name}.code-workspace` and `workspace.aldt.toml`) -
-so the property is tested through the parent sha rather than by generating a one-file
-workspace.
+Standards are laid over the generated files by path before anything is uploaded, so an
+override is one blob and one tree entry rather than a second commit replacing a file the
+first one just wrote. The one-file shortcut this used to have to dodge is gone with the
+second commit; a workspace of a single file would take the same route as any other.
 
 A ruleset is only posted when it asks GitHub for something. `GitHubRepositoryRuleset.IsEmpty`
 is the guard, and it is why "3 approvals" with "require a pull request" switched off counts

@@ -246,6 +246,32 @@ public sealed class FakeGitHubApi : HttpMessageHandler
             + ",\"assets\":[" + assetJson + "]}";
     }
 
+    /// <summary>
+    /// The <c>GET /repos/{owner}/{repo}/rules/branches/{branch}</c> body: one
+    /// entry per rule that governs the branch. Only the <c>type</c> is read,
+    /// but the <c>ruleset_id</c> is part of GitHub's shape.
+    /// </summary>
+    public static string BranchRulesJson(params string[] types) =>
+        "[" + string.Join(',', types.Select(t =>
+            $"{{\"type\":\"{t}\",\"ruleset_id\":77,\"ruleset_source_type\":\"Organization\"}}")) + "]";
+
+    /// <summary>
+    /// GitHub's 422 when a ruleset refuses a write - the refusal issue #811 is
+    /// about. The rules that fired are appended to the message, which is why the
+    /// toolbox matches on the first two words and not the whole sentence.
+    /// </summary>
+    public static string RuleViolationJson(string rule = "Changes must be made through a pull request.") =>
+        $"{{\"message\":\"Repository rule violations found {rule}\","
+        + "\"documentation_url\":\"https://docs.github.com/rest/git/refs\",\"status\":\"422\"}";
+
+    /// <summary>The <c>POST /repos/{owner}/{repo}/git/refs</c> body: the ref that now exists.</summary>
+    public static string RefJson(string branch, string sha = "new-commit-sha") =>
+        $"{{\"ref\":\"refs/heads/{branch}\",\"object\":{{\"sha\":\"{sha}\",\"type\":\"commit\"}}}}";
+
+    /// <summary>The <c>POST /repos/{owner}/{repo}/pulls</c> body.</summary>
+    public static string PullRequestJson(string fullName, int number = 1) =>
+        $"{{\"number\":{number},\"html_url\":\"https://github.com/{fullName}/pull/{number}\"}}";
+
     /// <summary>The <c>GET /repos/{owner}/{repo}/releases</c> body.</summary>
     public static string ReleasesJson(params string[] releases) => "[" + string.Join(',', releases) + "]";
 

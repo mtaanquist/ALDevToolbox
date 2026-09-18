@@ -481,26 +481,61 @@
                                 <p class="alert alert--success" role="status">
                                     <Icon Name="circle-check" Width="16" Height="16" />
                                     <span class="u-stack">
-                                        <span>
-                                            <strong>@_createdRepo.Repository.FullName</strong> is ready, with
-                                            @_createdRepo.FileCount @(_createdRepo.FileCount == 1 ? "file" : "files")
-                                            committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
-                                            @if (_createdRepo.StandardsFileCount > 0)
-                                            {
-                                                <text>
-                                                    Your organisation's
-                                                    @_createdRepo.StandardsFileCount
-                                                    @(_createdRepo.StandardsFileCount == 1 ? "standard file was" : "standard files were")
-                                                    added too.
-                                                </text>
-                                            }
-                                        </span>
+                                        @* Two ways this can have gone: straight onto the
+                                           default branch, or into a pull request when the
+                                           organisation only takes changes there that way
+                                           (#811). Both are a success; they ask the person
+                                           to do different things next. *@
+                                        @if (_createdRepo.Delivery == GitHubWorkspaceDelivery.PullRequest)
+                                        {
+                                            <span>
+                                                <strong>@_createdRepo.Repository.FullName</strong> is ready.
+                                                Your organisation only allows changes to
+                                                <code class="code">@_createdRepo.Repository.DefaultBranch</code>
+                                                through a pull request, so the workspace files are waiting in one.
+                                                @if (_createdRepo.StandardsFileCount > 0)
+                                                {
+                                                    <text>
+                                                        Your organisation's
+                                                        @_createdRepo.StandardsFileCount
+                                                        @(_createdRepo.StandardsFileCount == 1 ? "standard file is" : "standard files are")
+                                                        in it too.
+                                                    </text>
+                                                }
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span>
+                                                <strong>@_createdRepo.Repository.FullName</strong> is ready, with
+                                                @_createdRepo.FileCount @(_createdRepo.FileCount == 1 ? "file" : "files")
+                                                committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
+                                                @if (_createdRepo.StandardsFileCount > 0)
+                                                {
+                                                    <text>
+                                                        Your organisation's
+                                                        @_createdRepo.StandardsFileCount
+                                                        @(_createdRepo.StandardsFileCount == 1 ? "standard file was" : "standard files were")
+                                                        added too.
+                                                    </text>
+                                                }
+                                            </span>
+                                        }
                                         <span>
                                             <a class="btn" href="@_createdRepo.Repository.HtmlUrl"
                                                target="_blank" rel="noopener">
                                                 <Icon Name="external-link" Width="15" Height="15" />
                                                 <span>Open it on GitHub</span>
                                             </a>
+                                            @if (_createdRepo.PullRequestUrl is { Length: > 0 } pullRequestUrl)
+                                            {
+                                                <a class="btn" href="@pullRequestUrl" target="_blank" rel="noopener">
+                                                    @* The same icon the New Extension page puts on
+                                                       its pull-request link, for the same act. *@
+                                                    <Icon Name="external-link" Width="15" Height="15" />
+                                                    <span>Open the pull request</span>
+                                                </a>
+                                            }
                                         </span>
                                         @* Where the customer now lives, so the
                                            consultant can go straight on to
