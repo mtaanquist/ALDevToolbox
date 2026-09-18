@@ -29,22 +29,84 @@
 
 <PageTitle>@(_header?.Name ?? "Pipeline") · Pipelines · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading pipeline...</span></div>
-    }
-    else if (_notFound)
-    {
-        <div class="empty-state">
-            <span class="empty-state__icon"><Icon Name="rocket" Width="21" Height="21" /></span>
-            <h1 class="empty-state__title">This pipeline doesn't exist</h1>
-            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
-            <a class="btn btn--primary empty-state__action" href="/pipelines"><Icon Name="arrow-left" Width="16" Height="16" /><span>All pipelines</span></a>
-        </div>
-    }
-    else
-    {
+<DetailPage IsLoading="@(_loading)"
+            LoadingText="Loading pipeline..."
+            IsNotFound="@(_notFound)"
+            Title="@(_header?.Name)">
+    <NotFound>
+        <EmptyState Icon="rocket" Title="This pipeline doesn't exist" Heading="true">
+            <Text>It may have been deleted. Head back to the list to pick another.</Text>
+            <Action>
+                <a class="btn btn--primary" href="/pipelines"><Icon Name="arrow-left" Width="16" Height="16" /><span>All pipelines</span></a>
+            </Action>
+        </EmptyState>
+    </NotFound>
+    <Crumbs>
+        <a href="/pipelines">Pipelines</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <a href="@($"/solutions/{_header!.ProjectId}")">@_header!.ProjectName</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>@_header!.Name</span>
+    </Crumbs>
+    <TitleRow>
+        @if (_latest is not null)
+        {
+            <span class="status-pill status-pill--@RowStateIcon.PillTone(_latest.Status)">
+                <span class="status-pill__dot"></span>
+                <span>@RowStateIcon.StateLabel(_latest.Status)</span>
+            </span>
+        }
+    </TitleRow>
+    <SubtitleContent>
+        Pipeline in @_header!.ProjectName
+    </SubtitleContent>
+    <Actions>
+        @if (_canManage)
+        {
+            <button type="button" class="btn btn--primary" @onclick="RunBuildAsync" disabled="@_starting">
+                <Icon Name="hammer" Width="15" Height="15" />
+                <span>@(_starting ? "Starting..." : "Build")</span>
+            </button>
+            <button type="button" class="btn" @onclick="EditPipelineAsync">
+                <Icon Name="settings" Width="15" Height="15" />
+                <span>Edit pipeline</span>
+            </button>
+            <button type="button" class="btn" @onclick="DeletePipelineAsync">
+                <Icon Name="trash-2" Width="15" Height="15" />
+                <span>Delete</span>
+            </button>
+        }
+        @if (_latest is not null && _latestDetail is { Artifacts.Count: > 0 })
+        {
+            <a class="btn" href="@($"/artifacts/build/{_latest.Id}/all")">
+                <Icon Name="archive" Width="15" Height="15" />
+                <span>Download all</span>
+            </a>
+        }
+    </Actions>
+    <Meta>
+        <span class="meta-item">
+            <span class="meta-item__label">Solution</span>
+            <span class="meta-item__value">@_header!.ProjectName</span>
+        </span>
+        <span class="meta-item">
+            <span class="meta-item__label">Owner</span>
+            <span class="meta-item__value">@(_header!.OwnerName ?? "—")</span>
+        </span>
+        <span class="meta-item">
+            <span class="meta-item__label">Builds</span>
+            <span class="meta-item__value">@_builds.Count</span>
+        </span>
+        <span class="meta-item">
+            <span class="meta-item__label">Latest BC</span>
+            <span class="meta-item__value meta-item__value--mono">@(_latest?.BcVersion is { Length: > 0 } mb ? mb : "—")</span>
+        </span>
+        <span class="meta-item">
+            <span class="meta-item__label">Last build</span>
+            <span class="meta-item__value">@(_latest is null ? "—" : TimeAgo(_latest.FinishedAt ?? _latest.StartedAt))</span>
+        </span>
+    </Meta>
+    <ChildContent>
         @* Archetype: PageDetail.dc.html. Crumbs sit outside the head, the state
            pill sits beside the title, and the facts are a full-width .meta-row
            rather than the rail of cards this page used to open with.
@@ -52,77 +114,6 @@
            The body below does have a rail (.detail-body, divergence 70), which
            the archetype has not - but it holds reference and a secondary
            action, never the facts. Those belong in the strip above. *@
-        <div class="page-head__crumbs">
-            <a href="/pipelines">Pipelines</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <a href="@($"/solutions/{_header!.ProjectId}")">@_header.ProjectName</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>@_header.Name</span>
-        </div>
-
-        <div class="detail-head">
-            <div>
-                <div class="detail-head__title-row">
-                    <h1 class="detail-head__title">@_header.Name</h1>
-                    @if (_latest is not null)
-                    {
-                        <span class="status-pill status-pill--@RowStateIcon.PillTone(_latest.Status)">
-                            <span class="status-pill__dot"></span>
-                            <span>@RowStateIcon.StateLabel(_latest.Status)</span>
-                        </span>
-                    }
-                </div>
-                <p class="page-head__sub">Pipeline in @_header.ProjectName</p>
-            </div>
-            <div class="page-head__actions">
-                @if (_canManage)
-                {
-                    <button type="button" class="btn btn--primary" @onclick="RunBuildAsync" disabled="@_starting">
-                        <Icon Name="hammer" Width="15" Height="15" />
-                        <span>@(_starting ? "Starting..." : "Build")</span>
-                    </button>
-                    <button type="button" class="btn" @onclick="EditPipelineAsync">
-                        <Icon Name="settings" Width="15" Height="15" />
-                        <span>Edit pipeline</span>
-                    </button>
-                    <button type="button" class="btn" @onclick="DeletePipelineAsync">
-                        <Icon Name="trash-2" Width="15" Height="15" />
-                        <span>Delete</span>
-                    </button>
-                }
-                @if (_latest is not null && _latestDetail is { Artifacts.Count: > 0 })
-                {
-                    <a class="btn" href="@($"/artifacts/build/{_latest.Id}/all")">
-                        <Icon Name="archive" Width="15" Height="15" />
-                        <span>Download all</span>
-                    </a>
-                }
-            </div>
-        </div>
-
-        <div class="meta-row">
-            <span class="meta-item">
-                <span class="meta-item__label">Solution</span>
-                <span class="meta-item__value">@_header.ProjectName</span>
-            </span>
-            <span class="meta-item">
-                <span class="meta-item__label">Owner</span>
-                <span class="meta-item__value">@(_header.OwnerName ?? "—")</span>
-            </span>
-            <span class="meta-item">
-                <span class="meta-item__label">Builds</span>
-                <span class="meta-item__value">@_builds.Count</span>
-            </span>
-            <span class="meta-item">
-                <span class="meta-item__label">Latest BC</span>
-                <span class="meta-item__value meta-item__value--mono">@(_latest?.BcVersion is { Length: > 0 } mb ? mb : "—")</span>
-            </span>
-            <span class="meta-item">
-                <span class="meta-item__label">Last build</span>
-                <span class="meta-item__value">@(_latest is null ? "—" : TimeAgo(_latest.FinishedAt ?? _latest.StartedAt))</span>
-            </span>
-        </div>
-
         @if (_buildError is { } be)
         {
             <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@be</span></p>
@@ -130,32 +121,20 @@
 
         @if (_builds.Count == 0)
         {
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="box" Width="21" Height="21" /></span>
-                <div class="empty-state__title">No builds yet</div>
-                @if (_canManage)
-                {
-                    @* The empty state is the one screen with nothing else to do, so it
-                       carries the action itself rather than pointing at a button. *@
-                    <p class="empty-state__text">
-                        Building compiles this pipeline's extensions, and the resulting
-                        <span class="u-nowrap"><code>.app</code> files</span> show up here to
-                        download. Each private repository needs a token first — set them up under
-                        <a href="/account?section=repos">Account → Repository access</a>.
-                    </p>
-                    <button type="button" class="btn empty-state__action" @onclick="RunBuildAsync" disabled="@_starting">
+            <EmptyState Icon="box" Title="No builds yet">
+                <Text>
+                    Building compiles this pipeline's extensions, and the resulting
+                    <span class="u-nowrap"><code>.app</code> files</span> show up here to
+                    download. Each private repository needs a token first — set them up under
+                    <a href="/account?section=repos">Account → Repository access</a>.
+                </Text>
+                <Action>
+                    <button type="button" class="btn" @onclick="RunBuildAsync" disabled="@_starting">
                         <Icon Name="hammer" Width="15" Height="15" />
                         <span>@(_starting ? "Starting..." : "Build")</span>
                     </button>
-                }
-                else
-                {
-                    <p class="empty-state__text">
-                        The owner hasn't run this pipeline yet. Once they do, its compiled
-                        <code>.app</code> files show up here to download.
-                    </p>
-                }
-            </div>
+                </Action>
+            </EmptyState>
         }
         else
         {
@@ -515,8 +494,8 @@
                 }
             </div>
         }
-    }
-</div>
+    </ChildContent>
+</DetailPage>
 
 <PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineSavedAsync" />
 <ConfirmDialog @ref="_deleteConfirm" Title="Delete pipeline?"
