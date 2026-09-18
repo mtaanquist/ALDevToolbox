@@ -31,6 +31,13 @@ public sealed class CapturingLoggerProvider : ILoggerProvider
             e.Error is null ? $"  {e.Level}: {e.Message}" : $"  {e.Level}: {e.Message}\n    {e.Error}"));
     }
 
+    /// <summary>
+    /// Everything logged, oldest first, as "Level: message" - for a test whose
+    /// subject <em>is</em> what the code said, rather than what it returned.
+    /// </summary>
+    public IReadOnlyList<string> Messages =>
+        _entries.Select(e => $"{e.Level}: {e.Message}").ToList();
+
     public void Dispose() { }
 
     private sealed class Capturing(ConcurrentQueue<(LogLevel, string, Exception?)> sink) : ILogger

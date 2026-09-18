@@ -302,6 +302,14 @@ public sealed class GenerateWorkspaceRepositoryToolTests : IDisposable
             .On(HttpMethod.Post, $"/repos/{Repo}/git/trees", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-tree-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/commits", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
             .On(HttpMethod.Patch, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.OK, FakeGitHubApi.ShaJson("new-commit-sha"))
+            // Since #811 the default branch is created at the finished commit
+            // rather than moved on to one: the seed lands on a throwaway branch
+            // that is deleted afterwards, and the repository's default-branch
+            // setting is then pointed at the real one.
+            .On(HttpMethod.Get, $"/repos/{Repo}/rules/branches/", HttpStatusCode.OK, FakeGitHubApi.BranchRulesJson())
+            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.RefJson("main"))
+            .On(HttpMethod.Delete, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.NoContent)
+            .On(HttpMethod.Patch, $"/repos/{Repo}", HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(Repo))
             // GitHub refuses the Git Data API until a repository has a commit,
             // which is what the Contents write above is for.
             .EmptyRepository(Repo);

@@ -731,6 +731,122 @@ public sealed partial class GitHubAppClient
     }
 
     /// <summary>
+    /// Removes <paramref name="branch"/>. Returns <see langword="false"/> when
+    /// GitHub would not remove it - including because it was not there.
+    ///
+    /// <para>Refusals are reported rather than thrown, because the only caller
+    /// is tidying up a throwaway branch it made itself (issue #811): a branch
+    /// left behind is untidy, not a reason to fail work that has already
+    /// landed.</para>
+    /// </summary>
+    public async Task<bool> DeleteBranchAsync(
+        string credential, string owner, string repo, string branch, CancellationToken ct = default)
+    {
+        using var request = NewRequest(
+            HttpMethod.Delete, $"{RepoPath(owner, repo)}/git/refs/heads/{EscapePath(branch)}", credential);
+        using var response = await SendRawAsync(request, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Deleted branch {Branch} on {Owner}/{Repo}.", branch, owner, repo);
+            return true;
+        }
+
+        var (message, _) = ReadError(await response.Content.ReadAsStringAsync(ct));
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Asking for a branch that was never made is a tidy-up finding
+            // nothing to tidy, not a problem.
+            _logger.LogInformation(
+                "There is no branch {Branch} on {Owner}/{Repo} to delete.", branch, owner, repo);
+            return false;
+        }
+
+        _logger.LogWarning(
+            "GitHub would not delete branch {Branch} on {Owner}/{Repo} with {Status}: {Message}",
+            branch, owner, repo, (int)response.StatusCode, message);
+        return false;
+    }
+
+    /// <summary>
+    /// Points the repository's default branch at <paramref name="branch"/>,
+    /// which has to exist already.
+    ///
+    /// <para>This is a repository <em>setting</em>, not a write to a ref, which
+    /// is what lets it run on a repository whose branches are governed by a
+    /// ruleset (issue #811). It needs the installation's
+    /// <c>administration: write</c> grant - the same one the ruleset step
+    /// already needs.</para>
+    /// </summary>
+    /// <exception cref="GitHubApiException">GitHub refused the change.</exception>
+    public async Task SetDefaultBranchAsync(
+        string installationToken, string owner, string repo, string branch, CancellationToken ct = default)
+    {
+        using var request = NewJsonRequest(
+            HttpMethod.Patch, RepoPath(owner, repo), installationToken, new { default_branch = branch });
+        using var response = await SendRawAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var (message, url) = ReadError(await response.Content.ReadAsStringAsync(ct));
+            _logger.LogWarning(
+                "GitHub refused to make {Branch} the default branch of {Owner}/{Repo} with {Status}: {Message}",
+                branch, owner, repo, (int)response.StatusCode, message);
+            throw new GitHubApiException(response.StatusCode, message, url);
+        }
+        _logger.LogInformation("{Branch} is now the default branch of {Owner}/{Repo}.", branch, owner, repo);
+    }
+
+    /// <summary>
+    /// The kinds of rule that apply to <paramref name="branch"/> for this
+    /// credential - <c>pull_request</c>, <c>non_fast_forward</c> and the rest -
+    /// or <see langword="null"/> when GitHub would not say.
+    ///
+    /// <para>Only the <c>type</c>s are read: the question this answers is
+    /// "would a direct push to this branch be refused", not which ruleset said
+    /// so. A null is deliberately different from an empty list: an older GitHub
+    /// Enterprise Server has no such route and answers 404, and a token without
+    /// the grant gets a 403, neither of which means "no rules" (issue
+    /// #811).</para>
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> GetBranchRuleTypesAsync(
+        string credential, string owner, string repo, string branch, CancellationToken ct = default)
+    {
+        using var request = NewRequest(
+            HttpMethod.Get, $"{RepoPath(owner, repo)}/rules/branches/{EscapePath(branch)}", credential);
+        using var response = await SendRawAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var (message, _) = ReadError(body);
+            _logger.LogInformation(
+                "GitHub would not say which rules apply to {Branch} on {Owner}/{Repo} ({Status}: {Message}).",
+                branch, owner, repo, (int)response.StatusCode, message);
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
+            var types = new List<string>();
+            foreach (var rule in document.RootElement.EnumerateArray())
+            {
+                if (rule.ValueKind == JsonValueKind.Object
+                    && rule.TryGetProperty("type", out var type)
+                    && type.GetString() is { Length: > 0 } name)
+                {
+                    types.Add(name);
+                }
+            }
+            return types;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "GitHub returned a branch-rules body that is not JSON for {Owner}/{Repo}.", owner, repo);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Moves an existing branch on to <paramref name="commitSha"/>, refusing
     /// anything that is not a fast-forward. Returns <see langword="false"/> when
     /// GitHub says it is not one - meaning somebody else moved the branch in the

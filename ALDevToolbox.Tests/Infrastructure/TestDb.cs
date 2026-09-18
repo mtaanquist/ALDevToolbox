@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -425,12 +426,13 @@ public sealed class TestDb : IDisposable
         AppDbContext ctx,
         ALDevToolbox.Services.GitHub.GitHubAppClient client,
         ALDevToolbox.Services.GitHub.GitHubAccessService access,
-        ALDevToolbox.Services.Tools.IToolAvailability? toolAvailability = null) =>
+        ALDevToolbox.Services.Tools.IToolAvailability? toolAvailability = null,
+        ILogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>? logger = null) =>
         new(NewGenerationService(ctx), NewGitHubRepositoryService(ctx, client, access),
             NewGitHubConnectionService(ctx, access), access, client,
             NewGitHubRepositoryStandardsService(ctx), NewProjectService(ctx),
             NewOrganizationConfigService(ctx), NewToolEnablement(ctx, toolAvailability), ctx, OrgContext,
-            NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
+            logger ?? NullLogger<ALDevToolbox.Services.GitHub.GitHubWorkspaceRepositoryService>.Instance);
 
     /// <summary>
     /// The "is this tool switched on for the acting organisation" service. There

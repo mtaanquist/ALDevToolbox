@@ -201,6 +201,64 @@ public sealed class NewWorkspaceRepositoryTests : IDisposable
         cut.FindAll(".ws-repo .btn--primary").Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task The_success_card_points_at_the_pull_request_when_the_branch_only_takes_one()
+    {
+        await ReadyAsync();
+        // What issue #811 was reported against: an organisation ruleset that
+        // only lets changes onto the default branch through a pull request.
+        _api
+            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", request =>
+                (request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty)
+                    .Contains("refs/heads/main", StringComparison.Ordinal)
+                        ? (HttpStatusCode.UnprocessableEntity, FakeGitHubApi.RuleViolationJson())
+                        : (HttpStatusCode.Created, FakeGitHubApi.RefJson("aldt/initial-workspace")))
+            .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK,
+                FakeGitHubApi.RepositoryJson(Repo, defaultBranch: "aldt/seed"))
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", request =>
+                // main was never created - its ref creation is what was refused -
+                // so the flow has to bring it into being before it opens anything.
+                (request.RequestUri?.AbsolutePath ?? string.Empty).EndsWith("/heads/main", StringComparison.Ordinal)
+                    ? (HttpStatusCode.NotFound, """{"message":"Not Found"}""")
+                    : (HttpStatusCode.OK, """{"object":{"sha":"seed-commit-sha"}}"""))
+            .On(HttpMethod.Post, $"/repos/{Repo}/pulls", HttpStatusCode.Created,
+                FakeGitHubApi.PullRequestJson(Repo));
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']").Input("CRONUS Customer");
+        cut.WaitForElement("button:contains('Create repository')").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            var card = cut.Find(".ws-repo");
+            // Still a success - the repository is there and the files are in
+            // it - with the one thing left to do said in the user's terms and a
+            // way to go and do it.
+            card.TextContent.Should().Contain(Repo);
+            card.TextContent.Should().Contain("only allows changes to");
+            card.TextContent.Should().Contain("waiting in a");
+            card.TextContent.Should().Contain("Review and merge it");
+            card.TextContent.Should().Contain("Open the pull request");
+            card.InnerHtml.Should().Contain($"https://github.com/{Repo}/pull/1");
+
+            // Cloning is the one thing they cannot usefully do yet: the branch
+            // holds a placeholder until the pull request merges, so a clone
+            // would hand them an empty workspace.
+            card.TextContent.Should().NotContain("git clone");
+            card.TextContent.Should().NotContain("Clone in VS Code");
+            card.QuerySelectorAll(".ws-repo-clone").Should().BeEmpty();
+            card.QuerySelectorAll("a[href^='vscode://']").Should().BeEmpty();
+            card.TextContent.Should().Contain("You can clone it once the pull request is merged");
+
+            // The pull request comes first in the actions row, because it is
+            // the thing still to do.
+            var actions = card.QuerySelectorAll(".ws-repo-actions a");
+            actions[0].TextContent.Should().Contain("Open the pull request");
+            actions[1].TextContent.Should().Contain("Open it on GitHub");
+            actions[0].TextContent.Should().Contain("opens in a new tab");
+        }, TimeSpan.FromSeconds(10));
+    }
+
     // --- helpers ------------------------------------------------------------
 
     /// <summary>
@@ -221,6 +279,14 @@ public sealed class NewWorkspaceRepositoryTests : IDisposable
             .On(HttpMethod.Post, $"/repos/{Repo}/git/trees", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-tree-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/commits", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
             .On(HttpMethod.Patch, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.OK, FakeGitHubApi.ShaJson("new-commit-sha"))
+            // Since #811 the default branch is created at the finished commit
+            // rather than moved on to one: the seed lands on a throwaway branch
+            // that is deleted afterwards, and the repository's default-branch
+            // setting is then pointed at the real one.
+            .On(HttpMethod.Get, $"/repos/{Repo}/rules/branches/", HttpStatusCode.OK, FakeGitHubApi.BranchRulesJson())
+            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.RefJson("main"))
+            .On(HttpMethod.Delete, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.NoContent)
+            .On(HttpMethod.Patch, $"/repos/{Repo}", HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(Repo))
             .EmptyRepository(Repo);
 
     /// <summary>Deployment configured, organisation connected, user linked, one template.</summary>
