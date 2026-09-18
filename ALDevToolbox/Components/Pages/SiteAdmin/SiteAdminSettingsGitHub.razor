@@ -52,38 +52,25 @@
         else
         {
             <div class="card__body">
-                <div class="steps steps--wide">
-                    <div class="step @(IsConfigured ? "is-done" : "step--current")">
-                        <span class="step__n">
-                            @if (IsConfigured)
-                            {
-                                <Icon Name="check" Width="15" Height="15" />
-                            }
-                            else
-                            {
-                                <text>1</text>
-                            }
-                        </span>
-                        <span class="step__head"><span class="step__title">Register the app on GitHub</span></span>
-                        <span class="step__text">
+                <SetupSteps Wide="true">
+                    <SetupStep Number="1" Title="Register the app on GitHub" State="@(IsConfigured ? SetupStepState.Done : SetupStepState.Current)">
+                        <Text>
                             Sign in to GitHub as yourself and create a new app. It is under
                             Settings, then Developer settings, then GitHub Apps. Any name will
                             do - your customers will see it when they install it.
-                        </span>
-                        <span class="step__body">
+                        </Text>
+                        <ChildContent>
                             <span class="u-row">
                                 <a class="btn" href="https://github.com/settings/apps/new" target="_blank" rel="noopener">
                                     <Icon Name="external-link" Width="16" Height="16" />
                                     <span>Create the app on GitHub</span>
                                 </a>
                             </span>
-                        </span>
-                    </div>
+                        </ChildContent>
+                    </SetupStep>
 
-                    <div class="step">
-                        <span class="step__n">2</span>
-                        <span class="step__head"><span class="step__title">Give it the three web addresses below</span></span>
-                        <span class="step__text">
+                    <SetupStep Number="2" Title="Give it the three web addresses below">
+                        <Text>
                             Copy the Setup URL, the Callback URL and the Webhook URL from the
                             first three fields below into the app's own boxes of the same
                             names. The first is where GitHub sends an admin back to after they
@@ -93,23 +80,19 @@
                             of your own, paste the same text into GitHub's Webhook secret box
                             and into the Webhook secret field below. Tick "Active" beside the
                             webhook on GitHub.
-                        </span>
-                    </div>
+                        </Text>
+                    </SetupStep>
 
-                    <div class="step">
-                        <span class="step__n">3</span>
-                        <span class="step__head"><span class="step__title">Let it be installed on any account</span></span>
-                        <span class="step__text">
+                    <SetupStep Number="3" Title="Let it be installed on any account">
+                        <Text>
                             Choose "Any account" where GitHub asks where the app can be
                             installed. Each customer installs it on their own GitHub
                             organisation, so limiting it to yours would lock everyone else out.
-                        </span>
-                    </div>
+                        </Text>
+                    </SetupStep>
 
-                    <div class="step">
-                        <span class="step__n">4</span>
-                        <span class="step__head"><span class="step__title">Tick the access it needs</span></span>
-                        <span class="step__text">
+                    <SetupStep Number="4" Title="Tick the access it needs">
+                        <Text>
                             Under Repository permissions and Organization permissions, allow the
                             app to: create new repositories (Administration), read and write
                             files in repositories (Contents), see repository names and
@@ -118,25 +101,21 @@
                             who is in the organisation (Members). The name in brackets is what
                             GitHub calls the permission on its own page. Anything you leave out
                             simply turns off the part of the toolbox that needs it.
-                        </span>
-                    </div>
+                        </Text>
+                    </SetupStep>
 
-                    <div class="step">
-                        <span class="step__n">5</span>
-                        <span class="step__head"><span class="step__title">Subscribe it to pull requests</span></span>
-                        <span class="step__text">
+                    <SetupStep Number="5" Title="Subscribe it to pull requests">
+                        <Text>
                             Further down the same page, under "Subscribe to events", tick
                             "Pull request". That is what lets the toolbox build a branch when
                             somebody opens a pull request and post the result back on it.
                             Leave it unticked and nothing else changes - the toolbox simply
                             never hears about pull requests.
-                        </span>
-                    </div>
+                        </Text>
+                    </SetupStep>
 
-                    <div class="step">
-                        <span class="step__n">6</span>
-                        <span class="step__head"><span class="step__title">Generate a private key, then fill in the form</span></span>
-                        <span class="step__text">
+                    <SetupStep Number="6" Title="Generate a private key, then fill in the form">
+                        <Text>
                             At the bottom of the app's settings, generate a private key. GitHub
                             downloads the file there and then and will never show it again - if
                             you lose it, you generate a new one. Then copy the App ID, the app's
@@ -144,9 +123,9 @@
                             and the webhook secret you made up in step 2.
                             While you are there, tick "Expire user authorization tokens" - it is
                             on by default, and the toolbox renews them for people quietly.
-                        </span>
-                    </div>
-                </div>
+                        </Text>
+                    </SetupStep>
+                </SetupSteps>
             </div>
 
             <form method="post" action="/site-admin/settings/github/save" id="settings-github-form">

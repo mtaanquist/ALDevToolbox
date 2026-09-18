@@ -34,18 +34,9 @@
     out and get wrong.
 *@
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Connect an AI assistant</h1>
-            <p class="page-head__sub">
-                Let Claude, Cursor, Copilot or another assistant use AL Dev Toolbox on your behalf.
-            </p>
-        </div>
-    </header>
-
-    <div class="docs">
-        <div class="docs__main">
+<DocsPage Title="Connect an AI assistant"
+          Subtitle="Let Claude, Cursor, Copilot or another assistant use AL Dev Toolbox on your behalf."
+          Toc="@Toc" Prose="false">
             <article class="prose">
                 <p class="prose__lead">
                     AL Dev Toolbox can be plugged into AI assistants. Once connected, you
@@ -150,10 +141,7 @@
                             Enter this as the server URL:
                             <div class="code-block code-block--inlinebar">
                                 <pre id="mcp-url">@_serverUrl</pre>
-                                <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-url">
-                                    <Icon Name="copy" Width="14" Height="14" />
-                                    <span data-copy-label>Copy</span>
-                                </button>
+                                <CopyButton Target="#mcp-url" />
                             </div>
                         </li>
                         @if (client.Key == "claude-web")
@@ -198,10 +186,7 @@
                                 Use this as the server URL:
                                 <div class="code-block code-block--inlinebar">
                                     <pre id="mcp-url">@_serverUrl</pre>
-                                    <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-url">
-                                        <Icon Name="copy" Width="14" Height="14" />
-                                        <span data-copy-label>Copy</span>
-                                    </button>
+                                    <CopyButton Target="#mcp-url" />
                                 </div>
                             </li>
                         }
@@ -217,10 +202,7 @@
                                             <span class="code-block__name">@file</span>
                                         }
                                         <span class="code-block__spacer"></span>
-                                        <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-snippet">
-                                            <Icon Name="copy" Width="14" Height="14" />
-                                            <span data-copy-label>Copy</span>
-                                        </button>
+                                        <CopyButton Target="#mcp-snippet" />
                                     </div>
                                     <pre id="mcp-snippet">@snippet(_serverUrl)</pre>
                                 </div>
@@ -261,10 +243,7 @@
                         <div class="code-block__bar">
                             <span class="code-block__lang">yaml</span>
                             <span class="code-block__spacer"></span>
-                            <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-swagger">
-                                <Icon Name="copy" Width="14" Height="14" />
-                                <span data-copy-label>Copy</span>
-                            </button>
+                            <CopyButton Target="#mcp-swagger" />
                         </div>
                         <pre id="mcp-swagger">paths:
   /mcp:
@@ -377,29 +356,21 @@
                     your account.
                 </p>
             </article>
-        </div>
-
-        <nav class="docs__toc" aria-label="On this page">
-            <span class="docs__toc-h">On this page</span>
-            <div class="docs__toc-list">
-                <a class="toc-link" href="#mcp-ways">Two ways to connect</a>
-                <a class="toc-link toc-link--sub" href="#mcp-token">A personal access token</a>
-                <a class="toc-link toc-link--sub" href="#mcp-consent">Signing in from the assistant</a>
-                <a class="toc-link" href="#mcp-setup">Set up your assistant</a>
-                <a class="toc-link" href="#mcp-does">What it can do</a>
-                <a class="toc-link" href="#mcp-revoke">Taking access back</a>
-                <a class="toc-link" href="#mcp-trouble">If it isn't working</a>
-                <a class="toc-link" href="#mcp-tools">Every tool it can use</a>
-                @foreach (var group in McpToolCatalog.Groups)
-                {
-                    <a class="toc-link toc-link--sub" href="#@GroupAnchor(group)">@group</a>
-                }
-            </div>
-        </nav>
-    </div>
-</div>
+</DocsPage>
 
 @code {
+    private static readonly IReadOnlyList<DocsTocEntry> Toc = new DocsTocEntry[]
+    {
+        new("Two ways to connect", "mcp-ways"),
+        new("A personal access token", "mcp-token", Sub: true),
+        new("Signing in from the assistant", "mcp-consent", Sub: true),
+        new("Set up your assistant", "mcp-setup"),
+        new("What it can do", "mcp-does"),
+        new("Taking access back", "mcp-revoke"),
+        new("If it isn't working", "mcp-trouble"),
+        new("Every tool it can use", "mcp-tools"),
+    }.Concat(McpToolCatalog.Groups.Select(g => new DocsTocEntry(g, GroupAnchor(g), Sub: true))).ToList();
+
     [SupplyParameterFromQuery(Name = "client")] public string? Client { get; set; }
 
     private string _client = "claude-web";
