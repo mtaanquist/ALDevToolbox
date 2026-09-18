@@ -69,9 +69,7 @@ public sealed class ArchetypeConformanceTests
         "ALDevToolbox/Components/Pages/ObjectExplorer/OeObjectDetail.razor",
         "ALDevToolbox/Components/Pages/ObjectExplorer/OeReleaseDetail.razor",
         "ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor",
-        "ALDevToolbox/Components/Pages/ObjectExplorer/SourceFileViewer.razor",
         "ALDevToolbox/Components/Pages/Pipelines/PipelinesBrowser.razor",
-        "ALDevToolbox/Components/Pages/Piper.razor",
         "ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor",
         "ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAudit.razor",
         "ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor",
@@ -82,7 +80,6 @@ public sealed class ArchetypeConformanceTests
         "ALDevToolbox/Components/Pages/Teams/TeamsIndex.razor",
         "ALDevToolbox/Components/Pages/TemplateDetail.razor",
         "ALDevToolbox/Components/Pages/TemplatesBrowser.razor",
-        "ALDevToolbox/Components/Pages/Translator.razor",
         "ALDevToolbox/Components/Shared/SettingsPage.razor",
         "ALDevToolbox/Components/Shared/TabbedPage.razor",
     };

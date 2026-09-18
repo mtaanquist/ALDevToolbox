@@ -39,15 +39,12 @@
 @if (!_hasFile)
 {
     <div class="page">
-        <div class="page-head">
-            <div>
-                <h1 class="page-head__title">Translator</h1>
-                <p class="page-head__sub">
-                    Open an XLIFF (<code>.xlf</code>) file from your extension and translate it here. The file's
-                    exact formatting is kept, so a git diff shows only what you changed.
-                </p>
-            </div>
-        </div>
+        <PageHead Title="Translator">
+            <SubtitleContent>
+                Open an XLIFF (<code>.xlf</code>) file from your extension and translate it here. The file's
+                exact formatting is kept, so a git diff shows only what you changed.
+            </SubtitleContent>
+        </PageHead>
 
         @if (_restoreName is not null)
         {
