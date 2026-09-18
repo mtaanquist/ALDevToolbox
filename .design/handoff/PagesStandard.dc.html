@@ -13,12 +13,16 @@
   <link rel="stylesheet" href="components.css" />
   <link rel="stylesheet" href="shell.css" />
   <link rel="stylesheet" href="pages.css" />
+  <!-- Environment detail's settings block composes .setting-list, which lives in
+       the forms layer. Loading it here keeps the archetype honest rather than
+       re-implementing the component in the pages layer. -->
+  <link rel="stylesheet" href="pages-forms.css" />
 </helmet>
 <div class="doc">
   <header class="doc__head">
     <p class="doc__eyebrow">AL Dev Toolbox - design system - step 4</p>
     <h1 class="doc__title">Standard page archetypes</h1>
-    <p class="doc__sub">Four layouts that between them cover most of the toolbox, each shown inside the real shell - switch a frame between light, dark or both: the tool launcher, the list/browser workhorse (all three states, both table and card views), master-detail, and the calm admin dashboard. Every frame is a real 1440px desktop shell, scaled down with a fixed CSS transform so the shell's own container queries still see a desktop - scroll inside one to see the sticky page header and the live interactions.</p>
+    <p class="doc__sub">Seven layouts that between them cover most of the toolbox, each shown inside the real shell: the tool launcher, the list/browser workhorse (all three states, both table and card views), the cross-solution Environments list, the actionable list with its command bar, master-detail, environment detail, and the calm admin dashboard. The four original frames switch between light, dark or both. Every frame is a real 1440px desktop shell, scaled down with a fixed CSS transform so the shell's own container queries still see a desktop - scroll inside one to see the sticky page header and the live interactions.</p>
   </header>
 
   <div class="arch">
@@ -36,17 +40,17 @@
         </div>
         <div class="theme-split__body">
           <sc-if value="{{ showLauncherLight }}" hint-placeholder-val="{{ true }}">
-            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="launcher" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="launcher" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
           <sc-if value="{{ showLauncherDark }}" hint-placeholder-val="{{ false }}">
-            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="launcher" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="launcher" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
         </div>
       </div>
     </section>
 
     <section>
-      <div class="arch__head"><div><span class="arch__n">Archetype 2</span><h2 class="arch__t">List / browser</h2></div><span class="arch__use">Templates, Cookbook, Projects, Pipelines, Releases. All three states + both views.</span></div>
+      <div class="arch__head"><div><span class="arch__n">Archetype 2</span><h2 class="arch__t">List / browser</h2></div><span class="arch__use">Templates, Cookbook, Solutions, Pipelines, Releases. All three states + both views.</span></div>
       <div class="theme-split {{ listClass }}" data-theme="light">
         <div class="theme-split__bar">
           <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Scroll the frame for loading and empty states</span>
@@ -58,17 +62,17 @@
         </div>
         <div class="theme-split__body">
           <sc-if value="{{ showListLight }}" hint-placeholder-val="{{ true }}">
-            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="list" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="list" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
           <sc-if value="{{ showListDark }}" hint-placeholder-val="{{ false }}">
-            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="list" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="list" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
         </div>
       </div>
     </section>
 
     <section>
-      <div class="arch__head"><div><span class="arch__n">Archetype 3</span><h2 class="arch__t">Master-detail</h2></div><span class="arch__use">Project / pipeline / release detail. Running and failed runs shown.</span></div>
+      <div class="arch__head"><div><span class="arch__n">Archetype 3</span><h2 class="arch__t">Master-detail</h2></div><span class="arch__use">Solution / pipeline / release detail. Running and failed runs shown.</span></div>
       <div class="theme-split {{ detailClass }}" data-theme="light">
         <div class="theme-split__bar">
           <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Theme</span>
@@ -80,12 +84,66 @@
         </div>
         <div class="theme-split__body">
           <sc-if value="{{ showDetailLight }}" hint-placeholder-val="{{ true }}">
-            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="detail" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="detail" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
           <sc-if value="{{ showDetailDark }}" hint-placeholder-val="{{ false }}">
-            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="detail" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="detail" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
         </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 2 - variant</span><h2 class="arch__t">Environments (cross-solution list)</h2></div><span class="arch__use">Every environment the user can reach, read live from Business Central. Populated, loading and first-run empty.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Populated - light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="env-list" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Populated - dark</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="env-list" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+      <div class="themes" style="margin-top: var(--space-4)">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Loading - freshness reads "just now", Refresh is in flight</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="env-list" body-kind="loading" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - first run, before any solution is connected</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="env-list" body-kind="empty" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 15</span><h2 class="arch__t">Actionable list</h2></div><span class="arch__use">A list whose rows are selected and acted on together. Upgrades is the first one; anything with bulk actions uses it.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Nothing selected - the two selection-only commands are disabled</div>
+          <p class="vpcap"><span>tick a row inside the frame</span><span>the commands enable themselves</span></p>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Three selected - commands enabled, rows marked</div>
+          <p class="vpcap"><span>same markup, three rows pre-ticked</span><span>header box goes indeterminate</span></p>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades" upgrades-selected="{{ three }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 3 - variant</span><h2 class="arch__t">Environment detail</h2></div><span class="arch__use">One customer environment: overview, updates, three app states, tenant-writing settings. One freshness strip for the whole page.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Light - scroll the frame for apps and settings</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="env-detail" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Dark - same markup</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="env-detail" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
       </div>
     </section>
 
@@ -102,10 +160,10 @@
         </div>
         <div class="theme-split__body">
           <sc-if value="{{ showDashboardLight }}" hint-placeholder-val="{{ true }}">
-            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="dashboard" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="dashboard" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
           <sc-if value="{{ showDashboardDark }}" hint-placeholder-val="{{ false }}">
-            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="dashboard" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="dashboard" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
           </sc-if>
         </div>
       </div>
@@ -124,6 +182,42 @@
         <ul>
           <li><code>.page</code> - the vertical rhythm every archetype sits in (grid, <code>--space-5</code> gap). <code>.page__hero</code> / <code>__hero-title</code> / <code>__hero-sub</code> for the launcher's larger greeting; ordinary pages use <code>.page-head</code> from step 2.</li>
           <li><code>.state-label</code> - the small rule-and-caption marker used on this sheet to separate loading / empty / populated. Not shipped in the app.</li>
+        </ul>
+        <h3>15. Actionable list (command bar)</h3>
+        <ul>
+          <li><code>.cmdbar</code> (components.css) + <code>__row</code> / <code>__group</code> / <code>__search</code> / <code>__note</code>. Structure taken from the Business Central ribbon - a persistent command bar above the table, commands grouped and separated, the rest behind one overflow - and nothing else: it is drawn entirely in our own tokens and composes <code>.btn</code>, <code>.ra</code> / <code>.menu</code>, <code>.search</code> and <code>.select-wrap</code> rather than owning a button of its own.</li>
+          <li>One filter control, not a select plus a loose checkbox: the "only with an update waiting" flag is a named view inside the same <code>.select</code>, with the combinations spelled out. Two controls for one job made the row ragged and left the checkbox floating between the select and the search.</li>
+          <li><code>.cell-stack</code> + <code>__main</code> / <code>__sub</code> - a two-line cell for a value and its qualifier: environment over its type, next version over its date. Inline, the second part starts at a different x on every row and the column cannot be scanned; stacked, both lines have a fixed left edge and the row reads as one fact with a footnote.</li>
+          <li><code>.ra--up</code> flips a row menu above its button. Rows near the foot of a scrolling list have no room below them and the content column clips what escapes; the page's open handler measures the button against the scroll container and sets the class.</li>
+          <li>One row, in the order the work happens: filter, then search, then commands - so the search and filters that used to straggle across their own ragged row sit on the same grid and the same baseline as the actions. The bar is <code>position: sticky</code> - a bulk action has to still be reachable after you have scrolled to the last row you wanted.</li>
+          <li>The command bar <b>is</b> the page's sticky header, so its page head is a plain <code>.page-head</code>: one sticky element per scroll container, as everywhere else. A page that genuinely needs both pins the head as usual and sets <code>--sticky-head</code> on the page root - <code>.cmdbar</code> reads <code>top: var(--sticky-head, 0px)</code>, the same escape hatch <code>.detail-body</code> uses.</li>
+          <li>Selection-dependent commands are plainly <code>disabled</code> until rows are ticked, which is what a BC user already expects from a ribbon. No selection counter and no "tick rows first" instruction: the checkbox column and the disabled buttons say it between them, and a counter that appears and disappears changes the bar's height for no gain.</li>
+          <li>Captions are two words - <b>Move dates</b>, <b>Update now</b>, <b>Refresh</b> - with the full sentence in the <code>title</code>. A command bar is scanned, not read; the long form ("Move dates to the latest") belongs in the tooltip and in the row menu, where there is room for it.</li>
+          <li>The overflow is a single <code>.btn--icon</code> ellipsis holding the rest, including the selection-only commands as <code>.menu__item[disabled]</code>. The timezone caption that used to float above the table is now one clause of the page subtitle, where a fact about the whole page belongs.</li>
+          <li>Row selection is <code>.data-table__col-check</code> + <code>.check</code>, with <code>.is-indeterminate</code> on the header box for a partial selection and <code>tr.is-selected</code> on the picked rows - so the selection is legible in the table, not only in the bar.</li>
+          <li>Per-row commands live in the row's own <code>.ra</code> menu (Update history first). A button repeated down every row competes with the bar for the same job; a menu is the quieter affordance and holds the single-row versions of the bulk commands too.</li>
+          <li>No Status column: the row already carries its state twice, as the leading glyph and the edge keyline, and the glyph's <code>aria-label</code> / <code>title</code> carry the word. That is the rule the sheet states below - tables get the edge bar and glyph, pills belong to cards, detail headers and inline contexts - so a third copy in a column of its own was the table contradicting the system. Version numbers are plain sans with <code>.u-num</code> tabular figures rather than the mono face. The boundary: a short release number you say out loud - <code>28.2</code>, <code>28.4</code> - is sans in every table; a full build identifier you copy and paste - <code>28.5.0.363410</code>, <code>1.4.0.882</code> - stays mono, on the environment detail page where those live.</li>
+          <li>Reusable anywhere a list has bulk actions - Releases, Users, Translator's unit list. The archetype is the bar plus a selectable <code>.data-table--edge</code>; only the columns and the command set change.</li>
+        </ul>
+        <h3>Freshness (data read from Business Central)</h3>
+        <ul>
+          <li><code>.freshness</code> (components.css) + <code>__icon __text __age __sep __note __spacer</code>, with <code>--stale</code> and <code>.is-refreshing</code>. Exactly one per page, directly under the page head, holding the only Refresh - the old environment panel repeated "checked 10 hours ago" and a Refresh button per section, and neither told you which section the age belonged to.</li>
+          <li><code>--stale</code> is the same strip escalated to <code>--warning</code>, not a second component, so the copy under it never changes. <code>.is-refreshing</code> mutes the age and pairs with <code>.btn--loading</code> on the action.</li>
+          <li>Row-level ages stay in the table's own "Last checked" column: solutions are polled on their own schedules, so a single page-level age would be a lie for some rows. The strip says so in <code>__note</code>.</li>
+        </ul>
+        <h3>2 - variant. Environments list</h3>
+        <ul>
+          <li>Plain archetype 2: <code>.page-head--sticky</code>, <code>.filter-bar</code>, <code>.data-table--edge</code>, <code>.pager</code>. Columns are customer, environment, now on, next update, last checked - the same set and the same <code>.cell-stack</code> treatment as Upgrades, because the two pages list the same thing. Customer links to the solution, environment to this detail page; Upgrades adds only what scheduling needs on top: a selection column and the latest possible date.</li>
+          <li>Status is the row's edge keyline plus its leading glyph - <code>tr.is-published</code> / <code>.is-running</code> / <code>.is-failed</code> / <code>.is-queued</code>, with the word on the glyph's <code>aria-label</code> and <code>title</code>. No Status column: a pill there would be the third copy of the same fact, and pills belong to cards, detail headers and inline contexts. Unreachable and Suspended are real states here, not blanks.</li>
+          <li>The empty state is written for a first run: environments appear once a solution has a Business Central connection, so the primary action is Connect a solution, not New environment - the toolbox cannot create one.</li>
+        </ul>
+        <h3>3 - variant. Environment detail</h3>
+        <ul>
+          <li>Header band is the standard <code>.detail-head</code> + <code>.page-head__crumbs</code> back to the solution, with status pill and type <code>.tag</code> beside the name, and "Open in Business Central" as the one outbound action. <code>.meta-row</code> carries version, country, windows and app count.</li>
+          <li>Then three <code>.card</code> blocks, in the order a consultant reads them: <b>Updates</b> (<code>.kv-grid</code> of current version, next version, date, latest possible date, our delivery window beside BC's own window, plus an <code>.alert--info</code> when the two overlap), <b>Apps</b>, and <b>Environment settings</b>.</li>
+          <li>Apps is three separately headed cards, never one column: scheduled installs (<code>.empty-state--quiet</code> plus the "do not use both places" caveat), installed apps (plain <code>.data-table</code>, capped with a Show all footer), and AppSource updates waiting.</li>
+          <li>The waiting list was ~25 ragged text lines with inline "needs X, Y first" notes. It is now <code>.data-table--edge.u-compact</code> with App / Publisher / Target version / Prerequisites, its own filter and search, and a state column that turns the dependency note into a sortable status - <code>Ready</code> against <code>tr.is-published</code>, <code>Waits for N</code> against <code>tr.is-queued</code> - with the blocking apps as <code>.tag</code> chips. Ready rows sort first, so the work you can actually do is at the top.</li>
+          <li>Settings use <code>.setting-list</code> with an <code>.alert--warn</code> above them and <code>.setting--danger</code> + <code>.setting__lock</code> on the one that reschedules the tenant's update: the existing "this writes to the customer's tenant" treatment, unchanged.</li>
         </ul>
         <h3>1. Tool launcher</h3>
         <ul>
@@ -168,7 +262,7 @@
         </ul>
         <h3>Shell integration and performance</h3>
         <ul>
-          <li><code>ShellFrame</code> gained a <code>body</code> prop (<code>pipelines</code> | <code>launcher</code> | <code>list</code> | <code>detail</code> | <code>dashboard</code>) so archetypes mount inside the real shell rather than a mock-up of it. Nothing else in the shell changed.</li>
+          <li><code>ShellFrame</code> gained a <code>body</code> prop (<code>pipelines</code> | <code>launcher</code> | <code>list</code> | <code>detail</code> | <code>env-list</code> | <code>env-detail</code> | <code>upgrades</code> | <code>dashboard</code> | ...) so archetypes mount inside the real shell rather than a mock-up of it, plus <code>bodyKind</code> (<code>populated</code> | <code>loading</code> | <code>empty</code>, for the list states) and <code>upgradesSelected</code> (seeds the actionable list’s selection). The shell also derives its own active nav item from <code>body</code>, so a frame showing Environments highlights Solutions &gt; Environments rather than whatever was hard-coded.</li>
           <li>Frames scale with a fixed per-breakpoint <code>transform: scale()</code> - no measurement, no observers, no JS. Two optimisations were tried and removed: <code>content-visibility: auto</code>, whose <code>auto</code> intrinsic size is derived from the element's own last render and so oscillates between skipped and rendered, relayouting repeatedly; and observer-gated <code>animation-play-state</code>, which froze the very loading states this sheet exists to demonstrate. Each archetype mounts ONE frame with a light / dark / both switch, and the inactive pane is not rendered at all (<code>sc-if</code>, not <code>display: none</code>) - so only the shell you are looking at is ever constructed. This is spec-sheet scaffolding, not app code - the Blazor app renders one shell, unscaled.</li>
         </ul>
         <h3>Tokens added</h3>
@@ -177,7 +271,7 @@
         </ul>
         <h3>Which archetype per tool</h3>
         <ul>
-          <li><b>Launcher</b> Home. <b>List</b> Templates, Cookbook, Projects, Pipelines, Releases, Admin Users. <b>Detail</b> project / pipeline / release / release-run pages. <b>Dashboard</b> Admin and Site-admin landings. Object Explorer, Translator, Compare and Piper are the data-heavy power tools - they need their own archetype and are not covered here.</li>
+          <li><b>Launcher</b> Home. <b>List</b> Templates, Cookbook, Solutions, Pipelines, Releases, Admin Users. <b>Actionable list</b> Upgrades, and any list with bulk actions. <b>Detail</b> solution / pipeline / release / release-run pages, and Environment detail. <b>Dashboard</b> Admin and Site-admin landings. Object Explorer, Translator, Diff and Piper are the data-heavy power tools - they need their own archetype and are not covered here.</li>
         </ul>
       </div>
     </div>
@@ -192,6 +286,8 @@ class Component extends DCLogic {
 
   renderVals() {
     const keys = { launcher: 'Launcher', list: 'List', detail: 'Detail', dashboard: 'Dashboard' };
+    // Seeds the pre-selected demo of the actionable list.
+    const three = 3;
     const vals = {};
     Object.entries(keys).forEach(([body, K]) => {
       const mode = this.state[body];
@@ -205,6 +301,7 @@ class Component extends DCLogic {
       vals['set' + K + 'Dark'] = () => this.setState({ [body]: 'dark' });
       vals['set' + K + 'Split'] = () => this.setState({ [body]: 'split' });
     });
+    vals.three = three;
     return vals;
   }
 }

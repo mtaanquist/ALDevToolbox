@@ -176,6 +176,9 @@ code, kbd { font-family: var(--font-mono); }
 }
 
 .shell-scale--half { --dw: 1280px; --dh: 480px; --sf: calc(var(--sf-base) * .52); }
+/* Hero frames: a real laptop canvas, so a full-length sidebar is shown whole
+   rather than clipped by the demo frame. */
+.shell-scale--tall { --dh: 900px; }
 @media (min-width:  900px) { .shell-scale { --sf-base: .52; } }
 @media (min-width: 1100px) { .shell-scale { --sf-base: .66; } }
 @media (min-width: 1300px) { .shell-scale { --sf-base: .80; } }
