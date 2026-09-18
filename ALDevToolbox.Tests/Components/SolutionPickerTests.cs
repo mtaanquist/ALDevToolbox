@@ -292,6 +292,6 @@ public sealed class SolutionPickerTests : IDisposable
         await cut.InvokeAsync(() => cut.FindAll("[role='option']")[0].Click());
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain(
-            "Using CRONUS Denmark's saved details. Use Change customer to pick someone else."));
+            "Using CRONUS Denmark's saved details. Use Change solution to pick a different one."));
     }
 }

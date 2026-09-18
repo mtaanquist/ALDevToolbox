@@ -194,6 +194,23 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--success); }
 .invalid { outline: 1px solid var(--danger-text); }
 
+/* ---------- Form fields keep their rows at the top ---------- */
+
+/* A .field is a grid of label, control and hint. Side by side in a .form-grid,
+   the shorter column is stretched to the height of the taller one, and a grid
+   whose rows are all auto shares that spare height out between them - so the
+   field with the shorter hint grows its own label row and drops its box below
+   the one beside it. That is the 18px the two New Workspace boxes were out by
+   (issue #813), and it moves with whatever the hints happen to say. The rows
+   stay the size of their content; the spare height collects at the bottom of
+   the field, where nothing is looking.
+
+   Written against .form-grid rather than .field: sharing a row with a taller
+   field is the only thing that stretches one, and a bare .field here would be
+   this sheet redefining a component class, which is the collision the component
+   guard exists to catch. */
+.form-grid .field { align-content: start; }
+
 
 /* ---------- Tile grid (admin dashboard + tools home) ---------- */
 
