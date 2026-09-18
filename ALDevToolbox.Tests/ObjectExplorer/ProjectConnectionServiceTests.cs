@@ -1400,6 +1400,101 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         admin.SelectWrites.Should().Be(0, "a no-op must not touch the customer's tenant");
     }
 
+    // ── The exclusive latest-selectable bound (issue #804) ────────────────
+
+    /// <summary>Microsoft's bound as the reporter saw it: midnight UTC, meaning "before 1 March".</summary>
+    private static readonly DateTimeOffset MidnightBound = new(2027, 3, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>The last moment inside that bound, and what the PATCH must carry.</summary>
+    private static readonly DateTimeOffset LastAllowedDay = new(2027, 2, 28, 0, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Pushing_the_date_sends_the_day_before_an_exclusive_midnight_bound()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        // Business Central stores the date inside the customer's update window, so the day
+        // it reads back carries a time of day the PATCH never named.
+        var landed = new DateTimeOffset(2027, 2, 28, 21, 0, 0, TimeSpan.Zero);
+        var admin = AdminWithUpdates(Update(ScheduledDate, MidnightBound), Update(landed, MidnightBound));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        admin.SelectedDateTime.Should().Be(LastAllowedDay,
+            "the bound is exclusive, so asking for it asks for a moment Business Central refuses");
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.BcNextUpdateDate.Should().Be(landed.UtcDateTime,
+            "the mirror says what Business Central stored, not what we asked for");
+    }
+
+    [Fact]
+    public async Task Pushing_the_date_refuses_an_update_already_on_the_last_allowed_day()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        // The same day as the effective latest, at a different time of day: an exact-tick
+        // guard misses this and re-PATCHes the customer's tenant on every sweep.
+        var onTheDay = new DateTimeOffset(2027, 2, 28, 21, 0, 0, TimeSpan.Zero);
+        var admin = new FakeAdminClient { OnEnvironmentUpdates = _ => new[] { Update(onTheDay, MidnightBound) } };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+            .Should().Be("This update's date is already the latest Microsoft allows.");
+        admin.SelectWrites.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_date_business_central_did_not_take_fails_the_push_instead_of_reporting_it_done()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        // The PATCH succeeds and the re-read still shows the old date - what issue #804
+        // saw as a green "Done" entry on an environment that never moved.
+        var admin = AdminWithUpdates(Update(ScheduledDate, Latest), Update(ScheduledDate, Latest));
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+            (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+                .Should().Be($"Business Central did not accept the new date. Its schedule still says {ScheduledDate.UtcDateTime:yyyy-MM-dd}.");
+        }
+
+        await using var verify = _db.NewContext();
+        (await verify.AuditLog.AsNoTracking().CountAsync()).Should().Be(0,
+            "nothing moved on the customer's tenant, so the history must not claim it did");
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.BcNextUpdateFetchedAt.Should().NotBeNull("the failed write still refreshed what we know");
+    }
+
+    [Fact]
+    public async Task A_re_read_that_fails_outright_still_leaves_the_push_done()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient();
+        admin.OnEnvironmentUpdates = _ => admin.SelectWrites == 0
+            ? new[] { Update(ScheduledDate, Latest) }
+            : throw new BcApiException(System.Net.HttpStatusCode.Forbidden, "denied");
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        admin.SelectedDateTime.Should().Be(Latest);
+
+        await using var verify = _db.NewContext();
+        (await verify.AuditLog.AsNoTracking().CountAsync()).Should().Be(1,
+            "a re-read that fails costs the freshness, never the write");
+    }
+
     [Fact]
     public async Task An_update_the_customer_has_not_picked_yet_is_selected_by_the_date_write()
     {

@@ -96,9 +96,17 @@ are gated on the environment-updates grant rather than on managing the project, 
 re-mirror the row from a fresh read afterwards so the table shows the new date without
 waiting for the nightly sweep. A failed re-read costs the freshness, never the write.
 
-- **Push the date to the latest** sets the date to the update's latest selectable date.
-  Refuses when there is no update on offer, when Business Central gave the update no latest
-  date, and when the date is already there.
+- **Push the date to the latest** sets the date as late as Business Central will take it.
+  The `latestSelectableDateTime` the updates read gives back is an *exclusive* bound — a
+  value of midnight UTC means "before that day", which is why the admin center's own picker
+  stops the day before — so a midnight bound is turned into the previous day and only a
+  bound carrying a time of day is sent as it stands. The write is then verified: the
+  re-read that re-mirrors the row is also what proves the date moved, compared by calendar
+  day in UTC, because Business Central answers a date it will not take by returning success
+  and keeping the old one. An unmoved date fails the action rather than recording it as
+  done. Refuses when there is no update on offer, when Business Central gave the update no
+  latest date, and when the date is already on that day. The same reading decides what the
+  fleet page shows as the latest allowed, so the page and the admin center agree.
 - **Update now** sets the date to the current moment and is the *only* operation that ever
   ignores the environment's update window — a customer who has agreed a slot is asking for
   the upgrade regardless of their window, and nothing else has the right to take that
