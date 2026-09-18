@@ -10,29 +10,26 @@
 
 <PageTitle>Modules · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Modules</h1>
-            <p class="page-head__sub">
-                Modules are the optional pieces someone can add on the New Workspace
-                form. Each one contributes its own extension folder and dependencies.
-                Edits apply the next time someone generates.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-            <a class="btn btn--sm btn--primary" href="/admin/modules/new">
-                <Icon Name="package-plus" Width="14" Height="14" />
-                <span>New module</span>
-            </a>
-        </div>
-    </header>
-
-    <div class="filter-bar">
+<ListPage Title="Modules" ShowActions="true" FiltersWhenEmpty="true"
+          IsLoading="@(_rows is null)"
+          IsEmpty="@(_rows is not null && FilteredRows.Count == 0 && _rows.Count == 0)"
+          HasNoMatches="@(_rows is not null && FilteredRows.Count == 0)">
+    <SubtitleContent>
+        Modules are the optional pieces someone can add on the New Workspace
+        form. Each one contributes its own extension folder and dependencies.
+        Edits apply the next time someone generates.
+    </SubtitleContent>
+    <Actions>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+        <a class="btn btn--sm btn--primary" href="/admin/modules/new">
+            <Icon Name="package-plus" Width="14" Height="14" />
+            <span>New module</span>
+        </a>
+    </Actions>
+    <Filters>
         <label class="check @(_showDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
@@ -43,43 +40,35 @@
             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
             <span>Hide deprecated</span>
         </label>
-    </div>
-
-    @if (_rows is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else if (FilteredRows.Count == 0)
-    {
+    </Filters>
+    <Loading>
+        <LoadingBlock Text="Loading..." />
+    </Loading>
+    <Empty>
         <div class="card">
-            @if (_rows.Count == 0)
-            {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No modules yet</span>
-                    <span class="empty-state__text">
-                        Create one, or import a template from the site catalogue on the
-                        <a href="/admin/templates">Templates</a> page - the modules it uses
-                        come with it.
-                    </span>
-                    <a class="btn empty-state__action" href="/admin/modules/new">
+            <EmptyState Icon="package" Title="No modules yet">
+                <Text>
+                    Create one, or import a template from the site catalogue on the
+                    <a href="/admin/templates">Templates</a> page - the modules it uses
+                    come with it.
+                </Text>
+                <Action>
+                    <a class="btn" href="/admin/modules/new">
                         <Icon Name="package-plus" Width="14" Height="14" />
                         <span>New module</span>
                     </a>
-                </div>
-            }
-            else
-            {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">Nothing matches these filters</span>
-                    <span class="empty-state__text">Untick <strong>Hide deprecated</strong> to see deprecated rows.</span>
-                </div>
-            }
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else
-    {
+    </Empty>
+    <NoMatches>
+        <div class="card">
+            <EmptyState Icon="funnel-x" Title="Nothing matches these filters">
+                <Text>Untick <strong>Hide deprecated</strong> to see deprecated rows.</Text>
+            </EmptyState>
+        </div>
+    </NoMatches>
+    <ChildContent>
         @if (_selected.Count > 0)
         {
             <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
@@ -147,7 +136,7 @@
                     <th class="data-table__num">Dependencies</th>
                     <th class="data-table__num">ID range size</th>
                     <th>Last updated (UTC)</th>
-                    <th class="data-table__actions"></th>
+                    <th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -200,9 +189,8 @@
                 }
             </tbody>
         </table>
-    }
-
-</div>
+    </ChildContent>
+</ListPage>
 
 <ConfirmDialog @ref="_confirm" />
 

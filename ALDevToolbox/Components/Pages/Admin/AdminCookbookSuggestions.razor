@@ -7,44 +7,35 @@
 
 <PageTitle>Recipe suggestions · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <p class="page-head__crumbs">
-                <a href="/admin/cookbook">Cookbook</a>
-                <Icon Name="chevron-right" Width="12" Height="12" />
-                <span>Suggestions</span>
-            </p>
-            <h1 class="page-head__title">Recipe suggestions</h1>
-            <p class="page-head__sub">
-                Drafts your team has submitted. Open one to review it in full and
-                approve or reject it.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin/cookbook">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to cookbook</span>
-            </a>
-        </div>
-    </header>
-
-    @if (_pending is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else if (_pending.Count == 0)
-    {
+<ListPage Title="Recipe suggestions" ShowActions="true" FiltersWhenEmpty="true"
+          IsLoading="@(_pending is null)"
+          IsEmpty="@(_pending is not null && _pending.Count == 0)">
+    <Crumbs>
+        <a href="/admin/cookbook">Cookbook</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Suggestions</span>
+    </Crumbs>
+    <SubtitleContent>
+        Drafts your team has submitted. Open one to review it in full and
+        approve or reject it.
+    </SubtitleContent>
+    <Actions>
+        <a class="btn btn--sm" href="/admin/cookbook">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to cookbook</span>
+        </a>
+    </Actions>
+    <Loading>
+        <LoadingBlock Text="Loading..." />
+    </Loading>
+    <Empty>
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="inbox" Width="21" Height="21" /></span>
-                <span class="empty-state__title">Nothing waiting</span>
-                <span class="empty-state__text">Recipes your team submits appear here for review.</span>
-            </div>
+            <EmptyState Icon="inbox" Title="Nothing waiting">
+                <Text>Recipes your team submits appear here for review.</Text>
+            </EmptyState>
         </div>
-    }
-    else
-    {
+    </Empty>
+    <ChildContent>
         <table class="data-table">
             <thead>
                 <tr>
@@ -53,11 +44,11 @@
                     <th>Submitted by</th>
                     <th>Files</th>
                     <th>Submitted (UTC)</th>
-                    <th class="data-table__actions"></th>
+                    <th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var s in _pending)
+                @foreach (var s in _pending ?? new())
                 {
                     <tr>
                         <td>@s.Title</td>
@@ -75,8 +66,8 @@
                 }
             </tbody>
         </table>
-    }
-</div>
+    </ChildContent>
+</ListPage>
 
 @code {
     private List<RecipeSuggestion>? _pending;

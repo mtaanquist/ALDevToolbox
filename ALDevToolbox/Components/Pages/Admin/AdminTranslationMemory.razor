@@ -18,124 +18,103 @@
 
 <PageTitle>Translation memory · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Translation memory</h1>
-            <p class="page-head__sub">
-                Every source→target pair your organisation has learned (from Object Explorer imports,
-                the Translator, imported XLIFF files, and the translation files in your own repositories).
-                Vote good translations up and bad ones down to steer suggestion ranking, or remove a bad
-                pair so it stops being suggested. Removals are recoverable.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            @if (_canRefreshFromRepositories)
-            {
-                <button type="button" class="btn btn--sm" disabled="@_refreshing" @onclick="RefreshFromRepositoriesAsync">
-                    @if (_refreshing)
-                    {
-                        <span class="spinner"></span>
-                        <span>Reading your repositories...</span>
-                    }
-                    else
-                    {
-                        <Icon Name="refresh-cw" Width="14" Height="14" />
-                        <span>Read from repositories</span>
-                    }
-                </button>
-            }
-            <a class="btn btn--sm" href="/admin/translation-memory/import">
-                <Icon Name="upload" Width="14" Height="14" />
-                <span>Import XLIFF</span>
-            </a>
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-        </div>
-    </header>
-
-    @if (_refreshMessage is not null)
-    {
-        <p class="alert @(_refreshFailed ? "alert--warn" : "alert--success") tr-mem-refresh" role="status">
-            <Icon Name="@(_refreshFailed ? "circle-alert" : "check")" Width="16" Height="16" />
-            <span>@_refreshMessage</span>
-            <button type="button" class="btn btn--sm btn--ghost tr-mem-refresh__dismiss"
-                    aria-label="Dismiss" @onclick="() => _refreshMessage = null">
-                <Icon Name="x" Width="14" Height="14" />
+<ListPage Title="Translation memory" ShowActions="true" FiltersWhenEmpty="true"
+          IsLoading="@(_result is null)"
+          IsEmpty="@(_result is not null && _result.Items.Count == 0 && !HasFilters)"
+          HasNoMatches="@(_result is not null && _result.Items.Count == 0)">
+    <SubtitleContent>
+        Every source→target pair your organisation has learned (from Object Explorer imports,
+        the Translator, imported XLIFF files, and the translation files in your own repositories).
+        Vote good translations up and bad ones down to steer suggestion ranking, or remove a bad
+        pair so it stops being suggested. Removals are recoverable.
+    </SubtitleContent>
+    <Actions>
+        @if (_canRefreshFromRepositories)
+        {
+            <button type="button" class="btn btn--sm" disabled="@_refreshing" @onclick="RefreshFromRepositoriesAsync">
+                @if (_refreshing)
+                {
+                    <span class="spinner"></span>
+                    <span>Reading your repositories...</span>
+                }
+                else
+                {
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span>Read from repositories</span>
+                }
             </button>
-        </p>
-    }
+        }
+        <a class="btn btn--sm" href="/admin/translation-memory/import">
+            <Icon Name="upload" Width="14" Height="14" />
+            <span>Import XLIFF</span>
+        </a>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </Actions>
+    <Notices>
+        @if (_refreshMessage is not null)
+        {
+            <p class="alert @(_refreshFailed ? "alert--warn" : "alert--success") tr-mem-refresh" role="status">
+                <Icon Name="@(_refreshFailed ? "circle-alert" : "check")" Width="16" Height="16" />
+                <span>@_refreshMessage</span>
+                <button type="button" class="btn btn--sm btn--ghost tr-mem-refresh__dismiss"
+                        aria-label="Dismiss" @onclick="() => _refreshMessage = null">
+                    <Icon Name="x" Width="14" Height="14" />
+                </button>
+            </p>
+        }
 
-    <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
-        <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
-        <input class="input tr-mem-mini" aria-label="Target language" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
-        <span class="select-wrap">
-            <select class="select tr-mem-mini" aria-label="Kind" @bind="_kind">
-                <option value="">All kinds</option>
-                <option value="caption">Caption</option>
-                <option value="tooltip">Tooltip</option>
-                <option value="label">Label</option>
-                <option value="option">Option</option>
-                <option value="instructional">Instructional</option>
-                <option value="other">Other</option>
-            </select>
-            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-        </span>
-        <input class="input tr-mem-mini" aria-label="Origin" placeholder="Origin contains..." @bind="_origin" @bind:event="oninput" />
-        <label class="check tr-mem-incl @(_includeDeleted ? "is-checked" : "")">
-            <input type="checkbox" @bind="_includeDeleted" />
-            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-            <span>Include removed</span>
-        </label>
-        <button type="submit" class="btn btn--sm btn--primary">
-            <Icon Name="search" Width="14" Height="14" /><span>Search</span>
-        </button>
-    </form>
+        <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+            <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
+            <input class="input tr-mem-mini" aria-label="Target language" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
+            <span class="select-wrap">
+                <select class="select tr-mem-mini" aria-label="Kind" @bind="_kind">
+                    <option value="">All kinds</option>
+                    <option value="caption">Caption</option>
+                    <option value="tooltip">Tooltip</option>
+                    <option value="label">Label</option>
+                    <option value="option">Option</option>
+                    <option value="instructional">Instructional</option>
+                    <option value="other">Other</option>
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
+            <input class="input tr-mem-mini" aria-label="Origin" placeholder="Origin contains..." @bind="_origin" @bind:event="oninput" />
+            <label class="check tr-mem-incl @(_includeDeleted ? "is-checked" : "")">
+                <input type="checkbox" @bind="_includeDeleted" />
+                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                <span>Include removed</span>
+            </label>
+            <button type="submit" class="btn btn--sm btn--primary">
+                <Icon Name="search" Width="14" Height="14" /><span>Search</span>
+            </button>
+        </form>
 
-    @if (_loadError is not null)
-    {
-        <p class="alert alert--warn tr-mem-load-error" role="status">
-            <Icon Name="circle-alert" Width="16" Height="16" />
-            <span>@_loadError</span>
-        </p>
-    }
-
-    @if (_result is null)
-    {
+        @if (_loadError is not null)
+        {
+            <p class="alert alert--warn tr-mem-load-error" role="status">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@_loadError</span>
+            </p>
+        }
+    </Notices>
+    <Loading>
         @if (_loadError is null)
         {
-            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+            <LoadingBlock Text="Loading..." />
         }
-    }
-    else if (_result.Items.Count == 0)
-    {
-        @* Two different situations, and only one of them is about the filters:
-           a memory that has never been filled needs the ways to fill it, a
-           search that found nothing needs a way back to everything. *@
+    </Loading>
+    @* Two different situations, and only one of them is about the filters:
+       a memory that has never been filled needs the ways to fill it, a
+       search that found nothing needs a way back to everything. *@
+    <Empty>
         <div class="card">
-            @if (HasFilters)
-            {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">Nothing matches</span>
-                    <span class="empty-state__text">No entry matches what you searched for.</span>
-                    <button type="button" class="btn empty-state__action" @onclick="ClearFiltersAsync">
-                        <Icon Name="x" Width="14" Height="14" />
-                        <span>Clear filters</span>
-                    </button>
-                </div>
-            }
-            else
-            {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No translations learned yet</span>
-                    <span class="empty-state__text">
-                        Memory fills up as you translate and import language files.
-                    </span>
-                    <span class="empty-state__action u-row">
+            <EmptyState Icon="languages" Title="No translations learned yet">
+                <Text>Memory fills up as you translate and import language files.</Text>
+                <Action>
+                    <span class="u-row">
                         <a class="btn" href="/admin/translation-memory/import">
                             <Icon Name="upload" Width="14" Height="14" />
                             <span>Import XLIFF</span>
@@ -149,13 +128,25 @@
                             </button>
                         }
                     </span>
-                </div>
-            }
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else
-    {
-        <div class="tr-mem-count u-muted">@_result.Total entr@(_result.Total == 1 ? "y" : "ies") · showing @(_skip + 1)-@(_skip + _result.Items.Count)</div>
+    </Empty>
+    <NoMatches>
+        <div class="card">
+            <EmptyState Icon="languages" Title="Nothing matches">
+                <Text>No entry matches what you searched for.</Text>
+                <Action>
+                    <button type="button" class="btn" @onclick="ClearFiltersAsync">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear filters</span>
+                    </button>
+                </Action>
+            </EmptyState>
+        </div>
+    </NoMatches>
+    <ChildContent>
+        <div class="tr-mem-count u-muted">@_result!.Total entr@(_result!.Total == 1 ? "y" : "ies") · showing @(_skip + 1)-@(_skip + _result!.Items.Count)</div>
         <table class="data-table tr-mem-table">
             <thead>
                 <tr>
@@ -170,7 +161,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var e in _result.Items)
+                @foreach (var e in _result!.Items)
                 {
                     <tr class="@(e.IsDeleted ? "tr-mem-removed" : "")">
                         <td class="tr-mem-src">@e.SourceText<span class="tr-mem-lang">@e.SourceLanguage</span></td>
@@ -224,16 +215,16 @@
             </tbody>
         </table>
 
-        @if (_result.Total > _pageSize)
+        @if (_result!.Total > _pageSize)
         {
             <div class="tr-mem-pager">
                 <button class="btn btn--sm" disabled="@(_skip == 0)" @onclick="() => PageAsync(-1)">Previous</button>
-                <span class="pager__count">Page @(_skip / _pageSize + 1) of @(((_result.Total - 1) / _pageSize) + 1)</span>
-                <button class="btn btn--sm" disabled="@(_skip + _pageSize >= _result.Total)" @onclick="() => PageAsync(1)">Next</button>
+                <span class="pager__count">Page @(_skip / _pageSize + 1) of @(((_result!.Total - 1) / _pageSize) + 1)</span>
+                <button class="btn btn--sm" disabled="@(_skip + _pageSize >= _result!.Total)" @onclick="() => PageAsync(1)">Next</button>
             </div>
         }
-    }
-</div>
+    </ChildContent>
+</ListPage>
 
 <ConfirmDialog @ref="_confirm"
                Title="Remove this translation?"
