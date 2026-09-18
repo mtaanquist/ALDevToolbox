@@ -48,7 +48,7 @@
             @if (!_denied)
             {
                 <p class="page-head__sub">
-                    When each customer's environment moves to its next Business Central version,
+                    When each solution's environment moves to its next Business Central version,
                     and how much longer you can put that off. Pick the environments you want,
                     then move their dates or start their update.
                 </p>
@@ -63,7 +63,7 @@
                 <span class="empty-state__icon"><Icon Name="lock" Width="21" Height="21" /></span>
                 <span class="empty-state__title">You don't have access to Upgrades</span>
                 <span class="empty-state__text">
-                    Changing a customer's update date acts on their live Business Central
+                    Changing a solution's update date acts on its live Business Central
                     environment. Access to Upgrades is granted per team. Ask an administrator
                     to add environment updates to one of your teams.
                 </span>
@@ -80,7 +80,7 @@
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="upg__pick"><span class="u-sr">Select</span></th>
-                <th scope="col">Customer</th>
+                <th scope="col">Solution</th>
                 <th scope="col">Environment</th>
                 <th scope="col">Status</th>
                 <th scope="col">Current version</th>
@@ -100,11 +100,11 @@
         <div class="card">
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="calendar" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No customer environments yet</span>
+                <span class="empty-state__title">No environments yet</span>
                 <span class="empty-state__text">
-                    This page lists the Business Central environments of the customers you can
-                    see. Connect a customer's Business Central from their solution, and their
-                    environments show up here.
+                    This page lists the Business Central environments of the solutions you can
+                    see. Connect a solution to its Business Central from the solution's own
+                    page, and its environments show up here.
                 </span>
                 <a class="btn empty-state__action" href="/solutions">
                     <Icon Name="folder-git-2" Width="15" Height="15" />
@@ -125,8 +125,8 @@
                 <span class="search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     <input type="search" name="q" value="@_search" class="input"
-                           placeholder="Search by customer or environment name..."
-                           aria-label="Search customers and environments" />
+                           placeholder="Search by solution or environment name..."
+                           aria-label="Search solutions and environments" />
                 </span>
                 <input type="hidden" name="type" value="@_type" />
                 <input type="hidden" name="waiting" value="@(_onlyWaiting ? "1" : "")" />
@@ -248,7 +248,7 @@
                                 <span class="u-sr">Select</span>
                             }
                         </th>
-                        <th scope="col">Customer</th>
+                        <th scope="col">Solution</th>
                         <th scope="col">Environment</th>
                         <th scope="col">Status</th>
                         <th scope="col">Current version</th>
@@ -275,7 +275,7 @@
                                     @* The legend under the table carries the explanation;
                                        this needs a name of its own so it isn't a silent
                                        glyph to a screen reader. *@
-                                    <span role="img" aria-label="Locked - you can't change this customer's dates">
+                                    <span role="img" aria-label="Locked - you can't change this solution's dates">
                                         <Icon Name="lock" Width="13" Height="13" />
                                     </span>
                                 }
@@ -351,7 +351,7 @@
                                     {
                                         <div class="upg-note upg-note--warn">
                                             <Icon Name="triangle-alert" Width="12" Height="12" />
-                                            <span>Runs outside the customer's update window</span>
+                                            <span>Runs outside the solution's update window</span>
                                         </div>
                                     }
                                 }
@@ -855,8 +855,8 @@
             // customer nobody has set up yet and one whose credentials were rejected,
             // and the summary must not claim which. The row says which; this says where
             // to go.
-            text += $" {needSetup} of them need{(needSetup == 1 ? "s" : "")} the customer's "
-                + "Business Central connection checked - open the customer, then try again.";
+            text += $" {needSetup} of them need{(needSetup == 1 ? "s" : "")} the solution's "
+                + "Business Central connection checked - open the solution, then try again.";
         }
 
         return new Notice(text, skipped > 0 || failed > 0 ? "warn" : "info", false);
@@ -881,7 +881,7 @@
         var result = await Fleet.RequestRefreshAsync(projectIds);
         var asked = result.Queued + result.AlreadyRunning;
         _notice = new Notice(
-            $"Asking Business Central about {asked} customer{(asked == 1 ? "" : "s")}. "
+            $"Asking Business Central about {asked} solution{(asked == 1 ? "" : "s")}. "
             + "New answers will appear here.",
             "info", true);
         StartPolling();
