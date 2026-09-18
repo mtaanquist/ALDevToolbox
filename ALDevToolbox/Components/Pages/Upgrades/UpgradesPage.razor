@@ -80,15 +80,16 @@
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="upg__pick"><span class="u-sr">Select</span></th>
-                <th scope="col">Solution</th>
+                <th scope="col" class="upg-customer">Solution</th>
                 <th scope="col">Environment</th>
                 <th scope="col">Status</th>
                 <th scope="col">Current version</th>
                 <th scope="col">Next update</th>
                 <th scope="col">Latest Microsoft allows</th>
                 <th scope="col">Last checked</th>
+                <th scope="col" class="upg-history">History</th>
             </tr></thead>
-            <tbody><TableSkeletonRows Columns="8" /></tbody>
+            <tbody><TableSkeletonRows Columns="9" /></tbody>
         </table>
         </div>
         <div class="loading-block loading-block--under-table">
@@ -121,8 +122,8 @@
            Search button is there because an unlabelled box that only responds to
            Enter is a mechanic you have to be told about. *@
         <div class="filter-bar">
-            <form method="get" class="filter-bar__search" role="search">
-                <span class="search">
+            <form method="get" class="upg-search" role="search">
+                <span class="search filter-bar__search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     <input type="search" name="q" value="@_search" class="input"
                            placeholder="Search by solution or environment name..."
@@ -230,7 +231,7 @@
                named where it is picked and where it is shown back. *@
             <p class="upg-tz">Dates below are UTC. Times you book are in each customer's local time.</p>
 
-            @* Eight columns of real customer data do not fit a narrow window, and
+            @* Nine columns of real customer data do not fit a narrow window, and
                the page's own container clips rather than scrolls (#574), so the
                table gets a box of its own to scroll in. *@
             <div class="upg-scroll">
@@ -248,13 +249,18 @@
                                 <span class="u-sr">Select</span>
                             }
                         </th>
-                        <th scope="col">Solution</th>
+                        <th scope="col" class="upg-customer">Solution</th>
                         <th scope="col">Environment</th>
                         <th scope="col">Status</th>
                         <th scope="col">Current version</th>
                         <th scope="col">Next update</th>
                         <th scope="col">Latest Microsoft allows</th>
                         <th scope="col">Last checked</th>
+                        @* The row's own way into its past, out of the Environment cell
+                           and into a column of its own (#805): an action in a data cell
+                           made every row three lines tall and buried the name it was
+                           sitting next to. *@
+                        <th scope="col" class="upg-history">History</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -287,34 +293,6 @@
                                     <span class="status-pill__dot"></span>
                                     <span>@row.EnvironmentType</span>
                                 </span>
-                                @* A booking survives a reload, and this marker is the only
-                                   trace of one on the table - the batch result that announced
-                                   it is gone the moment the page reloads. So it carries the
-                                   whole fact (when, whose) and both ways to act on it: the
-                                   marker itself opens the history, and a single booking can
-                                   be called off without opening anything. *@
-                                @if (PendingFor(row.EnvironmentId) is { Count: > 0 } waiting)
-                                {
-                                    <div class="upg-booked">
-                                        <button type="button" class="upg-booked__open"
-                                                aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
-                                                @onclick="() => ToggleFeedAsync(row)">
-                                            <Icon Name="clock" Width="12" Height="12" />
-                                            <span>@BookedMarkerText(row, waiting)</span>
-                                        </button>
-                                        @if (waiting.Count == 1 && row.CanAct)
-                                        {
-                                            <button type="button" class="btn btn--sm upg-booked__cancel"
-                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel booking</button>
-                                        }
-                                    </div>
-                                }
-                                <button type="button" class="btn btn--sm upg-activity-btn"
-                                        aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
-                                        @onclick="() => ToggleFeedAsync(row)">
-                                    <Icon Name="@(_feedEnvId == row.EnvironmentId ? "chevron-down" : "chevron-right")" Width="13" Height="13" />
-                                    <span>Update history</span>
-                                </button>
                             </td>
                             <td>
                                 @if (string.IsNullOrWhiteSpace(row.Status))
@@ -355,6 +333,32 @@
                                         </div>
                                     }
                                 }
+                                @* A booking survives a reload, and this marker is the only
+                                   trace of one on the table - the batch result that announced
+                                   it is gone the moment the page reloads. So it carries the
+                                   whole fact (when, whose) and both ways to act on it: the
+                                   marker itself opens the history, and a single booking can
+                                   be called off without opening anything. It sits under the
+                                   date Business Central would otherwise run on, because a
+                                   booked slot and that date are two answers to one question
+                                   and reading them in different columns invites picking the
+                                   wrong one. *@
+                                @if (PendingFor(row.EnvironmentId) is { Count: > 0 } waiting)
+                                {
+                                    <div class="upg-booked">
+                                        <button type="button" class="upg-booked__open"
+                                                aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
+                                                @onclick="() => ToggleFeedAsync(row)">
+                                            <Icon Name="clock" Width="12" Height="12" />
+                                            <span>@BookedMarkerText(row, waiting)</span>
+                                        </button>
+                                        @if (waiting.Count == 1 && row.CanAct)
+                                        {
+                                            <button type="button" class="btn btn--sm upg-booked__cancel"
+                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel booking</button>
+                                        }
+                                    </div>
+                                }
                                 @if (_results.TryGetValue(row.EnvironmentId, out var result))
                                 {
                                     <div class="@result.CssClass">
@@ -389,13 +393,27 @@
                                     <text>Not checked yet</text>
                                 }
                             </td>
+                            <td class="upg-history">
+                                @* Says what pressing it does, not what is behind it: every
+                                   other button on this page is a verb, and a bare noun read
+                                   as one more thing that acts on a tenant. *@
+                                <button type="button" class="btn btn--sm upg-activity-btn"
+                                        aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
+                                        @onclick="() => ToggleFeedAsync(row)">
+                                    <Icon Name="@(_feedEnvId == row.EnvironmentId ? "chevron-down" : "chevron-right")" Width="13" Height="13" />
+                                    <span>@(_feedEnvId == row.EnvironmentId ? "Hide history" : "Show history")</span>
+                                </button>
+                            </td>
                         </tr>
                         @if (_feedEnvId == row.EnvironmentId)
                         {
                             <tr class="is-subrow" @key="@($"feed-{row.EnvironmentId}")">
-                                <td colspan="8">
+                                <td colspan="9">
                                     <div class="upg-feed">
-                                        <h2 class="upg-feed__title">Update history - @row.EnvironmentName</h2>
+                                        @* Named in full: a dozen rows have an environment
+                                           called Production, so the environment alone does
+                                           not say whose history this is. *@
+                                        <h2 class="upg-feed__title">Update history - @row.ProjectName, @row.EnvironmentName</h2>
                                         <EnvironmentActivityFeed Entries="_feed"
                                                                  CanAct="row.CanAct"
                                                                  TimeZone="UpdateWindow.ResolveTimeZone(row.TimeZone)"
@@ -537,7 +555,12 @@
     private int? _feedEnvId;
     private List<UpgradeActionRow>? _feed;
 
-    private const string PickFirstHint = "Nothing selected - tick an environment to move its date or start its update";
+    /// <summary>
+    /// What the count says with an empty selection. It states the fact rather than
+    /// teaching the gesture: the checkboxes are visible, and a sentence explaining how
+    /// to tick one is a mechanic the UI should not need to spell out.
+    /// </summary>
+    private const string PickFirstHint = "No environments selected";
 
     private bool ActionsDisabled => _selected.Count == 0 || _running;
 
