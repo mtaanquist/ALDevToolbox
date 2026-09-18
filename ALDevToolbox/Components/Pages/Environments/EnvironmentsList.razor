@@ -91,7 +91,18 @@
 
     @if (_rows is null)
     {
-        <LoadingBlock Text="Loading environments..." />
+        @* Skeleton rows under the real header, as the design has it, so the column
+           widths are settled before the data lands and nothing jumps. *@
+        <table class="data-table data-table--edge">
+            <thead>
+                <tr>
+                    <th class="data-table__col-state"><span class="u-sr">State</span></th>
+                    <th>Solution</th><th>Environment</th><th>Now on</th><th>Next update</th><th>Last checked</th>
+                </tr>
+            </thead>
+            <tbody><TableSkeletonRows Columns="5" StateColumn="true" /></tbody>
+        </table>
+        <LoadingBlock Text="Loading environments..." UnderTable="true" />
     }
     else if (_loadFailed)
     {
@@ -206,10 +217,10 @@
             <table class="data-table data-table--edge">
                 <thead>
                     <tr>
-                        <th class="data-table__col-state" scope="col">State</th>
+                        <th class="data-table__col-state" scope="col"><span class="u-sr">State</span></th>
                         <th scope="col">Solution</th>
                         <th scope="col">Environment</th>
-                        <th scope="col">Current version</th>
+                        <th scope="col">Now on</th>
                         <th scope="col">Next update</th>
                         <th scope="col">Last checked</th>
                     </tr>
@@ -219,14 +230,15 @@
                     {
                         <tr class="@RowState(row)">
                             <td class="data-table__col-state">
-                                @* The word rides beside the glyph rather than hiding in a
-                                   tooltip: four of the states share two icons (suspended and
-                                   deleted both take circle-pause, updating and preparing both
-                                   take clock), so the glyph alone cannot tell them apart, and
-                                   a title does not exist on touch. *@
-                                <span class="data-table__state">
-                                    <Icon Name="@StatusIcon(row)" Width="13" Height="13" />
-                                    <span>@StatusWord(row)</span>
+                                @* Glyph only, as the design has it: the row says its state
+                                   with the edge bar and this icon, and no column is spent on
+                                   a word. Four states share two glyphs (suspended and deleted,
+                                   updating and preparing), and a title does not exist on
+                                   touch - so for every state but Running the word is also
+                                   written out under Next update, where the design puts it. *@
+                                <span class="data-table__state data-table__state--icon" role="img"
+                                      aria-label="@StatusWord(row)" title="@StatusWord(row)">
+                                    <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
                                 </span>
                             </td>
                             <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
@@ -243,7 +255,7 @@
                             <td class="u-num">@(row.Version ?? "—")</td>
                             <td>
                                 <span class="cell-stack">
-                                    <span class="cell-stack__main">@NextVersion(row)</span>
+                                    <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@NextVersion(row)</span>
                                     <span class="cell-stack__sub">@NextWhen(row)</span>
                                 </span>
                             </td>
@@ -252,11 +264,16 @@
                     }
                 </tbody>
             </table>
-            <p class="u-muted">
-                @(shown.Count == _rows.Count
-                    ? $"{shown.Count} {(shown.Count == 1 ? "environment" : "environments")}"
-                    : $"{shown.Count} of {_rows.Count} environments")
-            </p>
+            @* The whole result set is rendered, so the pager carries the count and
+               no buttons: Previous and Next over a list that is never paged would be
+               two controls that can never be enabled. *@
+            <div class="pager">
+                <span class="pager__count">
+                    @(shown.Count == _rows.Count
+                        ? $"{shown.Count} {(shown.Count == 1 ? "environment" : "environments")}"
+                        : $"Showing {shown.Count} of {_rows.Count} environments")
+                </span>
+            </div>
         }
     }
 </div>
@@ -553,10 +570,16 @@
     private static string NextWhen(UpgradeFleetRow row)
     {
         if (row.NextUpdateDate is { } date) return date.ToString("dd MMM yyyy, HH:mm") + " UTC";
-        return row.NextUpdateVersion is null ? "Nothing scheduled" : "Date not announced yet";
+        if (row.NextUpdateVersion is not null) return "Date not announced yet";
+        // With nothing scheduled, this line is where the design names a state that is
+        // not plain Running - the state cell is a glyph, and this keeps the word on screen.
+        return IsRunning(row) ? "Nothing scheduled" : StatusWord(row);
     }
 
     /// <summary>The next version, or a dash when Business Central is offering none.</summary>
+    private static bool IsRunning(UpgradeFleetRow row) =>
+        string.Equals(row.Status, "active", StringComparison.OrdinalIgnoreCase);
+
     private static string NextVersion(UpgradeFleetRow row) => row.NextUpdateVersion ?? "—";
 
     // fetched_at is NOT NULL on the row, so this always has a real answer; the

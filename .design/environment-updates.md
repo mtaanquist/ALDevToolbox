@@ -288,6 +288,26 @@ row writes nothing: nothing changed. For a booked action the audit row is writte
 by the worker, so the log records what actually reached Microsoft while the activity feed records
 the whole request-and-cancel story.
 
+## The Environments list, against its designed sheet
+
+`/environments` is the read-only view of the same fleet rows, designed as archetype 2a in
+`.design/handoff/PageEnvironmentsList.dc.html`. It follows the sheet: a glyph-only state cell
+with the word on `aria-label` / `title`, no status column, "Now on", a semibold next version
+over its date, skeleton rows under the real header while loading, and the count in `.pager`.
+With nothing scheduled, the line under Next update names any state that is not plainly
+running, as the sheet does - that keeps the word on screen, since four states share two
+glyphs and a title does not exist on touch.
+
+Where it still differs, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
+| The environment name links to its detail page | Plain text | The page does not exist until #809. A link back to the solution the row already links to is worse than none. |
+| A row menu: Open environment, Open in Business Central, Refresh this environment | No Actions column | The first waits on #809; the second needs the tenant id, which `UpgradeFleetRow` does not carry; refresh is per solution, not per environment. Add the column with #809, when it has something to hold. |
+| Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
+| Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
+
 ## Deliberately out of scope
 
 - **No MCP tools for the fleet actions.** These writes land on customers' production tenants
