@@ -36,6 +36,15 @@
     margin: 0;
 }
 
+/* Same floor the Create repository button gets on New Workspace: this label
+   swaps between three strings ("Add to repository", "Open another pull
+   request" and the busy "Opening pull request..."), and without a minimum the
+   button resizes under the pointer at the moment it is pressed. Sized to the
+   longest of them. */
+.ext-repo__go {
+    min-width: 14rem;
+}
+
 /* The one line on the card that reports what just happened. The static caption
    above it is .field__hint; if this looked the same, the only news on the card
    would read as more boilerplate. */

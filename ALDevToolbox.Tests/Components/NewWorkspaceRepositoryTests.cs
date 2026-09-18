@@ -129,6 +129,78 @@ public sealed class NewWorkspaceRepositoryTests : IDisposable
             .Which.Url.Should().Be($"https://github.com/{Repo}.git");
     }
 
+    /// <summary>
+    /// The bug in #812: the busy flag was set after the handler's first await,
+    /// so the render Blazor does at that yield still showed an idle button and
+    /// the whole create looked like nothing had happened. Pinned by holding
+    /// GitHub's create call open and looking at the button while it is in
+    /// flight.
+    /// </summary>
+    [Fact]
+    public async Task The_create_button_is_busy_while_the_repository_is_being_created()
+    {
+        await ReadyAsync();
+        var gate = _api.PauseUntilReleased(HttpMethod.Post, $"/orgs/{OrgLogin}/repos");
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']").Input("CRONUS Customer");
+        cut.WaitForElement("button:contains('Create repository')").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            var button = cut.Find(".ws-repo button.btn--loading");
+            button.HasAttribute("disabled").Should().BeTrue("a second press starts a second create");
+            // Not only disabled - disabled on its own reads as broken.
+            button.QuerySelector(".btn__spinner").Should().NotBeNull();
+            button.TextContent.Should().Contain("Creating repository...");
+        }, TimeSpan.FromSeconds(10));
+
+        gate.SetResult();
+
+        cut.WaitForAssertion(
+            () => cut.Find(".ws-repo").TextContent.Should().Contain("is ready"),
+            TimeSpan.FromSeconds(10));
+        cut.FindAll(".ws-repo button.btn--loading").Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// What the consultant does next once the repository exists: open it in VS
+    /// Code in one click, or take the clone command with one more (#812). The
+    /// command stays on the card because the VS Code link does nothing on a
+    /// machine without VS Code.
+    /// </summary>
+    [Fact]
+    public async Task The_success_card_offers_a_copyable_clone_command_and_a_vs_code_link()
+    {
+        await ReadyAsync();
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']").Input("CRONUS Customer");
+        cut.WaitForElement("button:contains('Create repository')").Click();
+
+        cut.WaitForAssertion(
+            () => cut.Find(".ws-repo").TextContent.Should().Contain("is ready"),
+            TimeSpan.FromSeconds(10));
+
+        var cloneUrl = $"https://github.com/{Repo}.git";
+
+        // The copy affordance is the design system's: a delegated listener in
+        // copy-to-clipboard.js reads the element the selector names, so what
+        // this pins is the pairing of the two.
+        var command = cut.Find("#ws-repo-clone-command");
+        command.TextContent.Trim().Should().Be($"git clone {cloneUrl}");
+        var copy = cut.Find(".ws-repo [data-copy-target]");
+        copy.GetAttribute("data-copy-target").Should().Be("#ws-repo-clone-command");
+        copy.QuerySelector("[data-copy-label]").Should().NotBeNull();
+
+        var vscode = cut.Find(".ws-repo-actions a[href^='vscode://']");
+        vscode.GetAttribute("href").Should()
+            .Be($"vscode://vscode.git/clone?url={Uri.EscapeDataString(cloneUrl)}");
+        vscode.TextContent.Should().Contain("Clone in VS Code");
+        // Download ZIP is still the only primary button; these are outlines.
+        cut.FindAll(".ws-repo .btn--primary").Should().BeEmpty();
+    }
+
     // --- helpers ------------------------------------------------------------
 
     /// <summary>
