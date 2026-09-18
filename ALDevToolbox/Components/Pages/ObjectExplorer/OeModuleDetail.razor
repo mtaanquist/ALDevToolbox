@@ -10,47 +10,40 @@
 
 <PageTitle>@(_moduleName ?? "Extension") · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    @if (_moduleName is null && _loaded)
-    {
+<DetailPage IsLoading="@(_moduleName is null && !_loaded)"
+            LoadingText="Loading extension..."
+            IsNotFound="@(_moduleName is null && _loaded)"
+            Title="@(_moduleName)">
+    <NotFound>
         @* Same fix as OeObjectDetail: an id that resolves to nothing used to
            leave the page on "Loading..." for ever, which reads as a hang. A
            stale bookmark into a re-imported release lands here. *@
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                <span class="empty-state__title">We couldn't find that extension</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="funnel-x" Title="We couldn't find that extension" Heading="true">
+                <Text>
                     The release it belonged to may have been removed or re-imported
                     since this link was made.
-                </span>
-                <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
-            </div>
+                </Text>
+                <Action>
+                    <a class="btn" href="/object-explorer">Back to Object Explorer</a>
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else if (_moduleName is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading extension...</span></div>
-    }
-    else
-    {
-        <div class="page-head">
-            <div>
-                <div class="page-head__crumbs">
-                    <a href="/object-explorer">Object Explorer</a>
-                    @if (_releaseId is { } rid)
-                    {
-                        <Icon Name="chevron-right" Width="14" Height="14" />
-                        <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
-                    }
-                    <Icon Name="chevron-right" Width="14" Height="14" />
-                    <span>@_moduleName</span>
-                </div>
-                <h1 class="page-head__title">@_moduleName</h1>
-                <p class="page-head__sub">@_modulePublisher · @_moduleVersion</p>
-            </div>
-        </div>
-
+    </NotFound>
+    <Crumbs>
+        <a href="/object-explorer">Object Explorer</a>
+        @if (_releaseId is { } rid)
+        {
+            <Icon Name="chevron-right" Width="14" Height="14" />
+            <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
+        }
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>@_moduleName</span>
+    </Crumbs>
+    <SubtitleContent>
+        @_modulePublisher · @_moduleVersion
+    </SubtitleContent>
+    <ChildContent>
         @* The list archetype's filter bar, not a form section: these two
            controls narrow a list, they are not fields being filled in. Both
            carry aria-labels rather than visible ones - the bar sits directly
@@ -102,13 +95,9 @@
         @if (_objects is { Rows.Count: 0 })
         {
             <div class="card">
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No objects match</span>
-                    <span class="empty-state__text">
-                        Clear the search or pick All types to see everything this extension ships.
-                    </span>
-                </div>
+                <EmptyState Icon="funnel-x" Title="No objects match">
+                    <Text>Clear the search or pick All types to see everything this extension ships.</Text>
+                </EmptyState>
             </div>
         }
         else
@@ -144,13 +133,11 @@
             </table>
             @if (_objects is null)
             {
-                <div class="loading-block loading-block--under-table">
-                    <span class="spinner"></span><span>Loading objects...</span>
-                </div>
+                <LoadingBlock Text="Loading objects..." UnderTable="true" />
             }
         }
-    }
-</div>
+    </ChildContent>
+</DetailPage>
 
 @code {
     [Parameter] public long ModuleId { get; set; }
