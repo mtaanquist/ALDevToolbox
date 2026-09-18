@@ -26,58 +26,90 @@
     into a customer solution. Primary action: the download.
 *@
 
-<DetailPage IsLoading="@(_recipe is null && !_loaded)"
-            LoadingText="Loading recipe..."
-            IsNotFound="@(_loaded && _recipe is null)"
-            Title="@(_recipe?.Title)">
-    <NotFound>
-        <EmptyState Icon="circle-alert" Title="Recipe not found" Heading="true">
-            <Text>This recipe may have been deleted since the link was made.</Text>
-            <Action>
-                <a class="btn btn--primary" href="/cookbook">
-                    <Icon Name="arrow-left" Width="16" Height="16" />
+<div class="page">
+    @if (_loaded && _recipe is null)
+    {
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="circle-alert" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">Recipe not found</h1>
+            <p class="empty-state__text">
+                This recipe may have been deleted since the link was made.
+            </p>
+            <a class="btn btn--primary empty-state__action" href="/cookbook">
+                <Icon Name="arrow-left" Width="16" Height="16" />
+                <span>Back to cookbook</span>
+            </a>
+        </div>
+    }
+    else if (_recipe is null)
+    {
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading recipe...</span>
+        </div>
+    }
+    else
+    {
+        var tags = SplitKeywords(_recipe.Keywords);
+        <div class="page-head__crumbs">
+            <a href="/cookbook">Cookbook</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_recipe.Title</span>
+        </div>
+
+        <div class="detail-head">
+            <div class="rd-head">
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">@_recipe.Title</h1>
+                    <RecipeTypeBadge Type="_recipe.Type" />
+                    @if (_recipe.Deprecated)
+                    {
+                        <span class="status-pill status-pill--warn">
+                            <Icon Name="archive" Width="12" Height="12" />
+                            Deprecated
+                        </span>
+                    }
+                </div>
+                <p class="rd-desc">@_recipe.Description</p>
+                @* Keywords are links, not decoration. As mono chips they said
+                   "identifier" and looked like filters while doing nothing;
+                   they are the best way into related recipes, so they now go
+                   there. See issue #540. *@
+                @if (tags.Count > 0)
+                {
+                    <div class="rd-tags">
+                        @foreach (var tag in tags)
+                        {
+                            <a class="tag" href="@($"/cookbook?q={Uri.EscapeDataString(tag)}")"
+                               title="@($"Find recipes tagged {tag}")">@tag</a>
+                        }
+                    </div>
+                }
+            </div>
+            @* The way back sits on the title row with the download, not on a line
+               of its own above the page: one row of actions, the download the only
+               primary one. Same shape as /releases/{id}. See issue #605. *@
+            <div class="page-head__actions">
+                <a class="btn" href="/cookbook">
+                    <Icon Name="arrow-left" Width="15" Height="15" />
                     <span>Back to cookbook</span>
                 </a>
-            </Action>
-        </EmptyState>
-    </NotFound>
-    <Crumbs>
-        <a href="/cookbook">Cookbook</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <span>@_recipe!.Title</span>
-    </Crumbs>
-    <TitleRow>
-        <RecipeTypeBadge Type="_recipe!.Type" />
-        @if (_recipe!.Deprecated)
-        {
-            <span class="status-pill status-pill--warn">
-                <Icon Name="archive" Width="12" Height="12" />
-                Deprecated
-            </span>
-        }
-    </TitleRow>
-    <Actions>
-        <a class="btn" href="/cookbook">
-            <Icon Name="arrow-left" Width="15" Height="15" />
-            <span>Back to cookbook</span>
-        </a>
-        @* Primary even on a deprecated recipe: the amber banner below
-           carries the caution, and demoting the button only left the page
-           with two identical outline buttons and no obvious action. The
-           label names what arrives - the endpoint always builds a ZIP,
-           one file or twenty - and the trailing "..." is the convention
-           for a control that opens a dialog rather than acting
-           immediately; this one asks for a customer name first. *@
-        @if (_recipe!.Files.Count > 0)
-        {
-            <button type="button" class="btn btn--primary" @onclick="OpenDownloadModal">
-                <Icon Name="download" Width="15" Height="15" />
-                <span>Download ZIP...</span>
-            </button>
-        }
-    </Actions>
-    <ChildContent>
-        var tags = SplitKeywords(_recipe!.Keywords);
+                @* Primary even on a deprecated recipe: the amber banner below
+                   carries the caution, and demoting the button only left the page
+                   with two identical outline buttons and no obvious action. The
+                   label names what arrives - the endpoint always builds a ZIP,
+                   one file or twenty - and the trailing "..." is the convention
+                   for a control that opens a dialog rather than acting
+                   immediately; this one asks for a customer name first. *@
+                @if (_recipe.Files.Count > 0)
+                {
+                    <button type="button" class="btn btn--primary" @onclick="OpenDownloadModal">
+                        <Icon Name="download" Width="15" Height="15" />
+                        <span>Download ZIP...</span>
+                    </button>
+                }
+            </div>
+        </div>
+
         @* What just happened, on the page rather than in a toast: a pull request
            is somebody else's turn next, and the link to it is the thing the
            consultant needs to send on. See issue #626. *@
@@ -104,7 +136,7 @@
             </div>
         }
 
-        @if (_recipe!.Deprecated)
+        @if (_recipe.Deprecated)
         {
             <div class="alert alert--warn">
                 <Icon Name="triangle-alert" Width="16" Height="16" />
@@ -123,10 +155,10 @@
                    that a write-up was ever meant to be there. *@
                 <section class="rd-sec">
                     <div class="rd-sec__head"><span class="section-label">Instructions</span></div>
-                    @if (!string.IsNullOrWhiteSpace(_recipe!.Instructions))
+                    @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
                     {
                         <div class="rd-prose">
-                            @Markdown.Render(_recipe!.Instructions)
+                            @Markdown.Render(_recipe.Instructions)
                         </div>
                     }
                     else
@@ -141,20 +173,24 @@
                 <section class="rd-sec">
                     <div class="rd-sec__head">
                         <span class="section-label">Files</span>
-                        <span class="rd-sec__note">@_recipe!.Files.Count file@(_recipe!.Files.Count == 1 ? "" : "s")</span>
+                        <span class="rd-sec__note">@_recipe.Files.Count file@(_recipe.Files.Count == 1 ? "" : "s")</span>
                     </div>
 
-                    @if (_recipe!.Files.Count == 0)
+                    @if (_recipe.Files.Count == 0)
                     {
                         <div class="card">
-                            <EmptyState Icon="file-code" Title="No files attached">
-                                <Text>This recipe explains an approach rather than shipping code to copy.</Text>
-                            </EmptyState>
+                            <div class="empty-state">
+                                <span class="empty-state__icon"><Icon Name="file-code" Width="21" Height="21" /></span>
+                                <span class="empty-state__title">No files attached</span>
+                                <span class="empty-state__text">
+                                    This recipe explains an approach rather than shipping code to copy.
+                                </span>
+                            </div>
                         </div>
                     }
                     else
                     {
-                        @foreach (var file in _recipe!.Files)
+                        @foreach (var file in _recipe.Files)
                         {
                             var path = DisplayPath(file);
                             var anchor = AnchorFor(path);
@@ -180,7 +216,7 @@
                                 {
                                     <div class="rd-file__body" id="@($"{anchor}-body")">
                                         <pre><code>@for (var li = 0; li < lines.Length; li++)
-        {<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){@if (tok.Cls.Length == 0){@tok.Text}else{<span class="@tok.Cls">@tok.Text</span>}}}</span></span>}</code></pre>
+{<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){@if (tok.Cls.Length == 0){@tok.Text}else{<span class="@tok.Cls">@tok.Text</span>}}}</span></span>}</code></pre>
                                     </div>
                                 }
                             </div>
@@ -201,7 +237,7 @@
                         <div class="meta-item">
                             <span class="meta-item__label">Requires</span>
                             <span class="meta-item__value rd-meta-wrap">
-                                @if (_recipe!.MinimumApplicationVersion is { } minV)
+                                @if (_recipe.MinimumApplicationVersion is { } minV)
                                 {
                                     <text>@minV.Name or later</text>
                                     <span class="rd-meta-sub">app version @minV.Application</span>
@@ -212,7 +248,7 @@
                                 }
                             </span>
                         </div>
-                        @if (_recipe!.EstimatedValueHours is { } hours)
+                        @if (_recipe.EstimatedValueHours is { } hours)
                         {
                             @* The label carries the meaning. It used to say "Est. value" and
                                explain itself in a title attribute — invisible on touch, on
@@ -233,7 +269,7 @@
                     <section class="card card--flush">
                         <div class="card__head"><h2 class="card__title">Jump to file</h2></div>
                         <div class="rd-jumps">
-                            @foreach (var file in _recipe!.Files)
+                            @foreach (var file in _recipe.Files)
                             {
                                 var path = DisplayPath(file);
                                 var anchor = AnchorFor(path);
@@ -266,8 +302,8 @@
                 }
             </aside>
         </div>
-    </ChildContent>
-</DetailPage>
+    }
+</div>
 
 <ToastHost @ref="_toast" />
 

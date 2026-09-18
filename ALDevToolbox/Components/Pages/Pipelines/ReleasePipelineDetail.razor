@@ -129,17 +129,20 @@
 
         @if (_deliveries.Count == 0)
         {
-            <EmptyState Icon="send" Title="No releases yet">
-                <Text>
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
+                <div class="empty-state__title">No releases yet</div>
+                <p class="empty-state__text">
                     When you release, the apps are uploaded and installed into
                     @_rp!.ProjectEnvironment!.Name and the run shows up here.
-                </Text>
-                <Action>
-                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync">
+                </p>
+                @if (_canManage && HasSomethingToRelease)
+                {
+                    <button type="button" class="btn btn--primary empty-state__action" @onclick="OpenReleaseAsync">
                         <Icon Name="send" Width="16" Height="16" /><span>Release</span>
                     </button>
-                </Action>
-            </EmptyState>
+                }
+            </div>
         }
         else
         {

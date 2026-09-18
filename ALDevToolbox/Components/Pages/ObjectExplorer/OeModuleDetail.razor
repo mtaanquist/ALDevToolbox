@@ -10,7 +10,7 @@
 
 <PageTitle>@(_moduleName ?? "Extension") · AL Dev Toolbox</PageTitle>
 
-<DetailPage IsLoading="@(_moduleName is null && !_loaded)"
+<DetailPage IsLoading="@(!(_moduleName is null && _loaded) && _moduleName is null)"
             LoadingText="Loading extension..."
             IsNotFound="@(_moduleName is null && _loaded)"
             Title="@(_moduleName)">
