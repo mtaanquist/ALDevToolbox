@@ -102,7 +102,8 @@ public sealed class UpgradeFleetService
                 e.BcNextUpdateIgnoresWindow,
                 e.BcNextUpdateFetchedAt,
                 _db.OeProjects.Where(actionable).Any(p => p.Id == e.ProjectId),
-                e.FetchedAt))
+                e.FetchedAt,
+                e.AadTenantId ?? e.Project!.BcTenantId))
             .ToListAsync(ct).ConfigureAwait(false);
 
         // Ordered in memory: "Production first" is a presentation rule, not something
@@ -213,8 +214,22 @@ public sealed record UpgradeFleetRow(
     /// the first; a page about environments wants this one, or it would report an
     /// environment as never checked when only its updates were unreadable.
     /// </summary>
-    DateTime? EnvironmentFetchedAt = null)
+    DateTime? EnvironmentFetchedAt = null,
+    /// <summary>
+    /// The customer's Entra tenant: the one Business Central reported for the environment,
+    /// else the one the solution's connection was set up with. Only here to build
+    /// <see cref="BusinessCentralUrl"/>.
+    /// </summary>
+    Guid? TenantId = null)
 {
+    /// <summary>
+    /// The environment in Business Central's own web client, or null when the tenant is
+    /// not known. The environment name is a path segment, so it is escaped.
+    /// </summary>
+    public string? BusinessCentralUrl => TenantId is { } tenant
+        ? $"https://businesscentral.dynamics.com/{tenant:D}/{Uri.EscapeDataString(EnvironmentName)}"
+        : null;
+
     /// <summary>True for a Production environment — the one the sweep is really about.</summary>
     public bool IsProduction =>
         string.Equals(EnvironmentType, "Production", StringComparison.OrdinalIgnoreCase);

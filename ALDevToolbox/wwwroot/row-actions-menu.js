@@ -5,6 +5,7 @@
 // positioned `.ra__menu`, shown by `.ra.is-open`. This script owns the whole of
 // that state:
 //   - clicking a `[data-ra-toggle]` opens its menu and closes every other,
+//   - a menu with no room under it opens upwards instead (`.ra--up`),
 //   - close on outside click, on scroll, on resize, and on Escape,
 //   - close after picking an entry, so the menu isn't left open behind whatever
 //     the entry did (a navigation, or a dialog - and a menu left lit over a
@@ -19,8 +20,31 @@
 // was already required - and `.ra__menu` meant the <details> here and the popup
 // in components.css, which collided app-wide (#529).
 (function () {
+    // The nearest ancestor that clips: the content column, or a table's own
+    // scrolling box. A menu is cut off at that edge, not at the window's.
+    function clipBox(el) {
+        for (let p = el.parentElement; p; p = p.parentElement) {
+            if (getComputedStyle(p).overflowY !== "visible") return p;
+        }
+        return document.documentElement;
+    }
+
+    // Show first, then measure - a display:none menu reports height 0, so
+    // deciding the direction before opening always chose "down". Upwards only
+    // when that is actually the roomier side.
+    function place(ra) {
+        const menu = ra.querySelector(".ra__menu");
+        if (!menu) return;
+        const box = clipBox(ra).getBoundingClientRect();
+        const at = ra.getBoundingClientRect();
+        const need = menu.getBoundingClientRect().height + 12;
+        const below = box.bottom - at.bottom;
+        ra.classList.toggle("ra--up", below < need && at.top - box.top > below);
+    }
+
     function close(ra) {
         ra.classList.remove("is-open");
+        ra.classList.remove("ra--up");
         const toggle = ra.querySelector("[data-ra-toggle]");
         if (toggle) toggle.setAttribute("aria-expanded", "false");
     }
@@ -40,6 +64,7 @@
             closeAll(ra);
             ra.classList.toggle("is-open", opening);
             toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+            if (opening) place(ra);
             // Otherwise the document-level handler below sees this same click
             // bubble up and closes what we just opened.
             e.stopPropagation();

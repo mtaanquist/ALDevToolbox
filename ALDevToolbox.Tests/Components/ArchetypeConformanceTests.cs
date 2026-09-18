@@ -83,7 +83,6 @@ public sealed class ArchetypeConformanceTests
         "ALDevToolbox/Components/Pages/TemplateDetail.razor",
         "ALDevToolbox/Components/Pages/TemplatesBrowser.razor",
         "ALDevToolbox/Components/Pages/Translator.razor",
-        "ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor",
         "ALDevToolbox/Components/Shared/SettingsPage.razor",
         "ALDevToolbox/Components/Shared/TabbedPage.razor",
     };

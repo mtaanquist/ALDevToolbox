@@ -135,7 +135,8 @@ public sealed class EnvironmentsListTests : IDisposable
         var cut = _ctx.Render<EnvironmentsList>();
 
         cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
-        var lastChecked = cut.FindAll(".data-table tbody tr td").Last().TextContent.Trim();
+        var lastChecked = cut.FindAll(".data-table tbody tr td")
+            .Last(c => !c.ClassList.Contains("data-table__actions")).TextContent.Trim();
         lastChecked.Should().NotBe("never",
             "the environment was read half an hour ago - only its updates were unreadable");
         lastChecked.Should().Contain("minutes ago");
@@ -157,5 +158,39 @@ public sealed class EnvironmentsListTests : IDisposable
         tabs.Should().Contain(t => t.StartsWith("Needs attention"));
         // Suspended counts; mid-update is the system working, so it must not.
         tabs.First(t => t.StartsWith("Needs attention")).Should().EndWith("1");
+    }
+
+    /// <summary>
+    /// The design gives a table row no status column: the state is the edge bar plus a
+    /// glyph. Four states share two glyphs and a title does not exist on touch, so the
+    /// word must still be on screen for anything that is not plainly running - under
+    /// Next update, where the designed sheet puts it.
+    /// </summary>
+    [Fact]
+    public async Task State_is_a_named_glyph_and_the_word_stays_on_screen_unless_running()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(id, "UAT", "Sandbox", "Suspended", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+        var rows = cut.FindAll(".data-table tbody tr");
+        var running = rows.Single(r => r.TextContent.Contains("Production"));
+        var suspended = rows.Single(r => r.TextContent.Contains("UAT"));
+
+        foreach (var row in rows)
+        {
+            var glyph = row.QuerySelector("td.data-table__col-state > .data-table__state--icon")!;
+            glyph.GetAttribute("role").Should().Be("img");
+            glyph.GetAttribute("aria-label").Should().NotBeNullOrWhiteSpace().And.Be(glyph.GetAttribute("title"));
+            glyph.TextContent.Trim().Should().BeEmpty("the state cell is a glyph, not a label column");
+        }
+
+        suspended.QuerySelectorAll(".cell-stack__sub").Last().TextContent.Should().Be("Suspended by Microsoft");
+        running.QuerySelectorAll(".cell-stack__sub").Last().TextContent.Should().Be("Nothing scheduled");
+        running.TextContent.Should().NotContain("Running", "a healthy row spends no words on its state");
     }
 }

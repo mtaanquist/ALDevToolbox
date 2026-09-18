@@ -73,7 +73,7 @@ Three things fill it. A consultant's Refresh on the project's Business Central t
 nightly sweep (`EnvironmentRefreshScheduler`, a fixed quiet UTC hour, `DeliveryScheduler`'s
 shape) that offers every BC-connected project to the in-process
 `EnvironmentRefreshQueue`/`Worker` pair so the fleet is fresh each morning without anyone
-opening a project; and the page's own **Refresh from Business Central** action, which feeds
+opening a project; and the page's own **Refresh** command, which feeds
 the same queue so a sweep and a hand-triggered refresh coalesce. Rather than telling the
 reader to reload after that, the page polls itself every 20 seconds for up to three
 minutes, on the renderer's synchronisation context so a tick cannot collide with a click on
@@ -210,10 +210,14 @@ yet.
 ## The page
 
 One table, one row per non-missing environment of every project the viewer can see: the
-customer, the environment and its type, its status, the version it is on, the mirrored next
-update (version, when, and a marker when it ignores Microsoft's window), the latest date that
-update can still be pushed to, and how old the mirror is. Filters are text search,
-environment type, and "update available"; loading, empty and populated states as usual.
+customer, its state as a glyph, the environment over its type, the version it is on, the
+mirrored next update (version, when, and a marker when it ignores Microsoft's window), the
+latest date that update can still be pushed to, how old the mirror is, and a row menu. Above
+it sits one sticky command bar: a view select (all, update waiting, and each environment type
+with and without an update waiting), a search that filters as you type, and the commands. The
+filters live in the address (`q`, `type`, `waiting`); loading, empty and populated states as
+usual. The layout is the design's archetype 15 - see "The Upgrades page, against its designed
+sheet" below.
 
 **The join is the guard.** `OeProjectEnvironment` has no visibility rule of its own — it
 inherits its project's. `UpgradeFleetService.ListFleetAsync` therefore reaches the
@@ -223,14 +227,16 @@ in the same query from `UpdateOpsProjectPredicate`, so a fleet of a hundred cost
 trip; a row the viewer may see but not act on shows a lock instead of a checkbox. The org
 fence sits underneath both.
 
-**Two actions, two voices.** Each runs over the checkbox selection behind a confirm that
+**Two actions, two voices.** Each runs over the checkbox selection - or, from a row's own
+menu, over that one row, leaving the ticked rows as they were - behind a confirm that
 lists every selected environment with what will happen to it and — grouped at the bottom
 under its own heading — the ones that will be passed over and why.
 
-- **Move dates to the latest** previews each date and the date it moves to.
-- **Start the update now** is the sterner one. It carries the danger button variant in the
-  toolbar (the one control here that acts at once and cannot be taken back — a variant, not a
-  second primary button), says plainly that Microsoft will start the updates whatever the
+- **Move dates** previews each date and the date it moves to. It is the page's one primary
+  button: it is what the team comes here to do, a hundred at a time.
+- **Update now** is the sterner one, and its dialog is where that is said; in the bar it is a
+  plain button, as the sheet has it. The dialog says plainly that Microsoft will start the
+  updates whatever the
   environment's update window says, counts the production environments in the selection just
   above the gate, and holds its confirm button disabled until the person types "update".
 
@@ -269,8 +275,8 @@ log.
 **A booking is visible on the fleet row itself**, not only in the batch result that made it
 (which a reload discards). One booking shows the whole fact — when, in whose time, who booked
 it — with a Cancel beside it; several show the nearest and a count. Either way that marker *is*
-the disclosure that opens the history, so "Update history" is a second door and never the only
-one. Confirming an update-now over an environment that already has a booking waiting groups it
+the disclosure that opens the history, so "Update history" in the row menu is a second door
+and never the only one. Confirming an update-now over an environment that already has a booking waiting groups it
 under "Already booked" in the preview, with what it is booked for: the run still acts on it, and
 adding a second booking is a thing to notice before the click.
 
@@ -287,6 +293,53 @@ because a Blazor circuit has no `HttpContext` for the interceptor's own lookup t
 row writes nothing: nothing changed. For a booked action the audit row is written at send time,
 by the worker, so the log records what actually reached Microsoft while the activity feed records
 the whole request-and-cancel story.
+
+## The Environments list, against its designed sheet
+
+`/environments` is the read-only view of the same fleet rows, designed as archetype 2a in
+`.design/handoff/PageEnvironmentsList.dc.html`. It follows the sheet: a glyph-only state cell
+with the word on `aria-label` / `title`, no status column, "Now on", a semibold next version
+over its date, skeleton rows under the real header while loading, and the count in `.pager`.
+With nothing scheduled, the line under Next update names any state that is not plainly
+running, as the sheet does - that keeps the word on screen, since four states share two
+glyphs and a title does not exist on touch.
+
+Where it still differs, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
+| The environment name links to its detail page | Plain text | The page does not exist until #809. A link back to the solution the row already links to is worse than none. |
+| A row menu: Open environment, Open in Business Central, Refresh this environment | Open in Business Central only | The first waits on #809; refresh is per solution, not per environment. |
+| Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
+| Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
+
+## The Upgrades page, against its designed sheet
+
+`/upgrades` is archetype 15, the actionable list, in `.design/handoff/PageUpgrades.dc.html`. It
+follows the sheet: crumbs, the time-zone rule as a clause of the subtitle, one `.cmdbar` whose
+selection commands are plainly disabled until rows are ticked (no counter and no instruction,
+as in Business Central's own lists), `.check` boxes in a `data-table__col-check` column with
+`is-indeterminate` on the header and `is-selected` on the row, the same glyph-only state cell
+and state wording as the Environments list (`FleetRowState` serves both), `.cell-stack` cells,
+"Now on" and "Latest possible date", bare dates, and the row's commands in one `.ra` menu with
+Update history first.
+
+Where it still differs, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Customer" | "Solution" | The house name for the record; see CLAUDE.md. |
+| A fixed view list: Production / Sandbox, each with "update waiting" | The same list built from the environment types actually present | Business Central reports the type as text, and a fleet with no sandboxes should not offer one. |
+| An overflow menu: delivery window, two exports, fleet-wide history, cancel the scheduled update | No overflow menu | None of the five exists yet. A booking is cancelled from its own marker or from the history. An empty kebab is worse than none; add it with the first entry. |
+| The environment name links to its detail page | Plain text | Waits on #809. |
+| Every row has a checkbox | A padlock instead, on rows of a team the viewer is not on, with a legend under the table | The sheet has no notion of a row you may see but not change. Their row menu holds history only. |
+| Nothing under the next update's date | The out-of-window warning, a booking marker with its Cancel, and the live per-row result of a run | Behaviour the sheet does not draw. They sit under the date because a booked slot and Business Central's date are two answers to one question. |
+| Sortable Customer and Next update headers; Previous / Next | Fixed order; count only | As on the Environments list. |
+| The table directly in the page | The table in a box that scrolls sideways, with the checkbox, state and Solution columns pinned | The page container clips rather than scrolls (#574), and nine columns do not fit a narrow window. |
+
+Row menus anywhere in the app now open upwards when there is no room under them
+(`row-actions-menu.js` sets the sheet's `.ra--up`), which this table needed for its last rows.
 
 ## Deliberately out of scope
 

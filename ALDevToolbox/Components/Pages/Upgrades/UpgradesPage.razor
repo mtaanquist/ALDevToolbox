@@ -8,6 +8,7 @@
 @inject NavigationManager Nav
 @inject ILogger<UpgradesPage> Log
 @using ALDevToolbox.Components.Shared
+@using static ALDevToolbox.Components.Shared.FleetRowState
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -24,164 +25,145 @@
     start that one environment's update straight away. They know Business
     Central; they know nothing about this codebase.
 
-    Archetype 2 (list / browser), table view, with two things no other browser
-    page has: per-row checkboxes (because the whole point is doing a hundred at
-    once) and an in-page run that reports per row. Filters stay a plain GET form
-    so a filtered fleet is a shareable address.
+    Archetype 15 (actionable list, PageUpgrades.dc.html): one sticky command bar
+    over a table with a selection column. The bar holds the view, the search and
+    the commands; commands that need a selection are plainly disabled until rows
+    are ticked, the way Business Central's own lists behave. No counter and no
+    instruction - the checkboxes and the disabled buttons already say it. Filters
+    live in the address, so a filtered fleet is something you can send a colleague.
 
-    "Start the update now" carries the danger variant: it is the one control here
-    that acts immediately and irreversibly on a customer's production tenant, and
-    it must not look like its harmless neighbours. That is a variant, not a second
-    primary - Generate is still the app's only primary button.
+    "Move dates" is this page's one primary: it is what the team comes here to do,
+    a hundred at a time. "Update now" is irreversible, and its dialog is where that
+    is said - a typed word and a danger button - rather than in the bar.
 
-    See .design/saas-delivery.md and issue #657.
+    Where this page departs from the sheet, and why, is in
+    .design/environment-updates.md. See also .design/saas-delivery.md and #657.
 *@
 
 <PageTitle>Upgrades · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Upgrades</h1>
-            @* The subtitle describes what you do here; someone who can't do it is
-               told that instead, by the card below. *@
-            @if (!_denied)
-            {
-                <p class="page-head__sub">
-                    When each solution's environment moves to its next Business Central version,
-                    and how much longer you can put that off. Pick the environments you want,
-                    then move their dates or start their update.
-                </p>
-            }
-        </div>
-    </div>
+    @* The subtitle describes what you do here; someone who can't do it is told
+       that instead, by the card below. *@
+    <PageHead Title="Upgrades"
+              Subtitle="@(_denied ? string.Empty : "When each solution's environment moves to its next Business Central version, and how much longer you can put that off. Dates are UTC; times you book land in the customer's local time.")">
+        <Crumbs>
+            <a href="/">Home</a>
+            <Icon Name="chevron-right" Width="14" Height="14" />
+            <a href="/solutions">Solutions</a>
+            <Icon Name="chevron-right" Width="14" Height="14" />
+            <span>Upgrades</span>
+        </Crumbs>
+    </PageHead>
 
     @if (_denied)
     {
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="lock" Width="21" Height="21" /></span>
-                <span class="empty-state__title">You don't have access to Upgrades</span>
-                <span class="empty-state__text">
-                    Changing a solution's update date acts on its live Business Central
-                    environment. Access to Upgrades is granted per team. Ask an administrator
-                    to add environment updates to one of your teams.
-                </span>
-                <a class="btn empty-state__action" href="/">
-                    <Icon Name="house" Width="15" Height="15" />
-                    <span>Go to Home</span>
-                </a>
-            </div>
+            <EmptyState Icon="lock" Title="You don't have access to Upgrades">
+                <Text>Changing a solution's update date acts on its live Business Central environment. Access to Upgrades is granted per team. Ask an administrator to add environment updates to one of your teams.</Text>
+                <Action>
+                    <a class="btn" href="/">
+                        <Icon Name="house" Width="15" Height="15" />
+                        <span>Go to Home</span>
+                    </a>
+                </Action>
+            </EmptyState>
         </div>
     }
     else if (_rows is null)
     {
         <div class="upg-scroll">
         <table class="data-table data-table--edge">
-            <thead><tr>
-                <th class="upg__pick"><span class="u-sr">Select</span></th>
-                <th scope="col" class="upg-customer">Solution</th>
-                <th scope="col">Environment</th>
-                <th scope="col">Status</th>
-                <th scope="col">Current version</th>
-                <th scope="col">Next update</th>
-                <th scope="col">Latest Microsoft allows</th>
-                <th scope="col">Last checked</th>
-                <th scope="col" class="upg-history">History</th>
-            </tr></thead>
-            <tbody><TableSkeletonRows Columns="9" /></tbody>
+            <thead>@TableHead(selectable: false)</thead>
+            <tbody>
+                @for (var i = 0; i < 4; i++)
+                {
+                    <tr aria-hidden="true">
+                        <td class="data-table__col-check"></td>
+                        <td class="data-table__col-state">
+                            <span class="skeleton" style="display:block;width:15px;height:15px;border-radius:var(--r-pill)"></span>
+                        </td>
+                        @for (var c = 0; c < 7; c++)
+                        {
+                            <td><span class="skeleton" style="display:block;width:@(c == 6 ? "15px" : "60%")"></span></td>
+                        }
+                    </tr>
+                }
+            </tbody>
         </table>
         </div>
-        <div class="loading-block loading-block--under-table">
-            <span class="spinner"></span><span>Loading environments...</span>
-        </div>
+        <LoadingBlock Text="Loading environments..." UnderTable="true" />
     }
     else if (_totalCount == 0)
     {
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="calendar" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No environments yet</span>
-                <span class="empty-state__text">
-                    This page lists the Business Central environments of the solutions you can
-                    see. Connect a solution to its Business Central from the solution's own
-                    page, and its environments show up here.
-                </span>
-                <a class="btn empty-state__action" href="/solutions">
-                    <Icon Name="folder-git-2" Width="15" Height="15" />
-                    <span>Go to Solutions</span>
-                </a>
-            </div>
+            <EmptyState Icon="calendar" Title="No environments yet">
+                <Text>This page lists the Business Central environments of the solutions you can see. Connect a solution to its Business Central from the solution's own page, and its environments show up here.</Text>
+                <Action>
+                    <a class="btn" href="/solutions">
+                        <Icon Name="folder-git-2" Width="15" Height="15" />
+                        <span>Go to Solutions</span>
+                    </a>
+                </Action>
+            </EmptyState>
         </div>
     }
     else
     {
-        @* Search is a plain GET form, so a filtered fleet is an address you can
-           send to a colleague; the two narrow filters navigate to the same kind of
-           address when they change. Both keep the other filters in the URL. The
-           Search button is there because an unlabelled box that only responds to
-           Enter is a mechanic you have to be told about. *@
-        <div class="filter-bar">
-            <form method="get" class="upg-search" role="search">
-                <span class="search filter-bar__search">
+        <div class="cmdbar">
+            <div class="cmdbar__row">
+                <div class="cmdbar__group">
+                    <span class="select-wrap upg-view">
+                        <select class="select" aria-label="Filter environments"
+                                value="@ViewValue(_type, _onlyWaiting)" @onchange="OnViewChanged">
+                            <option value="@ViewValue(string.Empty, false)">All environments</option>
+                            <option value="@ViewValue(string.Empty, true)">With an update waiting</option>
+                            @if (_typeOptions.Count > 0)
+                            {
+                                <option disabled>--</option>
+                                @foreach (var option in _typeOptions)
+                                {
+                                    <option value="@ViewValue(option, false)">@option only</option>
+                                }
+                                @foreach (var option in _typeOptions)
+                                {
+                                    <option value="@ViewValue(option, true)">@option, update waiting</option>
+                                }
+                            }
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
+                </div>
+                @* Filters as you type - the fleet is already in hand - and puts the
+                   search in the address once you leave the box or press Enter. *@
+                <span class="search cmdbar__search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-                    <input type="search" name="q" value="@_search" class="input"
-                           placeholder="Search by solution or environment name..."
-                           aria-label="Search solutions and environments" />
+                    <input class="input" type="search" value="@_search"
+                           placeholder="Search solution or environment..."
+                           aria-label="Search solutions and environments"
+                           @oninput="OnSearchInput" @onchange="OnSearchCommitted" />
                 </span>
-                <input type="hidden" name="type" value="@_type" />
-                <input type="hidden" name="waiting" value="@(_onlyWaiting ? "1" : "")" />
-                <button type="submit" class="btn btn--sm">Search</button>
-            </form>
-            <label class="u-sr" for="upg-type">Environment type</label>
-            <span class="select-wrap">
-                <select id="upg-type" class="select" value="@_type" @onchange="OnTypeChanged">
-                    <option value="">All environment types</option>
-                    @foreach (var option in _typeOptions)
-                    {
-                        <option value="@option">@option</option>
-                    }
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-            <label class="upg-check">
-                <input type="checkbox" checked="@_onlyWaiting" @onchange="OnWaitingChanged" />
-                <span>Only those with an update waiting</span>
-            </label>
-        </div>
-
-        <div class="upg-bar">
-            <span class="upg-bar__count">
-                @* The hint used to live in a title on the disabled buttons, where no
-                   browser shows it. It belongs here, on screen, where the count is. *@
-                @if (_selected.Count == 0)
-                {
-                    <text>@PickFirstHint</text>
-                }
-                else
-                {
-                    <text><b>@_selected.Count</b> selected</text>
-                }
-            </span>
-            <span class="upg-bar__acts">
-                <button type="button" class="btn btn--sm" disabled="@ActionsDisabled"
-                        @onclick="ConfirmPushAsync">
-                    <Icon Name="calendar" Width="14" Height="14" />
-                    <span>Move dates to the latest allowed</span>
-                </button>
-                @* The one control here that acts at once and cannot be taken back -
-                   though its dialog can also book the run for later. *@
-                <button type="button" class="btn btn--sm btn--danger" disabled="@ActionsDisabled"
-                        @onclick="ConfirmUpdateNowAsync">
-                    <Icon Name="zap" Width="14" Height="14" />
-                    <span>Start or book the update</span>
-                </button>
-                <span class="upg-bar__sep" aria-hidden="true"></span>
-                <button type="button" class="btn btn--sm" disabled="@_running" @onclick="RefreshDataAsync">
-                    <Icon Name="refresh-cw" Width="14" Height="14" />
-                    <span>Refresh from Business Central</span>
-                </button>
-            </span>
+                <div class="cmdbar__group">
+                    <button type="button" class="btn btn--primary" disabled="@ActionsDisabled"
+                            title="Move the selected environments to their latest possible update date"
+                            @onclick="() => ConfirmPushAsync()">
+                        <Icon Name="calendar" Width="15" Height="15" />
+                        <span>Move dates</span>
+                    </button>
+                    <button type="button" class="btn" disabled="@ActionsDisabled"
+                            title="Start the Business Central update on the selected environments, now or at a time you book"
+                            @onclick="() => ConfirmUpdateNowAsync()">
+                        <Icon Name="zap" Width="15" Height="15" />
+                        <span>Update now</span>
+                    </button>
+                    <button type="button" class="btn" disabled="@_running"
+                            title="Read the environments again from Business Central"
+                            @onclick="RefreshDataAsync">
+                        <Icon Name="refresh-cw" Width="15" Height="15" />
+                        <span class="btn__label">Refresh</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
         @if (_notice is { } notice)
@@ -213,68 +195,36 @@
         @if (_rows.Count == 0)
         {
             <div class="card">
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No environments match these filters</span>
-                    <span class="empty-state__text">
-                        Try a shorter search, or clear the filters to see all @_totalCount.
-                    </span>
-                    <a class="btn empty-state__action" href="/upgrades">Clear filters</a>
-                </div>
+                <EmptyState Icon="funnel-x" Title="No environments match these filters">
+                    <Text>Try a shorter search, or clear the filters to see all @_totalCount.</Text>
+                    <Action>
+                        <a class="btn" href="/upgrades">Clear filters</a>
+                    </Action>
+                </EmptyState>
             </div>
         }
         else
         {
-            @* Said once, here, rather than stamped onto every value: the whole table
-               is in one zone and the reader only has to learn that once. A time somebody
-               picks is a different matter - that one is the customer's own, and it is
-               named where it is picked and where it is shown back. *@
-            <p class="upg-tz">Dates below are UTC. Times you book are in each customer's local time.</p>
-
-            @* Nine columns of real customer data do not fit a narrow window, and
-               the page's own container clips rather than scrolls (#574), so the
-               table gets a box of its own to scroll in. *@
+            @* A narrow window cannot hold nine columns, and the page's own container
+               clips rather than scrolls (#574), so the table gets a box of its own
+               to scroll in. *@
             <div class="upg-scroll">
             <table class="data-table data-table--edge">
-                <thead>
-                    <tr>
-                        <th class="upg__pick">
-                            @if (_actionableRows.Count > 0)
-                            {
-                                <input type="checkbox" aria-label="Select every environment you can change"
-                                       checked="@AllPicked" @onchange="ToggleAll" disabled="@_running" />
-                            }
-                            else
-                            {
-                                <span class="u-sr">Select</span>
-                            }
-                        </th>
-                        <th scope="col" class="upg-customer">Solution</th>
-                        <th scope="col">Environment</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Current version</th>
-                        <th scope="col">Next update</th>
-                        <th scope="col">Latest Microsoft allows</th>
-                        <th scope="col">Last checked</th>
-                        @* The row's own way into its past, out of the Environment cell
-                           and into a column of its own (#805): an action in a data cell
-                           made every row three lines tall and buried the name it was
-                           sitting next to. *@
-                        <th scope="col" class="upg-history">History</th>
-                    </tr>
-                </thead>
+                <thead>@TableHead(selectable: true)</thead>
                 <tbody>
                     @foreach (var row in _rows)
                     {
-                        <tr @key="row.EnvironmentId" class="@(row.CanAct ? null : "upg-row--locked")">
-                            <td class="upg__pick">
+                        var picked = _selected.Contains(row.EnvironmentId);
+                        <tr @key="row.EnvironmentId"
+                            class="@RowClass(row, picked)">
+                            <td class="data-table__col-check">
                                 @if (row.CanAct)
                                 {
-                                    <input type="checkbox"
-                                           aria-label="@($"Select {row.ProjectName} {row.EnvironmentName}")"
-                                           checked="@_selected.Contains(row.EnvironmentId)"
-                                           @onchange="e => TogglePick(row.EnvironmentId, e)"
-                                           disabled="@_running" />
+                                    <label class="check" aria-label="@($"Select {row.ProjectName} {row.EnvironmentName}")">
+                                        <input type="checkbox" checked="@picked" disabled="@_running"
+                                               @onchange="e => TogglePick(row.EnvironmentId, e)" />
+                                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                    </label>
                                 }
                                 else
                                 {
@@ -286,52 +236,34 @@
                                     </span>
                                 }
                             </td>
-                            <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")"><strong>@row.ProjectName</strong></a></td>
-                            <td class="upg-env">
-                                <div>@row.EnvironmentName</div>
-                                <span class="status-pill status-pill--muted@(row.IsProduction ? " upg-prod" : "")">
-                                    <span class="status-pill__dot"></span>
-                                    <span>@row.EnvironmentType</span>
+                            <td class="data-table__col-state">
+                                <span class="data-table__state data-table__state--icon" role="img"
+                                      aria-label="@StatusWord(row)" title="@StatusWord(row)">
+                                    <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
                                 </span>
                             </td>
+                            <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
                             <td>
-                                @if (string.IsNullOrWhiteSpace(row.Status))
-                                {
-                                    <span class="status-pill status-pill--muted">
-                                        <span class="status-pill__dot"></span>
-                                        <span>Not checked yet</span>
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="status-pill status-pill--@StatusPillTone(row.Status)">
-                                        <span class="status-pill__dot"></span>
-                                        <span>@BcEnvironmentStatus.Humanise(row.Status)</span>
-                                    </span>
-                                }
+                                <span class="cell-stack">
+                                    <span class="cell-stack__main">@row.EnvironmentName</span>
+                                    <span class="cell-stack__sub">@row.EnvironmentType</span>
+                                </span>
                             </td>
                             @* Major.minor in both version columns so "27.5" and "27.6" can be
                                compared at a glance; the full build is on hover. *@
-                            <td class="u-muted" title="@row.Version">@ShortVersion(row.Version)</td>
+                            <td class="u-num" title="@row.Version">@ShortVersion(row.Version)</td>
                             <td class="upg-next">
-                                @if (!row.HasUpdate)
+                                <span class="cell-stack">
+                                    <span class="cell-stack__main" style="font-weight: var(--fw-semibold)"
+                                          title="@row.NextUpdateVersion">@(row.HasUpdate ? ShortVersion(row.NextUpdateVersion) : "—")</span>
+                                    <span class="cell-stack__sub">@UpdateWhen(row)</span>
+                                </span>
+                                @if (row.NextUpdateIgnoresWindow == true)
                                 {
-                                    <span class="u-muted">Nothing waiting</span>
-                                }
-                                else
-                                {
-                                    <div title="@row.NextUpdateVersion"><b>@ShortVersion(row.NextUpdateVersion)</b></div>
-                                    @* Whose decision this date is matters: Microsoft's own
-                                       schedule and a slot somebody here booked are different
-                                       facts, and "scheduled for ..." alone read as either. *@
-                                    <div class="u-muted">@UpdateWhen(row)</div>
-                                    @if (row.NextUpdateIgnoresWindow == true)
-                                    {
-                                        <div class="upg-note upg-note--warn">
-                                            <Icon Name="triangle-alert" Width="12" Height="12" />
-                                            <span>Runs outside the solution's update window</span>
-                                        </div>
-                                    }
+                                    <div class="upg-note upg-note--warn">
+                                        <Icon Name="triangle-alert" Width="12" Height="12" />
+                                        <span>Runs outside the solution's update window</span>
+                                    </div>
                                 }
                                 @* A booking survives a reload, and this marker is the only
                                    trace of one on the table - the batch result that announced
@@ -382,27 +314,34 @@
                                     </div>
                                 }
                             </td>
-                            <td class="u-muted">@LatestText(row)</td>
+                            <td>@LatestText(row)</td>
                             <td class="upg-checked @(IsStale(row) ? "upg-stale" : "u-muted")">
-                                @if (row.FetchedAt is { } at)
-                                {
-                                    @($"checked {RelativeTime.Ago(at)}")
-                                }
-                                else
-                                {
-                                    <text>Not checked yet</text>
-                                }
+                                @(row.FetchedAt is { } at ? RelativeTime.Ago(at) : "Not checked yet")
                             </td>
-                            <td class="upg-history">
-                                @* Says what pressing it does, not what is behind it: every
-                                   other button on this page is a verb, and a bare noun read
-                                   as one more thing that acts on a tenant. *@
-                                <button type="button" class="btn btn--sm upg-activity-btn"
-                                        aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
-                                        @onclick="() => ToggleFeedAsync(row)">
-                                    <Icon Name="@(_feedEnvId == row.EnvironmentId ? "chevron-down" : "chevron-right")" Width="13" Height="13" />
-                                    <span>@(_feedEnvId == row.EnvironmentId ? "Hide history" : "Show history")</span>
-                                </button>
+                            <td class="data-table__actions">
+                                @* History leads the menu: it is the one entry every row
+                                   has, and the only one that changes nothing. The two
+                                   that act go through the same dialogs as the bar, on
+                                   this row alone, and leave the ticked rows as they were. *@
+                                <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
+                                    <button type="button" class="menu__item" role="menuitem"
+                                            @onclick="() => ToggleFeedAsync(row)">
+                                        @(_feedEnvId == row.EnvironmentId ? "Hide update history" : "Update history")
+                                    </button>
+                                    @if (row.CanAct)
+                                    {
+                                        <button type="button" class="menu__item" role="menuitem" disabled="@_running"
+                                                @onclick="() => ConfirmPushAsync(row)">Move this date to the latest</button>
+                                        <button type="button" class="menu__item" role="menuitem" disabled="@_running"
+                                                @onclick="() => ConfirmUpdateNowAsync(row)">Start this update now</button>
+                                    }
+                                    @if (row.BusinessCentralUrl is { } bcUrl)
+                                    {
+                                        <div class="menu__sep"></div>
+                                        <a class="menu__item" role="menuitem" href="@bcUrl"
+                                           target="_blank" rel="noopener">Open in Business Central</a>
+                                    }
+                                </RowActions>
                             </td>
                         </tr>
                         @if (_feedEnvId == row.EnvironmentId)
@@ -428,6 +367,10 @@
             </table>
             </div>
 
+            <div class="pager">
+                <span class="pager__count">Showing @_rows.Count of @_totalCount environment@(_totalCount == 1 ? "" : "s")</span>
+            </div>
+
             @* Only when there is actually a padlock on screen to explain. A hover
                title alone was invisible on a touch screen, to the keyboard, and to a
                screen reader. *@
@@ -447,7 +390,7 @@
    ninety customers and finding out afterwards. The ones that will be passed over
    are grouped at the bottom so the top of the list is only what will happen. *@
 <ConfirmDialog @ref="_pushConfirm" Wide="true"
-               Title="Move these update dates?"
+               Title="@(_single is null ? "Move these update dates?" : "Move this update date?")"
                Message="The version each environment updates to doesn't change - only the date it runs. Each date moves to the latest Business Central still allows."
                ConfirmLabel="Move the dates" ConfirmButtonClass="btn" ConfirmIcon="calendar">
     @PreviewList()
@@ -459,7 +402,7 @@
    Cancel button would be a straight contradiction. So the title, the sentence, the
    button label and its colour all follow the choice. *@
 <ConfirmDialog @ref="_nowConfirm" Wide="true"
-               Title="@(_scheduleLater ? "Book these updates?" : "Start these updates?")"
+               Title="@NowDialogTitle"
                Message="@NowDialogMessage"
                ConfirmLabel="@NowConfirmLabel"
                ConfirmButtonClass="@(_scheduleLater ? "btn" : "btn--danger")"
@@ -555,13 +498,6 @@
     private int? _feedEnvId;
     private List<UpgradeActionRow>? _feed;
 
-    /// <summary>
-    /// What the count says with an empty selection. It states the fact rather than
-    /// teaching the gesture: the checkboxes are visible, and a sentence explaining how
-    /// to tick one is a mechanic the UI should not need to spell out.
-    /// </summary>
-    private const string PickFirstHint = "No environments selected";
-
     private bool ActionsDisabled => _selected.Count == 0 || _running;
 
     protected override async Task OnInitializedAsync()
@@ -596,11 +532,26 @@
         _onlyWaiting = WaitingFilter == "1";
     }
 
-    private void OnTypeChanged(ChangeEventArgs e) => GoToFilters(
-        type: e.Value?.ToString() ?? string.Empty, waiting: _onlyWaiting);
+    /// <summary>
+    /// The view select's value for one combination of the two filters behind it. The
+    /// sheet offers them as one list ("Production, update waiting") because that is
+    /// how the team thinks of them; the address keeps them apart so old links hold.
+    /// </summary>
+    private static string ViewValue(string type, bool waiting) => (waiting ? "1" : "0") + type;
 
-    private void OnWaitingChanged(ChangeEventArgs e) => GoToFilters(
-        type: _type, waiting: e.Value is true);
+    private void OnViewChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? string.Empty;
+        GoToFilters(type: value.Length > 1 ? value[1..] : string.Empty, waiting: value.StartsWith('1'));
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _search = (e.Value?.ToString() ?? string.Empty).Trim();
+        ApplyFilters();
+    }
+
+    private void OnSearchCommitted(ChangeEventArgs e) => GoToFilters(_type, _onlyWaiting);
 
     /// <summary>
     /// Applies a filter change by changing the address, so every state of this table
@@ -657,6 +608,13 @@
     private bool AllPicked =>
         _actionableRows.Count > 0 && _actionableRows.All(r => _selected.Contains(r.EnvironmentId));
 
+    /// <summary>The keyline state, plus the tint of a ticked row and the mark of a locked one.</summary>
+    private static string RowClass(UpgradeFleetRow row, bool picked) =>
+        RowState(row) + (picked ? " is-selected" : "") + (row.CanAct ? "" : " upg-row--locked");
+
+    /// <summary>Some but not all: the header box shows a dash rather than a tick.</summary>
+    private bool SomePicked => _selected.Count > 0 && !AllPicked;
+
     private void ToggleAll(ChangeEventArgs e)
     {
         if (e.Value is true)
@@ -675,12 +633,47 @@
         else _selected.Remove(environmentId);
     }
 
-    private List<UpgradeFleetRow> SelectedRows() =>
-        _actionableRows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
+    /// <summary>
+    /// The one row a row-menu command is acting on, while its dialog and run are open.
+    /// Kept apart from the ticked rows so that starting one customer's update from its
+    /// own menu neither uses nor disturbs a selection made for something else.
+    /// </summary>
+    private UpgradeFleetRow? _single;
+
+    /// <summary>What the open dialog or the running batch acts on.</summary>
+    private List<UpgradeFleetRow> SelectedRows() => _single is { } one
+        ? new List<UpgradeFleetRow> { one }
+        : _actionableRows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
 
     // ── The two bulk actions ────────────────────────────────────────────
 
-    private async Task ConfirmPushAsync()
+    private async Task ConfirmPushAsync(UpgradeFleetRow? only = null)
+    {
+        _single = only;
+        try
+        {
+            await ConfirmPushCoreAsync();
+        }
+        finally
+        {
+            _single = null;
+        }
+    }
+
+    private async Task ConfirmUpdateNowAsync(UpgradeFleetRow? only = null)
+    {
+        _single = only;
+        try
+        {
+            await ConfirmUpdateNowCoreAsync();
+        }
+        finally
+        {
+            _single = null;
+        }
+    }
+
+    private async Task ConfirmPushCoreAsync()
     {
         var rows = SelectedRows();
         if (rows.Count == 0 || _pushConfirm is null) return;
@@ -697,7 +690,7 @@
         }
     }
 
-    private async Task ConfirmUpdateNowAsync()
+    private async Task ConfirmUpdateNowCoreAsync()
     {
         var rows = SelectedRows();
         if (rows.Count == 0 || _nowConfirm is null) return;
@@ -1027,6 +1020,18 @@
     /// leads with the guarantee that makes it safe, and only then with what happens once
     /// it does run.
     /// </summary>
+    /// <summary>
+    /// Singular when the dialog came from one row's menu: rows ticked for something else
+    /// are still tinted behind it, and the title is what says they are not part of this.
+    /// </summary>
+    private string NowDialogTitle => (_scheduleLater, _single is null) switch
+    {
+        (true, true) => "Book these updates?",
+        (true, false) => "Book this update?",
+        (false, true) => "Start these updates?",
+        (false, false) => "Start this update?",
+    };
+
     private string NowDialogMessage => _scheduleLater
         ? "Business Central will start these updates at the time you pick. You can cancel from the Upgrades page any time before it runs; once it starts it can't be stopped."
         : "Business Central will start updating these environments as soon as it picks them up, whatever time of day their update window says. Once it starts you cannot stop it.";
@@ -1193,6 +1198,34 @@
         }
     }
 
+    /// <summary>
+    /// The header row, shared by the loading skeleton and the real table so the
+    /// columns are already where they will be when the data lands.
+    /// </summary>
+    private RenderFragment TableHead(bool selectable) => @<tr>
+        <th class="data-table__col-check">
+            @if (selectable && _actionableRows.Count > 0)
+            {
+                <label class="check@(SomePicked ? " is-indeterminate" : "")" aria-label="Select every environment you can change">
+                    <input type="checkbox" checked="@AllPicked" disabled="@_running" @onchange="ToggleAll" />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                </label>
+            }
+            else
+            {
+                <span class="u-sr">Select</span>
+            }
+        </th>
+        <th class="data-table__col-state"><span class="u-sr">State</span></th>
+        <th scope="col" class="upg-customer">Solution</th>
+        <th scope="col">Environment</th>
+        <th scope="col">Now on</th>
+        <th scope="col">Next update</th>
+        <th scope="col">Latest possible date</th>
+        <th scope="col">Last checked</th>
+        <th scope="col" class="data-table__actions">Actions</th>
+    </tr>;
+
     // ── Confirm-dialog previews ─────────────────────────────────────────
 
     /// <summary>
@@ -1273,12 +1306,17 @@
     /// </summary>
     private static string UpdateWhen(UpgradeFleetRow row)
     {
-        // Whose date this is, said in three words rather than a clause: the row's other
-        // "when" is a slot somebody here booked ("Booked for 20:00 on 30 Aug ... by Anna
-        // Jensen"), and the pair has to be tellable apart at a glance without either of
-        // them growing the column past what the page can show.
-        if (row.NextUpdateDate is { } at) return $"Business Central's date: {at:yyyy-MM-dd HH:mm} UTC";
-        return string.IsNullOrWhiteSpace(row.NextUpdateStatus) ? "no date set yet" : row.NextUpdateStatus;
+        // Bare, the way the sheet has it: the subtitle says once that dates are UTC, and
+        // the row's other "when" - a slot somebody here booked - announces itself
+        // ("Booked for 20:00 on 30 Aug ... by Anna Jensen"), so the pair stay tellable apart.
+        if (row.NextUpdateDate is { } at) return at.ToString("dd MMM yyyy, HH:mm");
+        if (row.HasUpdate)
+        {
+            return string.IsNullOrWhiteSpace(row.NextUpdateStatus) ? "no date set yet" : row.NextUpdateStatus;
+        }
+        // With nothing waiting, this line is where the sheet names a state that is not
+        // plain Running - the state cell is a glyph, and this keeps the word on screen.
+        return IsRunning(row) ? "Nothing waiting" : StatusWord(row);
     }
 
     /// <summary>
@@ -1297,10 +1335,10 @@
         row.EffectiveLatestDate is { } latest ? DateText(latest) : "—";
 
     private static string DateText(DateTime? at) =>
-        at is { } value ? value.ToString("yyyy-MM-dd") : "no date";
+        at is { } value ? value.ToString("dd MMM yyyy") : "no date";
 
     private static string WhenText(DateTime? at) =>
-        at is { } value ? value.ToString("yyyy-MM-dd") : "No date set";
+        at is { } value ? value.ToString("dd MMM yyyy") : "No date set";
 
     /// <summary>
     /// Why a selected row won't move, in the same words the service refuses with, so
@@ -1320,14 +1358,6 @@
     /// </summary>
     private static bool IsStale(UpgradeFleetRow row) =>
         row.FetchedAt is null || DateTime.UtcNow - row.FetchedAt.Value > TimeSpan.FromHours(36);
-
-    private static string StatusPillTone(string? status) => BcEnvironmentStatus.Classify(status) switch
-    {
-        BcEnvironmentReadiness.Ready => "success",
-        BcEnvironmentReadiness.Busy => "warn",
-        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "danger",
-        _ => "muted",
-    };
 
     private static string FirstMessage(PlanValidationException ex) =>
         ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.";
