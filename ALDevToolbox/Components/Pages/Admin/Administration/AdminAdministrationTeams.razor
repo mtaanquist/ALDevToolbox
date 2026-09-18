@@ -89,30 +89,23 @@
 
     @if (_teams is null)
     {
-        <div class="loading-block"><span class="spinner"></span><span>Loading teams...</span></div>
+        <LoadingBlock Text="Loading teams..." />
     }
     else if (_teams.Count == 0)
     {
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No teams yet</span>
-                @* Present tense would be a lie: being on a team grants nothing
-                   until the visibility slice lands, and security copy that
-                   overstates what is enforced is the worst kind to get wrong.
-                   Says what a team *is* today, and marks the rest as coming. *@
-                <span class="empty-state__text">
+            <EmptyState Icon="users" Title="No teams yet">
+                <Text>
                     Teams group the colleagues who work on the same customer. Soon you'll be able to
                     use a team to limit who can see and change that customer's solution.
-                </span>
-                @if (!_creating)
-                {
-                    <button type="button" class="btn btn--primary empty-state__action" @onclick="StartCreate">
+                </Text>
+                <Action>
+                    <button type="button" class="btn btn--primary" @onclick="StartCreate">
                         <Icon Name="plus" Width="15" Height="15" />
                         <span>Create team</span>
                     </button>
-                }
-            </div>
+                </Action>
+            </EmptyState>
         </div>
     }
     else

@@ -60,23 +60,23 @@
 
     @if (_releases is null)
     {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        <LoadingBlock Text="Loading..." />
     }
     else if (_totalCount == 0)
     {
-        <div class="empty-state">
-            <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
-            <span class="empty-state__title">No releases yet</span>
-            <span class="empty-state__text">
+        <EmptyState Icon="layers" Title="No releases yet">
+            <Text>
                 A release is one Business Central version's objects, imported once so
                 everyone can search and read them. Bring in a Microsoft build, a
                 partner app, or a legacy C/AL export.
-            </span>
-            <a class="btn btn--primary empty-state__action" href="/admin/object-explorer/new/artifacts">
-                <Icon Name="download" Width="14" Height="14" />
-                <span>Import a release</span>
-            </a>
-        </div>
+            </Text>
+            <Action>
+                <a class="btn btn--primary" href="/admin/object-explorer/new/artifacts">
+                    <Icon Name="download" Width="14" Height="14" />
+                    <span>Import a release</span>
+                </a>
+            </Action>
+        </EmptyState>
     }
     else
     {

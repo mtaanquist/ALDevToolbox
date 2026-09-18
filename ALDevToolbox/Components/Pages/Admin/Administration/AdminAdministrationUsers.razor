@@ -72,7 +72,7 @@
 
     @if (_pending is null || _active is null || _invites is null)
     {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        <LoadingBlock Text="Loading..." />
     }
     else
     {
@@ -82,10 +82,9 @@
             {
                 @* Quiet: this is a secondary section that is empty most days, and
                    "Add user" is already the page's primary action in the header. *@
-                <div class="empty-state empty-state--quiet">
-                    <span class="empty-state__title">No pending invites</span>
-                    <span class="empty-state__text">Invites you send appear here until they're accepted or they expire.</span>
-                </div>
+                <EmptyState Title="No pending invites" Quiet="true">
+                    <Text>Invites you send appear here until they're accepted or they expire.</Text>
+                </EmptyState>
             }
             else
             {
@@ -118,13 +117,12 @@
             <div class="card__head"><h2 class="card__title">Pending signups (@_pending.Count)</h2></div>
             @if (_pending.Count == 0)
             {
-                <div class="empty-state empty-state--quiet">
-                    <span class="empty-state__title">Nobody waiting for approval</span>
-                    <span class="empty-state__text">
+                <EmptyState Title="Nobody waiting for approval" Quiet="true">
+                    <Text>
                         People who sign up with an email at one of your claimed domains land here
                         until an admin approves them.
-                    </span>
-                </div>
+                    </Text>
+                </EmptyState>
             }
             else
             {
