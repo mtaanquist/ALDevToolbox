@@ -13,7 +13,14 @@
     {
         <span class="empty-state__icon"><Icon Name="@Icon" Width="21" Height="21" /></span>
     }
-    <span class="empty-state__title">@Title</span>
+    @if (Heading)
+    {
+        <h1 class="empty-state__title">@Title</h1>
+    }
+    else
+    {
+        <span class="empty-state__title">@Title</span>
+    }
     @if (Text is not null)
     {
         <span class="empty-state__text">@Text</span>
@@ -29,6 +36,13 @@
     [Parameter] public string? Icon { get; set; }
 
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Render the title as the page's <c>&lt;h1&gt;</c>. For a state that replaces the whole
+    /// page - a detail page whose entity is missing - where no head is drawn and the
+    /// page would otherwise have no heading for a screen reader or FocusOnNavigate.
+    /// </summary>
+    [Parameter] public bool Heading { get; set; }
 
     [Parameter] public RenderFragment? Text { get; set; }
 
