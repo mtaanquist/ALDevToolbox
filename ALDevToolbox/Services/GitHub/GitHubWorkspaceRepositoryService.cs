@@ -555,13 +555,22 @@ public sealed class GitHubWorkspaceRepositoryService
     /// <see cref="SeedBranch"/>, and pointing it back is a change to a
     /// repository setting rather than to a ref.</para>
     ///
-    /// <para><strong>And if GitHub refuses anyway.</strong> Whether ref
-    /// creation is rule-checked has not been verified against a real
-    /// organisation, so a rule violation on either of those two steps falls
-    /// back to a pull request inside the same operation rather than leaving a
-    /// half-filled repository behind. Both routes are equally legitimate under
-    /// the rule; the difference is only which one needs a human to press
-    /// merge.</para>
+    /// <para><strong>Why this works, and how far that reaches.</strong> The
+    /// ruleset in issue #811 targets <c>~DEFAULT_BRANCH</c>, and from the seed
+    /// until step 4 the default branch is <see cref="SeedBranch"/> - so
+    /// creating <c>refs/heads/main</c> is not an operation on a protected
+    /// branch at all, and the default-branch switch is a repository-settings
+    /// write no branch ruleset governs. Neither step depends on the weaker
+    /// claim that creating a ref is not rule-checked. That claim is only needed
+    /// by a ruleset naming the branch outright (<c>refs/heads/main</c>) rather
+    /// than symbolically, and it has not been verified against a real
+    /// organisation - which is exactly what the fallback below covers.</para>
+    ///
+    /// <para><strong>And if GitHub refuses anyway.</strong> A rule violation on
+    /// either of those two steps falls back to a pull request inside the same
+    /// operation rather than leaving a half-filled repository behind. Both
+    /// routes are equally legitimate under the rule; the difference is only
+    /// which one needs a human to press merge.</para>
     ///
     /// <para>See <c>.design/github-integration.md</c>, "#622 New workspace".</para>
     /// </summary>
@@ -675,7 +684,7 @@ public sealed class GitHubWorkspaceRepositoryService
         }
 
         return (standardsFiles.Count, GitHubWorkspaceDelivery.PullRequest,
-            await OpenPullRequestAsync(token, repository, plan, tree, author, contents.Count, ct));
+            await OpenPullRequestAsync(token, repository, plan, seed, tree, author, contents.Count, ct));
     }
 
     /// <summary>
@@ -683,28 +692,57 @@ public sealed class GitHubWorkspaceRepositoryService
     /// it - the route for an organisation whose rules refuse everything else
     /// (issue #811).
     ///
-    /// <para>The pull request is aimed at whatever GitHub currently calls the
-    /// default branch, read back rather than assumed: the seed made a branch
-    /// the default that the toolbox did not choose, and a pull request into a
-    /// branch that does not exist would be refused for a confusing
-    /// reason.</para>
+    /// <para><strong>The repository is put in its proper shape first.</strong>
+    /// The pull request is aimed at the default branch the repository was
+    /// created with, not at whatever the seed left as the default: a customer
+    /// whose organisation took this route would otherwise be handed a
+    /// repository whose default branch is a throwaway name the toolbox made up,
+    /// with no <c>main</c> and a pull request merging into the wrong thing. So
+    /// the real branch is made to exist, made the default, and the throwaway
+    /// one goes - and only then is the workspace put up for review.</para>
+    ///
+    /// <para>The branch is made with a Contents write rather than a ref
+    /// creation, because a ref creation is the operation that was just refused,
+    /// and a Contents write onto the branch is what the toolbox did before this
+    /// issue - which the bug report shows this organisation's rules allow (a
+    /// <c>.gitignore</c> did land on <c>main</c>; it was the <em>update</em>
+    /// after it that was refused). A ref creation at the seed commit is tried
+    /// if that fails, and a repository that refuses both is reported rather
+    /// than left in a shape nobody can read.</para>
     /// </summary>
     private async Task<string> OpenPullRequestAsync(
         string token, GitHubRepositorySummary repository, ProjectPlan plan,
-        string treeSha, GitHubCommitAuthor? author, int fileCount, CancellationToken ct)
+        GitHubCommitFile seed, string treeSha, GitHubCommitAuthor? author, int fileCount,
+        CancellationToken ct)
     {
         var owner = repository.Owner;
         var name = repository.Name;
-        var current = await _github.GetRepositoryAsync(token, owner, name, ct);
-        var baseBranch = current?.DefaultBranch ?? repository.DefaultBranch;
+        var branch = repository.DefaultBranch;
 
-        var parent = await _github.GetBranchHeadShaAsync(token, owner, name, baseBranch, ct);
-        var commit = await _github.CreateCommitAsync(
-            token, owner, name, $"Add the {plan.WorkspaceName} workspace", treeSha,
-            parentSha: parent, author: author, ct: ct);
-
+        // Where the one seeded file is, for the refusal to name honestly if
+        // everything below is refused too.
+        var seedSits = SeedBranch;
         try
         {
+            var head = await _github.GetBranchHeadShaAsync(token, owner, name, branch, ct);
+            if (head is null)
+            {
+                head = await StartDefaultBranchAsync(token, repository, seed, author, ct);
+            }
+            seedSits = branch;
+
+            var current = await _github.GetRepositoryAsync(token, owner, name, ct);
+            if (!string.Equals(current?.DefaultBranch, branch, StringComparison.Ordinal))
+            {
+                // Seeding made the throwaway branch the default; the settings
+                // write is not governed by a branch ruleset.
+                await _github.SetDefaultBranchAsync(token, owner, name, branch, ct);
+            }
+            await _github.DeleteBranchAsync(token, owner, name, SeedBranch, ct);
+
+            var commit = await _github.CreateCommitAsync(
+                token, owner, name, $"Add the {plan.WorkspaceName} workspace", treeSha,
+                parentSha: head, author: author, ct: ct);
             if (!await _github.CreateBranchAsync(token, owner, name, WorkspaceBranch, commit, ct))
             {
                 throw RaceRefusal(repository);
@@ -712,26 +750,19 @@ public sealed class GitHubWorkspaceRepositoryService
 
             var pullRequest = await _github.CreatePullRequestAsync(
                 token, owner, name, $"Add the {plan.WorkspaceName} workspace",
-                WorkspaceBranch, baseBranch,
+                WorkspaceBranch, branch,
                 $"AL Dev Toolbox generated this workspace: {fileCount} file(s) for "
                 + $"{plan.WorkspaceName}.\n\n"
-                + $"Your GitHub organisation only allows changes to {repository.DefaultBranch} through a "
-                + "pull request, so the files are here rather than committed straight to it. "
-                + $"{baseBranch} holds only the one file the repository was started with until this is "
-                + "merged.",
+                + $"Your GitHub organisation only allows changes to {branch} through a pull request, so "
+                + "the files are here rather than committed straight to it. The workspace is in this "
+                + $"pull request, and {branch} holds only the one file the repository was started with "
+                + "until this is merged.",
                 ct);
-
-            // The throwaway branch, when it is not the one the pull request is
-            // aimed at. It usually is, because seeding it made it the default.
-            if (!string.Equals(baseBranch, SeedBranch, StringComparison.Ordinal))
-            {
-                await _github.DeleteBranchAsync(token, owner, name, SeedBranch, ct);
-            }
 
             _logger.LogInformation(
                 "Opened pull request {PullRequestUrl} with {FileCount} file(s) for {RepoFullName}, "
                 + "because {Branch} only takes changes through one.",
-                pullRequest.HtmlUrl, fileCount, repository.FullName, repository.DefaultBranch);
+                pullRequest.HtmlUrl, fileCount, repository.FullName, branch);
             return pullRequest.HtmlUrl;
         }
         catch (GitHubApiException ex)
@@ -745,9 +776,55 @@ public sealed class GitHubWorkspaceRepositoryService
             throw Refuse(RepositoryField,
                 $"Your GitHub organisation only allows changes to {repository.DefaultBranch} through a "
                 + "pull request, and GitHub also refused the pull request the toolbox tried instead. "
-                + $"Nothing was left on the repository except one file on {baseBranch}. Download the ZIP "
+                + $"Nothing was left on the repository except one file on {seedSits}. Download the ZIP "
                 + "and push it through a pull request yourself.");
         }
+    }
+
+    /// <summary>
+    /// Brings the repository's real default branch into being on the
+    /// pull-request route, and returns the commit it points at.
+    ///
+    /// <para>Two ways round, in the order most likely to be allowed by the
+    /// rules that sent the flow here: a Contents write onto the branch, which
+    /// is how the toolbox used to start a repository, and failing that a ref
+    /// creation at the commit the throwaway branch already holds.</para>
+    /// </summary>
+    private async Task<string> StartDefaultBranchAsync(
+        string token, GitHubRepositorySummary repository, GitHubCommitFile seed,
+        GitHubCommitAuthor? author, CancellationToken ct)
+    {
+        var owner = repository.Owner;
+        var name = repository.Name;
+        var branch = repository.DefaultBranch;
+        try
+        {
+            var written = await _github.PutFileAsync(
+                token, owner, name, seed.Path, branch,
+                "Initial commit", seed.Content, baseSha: null, author: author, ct: ct);
+            return written.CommitSha;
+        }
+        catch (Exception ex) when (ex is GitHubApiException or GitHubContentConflictException)
+        {
+            _logger.LogWarning(
+                ex, "GitHub would not start {Branch} on {RepoFullName} with a file write; "
+                + "pointing it at the commit the throwaway branch holds instead.",
+                branch, repository.FullName);
+        }
+
+        var seedHead = await _github.GetBranchHeadShaAsync(token, owner, name, SeedBranch, ct)
+            ?? throw new GitHubApiException(
+                System.Net.HttpStatusCode.NotFound,
+                "The branch the repository was started on is no longer there.");
+        if (!await _github.CreateBranchAsync(token, owner, name, branch, seedHead, ct))
+        {
+            // Somebody else made it in the meantime; whatever is on it now is
+            // what the pull request will be aimed at.
+            _logger.LogInformation(
+                "{Branch} on {RepoFullName} appeared while the toolbox was making it.",
+                branch, repository.FullName);
+        }
+        return seedHead;
     }
 
     /// <summary>

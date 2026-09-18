@@ -363,13 +363,27 @@ for the standards) put one file in and lost the rest.
 The result is a repository whose history is a single "Initial commit", which
 also reads better than the seed-plus-workspace-plus-standards trio it replaced.
 
-**And when GitHub refuses anyway.** That creation is not rule-checked is the
-reading of GitHub's behaviour the issue rests on, not something verified against
-a live organisation, so a rule violation (a 422 whose message opens "Repository
-rule violations found") on step 3 or 4 falls back inside the same operation:
-whatever was created is taken back, the same tree is committed onto
-`aldt/initial-workspace` parented on the branch that does exist, and a pull
-request is opened for it. The result says which route was taken and carries the
+**Why steps 3 and 4 are allowed.** The ruleset in #811 targets
+`~DEFAULT_BRANCH`, and between step 1 and step 4 the default branch *is*
+`aldt/seed`. So `refs/heads/main` is not a protected branch when it is created -
+the rules are pointed at a different branch entirely - and the default-branch
+switch is a change to repository settings, which no branch ruleset governs.
+Neither step needs the weaker claim that creating a ref is never rule-checked.
+
+That weaker claim is only load-bearing for a ruleset that names the branch
+outright (`refs/heads/main`) instead of symbolically, where `main` is protected
+from the moment the repository exists. It has not been verified against a live
+organisation, and the fallback is what covers it: a rule violation (a 422 whose
+message opens "Repository rule violations found") on step 3 or 4 drops into the
+pull-request route inside the same operation. That route still leaves the
+repository in the right shape - `main` exists, holds the seeded file, and is the
+default branch, `aldt/seed` is gone - and the workspace is committed onto
+`aldt/initial-workspace` parented on `main`, with a pull request open against
+it. `main` is brought into being there with a Contents write rather than a ref
+creation, since a ref creation is what was just refused and a Contents write
+onto the branch is what the toolbox did before this issue - which the bug report
+shows such an organisation allows, because a `.gitignore` did land on `main`; it
+was the update after it that was refused. The result says which route was taken and carries the
 pull request's URL, and the success card and the MCP result say so in their own
 words. Both routes are legitimate under the rule; only one needs a human to
 press merge. If GitHub refuses the pull request as well, the refusal names what

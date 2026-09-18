@@ -143,8 +143,12 @@ public sealed class NewWorkspaceRepositoryTests : IDisposable
                         : (HttpStatusCode.Created, FakeGitHubApi.RefJson("aldt/initial-workspace")))
             .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK,
                 FakeGitHubApi.RepositoryJson(Repo, defaultBranch: "aldt/seed"))
-            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", HttpStatusCode.OK,
-                """{"object":{"sha":"seed-commit-sha"}}""")
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", request =>
+                // main was never created - its ref creation is what was refused -
+                // so the flow has to bring it into being before it opens anything.
+                (request.RequestUri?.AbsolutePath ?? string.Empty).EndsWith("/heads/main", StringComparison.Ordinal)
+                    ? (HttpStatusCode.NotFound, """{"message":"Not Found"}""")
+                    : (HttpStatusCode.OK, """{"object":{"sha":"seed-commit-sha"}}"""))
             .On(HttpMethod.Post, $"/repos/{Repo}/pulls", HttpStatusCode.Created,
                 FakeGitHubApi.PullRequestJson(Repo));
 

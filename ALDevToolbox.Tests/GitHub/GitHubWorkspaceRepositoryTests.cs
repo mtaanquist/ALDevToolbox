@@ -668,20 +668,22 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
 
         var pull = BodyOf(api, "POST", "/pulls");
         pull.Should().Contain("\"head\":\"aldt/initial-workspace\"");
-        // Into whatever GitHub says the default branch is now, read back rather
-        // than assumed: seeding made the throwaway branch the default.
-        pull.Should().Contain("\"base\":\"aldt/seed\"");
+        // Into the branch the repository was created with. The throwaway branch
+        // is not something to leave a customer's repository built around.
+        pull.Should().Contain("\"base\":\"main\"");
         pull.Should().Contain("Add the CRONUS Customer workspace");
         pull.Should().Contain("pull request");
 
-        // Nothing half-made. The refused attempt left no branch behind, so
-        // there is nothing to take back, and the default branch is never
-        // repointed at a branch that does not exist.
-        api.Calls.Should().NotContain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"),
-            "the seed branch is the one the pull request is aimed at");
-        api.Bodies.Should().NotContain(b => b.Body.Contains("default_branch"));
-        // And the workspace commit sits on what is already there rather than
-        // orphaning the seed.
+        // The repository is left in the shape it would have had anyway, minus
+        // the merge: main exists and holds the seeded file, it is the default
+        // branch, and the throwaway branch is gone.
+        api.Bodies.Should().Contain(b =>
+            b.Call.StartsWith("PUT") && b.Call.Contains("/contents/") && b.Body.Contains("\"branch\":\"main\""));
+        DefaultBranchBody(api).Should().Contain("\"default_branch\":\"main\"");
+        api.Calls.Should().Contain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
+
+        // And the workspace branch grows out of what is on main rather than
+        // orphaning it, so merging the pull request is a fast-forward.
         var commits = api.Bodies.Where(b => b.Call.Contains("/git/commits")).Select(b => b.Body).ToList();
         commits[^1].Should().Contain("\"parents\":[\"seed-commit-sha\"]");
     }
@@ -743,11 +745,15 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
                     ? (HttpStatusCode.UnprocessableEntity, FakeGitHubApi.RuleViolationJson())
                     : (HttpStatusCode.Created, FakeGitHubApi.RefJson("aldt/initial-workspace")))
             // Seeding made the throwaway branch the default, which is what the
-            // pull request has to be aimed at.
+            // flow has to put right before it opens anything.
             .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK,
                 FakeGitHubApi.RepositoryJson(Repo, defaultBranch: "aldt/seed"))
-            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", HttpStatusCode.OK,
-                """{"object":{"sha":"seed-commit-sha"}}""")
+            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", request =>
+                // main was never created - its ref creation is the one that was
+                // refused - while the throwaway branch carries the seed commit.
+                (request.RequestUri?.AbsolutePath ?? string.Empty).EndsWith("/heads/main", StringComparison.Ordinal)
+                    ? (HttpStatusCode.NotFound, """{"message":"Not Found"}""")
+                    : (HttpStatusCode.OK, """{"object":{"sha":"seed-commit-sha"}}"""))
             .On(HttpMethod.Post, $"/repos/{Repo}/pulls", HttpStatusCode.Created,
                 FakeGitHubApi.PullRequestJson(Repo));
 
