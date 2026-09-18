@@ -54,7 +54,7 @@ public sealed class BcEnvironmentStatusTests
     }
 
     [Theory]
-    [InlineData("SoftDeleted", "Soft deleted")]
+    [InlineData("SoftDeleted", "Soft-deleted")]
     [InlineData("NotReady", "Not ready")]
     [InlineData("UpgradingFailed", "Upgrading failed")]
     [InlineData("Active", "Active")]
