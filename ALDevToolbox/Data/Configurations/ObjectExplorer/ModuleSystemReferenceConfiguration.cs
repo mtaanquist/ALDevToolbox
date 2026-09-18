@@ -87,9 +87,26 @@ internal sealed class ModuleSystemReferenceConfiguration : IEntityTypeConfigurat
         // ReleaseManagementService sets, so without this index a release delete
         // does not slowly degrade, it fails.
         //
-        // The zero scans are not evidence of disuse: the same measurement
-        // registered 200,000 scans on this index from one release delete, so a
-        // lifetime zero says only that no release has been deleted yet.
+        // The zero scans are not evidence of disuse, and the real reason is
+        // subtler than "no release has been deleted yet" - production has in
+        // fact run this cascade. oe_module_symbols.n_tup_del reads 580,160
+        // lifetime with stats never reset, and the identical SET NULL index on
+        // the sibling table, ix_oe_module_references_source_symbol, which has
+        // never been dropped since it was created, shows 580,179 scans: one
+        // per deleted symbol plus a handful of real queries. Every deleted
+        // symbol fires one RI query per referencing FK, so this index served
+        // that same 580,160.
+        //
+        // Those scans are invisible here because idx_scan is keyed to the
+        // index OID, and migration 20260713000000 dropped EF's original
+        // IX_oe_module_system_references_source_symbol_id to create this
+        // partial one in its place. The counter restarted at zero with the new
+        // OID, and pg_stat_user_tables loses them too, since it sums only the
+        // indexes that still exist. An index OID far above its own table's is
+        // the tell that this has happened.
+        //
+        // So a zero here means no release has been deleted since this index
+        // was last replaced, which is not the same claim as nothing uses it.
         //
         // It is also the forward edge for "what system methods does this
         // procedure call?", parity with ix_oe_module_references_source_symbol
