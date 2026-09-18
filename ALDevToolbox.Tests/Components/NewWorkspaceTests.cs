@@ -104,6 +104,65 @@ public sealed class NewWorkspaceTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// The record being named here is a Solution, and that is what the rest of
+    /// the app calls it (CLAUDE.md, "Solutions in the product, Project in the
+    /// code"). The heading and the label said Customer until #813. Hints may
+    /// still speak of the customer - that is the person the solution is for.
+    /// </summary>
+    [Fact]
+    public async Task The_section_and_its_field_are_called_Solution()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<NewWorkspace>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".section-label").Select(e => e.TextContent.Trim())
+                .Should().Contain("Solution").And.NotContain("Customer");
+
+            cut.Find("label[for='ws-name']").TextContent.Trim()
+                .Should().StartWith("Solution", "the field names the record it fills in");
+
+            cut.FindAll("label.field__label").Select(e => e.TextContent.Trim())
+                .Should().NotContain(t => t.StartsWith("Customer", StringComparison.Ordinal),
+                    "no field on this page is labelled Customer any more");
+        });
+    }
+
+    /// <summary>
+    /// The picker's own way back out says Solution too, wherever it is used -
+    /// the button is the component's, not the page's.
+    /// </summary>
+    [Fact]
+    public async Task The_picker_offers_to_change_the_solution()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default());
+            await seed.SaveChangesAsync();
+        }
+        await SeedSolutionAsync("CRONUS Denmark", "CRO");
+
+        var cut = _ctx.Render<NewWorkspace>();
+        cut.WaitForElement("input[name='WorkspaceName']");
+        cut.Find("input[name='WorkspaceName']").Focus();
+        cut.Find("input[name='WorkspaceName']").Input("CRONUS");
+        cut.WaitForAssertion(() => cut.FindAll("[role='option']").Should().NotBeEmpty());
+        await cut.InvokeAsync(() => cut.FindAll("[role='option']")[0].Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("button").Select(b => b.TextContent.Trim())
+                .Should().Contain("Change solution").And.NotContain("Change customer");
+        });
+    }
+
     [Fact]
     public async Task The_short_name_field_sits_under_the_customer_field_and_is_optional()
     {
@@ -562,7 +621,7 @@ public sealed class NewWorkspaceTests : IDisposable
         });
 
         // Clearing takes back what the pick filled in, and nothing else.
-        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Change customer")).Click());
+        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Change solution")).Click());
         cut.WaitForAssertion(() =>
         {
             cut.Find("input[name='WorkspaceName']").GetAttribute("value").Should().BeEmpty();
@@ -665,7 +724,7 @@ public sealed class NewWorkspaceTests : IDisposable
             cut.Find("input[name='ShortName']").GetAttribute("value").Should().Be("CRO"));
 
         cut.Find("input[name='ShortName']").Input("MINE");
-        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Change customer")).Click());
+        await cut.InvokeAsync(() => cut.FindAll("button").First(b => b.TextContent.Contains("Change solution")).Click());
 
         cut.WaitForAssertion(() =>
             cut.Find("input[name='ShortName']").GetAttribute("value").Should().Be("MINE"));

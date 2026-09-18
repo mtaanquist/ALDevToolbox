@@ -50,7 +50,7 @@
             <button type="button" class="btn btn--sm solution-picker__clear" disabled="@Disabled"
                     @onclick="ClearAsync">
                 <Icon Name="search" Width="14" Height="14" />
-                <span>Change customer</span>
+                <span>Change solution</span>
             </button>
         </span>
     }
@@ -114,7 +114,7 @@
     @if (Selected is { } chosen)
     {
         <span class="field__hint">
-            Using @chosen.Name's saved details. Use Change customer to pick someone else.
+            Using @chosen.Name's saved details. Use Change solution to pick a different one.
         </span>
     }
     else if (CreateNew && Value.Trim() is { Length: > 0 } newName)
@@ -170,7 +170,7 @@
     [Parameter] public string? InputName { get; set; }
 
     /// <summary>What the input is called, for the read-only state's accessible name.</summary>
-    [Parameter] public string Label { get; set; } = "Customer";
+    [Parameter] public string Label { get; set; } = "Solution";
 
     /// <summary>The line under the control while the name is still free text.</summary>
     [Parameter] public string? Hint { get; set; }

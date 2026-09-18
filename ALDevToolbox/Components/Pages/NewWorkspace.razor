@@ -136,10 +136,10 @@
                 </section>
 
                 <section class="form-sec">
-                    <div class="form-sec__head"><span class="section-label">Customer</span></div>
+                    <div class="form-sec__head"><span class="section-label">Solution</span></div>
                     <div class="form-grid">
                         <div class="field">
-                            <label class="field__label" for="ws-name">Customer <span class="req">*</span></label>
+                            <label class="field__label" for="ws-name">Solution <span class="req">*</span></label>
                             @* The customer is typed once. A customer already on
                                file here fills in what it knows; a new one is
                                offered as a new solution. See
@@ -152,9 +152,9 @@
                                happens (issue #772). *@
                             @if (_solutionsEnabled)
                             {
-                                <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Customer"
+                                <SolutionPicker InputId="ws-name" InputName="WorkspaceName" Label="Solution"
                                                 Placeholder="e.g. CRONUS A/S" MaxLength="100" Required="true"
-                                                Hint="The customer's name. Pick their solution if it exists, or type a new name to create one."
+                                                Hint="The customer's solution. Pick it if it exists, or type a new name to create one."
                                                 Value="@_workspaceName" ValueChanged="OnCustomerNameChangedAsync"
                                                 Selected="_solution" SelectedChanged="OnSolutionSelectedAsync"
                                                 CreateNew="_createSolution" CreateNewChanged="OnCreateSolutionChanged" />
@@ -168,8 +168,8 @@
                                        placeholder="e.g. CRONUS A/S" required maxlength="100"
                                        value="@_workspaceName" @oninput="OnCustomerNameInput" />
                                 <span class="field__hint">
-                                    The customer's name as it should appear. Folder and file names are
-                                    derived from it.
+                                    The customer's solution, named as it should appear. Folder and file
+                                    names are derived from it.
                                 </span>
                             }
                             <FieldError Field="WorkspaceName" Errors="_errors" />
@@ -189,7 +189,7 @@
                             else
                             {
                                 <span class="field__hint">
-                                    Optional. A short form of the customer's name for extension names, for
+                                    Optional. A short form of the solution's name for extension names, for
                                     example <code class="code">CRO Core</code>. Also the default for the
                                     extension prefix. Leave blank to use the full name.
                                 </span>
