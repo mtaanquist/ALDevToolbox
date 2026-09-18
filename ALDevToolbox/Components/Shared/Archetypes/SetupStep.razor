@@ -1,0 +1,41 @@
+@* One step of a <SetupSteps> list: number (or a tick once done), title, text, body. *@
+
+<div class="step@(State switch { SetupStepState.Done => " is-done", SetupStepState.Current => " step--current", _ => "" })">
+    <span class="step__n">
+        @if (State == SetupStepState.Done)
+        {
+            <Icon Name="check" Width="15" Height="15" />
+        }
+        else
+        {
+            @Number
+        }
+    </span>
+    <span class="step__head">
+        <span class="step__title">@Title</span>
+        @HeadExtra
+    </span>
+    @if (Text is not null)
+    {
+        <span class="step__text">@Text</span>
+    }
+    @if (ChildContent is not null)
+    {
+        <span class="step__body">@ChildContent</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int Number { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public SetupStepState State { get; set; } = SetupStepState.Todo;
+
+    /// <summary>Beside the title: a badge summarising what a finished step settled on.</summary>
+    [Parameter] public RenderFragment? HeadExtra { get; set; }
+
+    /// <summary>What to do, in prose. Keeps the reading measure even in a wide list.</summary>
+    [Parameter] public RenderFragment? Text { get; set; }
+
+    /// <summary>The step's controls: buttons, fields, copyable blocks.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

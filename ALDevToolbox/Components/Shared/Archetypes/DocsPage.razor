@@ -1,0 +1,52 @@
+@*
+    Archetype 12, docs / long-form: page head, a reading column and an "On this page"
+    list beside it. Mirrors .docs in .design/handoff/PageDocs.dc.html (rules in
+    pages-content.css).
+
+    The table of contents is data, so its anchors are written next to nothing else and
+    a page cannot ship a list that has drifted from a hand-written <nav>. The headings
+    themselves stay in the page's prose, with matching ids.
+*@
+
+<div class="page">
+    <PageHead Title="@Title" Subtitle="@Subtitle" />
+
+    <div class="docs">
+        <div class="docs__main">
+            @if (Prose)
+            {
+                <article class="prose">@ChildContent</article>
+            }
+            else
+            {
+                @ChildContent
+            }
+        </div>
+
+        <nav class="docs__toc" aria-label="On this page">
+            <span class="docs__toc-h">On this page</span>
+            <div class="docs__toc-list">
+                @foreach (var entry in Toc)
+                {
+                    <a class="toc-link@(entry.Sub ? " toc-link--sub" : "")" href="#@entry.Anchor">@entry.Label</a>
+                }
+            </div>
+        </nav>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<DocsTocEntry> Toc { get; set; } = Array.Empty<DocsTocEntry>();
+
+    /// <summary>
+    /// Wraps the content in one <c>article.prose</c>. Turn off for a page that interleaves
+    /// prose with full-width blocks that must not pick up prose styling, and supply the
+    /// articles yourself.
+    /// </summary>
+    [Parameter] public bool Prose { get; set; } = true;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
