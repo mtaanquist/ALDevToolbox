@@ -1451,13 +1451,56 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_date_that_lands_on_the_day_after_the_one_we_asked_for_still_counts_as_moved()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        // The customer's update window opens at 02:00 in Copenhagen, which is 01:00 UTC on
+        // the following day. The date moved, so the action is done - checking that it
+        // landed on the exact day we sent would fail a write that worked.
+        var landed = new DateTimeOffset(2027, 3, 1, 1, 0, 0, TimeSpan.Zero);
+        var admin = AdminWithUpdates(Update(ScheduledDate, MidnightBound), Update(landed, MidnightBound));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        admin.SelectedDateTime.Should().Be(LastAllowedDay);
+
+        await using var verify = _db.NewContext();
+        (await verify.AuditLog.AsNoTracking().CountAsync()).Should().Be(1);
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.BcNextUpdateDate.Should().Be(landed.UtcDateTime);
+    }
+
+    [Fact]
+    public async Task Pushing_the_date_refuses_an_update_already_past_the_last_allowed_day()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        // Where the window put it a day beyond the bound: as late as it goes, and
+        // re-sending would fail loudly on every sweep.
+        var pastTheBound = new DateTimeOffset(2027, 3, 1, 1, 0, 0, TimeSpan.Zero);
+        var admin = new FakeAdminClient { OnEnvironmentUpdates = _ => new[] { Update(pastTheBound, MidnightBound) } };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+            .Should().Be("This update's date is already the latest Microsoft allows.");
+        admin.SelectWrites.Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_date_business_central_did_not_take_fails_the_push_instead_of_reporting_it_done()
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         await SeedUpdateOpsTeamAsync(projectId);
         _db.OrgContext.CurrentUserId = FlagUserId;
-        // The PATCH succeeds and the re-read still shows the old date - what issue #804
-        // saw as a green "Done" entry on an environment that never moved.
+        // The PATCH reports no error and the re-read shows the very same date it showed
+        // before - what issue #804 saw as a green "Done" entry on an environment that
+        // never moved. Unchanged is what fails, whatever day we asked for.
         var admin = AdminWithUpdates(Update(ScheduledDate, Latest), Update(ScheduledDate, Latest));
 
         await using (var ctx = _db.NewContext())
@@ -1472,6 +1515,27 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             "nothing moved on the customer's tenant, so the history must not claim it did");
         var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
         row.BcNextUpdateFetchedAt.Should().NotBeNull("the failed write still refreshed what we know");
+    }
+
+    [Fact]
+    public async Task An_update_that_still_has_no_date_afterwards_fails_the_push_too()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        // Dateless before and dateless after is unchanged just as plainly as an old date
+        // that stayed put, and must not be recorded as a move either.
+        var admin = AdminWithUpdates(Update(null, Latest, selected: false), Update(null, Latest, selected: false));
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+            (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+                .Should().Be("Business Central did not accept the new date. Its schedule still has no date.");
+        }
+
+        await using var verify = _db.NewContext();
+        (await verify.AuditLog.AsNoTracking().CountAsync()).Should().Be(0);
     }
 
     [Fact]

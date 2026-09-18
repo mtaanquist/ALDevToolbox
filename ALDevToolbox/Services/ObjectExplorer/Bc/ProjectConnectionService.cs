@@ -665,10 +665,13 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         {
             throw Validation("Update", "Business Central hasn't given this update a last possible date, so it can't be moved.");
         }
-        // By calendar day in UTC, not by tick: Business Central stores the date in the
-        // environment's own update window, so an update that is already as late as it can
-        // go still reads back a different time of day from the one we would send.
-        if (next.SelectedDateTime?.UtcDateTime.Date == latest.UtcDateTime.Date)
+        // On or after, by calendar day in UTC rather than by tick: Business Central stores
+        // the date at the start of the environment's own update window, so an update that
+        // is already as late as it can go reads back a different time of day from the one
+        // we would send — and a window starting after midnight UTC (02:00 in Copenhagen is
+        // 01:00 UTC) lands it on the following day. Either way there is nowhere left to
+        // move it to, and re-sending would only fail against the bound.
+        if (next.SelectedDateTime?.UtcDateTime.Date >= latest.UtcDateTime.Date)
         {
             throw Validation("Update", "This update's date is already the latest Microsoft allows.");
         }
@@ -733,11 +736,13 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// on it is the customer choosing it.
     /// <para>
     /// With <paramref name="verifyDateMoved"/> the re-read is also the proof that the
-    /// write landed: Business Central answers a date it will not take by returning 200 and
-    /// keeping the old one, and a history entry saying "done" for a date that never moved
-    /// is worse than no entry at all (issue #804). A re-read that <em>fails</em> still only
-    /// costs the freshness — it is a re-read that succeeds with an unchanged date that
-    /// fails the action.
+    /// write landed. Issue #804 saw the move recorded as done while the date stayed exactly
+    /// where it was, so the write is verified rather than trusted, and a history entry
+    /// saying "done" for a date that never moved is worse than no entry at all. The test is
+    /// whether the date <em>changed</em>, not whether it landed where we asked: Business
+    /// Central puts it at the start of the customer's update window, which can be the
+    /// following UTC day. A re-read that <em>fails</em> still only costs the freshness — it
+    /// is a re-read that succeeds with an unchanged date that fails the action.
     /// </para>
     /// </summary>
     private async Task WriteUpdateScheduleAsync(
@@ -784,9 +789,12 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         if (!verifyDateMoved) return;
 
-        var landed = stored?.SelectedDateTime?.UtcDateTime;
-        if (landed?.Date == selectedDateTime.UtcDateTime.Date) return;
+        // Did it move, not did it land where we asked: the stored date is the start of the
+        // customer's update window, so a window opening after midnight UTC legitimately
+        // puts it on the day after the one we sent. Two nulls count as unchanged.
+        if (stored?.SelectedDateTime != update.SelectedDateTime) return;
 
+        var landed = stored?.SelectedDateTime?.UtcDateTime;
         _logger.LogWarning(
             "Business Central kept {Environment} on {StoredDateTime} after being asked for {SelectedDateTime}, so the move was not recorded as done.",
             env.Name, landed, selectedDateTime);

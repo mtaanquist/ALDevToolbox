@@ -7,8 +7,8 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// <c>scheduleDetails.latestSelectableDateTime</c> is an <em>exclusive</em> upper bound:
 /// <c>2027-03-01T00:00:00Z</c> means "before 1 March", which is why the admin center's own
 /// picker stops at 28 February. Sending that value straight back as
-/// <c>selectedDateTime</c> asks for a moment Business Central will not take, and it
-/// answers by leaving the date where it was (issue #804). So a bound that lands on
+/// <c>selectedDateTime</c> asks for a moment outside the bound, and in issue #804 the date
+/// simply stayed where it was while the move was recorded as done. So a bound that lands on
 /// midnight UTC is a day boundary and the last date we may actually ask for is the
 /// previous day; a bound that carries a time of day is already a real moment inside the
 /// allowed range and is used as it stands. See <c>.design/environment-updates.md</c>.

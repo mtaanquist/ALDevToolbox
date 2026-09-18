@@ -216,13 +216,15 @@ public sealed record UpgradeFleetRow(
 
     /// <summary>
     /// True when the update's date can still be moved further out — there is an update,
-    /// Business Central gave it a last possible date, and it isn't already on that day.
-    /// The page shows the same answer the service enforces, so a preview and the run
-    /// agree, and both compare calendar days in UTC because the stored date sits inside
-    /// the customer's update window rather than on the bound itself.
+    /// Business Central gave it a last possible date, and the date is still short of that
+    /// day. The page shows the same answer the service enforces, so a preview and the run
+    /// agree, and both compare calendar days in UTC because the stored date is the start
+    /// of the customer's update window rather than the bound itself — a window opening
+    /// after midnight UTC puts it on the day after, which is still nowhere left to move.
     /// </summary>
     public bool CanPushDate =>
-        HasUpdate && EffectiveLatestDate is { } latest && NextUpdateDate?.Date != latest.Date;
+        HasUpdate && EffectiveLatestDate is { } latest
+        && (NextUpdateDate is not { } scheduled || scheduled.Date < latest.Date);
 }
 
 /// <summary>
