@@ -142,6 +142,8 @@ jobs:
 
             The probe confirms a version **exists** (it answers 401 rather than 400 unauthenticated); it does not confirm the response shape is unchanged. `BcAdminClient.ParseEnvironments` reads `value[].name` and `value[].type`, so a shape change would surface as an empty environment list rather than an error — worth an actual look, not just a green build.
 
+            A bump on its own adds nothing: new endpoints only help once something calls them. Read the [Admin Center API release notes](https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/administration/administration-center-api) for every version between the two above and note anything Solutions, Releases or Upgrades could use (the App Management surface arrived this way in v2.29). Open a separate issue per feature worth wiring in, so the bump itself stays a one-line change.
+
             ## No rush, but don't ignore it
 
             Old versions keep serving for years, so nothing is breaking. The cost of drifting is losing access to newer endpoints without noticing — which is how we ended up below the `v2.24` that `authorizedAadApps/manageableTenants` needs.
@@ -160,7 +162,10 @@ jobs:
             echo "Issue #$existing is already open; leaving it alone."
             exit 0
           fi
-          gh issue create --title "$TITLE" --body "$BODY"
+          # The three tools that call this API, plus tech-debt: a bump is housekeeping,
+          # and the follow-up features get issues of their own.
+          gh issue create --title "$TITLE" --body "$BODY" \
+            --label tool:solutions --label tool:releases --label tool:upgrades --label tech-debt
 
       - name: Report when current
         if: steps.probe.outputs.behind != 'true'
