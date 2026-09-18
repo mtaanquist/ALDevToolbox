@@ -50,43 +50,35 @@
 *@
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Model Context Protocol</h1>
-            <p class="page-head__sub">
-                Connect an AI assistant so it can generate workspaces, search Business
-                Central objects and read your recipes on your behalf.
-            </p>
-        </div>
-        <div class="page-head__actions">
+    <PageHead Title="Model Context Protocol"
+              Subtitle="Connect an AI assistant so it can generate workspaces, search Business Central objects and read your recipes on your behalf.">
+        <Actions>
             <a class="btn" href="/docs/mcp">
                 <Icon Name="book-open" Width="16" Height="16" />
                 <span>Full setup guide</span>
             </a>
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @* No loading branch: OnInitialized reads a singleton and a header, both
        synchronously, so it has already run before the first render. The old
        one could not be reached. *@
     @if (!_mcpEnabled)
     {
-        <div class="empty-state">
-            <span class="empty-state__icon"><Icon Name="plug" Width="21" Height="21" /></span>
-            <span class="empty-state__title">AI assistants are switched off here</span>
-            <span class="empty-state__text">
+        <EmptyState Icon="plug" Title="AI assistants are switched off here">
+            <Text>
                 Nobody can connect an assistant to this site until an administrator
                 switches assistants back on. Ask yours - there is nothing to set up on your
                 side in the meantime.
-            </span>
-        </div>
+            </Text>
+        </EmptyState>
     }
     else
     {
         @* steps--wide (divergence 72): this list's bodies are a two-up card
            row, a token field and JSON config, not prose. The reading measure
            stays on .step__text, where it belongs. *@
-        <div class="steps steps--wide">
+        <SetupSteps Wide="true">
             @* Step 1 is a fork, not a stage. The two cards used to point at the
                same URL and only the token half continued into steps 2 and 3, so
                a Claude-web reader picked "permission screen", landed on the same
@@ -94,29 +86,18 @@
                desktop clients and an instruction to paste a token they were
                never given. The connector card is terminal now: it carries the
                one thing that path needs, and says so. *@
-            <div class="step @(_alreadySetUp ? "is-done" : "step--current")">
-                <span class="step__n">
-                    @if (_alreadySetUp)
-                    {
-                        <Icon Name="check" Width="15" Height="15" />
-                    }
-                    else
-                    {
-                        <text>1</text>
-                    }
-                </span>
-                <span class="step__head">
-                    <span class="step__title">Choose how your assistant signs in</span>
+            <SetupStep Number="1" Title="Choose how your assistant signs in" State="@(_alreadySetUp ? SetupStepState.Done : SetupStepState.Current)">
+                <HeadExtra>
                     @if (_alreadySetUp)
                     {
                         <span class="badge">@SetUpSummary</span>
                     }
-                </span>
-                <span class="step__text">
+                </HeadExtra>
+                <Text>
                     Either way the assistant ends up acting as you, with your organisation
                     and your role. Which one you need depends on the assistant.
-                </span>
-                <span class="step__body">
+                </Text>
+                <ChildContent>
                     <div class="mcp-choice">
                         <div class="card">
                             <div class="card__head">
@@ -154,10 +135,7 @@
                                 </p>
                                 <div class="code-block code-block--inlinebar">
                                     <pre id="mcp-server-url">@_serverUrl</pre>
-                                    <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-server-url">
-                                        <Icon Name="copy" Width="14" Height="14" />
-                                        <span data-copy-label>Copy</span>
-                                    </button>
+                                    <CopyButton Target="#mcp-server-url" />
                                 </div>
                                 <p><strong>That is the whole setup - steps 2 and 3 are not yours.</strong></p>
                             </div>
@@ -169,17 +147,15 @@
                             </div>
                         </div>
                     </div>
-                </span>
-            </div>
+                </ChildContent>
+            </SetupStep>
 
-            <div class="step">
-                <span class="step__n">2</span>
-                <span class="step__head"><span class="step__title">Paste the settings into your assistant</span></span>
-                <span class="step__text">
+            <SetupStep Number="2" Title="Paste the settings into your assistant">
+                <Text>
                     Only if you chose a token. Pick your assistant, paste your token in
                     below, and the snippet fills itself in.
-                </span>
-                <span class="step__body">
+                </Text>
+                <ChildContent>
                     <span class="pill-tabs" role="tablist" aria-label="Assistant">
                         @foreach (var tab in Tabs)
                         {
@@ -233,17 +209,15 @@
                         </span>
                     }
                     <span class="step__text">@CurrentHint</span>
-                </span>
-            </div>
+                </ChildContent>
+            </SetupStep>
 
-            <div class="step">
-                <span class="step__n">3</span>
-                <span class="step__head"><span class="step__title">Try it</span></span>
-                <span class="step__text">
+            <SetupStep Number="3" Title="Try it">
+                <Text>
                     Reload your assistant, then ask it something only the toolbox can
                     answer. If it comes back with a real answer, you're connected.
-                </span>
-                <span class="step__body">
+                </Text>
+                <ChildContent>
                     <ul class="mcp-prompts">
                         <li>"Make a new workspace for CRONUS using the default template."</li>
                         <li>"Which procedures touch the No. field on Sales Line in BC 28.1?"</li>
@@ -258,9 +232,9 @@
                         connection is fine - your organisation just hasn't imported that
                         content yet.
                     </span>
-                </span>
-            </div>
-        </div>
+                </ChildContent>
+            </SetupStep>
+        </SetupSteps>
 
         <details class="mcp-tools">
             <summary>
