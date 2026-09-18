@@ -94,16 +94,23 @@
     else if (_teams.Count == 0)
     {
         <div class="card">
+            @* Present tense would be a lie: being on a team grants nothing
+               until the visibility slice lands, and security copy that
+               overstates what is enforced is the worst kind to get wrong.
+               Says what a team *is* today, and marks the rest as coming. *@
             <EmptyState Icon="users" Title="No teams yet">
                 <Text>
                     Teams group the colleagues who work on the same customer. Soon you'll be able to
                     use a team to limit who can see and change that customer's solution.
                 </Text>
                 <Action>
-                    <button type="button" class="btn btn--primary" @onclick="StartCreate">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>Create team</span>
-                    </button>
+                    @if (!_creating)
+                    {
+                        <button type="button" class="btn btn--primary" @onclick="StartCreate">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>Create team</span>
+                        </button>
+                    }
                 </Action>
             </EmptyState>
         </div>

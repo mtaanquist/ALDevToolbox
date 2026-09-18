@@ -113,6 +113,22 @@
         <div class="card">
             <EmptyState Icon="languages" Title="No translations learned yet">
                 <Text>Memory fills up as you translate and import language files.</Text>
+                <Action>
+                    <span class="u-row">
+                        <a class="btn" href="/admin/translation-memory/import">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Import XLIFF</span>
+                        </a>
+                        @if (_canRefreshFromRepositories)
+                        {
+                            <button type="button" class="btn" disabled="@_refreshing"
+                                    @onclick="RefreshFromRepositoriesAsync">
+                                <Icon Name="refresh-cw" Width="14" Height="14" />
+                                <span>Read translations from repositories</span>
+                            </button>
+                        }
+                    </span>
+                </Action>
             </EmptyState>
         </div>
     </Empty>
