@@ -17,6 +17,22 @@
     white-space: nowrap;
 }
 
+/* The search box and the button that submits it, side by side. `filter-bar__search`
+   (pages.css) only sizes a flex *item*; it doesn't lay out what's inside one, and a
+   form is a block - so with that class on the form the box and its button stacked,
+   and the type filter and checkbox beside a two-line block read as a jumble (#805).
+   The sizing class now sits on the box itself, the way the Environments page has it,
+   and the form is the row holding the box and the button. Wider than the 380px the
+   box alone gets, because the button is in the row too. */
+.upg-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-width: 260px;
+    max-width: 480px;
+}
+
 .upg-check {
     display: inline-flex;
     align-items: center;
@@ -301,13 +317,22 @@
     color: var(--ink-2);
 }
 
-/* The per-row Activity toggle. Quiet: it is a way in, not an action. On its own
-   line under the type pill, so a Production row and a Sandbox row line up
-   instead of the button landing wherever the pill's width leaves room. */
+/* The per-row Activity toggle. Quiet: it is a way in, not an action. It used to
+   sit under the type pill in the Environment cell, which put an action in a data
+   column and made every row three lines tall (#805); it now heads the row's own
+   History column, where the toggles line up down the table. */
 .upg-activity-btn {
     display: flex;
     width: fit-content;
-    margin-top: var(--space-1);
+}
+
+/* The History column: the row's one way into its past, and nothing else. Last,
+   after the data, so the eye reads the environment and its dates first; the
+   booking that used to sit here reads beside the date it competes with instead.
+   The floor keeps the label on one line. */
+.upg-history {
+    min-width: 8.5rem;
+    vertical-align: top;
 }
 
 /* Taking back a booking, on the result that announced it. */
@@ -330,7 +355,9 @@
 /* The booking marker on a row. It is the only trace of a booked update that
    survives a reload, so it carries the whole fact and both ways to act on it:
    the sentence opens the history, and a lone booking can be called off from
-   here without opening anything. */
+   here without opening anything. It reads at the foot of the next-update cell,
+   under the date Business Central would otherwise run on - the two are answers
+   to one question and belong in one column. */
 .upg-booked {
     display: flex;
     align-items: center;
@@ -387,13 +414,13 @@
     color: var(--warning-text);
 }
 
-/* The environment cell carries more than a name: the type, a booking with its
-   time, zone and owner, and the way into the history. Without a floor the
-   booking wrapped to four lines and the column read as a paragraph; much above
-   this and the eight columns stop fitting the page, which costs the Refresh
-   button and the data-age column their place on screen. */
+/* The environment cell carries a name and its type, and nothing else since the
+   booking and the history toggle moved to their own column (#805). The floor is
+   what stops a two-word environment name wrapping around its pill; it is lower
+   than it was because the cell no longer has to hold a booking sentence, which
+   buys the width the History column needs. */
 .upg-env {
-    min-width: 12.5rem;
+    min-width: 9rem;
 }
 
 /* A note's text shares the line with its glyph rather than being pushed below
@@ -414,7 +441,7 @@
     margin-top: 2px;
 }
 
-/* Eight columns is a lot for one table, and the headings here are longer than
+/* Nine columns is a lot for one table, and the headings here are longer than
    most of the values under them ("Latest Microsoft allows" over a date). Letting
    the headings wrap keeps the table narrower than the words in it. */
 .data-table th {
@@ -422,9 +449,61 @@
 }
 
 /* The page's container clips what overflows it rather than scrolling (#574),
-   so the fleet table - eight columns of real customer names and dates - gets a
+   so the fleet table - nine columns of real customer names and dates - gets a
    box of its own to scroll in instead of running off the right of the window. */
 .upg-scroll {
     min-width: 0;
     overflow-x: auto;
+    /* Named as a size container so the open history below can be asked to be as
+       wide as this box rather than as wide as the table inside it. */
+    container-type: inline-size;
+}
+
+/* What a row cannot be read without stays put while the rest scrolls under it.
+   Nine columns do not fit a laptop window, and the first thing to leave on the
+   left was the solution name - which is the only thing saying whose environment
+   the row in front of you is. The picker travels with it so the name is never
+   stranded from the box that selects it. The offset is the picker column's own
+   width, and the border is what tells the reader the columns beyond it moved. */
+.upg-scroll .upg__pick,
+.upg-scroll .upg-customer {
+    position: sticky;
+    z-index: 1;
+    background: var(--surface);
+}
+
+.upg-scroll .upg__pick { left: 0; }
+
+.upg-scroll .upg-customer {
+    left: 2.25rem;
+    border-right: 1px solid var(--border);
+}
+
+/* The heading keeps its own tone while it sticks - the shared rule above would
+   otherwise paint it as a body cell - and outranks the body cells it passes. */
+.upg-scroll thead .upg__pick,
+.upg-scroll thead .upg-customer {
+    background: var(--surface-sunken);
+    z-index: 2;
+}
+
+/* An open history spans every column, so scrolling right would carry its heading
+   off the left of the box and leave the panel unreadable while the reader is
+   looking at the columns that made them open it. Pinned to the box's left edge,
+   it stays where it was read from. Pinning alone is not enough: a sticky box can
+   only slide as far as its own containing block allows, and at the table's full
+   width there is nowhere to slide - so it is sized to the scrolling box instead,
+   and capped at the cell's width for the case where nothing scrolls at all. */
+.upg-feed {
+    position: sticky;
+    left: 0;
+    width: 100cqw;
+    max-width: 100%;
+}
+
+/* The panel brings its own padding, and the cell's would otherwise shorten the
+   distance the pinned panel can travel by exactly that much - which showed up as
+   the first letter of the heading clipped at the left edge. */
+.upg-scroll tr.is-subrow td {
+    padding: 0;
 }

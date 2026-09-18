@@ -487,21 +487,46 @@
                                             committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
                                             @if (_createdRepo.StandardsFileCount > 0)
                                             {
+                                                @* Worded to match what the card
+                                                   promised before the button was
+                                                   pressed. A bare count of
+                                                   "standard files" names
+                                                   something this page never
+                                                   defined. *@
                                                 <text>
-                                                    Your organisation's
-                                                    @_createdRepo.StandardsFileCount
-                                                    @(_createdRepo.StandardsFileCount == 1 ? "standard file was" : "standard files were")
-                                                    added too.
+                                                    Your organisation's standard files and branch rules
+                                                    were added too.
                                                 </text>
                                             }
                                         </span>
-                                        <span>
+                                        @* The two things a consultant does next,
+                                           side by side. Both stay outline
+                                           buttons - Download ZIP is still the
+                                           page's one primary action (#812). *@
+                                        <span class="ws-repo-actions">
                                             <a class="btn" href="@_createdRepo.Repository.HtmlUrl"
                                                target="_blank" rel="noopener">
                                                 <Icon Name="external-link" Width="15" Height="15" />
                                                 <span>Open it on GitHub</span>
+                                                <span class="u-sr">(opens in a new tab)</span>
+                                            </a>
+                                            @* VS Code's own URL handler: it opens
+                                               VS Code and starts its clone flow.
+                                               Nothing happens on a machine without
+                                               VS Code, which is why the command
+                                               below stays on the card. *@
+                                            <a class="btn" href="@VsCodeCloneUrl(_createdRepo.Repository.CloneUrl)">
+                                                <Icon Name="code" Width="15" Height="15" />
+                                                <span>Clone in VS Code</span>
                                             </a>
                                         </span>
+                                        @* A click that opens nothing is the worst
+                                           outcome here, so say what to expect and
+                                           point at the way out of it. *@
+                                        <small class="field__hint">
+                                            Your browser will ask to open VS Code. If nothing happens,
+                                            use the command below.
+                                        </small>
                                         @* Where the customer now lives, so the
                                            consultant can go straight on to
                                            builds and pipelines (#759). *@
@@ -512,9 +537,21 @@
                                                 <a href="@($"/solutions/{solutionId}")">@_createdRepo.SolutionName</a>.
                                             </span>
                                         }
-                                        <span>
-                                            Clone it with
-                                            <code class="code">git clone @_createdRepo.Repository.CloneUrl</code>
+                                        @* The fallback for a machine without VS
+                                           Code, and for anyone who would rather
+                                           type it. Copy button wired the same
+                                           way the docs pages wire theirs - one
+                                           delegated listener in
+                                           copy-to-clipboard.js, loaded in the
+                                           shell, so this needs no interop. *@
+                                        <span class="ws-repo-clone">
+                                            <span class="ws-repo-clone__label">Or clone it yourself:</span>
+                                            <code class="code" id="ws-repo-clone-command">git clone @_createdRepo.Repository.CloneUrl</code>
+                                            <button type="button" class="btn btn--sm copy-btn"
+                                                    data-copy-target="#ws-repo-clone-command">
+                                                <Icon Name="copy" Width="14" Height="14" />
+                                                <span data-copy-label>Copy</span>
+                                            </button>
                                         </span>
                                     </span>
                                 </p>
@@ -652,10 +689,22 @@
                                    away, but this is the button that was pressed,
                                    so this is where the refusal has to be. *@
                                 <FieldError Field="SolutionId" Errors="_repoErrors" />
-                                <button type="button" class="btn" disabled="@_repoBusy"
+                                @* Same spinner-and-busy-label treatment the
+                                   Download ZIP button gets. Creating the
+                                   repository runs for seconds, and "disabled"
+                                   on its own reads as "broken" rather than
+                                   "working" (#812). The class is driven from
+                                   Blazor here rather than by generate.js: this
+                                   button posts nothing, so there is no form
+                                   submission for that script to hang off. *@
+                                <button type="button" class="btn ws-repo__create @(_repoBusy ? "btn--loading" : null)"
+                                        disabled="@_repoBusy" aria-busy="@(_repoBusy ? "true" : null)"
                                         @onclick="CreateRepositoryAsync">
-                                    <Icon Name="folder-git-2" Width="15" Height="15" />
-                                    <span>@(_repoBusy ? "Creating repository..." : "Create repository")</span>
+                                    <span class="btn__spinner" aria-hidden="true"></span>
+                                    <span class="btn__label">
+                                        <Icon Name="folder-git-2" Width="15" Height="15" /> Create repository
+                                    </span>
+                                    <span class="btn__label-busy">Creating repository...</span>
                                 </button>
                             }
                         </div>
@@ -1036,15 +1085,22 @@
     /// </summary>
     private async Task CreateRepositoryAsync()
     {
+        // Every one of these has to be set before the first await. Blazor
+        // renders an event handler's synchronous prefix when it first yields
+        // and again when the whole handler finishes - not at each await in
+        // between. Setting the flag after validating the plan meant the render
+        // that happens at that yield still saw an idle button, and the create
+        // itself (one call per generated file) ran with nothing on screen to
+        // say so, which is what invited the second click (#812).
         _repoErrors = new();
         _createdRepo = null;
-
-        var plan = await BuildValidPlanAsync();
-        if (plan is null) return;
-
         _repoBusy = true;
+
         try
         {
+            var plan = await BuildValidPlanAsync();
+            if (plan is null) return;
+
             _createdRepo = await GitHubCreate.CreateAsync(
                 plan, RepositoryName, isPrivate: _repoVisibility != "public", solutionId: _solutionId);
 
@@ -1102,6 +1158,16 @@
             _repoBusy = false;
         }
     }
+
+    /// <summary>
+    /// VS Code's documented URL handler for cloning: it opens VS Code, asks
+    /// where to put the repository, and clones it there. The clone URL is a
+    /// query-string value, so it is escaped rather than pasted in - its own
+    /// <c>://</c> and slashes would otherwise be read as part of the handler
+    /// path.
+    /// </summary>
+    private static string VsCodeCloneUrl(string cloneUrl) =>
+        $"vscode://vscode.git/clone?url={Uri.EscapeDataString(cloneUrl)}";
 
     /// <summary>
     /// The name the user typed. Once they have touched the field the workspace

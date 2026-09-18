@@ -292,7 +292,7 @@
                                               InputId="ext-repo"
                                               Selected="_repository"
                                               SelectedChanged="OnRepositoryChangedAsync"
-                                              Disabled="_repoBusy"
+                                              Disabled="_repoBusy || _hydrating"
                                               Hint="Picking one fills this form in from the solution's saved settings, replacing anything already typed here." />
                             @if (_hydrating)
                             {
@@ -363,14 +363,24 @@
                                     <code class="code">@_repository.DefaultBranch</code> changes until
                                     someone merges it.
                                 </p>
-                                <button type="button" class="btn" disabled="@_repoBusy"
+                                @* Spinner and busy label, as on Download ZIP:
+                                   opening the pull request takes seconds and a
+                                   merely disabled button reads as broken. *@
+                                @* Disabled while the picked repository's settings
+                                   are still being read - the plan would be built
+                                   from half-filled fields - but only _repoBusy
+                                   gets the spinner and the label, because only
+                                   _repoBusy is a pull request being opened. *@
+                                <button type="button" class="btn ext-repo__go @(_repoBusy ? "btn--loading" : null)"
+                                        disabled="@(_repoBusy || _hydrating)"
+                                        aria-busy="@(_repoBusy ? "true" : null)"
                                         @onclick="AddToRepositoryAsync">
-                                    <Icon Name="git-branch" Width="15" Height="15" />
-                                    <span>
-                                        @(_repoBusy
-                                            ? "Opening pull request..."
-                                            : _delivery is null ? "Add to repository" : "Open another pull request")
+                                    <span class="btn__spinner" aria-hidden="true"></span>
+                                    <span class="btn__label">
+                                        <Icon Name="git-branch" Width="15" Height="15" />
+                                        @(_delivery is null ? "Add to repository" : "Open another pull request")
                                     </span>
+                                    <span class="btn__label-busy">Opening pull request...</span>
                                 </button>
                             </div>
                         }
@@ -565,6 +575,13 @@
     private GitHubRepositorySummary? _repository;
     private string _repoMessage = string.Empty;
     private Dictionary<string, string> _repoErrors = new();
+
+    /// <summary>
+    /// True only while a pull request is being opened - not while a picked
+    /// repository's settings are being read, which is <see cref="_hydrating"/>.
+    /// The two disable the same controls, but only this one is allowed to say
+    /// "Opening pull request...".
+    /// </summary>
     private bool _repoBusy;
     private GitHubExtensionDelivery? _delivery;
 
@@ -771,8 +788,10 @@
         _repoErrors = new();
         if (repository is null) return;
 
+        // Only _hydrating: this reads the repository's settings, it does not
+        // open a pull request, and _repoBusy is what puts "Opening pull
+        // request..." on the button below.
         _hydrating = true;
-        _repoBusy = true;
         try
         {
             var config = await GitHubRepos.TryReadWorkspaceConfigAsync(repository);
@@ -814,7 +833,6 @@
         finally
         {
             _hydrating = false;
-            _repoBusy = false;
         }
     }
 
@@ -842,27 +860,33 @@
 
         _repoErrors = new();
         _errorAction = "added to the repository";
-        var plan = await BuildValidPlanAsync();
-        if (plan is null)
-        {
-            // The button lives in the aside; the form's own error banner is a
-            // column away and often off-screen. Say what is wrong here, name the
-            // first thing to fix, and take the user to it - a button that looks
-            // like it did nothing is worse than one that refuses out loud.
-            _repoErrors = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["GitHubRepository"] = FirstThingToFix(),
-            };
-            if (FirstErrorFieldId() is { } fieldId)
-            {
-                await JS.InvokeVoidAsync("aldtGenerate.focusField", fieldId);
-            }
-            return;
-        }
-
+        // Before the first await, or the render Blazor does when this handler
+        // first yields still shows an idle button and the pull request opens
+        // with nothing on screen to say it is happening - the same ordering bug
+        // the Create repository button had (#812). The plan build moved inside
+        // the try so the early refusal below still clears the flag.
         _repoBusy = true;
+
         try
         {
+            var plan = await BuildValidPlanAsync();
+            if (plan is null)
+            {
+                // The button lives in the aside; the form's own error banner is a
+                // column away and often off-screen. Say what is wrong here, name the
+                // first thing to fix, and take the user to it - a button that looks
+                // like it did nothing is worse than one that refuses out loud.
+                _repoErrors = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["GitHubRepository"] = FirstThingToFix(),
+                };
+                if (FirstErrorFieldId() is { } fieldId)
+                {
+                    await JS.InvokeVoidAsync("aldtGenerate.focusField", fieldId);
+                }
+                return;
+            }
+
             _delivery = await GitHubDelivery.AddExtensionAsync(plan, BuildSiblingContext(), _repository.FullName);
             _repoMessage = string.Empty;
         }
