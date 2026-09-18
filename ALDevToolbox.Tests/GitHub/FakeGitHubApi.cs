@@ -275,7 +275,35 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     /// <summary>The <c>GET /repos/{owner}/{repo}/releases</c> body.</summary>
     public static string ReleasesJson(params string[] releases) => "[" + string.Join(',', releases) + "]";
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    /// <summary>
+    /// Holds every request to <paramref name="path"/> until the returned source
+    /// is completed - so a test can look at the page <em>while</em> a call is in
+    /// flight, which is the only way to see a busy state at all. The route's own
+    /// reply is used once the gate opens.
+    /// </summary>
+    public TaskCompletionSource PauseUntilReleased(HttpMethod method, string path)
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _gates.Add((method.Method, Normalise(path), gate.Task));
+        return gate;
+    }
+
+    private readonly List<(string Method, string Path, Task Gate)> _gates = new();
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var gate = _gates.FirstOrDefault(g => g.Method == request.Method.Method
+            && request.RequestUri!.AbsolutePath.StartsWith(g.Path, StringComparison.Ordinal));
+        if (gate.Gate is not null)
+        {
+            await gate.Gate.WaitAsync(cancellationToken);
+        }
+
+        return await Dispatch(request, cancellationToken);
+    }
+
+    private Task<HttpResponseMessage> Dispatch(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var uri = request.RequestUri!.ToString();
         Calls.Add($"{request.Method.Method} {uri}");
