@@ -132,7 +132,10 @@ The MCP tool mirrors this: `extensionPrefix` is ignored under `Hidden` and
 
 `ProjectPlan.WorkspaceName` keeps its C# name (the spine rule from `CLAUDE.md`:
 rename what a person sees, not the identifiers) but now means *the customer
-name as typed*. The form labels it **Customer**. The plan gains `ShortName`.
+name as typed*. The form labels it **Solution**, in the section headed
+**Solution** - it is the customer's solution that is being named, and Solution
+is what the rest of the app calls that record (issue #813). The plan gains
+`ShortName`.
 
 ```csharp
 record ProjectPlan(
@@ -191,7 +194,7 @@ the folder.
 
 ## The Solution picker
 
-The **Customer** field on New Workspace is a combobox over the Solutions the
+The **Solution** field on New Workspace is a combobox over the Solutions the
 user can see (`ProjectAccess`, the same rule `list_solutions` applies), searched
 as the user types, with a final row **Create "Jørgensen Møbler" as a new
 solution** when the typed text matches no existing name. It is a shared
