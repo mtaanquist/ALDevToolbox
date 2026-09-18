@@ -1,68 +1,11 @@
-/* Upgrades page. Everything here is either the selection column (which no other
-   table in the app has) or a small note beside a value; the table, pills,
-   buttons and empty states come from the design system unchanged. */
+/* Upgrades page. The command bar, the table, its selection column and the empty
+   states come from the design system unchanged; what is here is the scrolling box
+   the table sits in and the small notes a row carries beside its values. */
 
-/* The checkbox column: narrow, centred, and the same width in the loading
-   skeleton as in the real table so the header doesn't jump when data lands. */
-.upg__pick {
-    width: 2.25rem;
-    text-align: center;
-}
-
-/* A customer name and a "checked 8 minutes ago" both read as one thing and both
-   wrap into two lines at this table's width, which makes the rows uneven for no
-   gain. */
-.upg-customer,
+/* "8 minutes ago" reads as one thing, and wrapping it makes the rows uneven for
+   no gain. */
 .upg-checked {
     white-space: nowrap;
-}
-
-/* The search box and the button that submits it, side by side. `filter-bar__search`
-   (pages.css) only sizes a flex *item*; it doesn't lay out what's inside one, and a
-   form is a block - so with that class on the form the box and its button stacked,
-   and the type filter and checkbox beside a two-line block read as a jumble (#805).
-   The sizing class now sits on the box itself, the way the Environments page has it,
-   and the form is the row holding the box and the button. Wider than the 380px the
-   box alone gets, because the button is in the row too. */
-.upg-search {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 1 1 auto;
-    min-width: 260px;
-    max-width: 480px;
-}
-
-.upg-check {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--ink-2);
-    white-space: nowrap;
-}
-
-/* The selection count and the two actions, directly above the table they act
-   on - close enough that "12 selected" and the button are read together. */
-.upg-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    margin: var(--space-3) 0 var(--space-2);
-}
-
-.upg-bar__count {
-    font-size: var(--text-sm);
-    color: var(--ink-3);
-}
-
-.upg-bar__acts {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-left: auto;
-    flex-wrap: wrap;
 }
 
 /* What just happened, or what is happening now. Sits between the buttons and
@@ -121,7 +64,7 @@
 /* A row whose customer this person can't act on. Same information, no
    checkbox - dimming it would hide the fact that it exists, which is the one
    thing the row is there to say. */
-.upg-row--locked .upg__pick {
+.upg-row--locked .data-table__col-check {
     color: var(--ink-4);
 }
 
@@ -157,13 +100,6 @@
 .upg-preview__skip .upg-preview__who,
 .upg-preview__skip .upg-preview__what { color: var(--ink-4); }
 
-/* The zone note, said once above the table rather than stamped on every value. */
-.upg-tz {
-    margin: 0 0 var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--ink-4);
-}
-
 /* What the padlock in a row means. Only rendered when a padlock is on screen -
    a hover title was invisible on a touch screen, to the keyboard and to a
    screen reader, which is most of the ways someone meets it. */
@@ -174,15 +110,6 @@
     margin: var(--space-2) 0 0;
     font-size: var(--text-xs);
     color: var(--ink-3);
-}
-
-/* Separates the two acting buttons from the harmless refresh beside them, so
-   "Start the update now" doesn't sit in an undifferentiated row of three. */
-.upg-bar__sep {
-    width: 1px;
-    align-self: stretch;
-    margin: 0 var(--space-1);
-    background: var(--border);
 }
 
 /* A run's summary stays reachable after a long batch: the rows below scroll,
@@ -246,11 +173,15 @@
     overflow-y: auto;
 }
 
-/* The next-update cell also carries a row's live result, which is a sentence
-   rather than a value. Without a floor it wraps to five words a line and the
-   link beside it squeezes the text further. */
+/* The next-update cell also carries a booking and a row's live result, which are
+   sentences rather than values. Without a floor they wrap to five words a line. */
 .upg-next {
-    min-width: 17rem;
+    min-width: 13rem;
+}
+
+/* The view select's width, from the sheet. */
+.upg-view {
+    width: 230px;
 }
 
 /* The link drops onto its own line rather than stealing width from the sentence
@@ -315,24 +246,6 @@
 .upg-when__zone {
     font-size: var(--text-sm);
     color: var(--ink-2);
-}
-
-/* The per-row Activity toggle. Quiet: it is a way in, not an action. It used to
-   sit under the type pill in the Environment cell, which put an action in a data
-   column and made every row three lines tall (#805); it now heads the row's own
-   History column, where the toggles line up down the table. */
-.upg-activity-btn {
-    display: flex;
-    width: fit-content;
-}
-
-/* The History column: the row's one way into its past, and nothing else. Last,
-   after the data, so the eye reads the environment and its dates first; the
-   booking that used to sit here reads beside the date it competes with instead.
-   The floor keeps the label on one line. */
-.upg-history {
-    min-width: 8.5rem;
-    vertical-align: top;
 }
 
 /* Taking back a booking, on the result that announced it. */
@@ -414,15 +327,6 @@
     color: var(--warning-text);
 }
 
-/* The environment cell carries a name and its type, and nothing else since the
-   booking and the history toggle moved to their own column (#805). The floor is
-   what stops a two-word environment name wrapping around its pill; it is lower
-   than it was because the cell no longer has to hold a booking sentence, which
-   buys the width the History column needs. */
-.upg-env {
-    min-width: 9rem;
-}
-
 /* A note's text shares the line with its glyph rather than being pushed below
    it. The wrap rule above exists so a result's link can drop onto its own line;
    the sentence beside the glyph has to shrink instead of wrapping whole, and
@@ -441,9 +345,9 @@
     margin-top: 2px;
 }
 
-/* Nine columns is a lot for one table, and the headings here are longer than
-   most of the values under them ("Latest Microsoft allows" over a date). Letting
-   the headings wrap keeps the table narrower than the words in it. */
+/* Headings here are longer than most of the values under them ("Latest possible
+   date" over a date). Letting them wrap when the window is narrow keeps the table
+   inside it for longer; on a wide window they stay on one line, as on the sheet. */
 .data-table th {
     white-space: normal;
 }
@@ -462,29 +366,55 @@
 /* What a row cannot be read without stays put while the rest scrolls under it.
    Nine columns do not fit a laptop window, and the first thing to leave on the
    left was the solution name - which is the only thing saying whose environment
-   the row in front of you is. The picker travels with it so the name is never
-   stranded from the box that selects it. The offset is the picker column's own
-   width, and the border is what tells the reader the columns beyond it moved. */
-.upg-scroll .upg__pick,
+   the row in front of you is. The checkbox and the state glyph travel with it so
+   the name is never stranded from the box that selects it. Both leading columns
+   get a fixed width here because the offsets have to add up to something, and the
+   border is what tells the reader the columns beyond it moved. */
+.upg-scroll .data-table__col-check,
+.upg-scroll .data-table__col-state {
+    width: 2.25rem;
+    min-width: 2.25rem;
+}
+
+.upg-scroll .data-table__col-check,
+.upg-scroll .data-table__col-state,
 .upg-scroll .upg-customer {
     position: sticky;
     z-index: 1;
     background: var(--surface);
 }
 
-.upg-scroll .upg__pick { left: 0; }
+.upg-scroll .data-table__col-check { left: 0; }
+.upg-scroll .data-table__col-state { left: 2.25rem; }
 
 .upg-scroll .upg-customer {
-    left: 2.25rem;
+    left: 4.5rem;
+    white-space: nowrap;
     border-right: 1px solid var(--border);
+}
+
+/* A pinned cell paints its own background, which would otherwise leave the left
+   end of a ticked row white while the rest of it is tinted. */
+.upg-scroll tr.is-selected .data-table__col-check,
+.upg-scroll tr.is-selected .data-table__col-state,
+.upg-scroll tr.is-selected .upg-customer {
+    background: var(--primary-weak);
 }
 
 /* The heading keeps its own tone while it sticks - the shared rule above would
    otherwise paint it as a body cell - and outranks the body cells it passes. */
-.upg-scroll thead .upg__pick,
+.upg-scroll thead .data-table__col-check,
+.upg-scroll thead .data-table__col-state,
 .upg-scroll thead .upg-customer {
     background: var(--surface-sunken);
     z-index: 2;
+}
+
+/* A row menu opens inside the scrolling box, which clips it. On a fleet of two or
+   three rows there is no room in either direction, so the box makes some while a
+   menu is open. Taller tables are unaffected. */
+.upg-scroll:has(.ra.is-open) {
+    min-height: 15rem;
 }
 
 /* An open history spans every column, so scrolling right would carry its heading

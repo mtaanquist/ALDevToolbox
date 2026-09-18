@@ -135,7 +135,8 @@ public sealed class EnvironmentsListTests : IDisposable
         var cut = _ctx.Render<EnvironmentsList>();
 
         cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
-        var lastChecked = cut.FindAll(".data-table tbody tr td").Last().TextContent.Trim();
+        var lastChecked = cut.FindAll(".data-table tbody tr td")
+            .Last(c => !c.ClassList.Contains("data-table__actions")).TextContent.Trim();
         lastChecked.Should().NotBe("never",
             "the environment was read half an hour ago - only its updates were unreadable");
         lastChecked.Should().Contain("minutes ago");

@@ -6,6 +6,7 @@
 @inject ILogger<EnvironmentsList> Log
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services.ObjectExplorer.Bc
+@using static ALDevToolbox.Components.Shared.FleetRowState
 
 @*
     Every Business Central environment across the solutions the viewer can
@@ -97,10 +98,10 @@
             <thead>
                 <tr>
                     <th class="data-table__col-state"><span class="u-sr">State</span></th>
-                    <th>Solution</th><th>Environment</th><th>Now on</th><th>Next update</th><th>Last checked</th>
+                    <th>Solution</th><th>Environment</th><th>Now on</th><th>Next update</th><th>Last checked</th><th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
-            <tbody><TableSkeletonRows Columns="5" StateColumn="true" /></tbody>
+            <tbody><TableSkeletonRows Columns="6" StateColumn="true" /></tbody>
         </table>
         <LoadingBlock Text="Loading environments..." UnderTable="true" />
     }
@@ -223,6 +224,7 @@
                         <th scope="col">Now on</th>
                         <th scope="col">Next update</th>
                         <th scope="col">Last checked</th>
+                        <th scope="col" class="data-table__actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -260,6 +262,18 @@
                                 </span>
                             </td>
                             <td class="u-muted">@Checked(row)</td>
+                            <td class="data-table__actions">
+                                @* The sheet's other two entries are not here yet: the
+                                   environment's own page is #809, and a refresh is per
+                                   solution, not per environment. *@
+                                @if (row.BusinessCentralUrl is { } bcUrl)
+                                {
+                                    <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
+                                        <a class="menu__item" role="menuitem" href="@bcUrl"
+                                           target="_blank" rel="noopener">Open in Business Central</a>
+                                    </RowActions>
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -501,67 +515,6 @@
     // ── Presentation ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// The state in words a consultant would use. Business Central's own tokens
-    /// ("SoftDeleted") are API vocabulary and must not reach the screen, but an
-    /// unrecognised one is still shown rather than swallowed - a state we don't know
-    /// about is exactly the kind of thing someone needs to see.
-    /// </summary>
-    private static string StatusWord(UpgradeFleetRow row)
-    {
-        return (row.Status ?? string.Empty).ToLowerInvariant() switch
-        {
-            "active" => "Running",
-            "updating" => "Update in progress",
-            "preparing" => "Being prepared",
-            "suspended" => "Suspended by Microsoft",
-            "softdeleted" => "Deleted, still restorable",
-            "" => "State not reported",
-            _ => "In a state we don't recognise",
-        };
-    }
-
-    /// <summary>
-    /// True when the row exists but Business Central told us no lifecycle state for it.
-    /// Note this is NOT "never read": an environment row is only created from a
-    /// successful listing, so <c>fetched_at</c> is always set. What can be missing is
-    /// the state itself, and saying "not read yet" for that would be wrong.
-    /// </summary>
-    private static bool StateUnknown(UpgradeFleetRow row) => string.IsNullOrWhiteSpace(row.Status);
-
-    /// <summary>
-    /// The row's keyline state. An unread environment takes the neutral queued
-    /// keyline: the design system has no "unknown" row state, and inventing one here
-    /// would put app-only CSS into a sheet that is byte-locked to the handoff. The
-    /// icon and the hover word are what separate "we never got an answer" from
-    /// "Microsoft suspended this" - see StatusIcon.
-    /// </summary>
-    private static string RowState(UpgradeFleetRow row)
-    {
-        if (StateUnknown(row)) return "is-queued";
-        return row.Status!.ToLowerInvariant() switch
-        {
-            "active" => "is-published",
-            "updating" or "preparing" => "is-running",
-            "suspended" or "softdeleted" => "is-queued",
-            _ => "is-failed",
-        };
-    }
-
-    private static string StatusIcon(UpgradeFleetRow row)
-    {
-        // Checked before the keyline state, because unread and suspended share that
-        // state but must never look the same.
-        if (StateUnknown(row)) return "circle-dashed";
-        return RowState(row) switch
-        {
-            "is-published" => "circle-check",
-            "is-running" => "clock",
-            "is-queued" => "circle-pause",
-            _ => "circle-alert",
-        };
-    }
-
-    /// <summary>
     /// The sub-line under the next version. Distinguishes a scheduled date, a version
     /// Microsoft has named but not dated, nothing on offer at all, and an environment
     /// we have never managed to read - see .design/environment-updates.md, which makes
@@ -577,9 +530,6 @@
     }
 
     /// <summary>The next version, or a dash when Business Central is offering none.</summary>
-    private static bool IsRunning(UpgradeFleetRow row) =>
-        string.Equals(row.Status, "active", StringComparison.OrdinalIgnoreCase);
-
     private static string NextVersion(UpgradeFleetRow row) => row.NextUpdateVersion ?? "—";
 
     // fetched_at is NOT NULL on the row, so this always has a real answer; the
