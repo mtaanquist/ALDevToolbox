@@ -258,6 +258,31 @@ public sealed class UpgradeFleetServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_soft_deleted_environment_is_left_out()
+    {
+        var project = await SeedProjectAsync("CRONUS Denmark");
+        await SeedTeamAsync(project, flagHolders: new[] { FlagUserId }, plainMembers: Array.Empty<int>());
+        await SeedEnvironmentAsync(project, "Production");
+        // Business Central renames an environment when it is soft-deleted, which is why
+        // this one carries a deletion stamp; see issue #808.
+        var deleted = await SeedEnvironmentAsync(project, "JLE-260911110359", "Sandbox");
+        await using (var seed = _db.NewContext())
+        {
+            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == deleted);
+            env.Status = "SoftDeleted";
+            env.SoftDeletedOn = new DateTime(2026, 9, 11, 11, 3, 59, DateTimeKind.Utc);
+            await seed.SaveChangesAsync();
+        }
+
+        ActAs(FlagUserId);
+        await using var ctx = _db.NewContext();
+        var rows = await Svc(ctx).ListFleetAsync();
+
+        rows.Should().ContainSingle("a deleted environment cannot have its update date moved")
+            .Which.EnvironmentName.Should().Be("Production");
+    }
+
+    [Fact]
     public async Task Rows_come_back_by_customer_with_production_first()
     {
         var second = await SeedProjectAsync("CRONUS Norway");

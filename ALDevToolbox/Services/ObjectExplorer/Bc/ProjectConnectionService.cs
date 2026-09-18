@@ -411,10 +411,18 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private async Task<IReadOnlySet<Guid>> ReleasedAppIdsAsync(
         int projectId, string environmentName, CancellationToken ct)
     {
+        // A delivery snapshots the environment's name at the time it was scheduled, so a
+        // soft-deleted environment — which Business Central renames, see the fold in
+        // UpsertEnvironmentsAsync — would otherwise lose every release made to it before
+        // the deletion. Its pre-deletion name is the same string with the stamp stripped,
+        // so match that too.
+        var formerName = SoftDeleteStampedBaseName(environmentName);
+
         var ids = await _db.OeProjectDeliveryResults.AsNoTracking()
             .Where(r => r.AppId != null
                         && r.ProjectDelivery!.ProjectId == projectId
-                        && r.ProjectDelivery.EnvironmentName == environmentName)
+                        && (r.ProjectDelivery.EnvironmentName == environmentName
+                            || (formerName != null && r.ProjectDelivery.EnvironmentName == formerName)))
             .Select(r => r.AppId!)
             .Distinct()
             .ToListAsync(ct);
@@ -962,6 +970,15 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// picked company), add new ones, and stamp <c>MissingSince</c> on any that the
     /// fetch no longer returns rather than deleting them — so a release pipeline's FK
     /// never dangles. Assumes the caller saves.
+    /// <para>
+    /// One wrinkle makes "match by name" not quite enough: when a customer soft-deletes
+    /// an environment, Business Central hands the name back under a <em>new</em> one with
+    /// the deletion time appended (<c>JLE</c> returns as <c>JLE-260911110359</c>), so the
+    /// original is free to be reused. Read literally that is one environment vanishing
+    /// and a stranger appearing, which is what issue #808 saw on screen. The fold below
+    /// puts the pair back onto the row the pipelines already point at. See
+    /// <c>.design/saas-delivery.md</c> ("soft_deleted_on and missing_since").
+    /// </para>
     /// </summary>
     private async Task UpsertEnvironmentsAsync(OeProject project, IReadOnlyList<BcEnvironment> fetched, CancellationToken ct)
     {
@@ -971,6 +988,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var byName = existing.ToDictionary(e => e.Name, StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fetchedNames = fetched.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var env in fetched)
         {
@@ -979,18 +997,34 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             {
                 ApplyFetched(row, env, now);
                 row.MissingSince = null; // back if it had vanished
+                continue;
             }
-            else
+
+            if (FoldTarget(env, byName, fetchedNames) is { } renamed)
             {
-                var row2 = new OeProjectEnvironment
-                {
-                    OrganizationId = project.OrganizationId,
-                    ProjectId = project.Id,
-                    Name = env.Name,
-                };
-                ApplyFetched(row2, env, now);
-                _db.OeProjectEnvironments.Add(row2);
+                _logger.LogInformation(
+                    "Business Central renamed soft-deleted environment {OldEnvironmentName} to {NewEnvironmentName} for project {ProjectId}; folded onto the existing row.",
+                    renamed.Name, env.Name, project.Id);
+                seen.Add(renamed.Name); // so the pass below doesn't call the old name missing
+                renamed.Name = env.Name; // the API name is what later admin-center calls address
+                byName[env.Name] = renamed;
+                ApplyFetched(renamed, env, now);
+                renamed.MissingSince = null;
+                continue;
             }
+
+            // Nothing to fold onto — including the reverse race, where the first refresh
+            // after the deletion is also the first time we hear of the environment at
+            // all. Then the suffixed name is simply a new environment, soft-deleted from
+            // the moment we meet it, and that is the honest thing to show.
+            var row2 = new OeProjectEnvironment
+            {
+                OrganizationId = project.OrganizationId,
+                ProjectId = project.Id,
+                Name = env.Name,
+            };
+            ApplyFetched(row2, env, now);
+            _db.OeProjectEnvironments.Add(row2);
         }
 
         foreach (var row in existing)
@@ -1000,6 +1034,55 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 row.MissingSince = now;
             }
         }
+    }
+
+    /// <summary>
+    /// The existing row a freshly-seen, soft-deleted environment is the renamed
+    /// continuation of, or null when there is none and it should be inserted as new.
+    /// Deliberately narrow: only a soft-deleted fetch with a deletion stamp on its name
+    /// folds, only onto a row that isn't itself soft-deleted, and only when the base name
+    /// is absent from this same fetch — a customer who has already created a fresh
+    /// <c>JLE</c> alongside the deleted one must keep two rows.
+    /// </summary>
+    private static OeProjectEnvironment? FoldTarget(
+        BcEnvironment env,
+        Dictionary<string, OeProjectEnvironment> byName,
+        HashSet<string> fetchedNames)
+    {
+        if (!IsSoftDeleted(env)) return null;
+        if (SoftDeleteStampedBaseName(env.Name) is not { } baseName) return null;
+        if (fetchedNames.Contains(baseName)) return null;
+        if (!byName.TryGetValue(baseName, out var row)) return null;
+        return row.SoftDeletedOn is null ? row : null;
+    }
+
+    /// <summary>
+    /// True when the API says this environment has been soft-deleted. Either signal is
+    /// enough, and the status is compared case-insensitively because enum-ish values are
+    /// stored verbatim from Microsoft (see <see cref="BcEnvironment"/>).
+    /// </summary>
+    private static bool IsSoftDeleted(BcEnvironment env) =>
+        env.SoftDeletedOn is not null
+        || string.Equals(env.Status?.Trim(), "SoftDeleted", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Strips the <c>-yyMMddHHmmss</c> deletion stamp Business Central appends when an
+    /// environment is soft-deleted, returning the name it had before
+    /// (<c>JLE-260911110359</c> → <c>JLE</c>), or null when the name carries no such
+    /// stamp. Twelve digits are all this checks: whether they parse as a plausible date
+    /// is Microsoft's business, and the caller only folds a name that the API has also
+    /// told us is soft-deleted.
+    /// </summary>
+    internal static string? SoftDeleteStampedBaseName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var dash = name.LastIndexOf('-');
+        if (dash <= 0 || name.Length - dash - 1 != 12) return null;
+        for (var i = dash + 1; i < name.Length; i++)
+        {
+            if (!char.IsAsciiDigit(name[i])) return null;
+        }
+        return name[..dash];
     }
 
     /// <summary>

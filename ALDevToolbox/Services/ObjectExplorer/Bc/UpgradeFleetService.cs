@@ -44,8 +44,9 @@ public sealed class UpgradeFleetService
 
     /// <summary>
     /// Every environment of every visible project that Business Central still reports
-    /// (<see cref="OeProjectEnvironment.MissingSince"/> null), with the mirrored next
-    /// update and whether this caller may act on it.
+    /// (<see cref="OeProjectEnvironment.MissingSince"/> null) and that is not on its way
+    /// out (<see cref="OeProjectEnvironment.SoftDeletedOn"/> null), with the mirrored
+    /// next update and whether this caller may act on it.
     ///
     /// <para>The "may act" answer is computed as part of the same query — a subquery
     /// over <see cref="ProjectAccess.UpdateOpsProjectPredicate"/> — rather than a check
@@ -63,6 +64,13 @@ public sealed class UpgradeFleetService
 
         var rows = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.MissingSince == null)
+            // A deleted environment cannot have its update date moved, so it is not part
+            // of the fleet. It stays on the solution's Business Central tab, where
+            // "restore it before it is gone for good" is the useful fact. Both signals
+            // are checked because either can arrive first; the status compare is
+            // case-insensitive as Microsoft's casing is stored verbatim (issue #808).
+            .Where(e => e.SoftDeletedOn == null
+                        && (e.Status == null || e.Status.ToUpper() != "SOFTDELETED"))
             .Where(e => _db.OeProjects.Where(visible)
                 .Any(p => p.Id == e.ProjectId && p.DeletedAt == null))
             .Select(e => new UpgradeFleetRow(

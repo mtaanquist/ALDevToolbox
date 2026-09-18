@@ -507,6 +507,146 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             .Should().NotBeNull("an environment the customer removed is flagged, not deleted");
     }
 
+    // ── The soft-delete rename (issue #808) ───────────────────────────────
+
+    /// <summary>Seeds one live environment and returns its row id.</summary>
+    private async Task<int> SeedLiveEnvironmentAsync(int projectId, string name)
+    {
+        await using var seed = _db.NewContext();
+        var env = new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = projectId,
+            Name = name,
+            Type = "Sandbox",
+            Status = "Active",
+            FetchedAt = DateTime.UtcNow.AddDays(-1),
+        };
+        seed.OeProjectEnvironments.Add(env);
+        await seed.SaveChangesAsync();
+        return env.Id;
+    }
+
+    private static BcEnvironment SoftDeleted(string name) =>
+        new(name, "Sandbox")
+        {
+            Status = "SoftDeleted",
+            SoftDeletedOn = new DateTime(2026, 9, 11, 11, 3, 59, DateTimeKind.Utc),
+        };
+
+    [Fact]
+    public async Task A_soft_delete_renamed_by_business_central_folds_onto_the_row_it_came_from()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var jleId = await SeedLiveEnvironmentAsync(id, "JLE");
+
+        // What the API does on a soft delete: the old name is gone and the environment
+        // comes back with the deletion time appended.
+        var admin = new FakeAdminClient { OnList = () => new[] { SoftDeleted("JLE-260911110359") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == id).ToListAsync();
+
+        var row = rows.Should().ContainSingle("one deletion is one environment, not two").Subject;
+        row.Id.Should().Be(jleId, "the row a release pipeline points at survives the rename");
+        row.Name.Should().Be("JLE-260911110359", "the API name is what later admin-center calls address");
+        row.SoftDeletedOn.Should().NotBeNull();
+        row.MissingSince.Should().BeNull("the environment is deleted, not absent");
+    }
+
+    [Fact]
+    public async Task A_renamed_soft_delete_does_not_fold_when_the_old_name_is_in_use_again()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        await SeedLiveEnvironmentAsync(id, "JLE");
+
+        // The customer deleted JLE and created a fresh one under the same name.
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("JLE", "Sandbox") { Status = "Active" }, SoftDeleted("JLE-260911110359") },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == id).ToListAsync();
+
+        rows.Should().HaveCount(2, "the live JLE and the deleted one are different environments");
+        rows.Single(e => e.Name == "JLE").MissingSince.Should().BeNull();
+        rows.Single(e => e.Name == "JLE-260911110359").SoftDeletedOn.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task An_environment_named_like_a_stamp_but_alive_is_not_folded()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        await SeedLiveEnvironmentAsync(id, "JLE");
+
+        // A customer is free to name an environment this way; only a soft delete folds.
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("JLE-260911110359", "Sandbox") { Status = "Active" } },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == id).ToListAsync();
+
+        rows.Should().HaveCount(2);
+        rows.Single(e => e.Name == "JLE").MissingSince.Should().NotBeNull("Business Central stopped reporting it");
+        rows.Single(e => e.Name == "JLE-260911110359").SoftDeletedOn.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_hard_delete_after_a_fold_flags_the_row_as_no_longer_present()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var jleId = await SeedLiveEnvironmentAsync(id, "JLE");
+
+        var soft = new FakeAdminClient { OnList = () => new[] { SoftDeleted("JLE-260911110359") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), soft).RefreshEnvironmentsAsync(id);
+
+        // Days later the hard delete lands and the environment is gone from the API.
+        var gone = new FakeAdminClient { OnList = () => Array.Empty<BcEnvironment>() };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), gone).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking()
+            .SingleAsync(e => e.ProjectId == id);
+
+        row.Id.Should().Be(jleId);
+        row.MissingSince.Should().NotBeNull("a hard-deleted environment is flagged, not deleted");
+    }
+
+    [Theory]
+    [InlineData("JLE-260911110359", "JLE")]
+    [InlineData("JLE-TEST-260911110359", "JLE-TEST")]
+    [InlineData("JLE", null)]
+    [InlineData("JLE-26091111035", null)]      // eleven digits
+    [InlineData("JLE-2609111103599", null)]    // thirteen digits
+    [InlineData("JLE-26091111035x", null)]     // not all digits
+    [InlineData("-260911110359", null)]        // nothing left of the stamp
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void The_deletion_stamp_is_only_stripped_from_a_name_that_carries_one(string? name, string? expected)
+        => ProjectConnectionService.SoftDeleteStampedBaseName(name).Should().Be(expected);
+
     [Fact]
     public async Task Refresh_updates_the_fetched_detail_and_leaves_the_users_own_settings_alone()
     {
