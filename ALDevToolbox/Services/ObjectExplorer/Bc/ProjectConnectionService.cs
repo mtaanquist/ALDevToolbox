@@ -669,16 +669,22 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var next = await ReadNextUpdateAsync(env, ct)
             ?? throw Validation("Update", "No update is available to reschedule.");
 
-        if (next.LatestSelectableDateTime is not { } latest)
+        if (BcUpdateSchedule.EffectiveLatest(next.LatestSelectableDateTime) is not { } latest)
         {
             throw Validation("Update", "Business Central hasn't given this update a last possible date, so it can't be moved.");
         }
-        if (next.SelectedDateTime == latest)
+        // On or after, by calendar day in UTC rather than by tick: Business Central stores
+        // the date at the start of the environment's own update window, so an update that
+        // is already as late as it can go reads back a different time of day from the one
+        // we would send — and a window starting after midnight UTC (02:00 in Copenhagen is
+        // 01:00 UTC) lands it on the following day. Either way there is nowhere left to
+        // move it to, and re-sending would only fail against the bound.
+        if (next.SelectedDateTime?.UtcDateTime.Date >= latest.UtcDateTime.Date)
         {
             throw Validation("Update", "This update's date is already the latest Microsoft allows.");
         }
 
-        await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct);
+        await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct, verifyDateMoved: true);
         await RecordUpdateActionAsync(
             projectId, env, next, "Moved the update date out to the latest Business Central allows", ct);
         _panelCache.Invalidate(projectId, environmentId);
@@ -736,13 +742,24 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// shows the new date without waiting for the nightly sweep. The PATCH also selects
     /// the update, which matters when the picked one was merely available: setting a date
     /// on it is the customer choosing it.
+    /// <para>
+    /// With <paramref name="verifyDateMoved"/> the re-read is also the proof that the
+    /// write landed. Issue #804 saw the move recorded as done while the date stayed exactly
+    /// where it was, so the write is verified rather than trusted, and a history entry
+    /// saying "done" for a date that never moved is worse than no entry at all. The test is
+    /// whether the date <em>changed</em>, not whether it landed where we asked: Business
+    /// Central puts it at the start of the customer's update window, which can be the
+    /// following UTC day. A re-read that <em>fails</em> still only costs the freshness — it
+    /// is a re-read that succeeds with an unchanged date that fails the action.
+    /// </para>
     /// </summary>
     private async Task WriteUpdateScheduleAsync(
         (string Token, string Family, string Name, int Id) env,
         BcEnvironmentUpdate update,
         DateTimeOffset selectedDateTime,
         bool? ignoreUpdateWindow,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool verifyDateMoved = false)
     {
         try
         {
@@ -758,13 +775,15 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         // Re-read rather than assume: Business Central decides what it actually stored,
         // and a mirror that says what we asked for would be a guess. A failure here loses
         // the freshness, never the write.
+        BcEnvironmentUpdate? stored;
         try
         {
             var updates = await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+            stored = PickNextUpdate(updates);
             var row = await _db.OeProjectEnvironments.FirstOrDefaultAsync(e => e.Id == env.Id, ct);
             if (row is not null)
             {
-                ApplyNextUpdate(row, PickNextUpdate(updates));
+                ApplyNextUpdate(row, stored);
                 await _db.SaveChangesAsync(ct);
             }
         }
@@ -773,7 +792,24 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             _logger.LogWarning(
                 "The update date on {Environment} was changed, but re-reading it failed: {Message}. The cached row stays stale until the next refresh.",
                 env.Name, ex.Message);
+            return;
         }
+
+        if (!verifyDateMoved) return;
+
+        // Did it move, not did it land where we asked: the stored date is the start of the
+        // customer's update window, so a window opening after midnight UTC legitimately
+        // puts it on the day after the one we sent. Two nulls count as unchanged.
+        if (stored?.SelectedDateTime != update.SelectedDateTime) return;
+
+        var landed = stored?.SelectedDateTime?.UtcDateTime;
+        _logger.LogWarning(
+            "Business Central kept {Environment} on {StoredDateTime} after being asked for {SelectedDateTime}, so the move was not recorded as done.",
+            env.Name, landed, selectedDateTime);
+
+        throw Validation("Update", landed is { } value
+            ? $"Business Central did not accept the new date. Its schedule still says {value:yyyy-MM-dd}."
+            : "Business Central did not accept the new date. Its schedule still has no date.");
     }
 
     /// <summary>

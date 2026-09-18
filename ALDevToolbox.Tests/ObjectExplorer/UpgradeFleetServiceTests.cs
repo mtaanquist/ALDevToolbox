@@ -354,6 +354,73 @@ public sealed class UpgradeFleetServiceTests : IDisposable
             "the page's preview must refuse exactly what the write refuses");
     }
 
+    [Fact]
+    public async Task An_exclusive_midnight_bound_is_shown_as_the_day_before()
+    {
+        var project = await SeedProjectAsync("CRONUS Denmark");
+        var envId = await SeedEnvironmentAsync(project);
+        await using (var seed = _db.NewContext())
+        {
+            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == envId);
+            // "before 1 March", which the admin center's picker shows as 28 February.
+            env.BcNextUpdateLatestDate = new DateTime(2027, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+            await seed.SaveChangesAsync();
+        }
+
+        ActAs(AdminUserId);
+        await using var ctx = _db.NewContext();
+        var row = (await Svc(ctx).ListFleetAsync()).Single();
+
+        row.EffectiveLatestDate.Should().Be(new DateTime(2027, 2, 28, 0, 0, 0, DateTimeKind.Utc));
+        row.CanPushDate.Should().BeTrue("the update still sits well before that day");
+    }
+
+    [Fact]
+    public async Task A_date_on_the_last_allowed_day_reports_nothing_to_push_whatever_its_time_of_day()
+    {
+        var project = await SeedProjectAsync("CRONUS Denmark");
+        var envId = await SeedEnvironmentAsync(project);
+        await using (var seed = _db.NewContext())
+        {
+            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == envId);
+            env.BcNextUpdateLatestDate = new DateTime(2027, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+            // Business Central stores the date inside the customer's update window, so it
+            // never lands on midnight - comparing ticks would offer a pointless re-push.
+            env.BcNextUpdateDate = new DateTime(2027, 2, 28, 21, 0, 0, DateTimeKind.Utc);
+            await seed.SaveChangesAsync();
+        }
+
+        ActAs(AdminUserId);
+        await using var ctx = _db.NewContext();
+        var row = (await Svc(ctx).ListFleetAsync()).Single();
+
+        row.CanPushDate.Should().BeFalse(
+            "an environment the admin center already scheduled as late as it allows has nowhere to move");
+    }
+
+    [Fact]
+    public async Task A_date_the_update_window_pushed_past_the_bound_reports_nothing_to_push()
+    {
+        var project = await SeedProjectAsync("CRONUS Denmark");
+        var envId = await SeedEnvironmentAsync(project);
+        await using (var seed = _db.NewContext())
+        {
+            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == envId);
+            env.BcNextUpdateLatestDate = new DateTime(2027, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+            // A window opening at 02:00 in Copenhagen is 01:00 UTC on the following day,
+            // so the stored date can sit a day beyond the effective latest. Comparing for
+            // inequality would offer a push that has nowhere to go and would now fail.
+            env.BcNextUpdateDate = new DateTime(2027, 3, 1, 1, 0, 0, DateTimeKind.Utc);
+            await seed.SaveChangesAsync();
+        }
+
+        ActAs(AdminUserId);
+        await using var ctx = _db.NewContext();
+        var row = (await Svc(ctx).ListFleetAsync()).Single();
+
+        row.CanPushDate.Should().BeFalse("on or past the last allowed day is as late as it goes");
+    }
+
     // ── Refresh ─────────────────────────────────────────────────────────
 
     [Fact]

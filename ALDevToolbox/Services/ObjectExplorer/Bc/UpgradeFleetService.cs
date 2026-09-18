@@ -226,12 +226,25 @@ public sealed record UpgradeFleetRow(
     public bool HasUpdate => !string.IsNullOrWhiteSpace(NextUpdateVersion);
 
     /// <summary>
+    /// The last date the update can actually be moved to, which is a day earlier than
+    /// <see cref="NextUpdateLatestDate"/> whenever Business Central's bound is a midnight
+    /// day boundary — see <see cref="BcUpdateSchedule"/>. This is the date to show and the
+    /// date the write aims at; the raw bound is kept on the row only because it is what
+    /// the mirror stores.
+    /// </summary>
+    public DateTime? EffectiveLatestDate => BcUpdateSchedule.EffectiveLatestUtc(NextUpdateLatestDate);
+
+    /// <summary>
     /// True when the update's date can still be moved further out — there is an update,
-    /// Business Central gave it a last possible date, and it isn't already there. The
-    /// page shows the same answer the service enforces, so a preview and the run agree.
+    /// Business Central gave it a last possible date, and the date is still short of that
+    /// day. The page shows the same answer the service enforces, so a preview and the run
+    /// agree, and both compare calendar days in UTC because the stored date is the start
+    /// of the customer's update window rather than the bound itself — a window opening
+    /// after midnight UTC puts it on the day after, which is still nowhere left to move.
     /// </summary>
     public bool CanPushDate =>
-        HasUpdate && NextUpdateLatestDate is { } latest && NextUpdateDate != latest;
+        HasUpdate && EffectiveLatestDate is { } latest
+        && (NextUpdateDate is not { } scheduled || scheduled.Date < latest.Date);
 }
 
 /// <summary>
