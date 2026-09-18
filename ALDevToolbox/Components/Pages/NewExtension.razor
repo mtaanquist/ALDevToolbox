@@ -371,7 +371,7 @@
                                    from half-filled fields - but only _repoBusy
                                    gets the spinner and the label, because only
                                    _repoBusy is a pull request being opened. *@
-                                <button type="button" class="btn @(_repoBusy ? "btn--loading" : null)"
+                                <button type="button" class="btn ext-repo__go @(_repoBusy ? "btn--loading" : null)"
                                         disabled="@(_repoBusy || _hydrating)"
                                         aria-busy="@(_repoBusy ? "true" : null)"
                                         @onclick="AddToRepositoryAsync">
