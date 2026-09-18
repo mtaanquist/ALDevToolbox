@@ -1,0 +1,63 @@
+@*
+    The filter row of the list archetype (archetype 2): search, then the selects, then
+    whatever sits at the far end. Mirrors .filter-bar in .design/handoff/PageList.dc.html
+    (rules in pages.css).
+
+    The lesson of #805, kept here so it is learnt once: .filter-bar__search sizes a flex
+    ITEM and says nothing about what is inside one. It goes on the search control - the
+    .search box - never on a block-level wrapper such as a <form>. With the class on a
+    form, the box and its Search button stacked. So when the search submits, the form is
+    its own small row and the sizing class stays on the box inside it.
+*@
+
+<div class="filter-bar">
+    @if (Search is not null)
+    {
+        @if (SearchForm)
+        {
+            <form method="get" action="@SearchFormAction" role="search" class="filter-bar-form">
+                <span class="search filter-bar__search">
+                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                    @Search
+                </span>
+                @SearchFormExtras
+            </form>
+        }
+        else
+        {
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                @Search
+            </span>
+        }
+    }
+    @ChildContent
+    @if (Trailing is not null)
+    {
+        <span class="filter-bar__spacer"></span>
+        @Trailing
+    }
+</div>
+
+@code {
+    /// <summary>The search <c>input</c> alone; the component supplies the box and its icon.</summary>
+    [Parameter] public RenderFragment? Search { get; set; }
+
+    /// <summary>
+    /// Wraps the search in a plain GET form, for pages that keep the query in the URL so
+    /// it survives a reload and can be shared.
+    /// </summary>
+    [Parameter] public bool SearchForm { get; set; }
+
+    /// <summary>Where the GET form submits. Null submits to the current URL.</summary>
+    [Parameter] public string? SearchFormAction { get; set; }
+
+    /// <summary>Rendered inside the form after the box: hidden inputs, the Search button.</summary>
+    [Parameter] public RenderFragment? SearchFormExtras { get; set; }
+
+    /// <summary>The selects and other filters, in order, after the search.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Pushed to the far end by the spacer: pill tabs, a view switch.</summary>
+    [Parameter] public RenderFragment? Trailing { get; set; }
+}

@@ -28,25 +28,19 @@
 <PageTitle>Releases · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Releases</h1>
-            <p class="page-head__sub">
-                A release pipeline publishes a build pipeline's compiled
-                <span class="u-nowrap"><code>.app</code> files</span> to a Business Central
-                environment — one target per customer environment (Production, Sandbox, ...).
-            </p>
-        </div>
-        @if (_rows is not null && _rows.Count > 0)
-        {
-            <div class="page-head__actions">
-                <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
-                    <Icon Name="plus" Width="16" Height="16" />
-                    <span>New release pipeline</span>
-                </button>
-            </div>
-        }
-    </div>
+    <PageHead Title="Releases" ShowActions="@(_rows is { Count: > 0 })">
+        <SubtitleContent>
+            A release pipeline publishes a build pipeline's compiled
+            <span class="u-nowrap"><code>.app</code> files</span> to a Business Central
+            environment — one target per customer environment (Production, Sandbox, ...).
+        </SubtitleContent>
+        <Actions>
+            <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+                <Icon Name="plus" Width="16" Height="16" />
+                <span>New release pipeline</span>
+            </button>
+        </Actions>
+    </PageHead>
 
     @if (_error is { } error)
     {
@@ -66,41 +60,43 @@
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
         </table>
-        <div class="loading-block loading-block--under-table">
-            <span class="spinner"></span><span>Loading release pipelines...</span>
-        </div>
+        <LoadingBlock Text="Loading release pipelines..." UnderTable="true" />
     }
     else if (_rows.Count == 0)
     {
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No release pipelines yet</span>
-                @if (_projectOptions.Count > 0)
-                {
-                    <span class="empty-state__text">
+            @if (_projectOptions.Count > 0)
+            {
+                <EmptyState Icon="send" Title="No release pipelines yet">
+                    <Text>
                         A release pipeline points a build pipeline's apps at a Business Central
                         environment. You'll pick the solution, its build pipeline, and the target
                         environment.
-                    </span>
-                    <button type="button" class="btn btn--primary empty-state__action" @onclick="NewReleaseAsync">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>New release pipeline</span>
-                    </button>
-                }
-                else
-                {
-                    <span class="empty-state__text">
+                    </Text>
+                    <Action>
+                        <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>New release pipeline</span>
+                        </button>
+                    </Action>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Icon="send" Title="No release pipelines yet">
+                    <Text>
                         Releases publish a solution's compiled apps to its Business Central
                         environment, so the first step is creating a solution, connecting Business
                         Central, and adding a build pipeline. Then you can set up a release.
-                    </span>
-                    <a class="btn btn--primary empty-state__action" href="/solutions/new">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>Create a solution</span>
-                    </a>
-                }
-            </div>
+                    </Text>
+                    <Action>
+                        <a class="btn btn--primary" href="/solutions/new">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>Create a solution</span>
+                        </a>
+                    </Action>
+                </EmptyState>
+            }
         </div>
     }
     else

@@ -30,19 +30,16 @@
 <PageTitle>Environments · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head page-head--sticky">
-        <div>
-            <nav class="page-head__crumbs" aria-label="Breadcrumb">
-                <a href="/">Home</a>
-                <Icon Name="chevron-right" Width="14" Height="14" />
-                <a href="/solutions">Solutions</a>
-                <Icon Name="chevron-right" Width="14" Height="14" />
-                <span>Environments</span>
-            </nav>
-            <h1 class="page-head__title">Environments</h1>
-            <p class="page-head__sub">Every Business Central environment across the solutions you can reach.</p>
-        </div>
-    </header>
+    <PageHead Title="Environments" Sticky="true"
+              Subtitle="Every Business Central environment across the solutions you can reach.">
+        <Crumbs>
+            <a href="/">Home</a>
+            <Icon Name="chevron-right" Width="14" Height="14" />
+            <a href="/solutions">Solutions</a>
+            <Icon Name="chevron-right" Width="14" Height="14" />
+            <span>Environments</span>
+        </Crumbs>
+    </PageHead>
 
     @* Only a refresh failure belongs here: the table is still on screen and the
        alert annotates it. A failure to load at all gets its own state below,
@@ -94,83 +91,79 @@
 
     @if (_rows is null)
     {
-        <div class="loading-block">
-            <span class="spinner"></span><span>Loading environments...</span>
-        </div>
+        <LoadingBlock Text="Loading environments..." />
     }
     else if (_loadFailed)
     {
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="circle-alert" Width="22" Height="22" /></span>
-                <span class="empty-state__title">Couldn't load your environments</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="circle-alert" Title="Couldn't load your environments">
+                <Text>
                     Something went wrong at our end - this doesn't mean anything is wrong
                     with your Business Central connections.
-                </span>
-                <span class="empty-state__action">
+                </Text>
+                <Action>
                     <button type="button" class="btn btn--primary" @onclick="RetryAsync" disabled="@_loading">
                         @(_loading ? "Trying..." : "Try again")
                     </button>
-                </span>
-            </div>
+                </Action>
+            </EmptyState>
         </div>
     }
     else if (_rows.Count == 0)
     {
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="server" Width="22" Height="22" /></span>
-                <span class="empty-state__title">No environments to show yet</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="server" Title="No environments to show yet">
+                <Text>
                     Environments appear here once a solution has a Business Central connection.
                     Open a solution, add its Entra tenant and app registration, and its
                     environments are read in automatically.
-                </span>
-                <span class="empty-state__action">
+                </Text>
+                <Action>
                     <a class="btn btn--primary" href="/solutions">Go to solutions</a>
-                </span>
-            </div>
+                </Action>
+            </EmptyState>
         </div>
     }
     else
     {
-        <div class="filter-bar">
-            <span class="search filter-bar__search">
-                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+        <FilterBar>
+            <Search>
                 <input class="input" type="search" placeholder="Solution or environment"
                        aria-label="Search solution or environment"
                        value="@_search" @oninput="OnSearchInput" />
-            </span>
-            <span class="select-wrap" style="width: 200px">
-                <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
-                    <option value="">All solutions</option>
-                    @foreach (var name in _rows.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
+            </Search>
+            <ChildContent>
+                <span class="select-wrap" style="width: 200px">
+                    <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
+                        <option value="">All solutions</option>
+                        @foreach (var name in _rows.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
+                        {
+                            <option value="@name">@name</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+                <span class="select-wrap" style="width: 170px">
+                    <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
+                        <option value="">All types</option>
+                        <option value="Production">Production only</option>
+                        <option value="Sandbox">Sandbox only</option>
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+            </ChildContent>
+            <Trailing>
+                <div class="pill-tabs">
+                    @foreach (var tab in AllTabs)
                     {
-                        <option value="@name">@name</option>
+                        <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
+                                title="@TabHint(tab)" @onclick="() => _tab = tab">
+                            @TabLabel(tab)<span class="pill-tab__count">@CountFor(tab)</span>
+                        </button>
                     }
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-            <span class="select-wrap" style="width: 170px">
-                <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
-                    <option value="">All types</option>
-                    <option value="Production">Production only</option>
-                    <option value="Sandbox">Sandbox only</option>
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-            <span class="filter-bar__spacer"></span>
-            <div class="pill-tabs">
-                @foreach (var tab in AllTabs)
-                {
-                    <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
-                            title="@TabHint(tab)" @onclick="() => _tab = tab">
-                        @TabLabel(tab)<span class="pill-tab__count">@CountFor(tab)</span>
-                    </button>
-                }
-            </div>
-        </div>
+                </div>
+            </Trailing>
+        </FilterBar>
 
         var shown = Filtered().ToList();
 
@@ -179,33 +172,33 @@
             @* An empty "Needs attention" is good news and must not be dressed as a
                failed search telling the reader to widen their filters. *@
             <div class="card">
-                <div class="empty-state">
-                    @if (_tab == Tab.NeedsAttention && NoOtherFilters())
-                    {
-                        <span class="empty-state__icon"><Icon Name="circle-check" Width="22" Height="22" /></span>
-                        <span class="empty-state__title">Nothing needs attention</span>
-                        <span class="empty-state__text">
+                @if (_tab == Tab.NeedsAttention && NoOtherFilters())
+                {
+                    <EmptyState Icon="circle-check" Title="Nothing needs attention">
+                        <Text>
                             Every environment reported a healthy state, and none of them are
                             waiting on you.
-                        </span>
-                    }
-                    else if (_tab == Tab.UpdatingSoon && NoOtherFilters())
-                    {
-                        <span class="empty-state__title">No updates scheduled</span>
-                        <span class="empty-state__text">
+                        </Text>
+                    </EmptyState>
+                }
+                else if (_tab == Tab.UpdatingSoon && NoOtherFilters())
+                {
+                    <EmptyState Title="No updates scheduled">
+                        <Text>
                             Business Central hasn't announced an update for any of these
                             environments yet.
-                        </span>
-                    }
-                    else
-                    {
-                        <span class="empty-state__title">No environments match those filters</span>
-                        <span class="empty-state__text">Try a different search, or choose All.</span>
-                        <span class="empty-state__action">
+                        </Text>
+                    </EmptyState>
+                }
+                else
+                {
+                    <EmptyState Title="No environments match those filters">
+                        <Text>Try a different search, or choose All.</Text>
+                        <Action>
                             <button type="button" class="btn" @onclick="ClearFilters">Clear filters</button>
-                        </span>
-                    }
-                </div>
+                        </Action>
+                    </EmptyState>
+                }
             </div>
         }
         else

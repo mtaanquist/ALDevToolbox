@@ -1,0 +1,11 @@
+/* The submitting search's own row: the box and the button it submits, side by
+   side. Takes the flex-item role in .filter-bar that the box has when there is
+   no form, so the bar lays out the same either way (#805). */
+.filter-bar-form {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-width: 260px;
+    max-width: 480px;
+}

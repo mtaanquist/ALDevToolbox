@@ -1,0 +1,40 @@
+@*
+    The empty state of any archetype: icon, title, text, and the action that gets the
+    user out of it. Mirrors .empty-state in .design/handoff/ComponentsPanel.dc.html
+    (rules in components.css). CLAUDE.md's "the empty state tells the user the next
+    step" is the Action slot - leave it out only when there is genuinely nothing to do.
+
+    The surrounding .card, where a page wants one, stays with the page: the same block
+    also sits inside table cards and panes that already have their own surface.
+*@
+
+<div class="empty-state@(Quiet ? " empty-state--quiet" : "")">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <span class="empty-state__icon"><Icon Name="@Icon" Width="21" Height="21" /></span>
+    }
+    <span class="empty-state__title">@Title</span>
+    @if (Text is not null)
+    {
+        <span class="empty-state__text">@Text</span>
+    }
+    @if (Action is not null)
+    {
+        <span class="empty-state__action">@Action</span>
+    }
+</div>
+
+@code {
+    /// <summary>Lucide icon name. Optional: a filtered-empty result often goes without.</summary>
+    [Parameter] public string? Icon { get; set; }
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public RenderFragment? Text { get; set; }
+
+    /// <summary>The button or link itself; the component supplies the <c>empty-state__action</c> wrapper.</summary>
+    [Parameter] public RenderFragment? Action { get; set; }
+
+    /// <summary>The compact, icon-less variant for an empty section inside a populated page.</summary>
+    [Parameter] public bool Quiet { get; set; }
+}
