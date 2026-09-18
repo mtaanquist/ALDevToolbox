@@ -47,6 +47,13 @@ public sealed class UpgradeFleetService
     /// (<see cref="OeProjectEnvironment.MissingSince"/> null), with the mirrored next
     /// update and whether this caller may act on it.
     ///
+    /// <para>A soft-deleted environment is left out by default, because the Upgrades
+    /// page exists to move update dates and a deleted environment's cannot be moved.
+    /// The Environments page asks for them with
+    /// <paramref name="includeSoftDeleted"/>: there the point is the state of every
+    /// environment, and "deleted, still restorable" is one of the states worth
+    /// seeing.</para>
+    ///
     /// <para>The "may act" answer is computed as part of the same query — a subquery
     /// over <see cref="ProjectAccess.UpdateOpsProjectPredicate"/> — rather than a check
     /// per row, so a fleet of a hundred environments costs one round trip.</para>
@@ -55,14 +62,27 @@ public sealed class UpgradeFleetService
     /// the sweep runs customer by customer, and Production is the row the upgrade team
     /// is looking for when it gets there.</para>
     /// </summary>
-    public async Task<List<UpgradeFleetRow>> ListFleetAsync(CancellationToken ct = default)
+    /// <param name="includeSoftDeleted">Keep environments the customer has deleted but can still restore.</param>
+    public async Task<List<UpgradeFleetRow>> ListFleetAsync(
+        bool includeSoftDeleted = false, CancellationToken ct = default)
     {
         var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
         var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
         var actionable = ProjectAccess.UpdateOpsProjectPredicate(snapshot);
 
-        var rows = await _db.OeProjectEnvironments.AsNoTracking()
-            .Where(e => e.MissingSince == null)
+        var query = _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.MissingSince == null);
+
+        if (!includeSoftDeleted)
+        {
+            // Both signals are checked because either can arrive first; the status
+            // compare is case-insensitive as Microsoft's casing is stored verbatim
+            // (issue #808).
+            query = query.Where(e => e.SoftDeletedOn == null
+                                     && (e.Status == null || e.Status.ToUpper() != "SOFTDELETED"));
+        }
+
+        var rows = await query
             .Where(e => _db.OeProjects.Where(visible)
                 .Any(p => p.Id == e.ProjectId && p.DeletedAt == null))
             .Select(e => new UpgradeFleetRow(
@@ -206,12 +226,25 @@ public sealed record UpgradeFleetRow(
     public bool HasUpdate => !string.IsNullOrWhiteSpace(NextUpdateVersion);
 
     /// <summary>
+    /// The last date the update can actually be moved to, which is a day earlier than
+    /// <see cref="NextUpdateLatestDate"/> whenever Business Central's bound is a midnight
+    /// day boundary — see <see cref="BcUpdateSchedule"/>. This is the date to show and the
+    /// date the write aims at; the raw bound is kept on the row only because it is what
+    /// the mirror stores.
+    /// </summary>
+    public DateTime? EffectiveLatestDate => BcUpdateSchedule.EffectiveLatestUtc(NextUpdateLatestDate);
+
+    /// <summary>
     /// True when the update's date can still be moved further out — there is an update,
-    /// Business Central gave it a last possible date, and it isn't already there. The
-    /// page shows the same answer the service enforces, so a preview and the run agree.
+    /// Business Central gave it a last possible date, and the date is still short of that
+    /// day. The page shows the same answer the service enforces, so a preview and the run
+    /// agree, and both compare calendar days in UTC because the stored date is the start
+    /// of the customer's update window rather than the bound itself — a window opening
+    /// after midnight UTC puts it on the day after, which is still nowhere left to move.
     /// </summary>
     public bool CanPushDate =>
-        HasUpdate && NextUpdateLatestDate is { } latest && NextUpdateDate != latest;
+        HasUpdate && EffectiveLatestDate is { } latest
+        && (NextUpdateDate is not { } scheduled || scheduled.Date < latest.Date);
 }
 
 /// <summary>

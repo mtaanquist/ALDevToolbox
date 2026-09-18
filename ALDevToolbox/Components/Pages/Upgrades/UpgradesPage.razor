@@ -48,7 +48,7 @@
             @if (!_denied)
             {
                 <p class="page-head__sub">
-                    When each customer's environment moves to its next Business Central version,
+                    When each solution's environment moves to its next Business Central version,
                     and how much longer you can put that off. Pick the environments you want,
                     then move their dates or start their update.
                 </p>
@@ -63,7 +63,7 @@
                 <span class="empty-state__icon"><Icon Name="lock" Width="21" Height="21" /></span>
                 <span class="empty-state__title">You don't have access to Upgrades</span>
                 <span class="empty-state__text">
-                    Changing a customer's update date acts on their live Business Central
+                    Changing a solution's update date acts on its live Business Central
                     environment. Access to Upgrades is granted per team. Ask an administrator
                     to add environment updates to one of your teams.
                 </span>
@@ -80,15 +80,16 @@
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="upg__pick"><span class="u-sr">Select</span></th>
-                <th scope="col">Customer</th>
+                <th scope="col" class="upg-customer">Solution</th>
                 <th scope="col">Environment</th>
                 <th scope="col">Status</th>
                 <th scope="col">Current version</th>
                 <th scope="col">Next update</th>
                 <th scope="col">Latest Microsoft allows</th>
                 <th scope="col">Last checked</th>
+                <th scope="col" class="upg-history">History</th>
             </tr></thead>
-            <tbody><TableSkeletonRows Columns="8" /></tbody>
+            <tbody><TableSkeletonRows Columns="9" /></tbody>
         </table>
         </div>
         <div class="loading-block loading-block--under-table">
@@ -100,11 +101,11 @@
         <div class="card">
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="calendar" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No customer environments yet</span>
+                <span class="empty-state__title">No environments yet</span>
                 <span class="empty-state__text">
-                    This page lists the Business Central environments of the customers you can
-                    see. Connect a customer's Business Central from their solution, and their
-                    environments show up here.
+                    This page lists the Business Central environments of the solutions you can
+                    see. Connect a solution to its Business Central from the solution's own
+                    page, and its environments show up here.
                 </span>
                 <a class="btn empty-state__action" href="/solutions">
                     <Icon Name="folder-git-2" Width="15" Height="15" />
@@ -121,12 +122,12 @@
            Search button is there because an unlabelled box that only responds to
            Enter is a mechanic you have to be told about. *@
         <div class="filter-bar">
-            <form method="get" class="filter-bar__search" role="search">
-                <span class="search">
+            <form method="get" class="upg-search" role="search">
+                <span class="search filter-bar__search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     <input type="search" name="q" value="@_search" class="input"
-                           placeholder="Search by customer or environment name..."
-                           aria-label="Search customers and environments" />
+                           placeholder="Search by solution or environment name..."
+                           aria-label="Search solutions and environments" />
                 </span>
                 <input type="hidden" name="type" value="@_type" />
                 <input type="hidden" name="waiting" value="@(_onlyWaiting ? "1" : "")" />
@@ -230,7 +231,7 @@
                named where it is picked and where it is shown back. *@
             <p class="upg-tz">Dates below are UTC. Times you book are in each customer's local time.</p>
 
-            @* Eight columns of real customer data do not fit a narrow window, and
+            @* Nine columns of real customer data do not fit a narrow window, and
                the page's own container clips rather than scrolls (#574), so the
                table gets a box of its own to scroll in. *@
             <div class="upg-scroll">
@@ -248,13 +249,18 @@
                                 <span class="u-sr">Select</span>
                             }
                         </th>
-                        <th scope="col">Customer</th>
+                        <th scope="col" class="upg-customer">Solution</th>
                         <th scope="col">Environment</th>
                         <th scope="col">Status</th>
                         <th scope="col">Current version</th>
                         <th scope="col">Next update</th>
                         <th scope="col">Latest Microsoft allows</th>
                         <th scope="col">Last checked</th>
+                        @* The row's own way into its past, out of the Environment cell
+                           and into a column of its own (#805): an action in a data cell
+                           made every row three lines tall and buried the name it was
+                           sitting next to. *@
+                        <th scope="col" class="upg-history">History</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -275,7 +281,7 @@
                                     @* The legend under the table carries the explanation;
                                        this needs a name of its own so it isn't a silent
                                        glyph to a screen reader. *@
-                                    <span role="img" aria-label="Locked - you can't change this customer's dates">
+                                    <span role="img" aria-label="Locked - you can't change this solution's dates">
                                         <Icon Name="lock" Width="13" Height="13" />
                                     </span>
                                 }
@@ -287,34 +293,6 @@
                                     <span class="status-pill__dot"></span>
                                     <span>@row.EnvironmentType</span>
                                 </span>
-                                @* A booking survives a reload, and this marker is the only
-                                   trace of one on the table - the batch result that announced
-                                   it is gone the moment the page reloads. So it carries the
-                                   whole fact (when, whose) and both ways to act on it: the
-                                   marker itself opens the history, and a single booking can
-                                   be called off without opening anything. *@
-                                @if (PendingFor(row.EnvironmentId) is { Count: > 0 } waiting)
-                                {
-                                    <div class="upg-booked">
-                                        <button type="button" class="upg-booked__open"
-                                                aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
-                                                @onclick="() => ToggleFeedAsync(row)">
-                                            <Icon Name="clock" Width="12" Height="12" />
-                                            <span>@BookedMarkerText(row, waiting)</span>
-                                        </button>
-                                        @if (waiting.Count == 1 && row.CanAct)
-                                        {
-                                            <button type="button" class="btn btn--sm upg-booked__cancel"
-                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel booking</button>
-                                        }
-                                    </div>
-                                }
-                                <button type="button" class="btn btn--sm upg-activity-btn"
-                                        aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
-                                        @onclick="() => ToggleFeedAsync(row)">
-                                    <Icon Name="@(_feedEnvId == row.EnvironmentId ? "chevron-down" : "chevron-right")" Width="13" Height="13" />
-                                    <span>Update history</span>
-                                </button>
                             </td>
                             <td>
                                 @if (string.IsNullOrWhiteSpace(row.Status))
@@ -351,9 +329,35 @@
                                     {
                                         <div class="upg-note upg-note--warn">
                                             <Icon Name="triangle-alert" Width="12" Height="12" />
-                                            <span>Runs outside the customer's update window</span>
+                                            <span>Runs outside the solution's update window</span>
                                         </div>
                                     }
+                                }
+                                @* A booking survives a reload, and this marker is the only
+                                   trace of one on the table - the batch result that announced
+                                   it is gone the moment the page reloads. So it carries the
+                                   whole fact (when, whose) and both ways to act on it: the
+                                   marker itself opens the history, and a single booking can
+                                   be called off without opening anything. It sits under the
+                                   date Business Central would otherwise run on, because a
+                                   booked slot and that date are two answers to one question
+                                   and reading them in different columns invites picking the
+                                   wrong one. *@
+                                @if (PendingFor(row.EnvironmentId) is { Count: > 0 } waiting)
+                                {
+                                    <div class="upg-booked">
+                                        <button type="button" class="upg-booked__open"
+                                                aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
+                                                @onclick="() => ToggleFeedAsync(row)">
+                                            <Icon Name="clock" Width="12" Height="12" />
+                                            <span>@BookedMarkerText(row, waiting)</span>
+                                        </button>
+                                        @if (waiting.Count == 1 && row.CanAct)
+                                        {
+                                            <button type="button" class="btn btn--sm upg-booked__cancel"
+                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel booking</button>
+                                        }
+                                    </div>
                                 }
                                 @if (_results.TryGetValue(row.EnvironmentId, out var result))
                                 {
@@ -389,13 +393,27 @@
                                     <text>Not checked yet</text>
                                 }
                             </td>
+                            <td class="upg-history">
+                                @* Says what pressing it does, not what is behind it: every
+                                   other button on this page is a verb, and a bare noun read
+                                   as one more thing that acts on a tenant. *@
+                                <button type="button" class="btn btn--sm upg-activity-btn"
+                                        aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
+                                        @onclick="() => ToggleFeedAsync(row)">
+                                    <Icon Name="@(_feedEnvId == row.EnvironmentId ? "chevron-down" : "chevron-right")" Width="13" Height="13" />
+                                    <span>@(_feedEnvId == row.EnvironmentId ? "Hide history" : "Show history")</span>
+                                </button>
+                            </td>
                         </tr>
                         @if (_feedEnvId == row.EnvironmentId)
                         {
                             <tr class="is-subrow" @key="@($"feed-{row.EnvironmentId}")">
-                                <td colspan="8">
+                                <td colspan="9">
                                     <div class="upg-feed">
-                                        <h2 class="upg-feed__title">Update history - @row.EnvironmentName</h2>
+                                        @* Named in full: a dozen rows have an environment
+                                           called Production, so the environment alone does
+                                           not say whose history this is. *@
+                                        <h2 class="upg-feed__title">Update history - @row.ProjectName, @row.EnvironmentName</h2>
                                         <EnvironmentActivityFeed Entries="_feed"
                                                                  CanAct="row.CanAct"
                                                                  TimeZone="UpdateWindow.ResolveTimeZone(row.TimeZone)"
@@ -537,7 +555,12 @@
     private int? _feedEnvId;
     private List<UpgradeActionRow>? _feed;
 
-    private const string PickFirstHint = "Nothing selected - tick an environment to move its date or start its update";
+    /// <summary>
+    /// What the count says with an empty selection. It states the fact rather than
+    /// teaching the gesture: the checkboxes are visible, and a sentence explaining how
+    /// to tick one is a mechanic the UI should not need to spell out.
+    /// </summary>
+    private const string PickFirstHint = "No environments selected";
 
     private bool ActionsDisabled => _selected.Count == 0 || _running;
 
@@ -664,7 +687,7 @@
 
         _preview = rows.Select(r => r.CanPushDate
             ? new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
-                $"{WhenText(r.NextUpdateDate)} → {DateText(r.NextUpdateLatestDate)} (UTC)", PreviewGroup.Acting)
+                $"{WhenText(r.NextUpdateDate)} → {DateText(r.EffectiveLatestDate)} (UTC)", PreviewGroup.Acting)
             : new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
                 WhyNoPush(r), PreviewGroup.Skipped)).ToList();
 
@@ -855,8 +878,8 @@
             // customer nobody has set up yet and one whose credentials were rejected,
             // and the summary must not claim which. The row says which; this says where
             // to go.
-            text += $" {needSetup} of them need{(needSetup == 1 ? "s" : "")} the customer's "
-                + "Business Central connection checked - open the customer, then try again.";
+            text += $" {needSetup} of them need{(needSetup == 1 ? "s" : "")} the solution's "
+                + "Business Central connection checked - open the solution, then try again.";
         }
 
         return new Notice(text, skipped > 0 || failed > 0 ? "warn" : "info", false);
@@ -881,7 +904,7 @@
         var result = await Fleet.RequestRefreshAsync(projectIds);
         var asked = result.Queued + result.AlreadyRunning;
         _notice = new Notice(
-            $"Asking Business Central about {asked} customer{(asked == 1 ? "" : "s")}. "
+            $"Asking Business Central about {asked} solution{(asked == 1 ? "" : "s")}. "
             + "New answers will appear here.",
             "info", true);
         StartPolling();
@@ -1271,7 +1294,7 @@
     }
 
     private static string LatestText(UpgradeFleetRow row) =>
-        row.NextUpdateLatestDate is { } latest ? DateText(latest) : "—";
+        row.EffectiveLatestDate is { } latest ? DateText(latest) : "—";
 
     private static string DateText(DateTime? at) =>
         at is { } value ? value.ToString("yyyy-MM-dd") : "no date";
@@ -1286,7 +1309,7 @@
     private static string WhyNoPush(UpgradeFleetRow row)
     {
         if (!row.HasUpdate) return "no update is waiting";
-        if (row.NextUpdateLatestDate is null) return "Business Central hasn't given it a last possible date";
+        if (row.EffectiveLatestDate is null) return "Business Central hasn't given it a last possible date";
         return "its date is already the latest allowed";
     }
 

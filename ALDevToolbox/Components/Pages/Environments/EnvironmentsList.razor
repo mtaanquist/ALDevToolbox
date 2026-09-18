@@ -17,7 +17,10 @@
     VisibleProjectPredicate, and its row carries every column drawn here. The
     Upgrades page is the same rows with scheduling on top; this one is the
     read-only view of the same fleet, so they deliberately share the query
-    rather than growing a second one that could disagree.
+    rather than growing a second one that could disagree. The one difference
+    is soft-deleted environments: Upgrades drops them (their update date
+    cannot be moved), this page keeps them, because "deleted, still
+    restorable" is a state worth seeing here.
 
     Nothing here calls Business Central. The rows come from the mirror on
     oe_project_environments, which a nightly sweep and this page's Refresh keep
@@ -326,7 +329,7 @@
     {
         try
         {
-            _rows = await Fleet.ListFleetAsync();
+            _rows = await Fleet.ListFleetAsync(includeSoftDeleted: true);
             _error = null;
             _loadFailed = false;
         }
