@@ -64,6 +64,8 @@
         @ChildContent
         @Footer
     }
+
+    @After
 </div>
 
 @code {
@@ -127,6 +129,12 @@
 
     /// <summary>Counts and the pager, under the populated list only.</summary>
     [Parameter] public RenderFragment? Footer { get; set; }
+
+    /// <summary>
+    /// Sections that follow the list whatever state it is in - the admin Cookbook's
+    /// house rules and suggestions sit under its recipes and do not depend on them.
+    /// </summary>
+    [Parameter] public RenderFragment? After { get; set; }
 
     private bool HasFilters => Search is not null || Filters is not null || Trailing is not null;
 }

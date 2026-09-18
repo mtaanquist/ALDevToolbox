@@ -107,6 +107,21 @@ public sealed class ListPageTests : IDisposable
         cut.FindAll("#empty").Should().ContainSingle();
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void Sections_after_the_list_show_in_every_state(bool loading, bool empty)
+    {
+        var cut = _ctx.Render<ListPage>(p => p
+            .Add(c => c.Title, "Cookbook")
+            .Add(c => c.IsLoading, loading)
+            .Add(c => c.IsEmpty, empty)
+            .Add(c => c.After, Html("<section id=\"rules\"></section>")));
+
+        cut.Find("div.page").Children.Last().Id.Should().Be("rules");
+    }
+
     [Fact]
     public void A_page_can_supply_its_own_loading_body_and_keep_address_driven_filters_up()
     {
