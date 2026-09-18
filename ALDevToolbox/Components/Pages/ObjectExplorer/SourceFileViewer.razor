@@ -32,15 +32,8 @@
 @if (_header is null || _file is null)
 {
     <div class="page">
-        <div class="page-head">
-            <div>
-                <h1 class="page-head__title">We couldn't find that file</h1>
-                <p class="page-head__sub">
-                    The release it belonged to may have been removed. Open Object Explorer to see
-                    what's available now.
-                </p>
-            </div>
-        </div>
+        <PageHead Title="We couldn't find that file"
+                  Subtitle="The release it belonged to may have been removed. Open Object Explorer to see what's available now." />
         <p><a class="btn" href="/object-explorer">Back to Object Explorer</a></p>
     </div>
 }
