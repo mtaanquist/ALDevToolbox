@@ -45,24 +45,17 @@
 *@
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Admin</h1>
-            <p class="page-head__sub">@HeadSub()</p>
-        </div>
-        @* No header action in the first-run state: the empty state below owns
-           the one move, and the same button twice on one screen reads as two
-           different things until you check. *@
-        @if (!_firstRun && ShowPerOrgContent)
-        {
-            <div class="page-head__actions">
-                <a class="btn btn--primary" href="/admin/administration/users/new">
-                    <Icon Name="user-plus" Width="16" Height="16" />
-                    <span>Invite user</span>
-                </a>
-            </div>
-        }
-    </header>
+    @* No header action in the first-run state: the empty state below owns
+       the one move, and the same button twice on one screen reads as two
+       different things until you check. *@
+    <PageHead Title="Admin" Subtitle="@HeadSub()" ShowActions="@(!_firstRun && ShowPerOrgContent)">
+        <Actions>
+            <a class="btn btn--primary" href="/admin/administration/users/new">
+                <Icon Name="user-plus" Width="16" Height="16" />
+                <span>Invite user</span>
+            </a>
+        </Actions>
+    </PageHead>
 
     @* No loading branch: this page is static SSR (no @@rendermode), so the
        response is not flushed until OnInitializedAsync has returned and the
@@ -73,10 +66,8 @@
         @* Six zeros over two "nothing" panels is accurate and useless. Until the
            org owns anything, the page has exactly one thing to say. *@
         <section class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
-                <span class="empty-state__title">Your organisation is empty</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="layers" Title="Your organisation is empty">
+                <Text>
                     @if (IsCurationOrg && SingleTenant.IsEnabled)
                     {
                         @* One org on this deployment, and it is the system org.
@@ -101,11 +92,11 @@
                             generates from. You can edit or remove any of them afterwards.
                         </text>
                     }
-                </span>
-                <span class="empty-state__action">
+                </Text>
+                <Action>
                     <a class="btn btn--primary" href="/admin/templates">@(IsCurationOrg ? "Add a template" : "Import starter content")</a>
-                </span>
-            </div>
+                </Action>
+            </EmptyState>
         </section>
     }
     else
@@ -136,13 +127,12 @@
                 </div>
                 @if (_attention.Count == 0)
                 {
-                    <div class="empty-state empty-state--quiet">
-                        <span class="empty-state__title">Nothing is waiting on you</span>
-                        <span class="empty-state__text">
+                    <EmptyState Quiet="true" Title="Nothing is waiting on you">
+                        <Text>
                             People waiting for an account, recipe suggestions to review, invitations
                             that ran out, and release imports that failed all appear here.
-                        </span>
-                    </div>
+                        </Text>
+                    </EmptyState>
                 }
                 else
                 {
@@ -173,12 +163,11 @@
                 </div>
                 @if (_recent.Count == 0)
                 {
-                    <div class="empty-state empty-state--quiet">
-                        <span class="empty-state__title">Nothing has changed yet</span>
-                        <span class="empty-state__text">
+                    <EmptyState Quiet="true" Title="Nothing has changed yet">
+                        <Text>
                             Edits to templates, modules, recipes and users are recorded here as they happen.
-                        </span>
-                    </div>
+                        </Text>
+                    </EmptyState>
                 }
                 else
                 {

@@ -45,7 +45,6 @@ public sealed class ArchetypeConformanceTests
         "ALDevToolbox/Components/Pages/Admin/AdminCookbook.razor",
         "ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestionReview.razor",
         "ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestions.razor",
-        "ALDevToolbox/Components/Pages/Admin/AdminDashboard.razor",
         "ALDevToolbox/Components/Pages/Admin/AdminModuleEdit.razor",
         "ALDevToolbox/Components/Pages/Admin/AdminModuleList.razor",
         "ALDevToolbox/Components/Pages/Admin/AdminObjectExplorerHeader.razor",
