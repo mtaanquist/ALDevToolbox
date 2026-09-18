@@ -92,7 +92,7 @@ public sealed class TemplatesBrowserTests : IDisposable
             // The distinction that matters: a filtered-empty list must not
             // claim there is nothing to see, nor push the create action.
             cut.Markup.Should().NotContain("No templates yet");
-            cut.Find(".empty-state__action").TextContent.Trim().Should().Be("Clear search");
+            cut.Find(".empty-state__action button").TextContent.Trim().Should().Be("Clear search");
         });
     }
 
@@ -106,7 +106,7 @@ public sealed class TemplatesBrowserTests : IDisposable
         cut.Find("input[type=search]").Input("zzzz");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("No templates match"));
 
-        cut.Find(".empty-state__action").Click();
+        cut.Find(".empty-state__action button").Click();
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Test Runtime"));
     }

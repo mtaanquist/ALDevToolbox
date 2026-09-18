@@ -11,7 +11,8 @@
                    table pass the real <thead> over TableSkeletonRows plus an
                    under-table LoadingBlock, as the sheet does, so the columns are
                    already where they will be when the data lands.
-      empty        Nothing exists yet. No filter row - there is nothing to filter -
+      empty        Nothing exists yet. No filter row - there is nothing to filter,
+                   unless the page says a filter could be why (FiltersWhenEmpty) -
                    and the head's actions step aside for the empty state's own
                    button unless the page says otherwise.
       no matches   Something exists, the filters hid all of it. The filter row stays,
@@ -32,7 +33,7 @@
 
     @Notices
 
-    @if (HasFilters && (IsLoading ? FiltersWhileLoading : !IsEmpty))
+    @if (HasFilters && (IsLoading ? FiltersWhileLoading : !IsEmpty || FiltersWhenEmpty))
     {
         <FilterBar Search="Search" ChildContent="Filters" Trailing="Trailing"
                    SearchForm="SearchForm" SearchFormAction="@SearchFormAction"
@@ -99,6 +100,13 @@
     /// pages only learn whether there is anything to filter once the load returns.
     /// </summary>
     [Parameter] public bool FiltersWhileLoading { get; set; }
+
+    /// <summary>
+    /// Keep the filter row over the empty state. Only for a list where "nothing to
+    /// show" can still be a filter's doing - the Cookbook hides deprecated recipes
+    /// by default, so an org holding only those is empty until the box is ticked.
+    /// </summary>
+    [Parameter] public bool FiltersWhenEmpty { get; set; }
 
     [Parameter] public bool IsLoading { get; set; }
     [Parameter] public RenderFragment? Loading { get; set; }

@@ -94,6 +94,20 @@ public sealed class ListPageTests : IDisposable
     }
 
     [Fact]
+    public void A_page_whose_filters_can_cause_the_empty_state_keeps_them_over_it()
+    {
+        var cut = _ctx.Render<ListPage>(p => p
+            .Add(c => c.Title, "Cookbook")
+            .Add(c => c.Search, Html("<input class=\"input\" type=\"search\" />"))
+            .Add(c => c.IsEmpty, true)
+            .Add(c => c.FiltersWhenEmpty, true)
+            .Add(c => c.Empty, Html("<div id=\"empty\"></div>")));
+
+        cut.FindAll(".filter-bar").Should().ContainSingle();
+        cut.FindAll("#empty").Should().ContainSingle();
+    }
+
+    [Fact]
     public void A_page_can_supply_its_own_loading_body_and_keep_address_driven_filters_up()
     {
         var cut = _ctx.Render<ListPage>(p => p

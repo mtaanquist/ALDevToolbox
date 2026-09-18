@@ -59,7 +59,7 @@ public sealed class ProjectsBrowserTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.Find(".card .empty-state__title").TextContent.Trim().Should().Be("No solutions yet");
-            cut.Find(".empty-state__action").GetAttribute("href").Should().Be("/solutions/new");
+            cut.Find(".empty-state__action a").GetAttribute("href").Should().Be("/solutions/new");
         });
     }
 

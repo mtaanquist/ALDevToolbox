@@ -20,7 +20,7 @@
     See .design/design-migration.md.
 *@
 
-<ListPage Title="Cookbook" FiltersWhileLoading="true" LoadingText="Loading recipes..."
+<ListPage Title="Cookbook" FiltersWhileLoading="true" FiltersWhenEmpty="true" LoadingText="Loading recipes..."
           Subtitle="Reusable AL recipes - from one-file snippets to almost-complete modules. Search by title, description, or keywords; open one to view its files and copy them into your project."
           IsLoading="@(_results is null)" IsEmpty="@(IsFirstRun && Rows.Count == 0)" HasNoMatches="@(Rows.Count == 0)">
     <Crumbs>

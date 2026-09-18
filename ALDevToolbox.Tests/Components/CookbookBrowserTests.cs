@@ -108,10 +108,10 @@ public sealed class CookbookBrowserTests : IDisposable
             // The distinction that matters: a filtered-empty list must not claim
             // the organisation has none, nor push the suggest action.
             cut.Markup.Should().NotContain("No recipes in this organisation yet");
-            cut.Find(".empty-state__action").TextContent.Trim().Should().Be("Clear filters");
+            cut.Find(".empty-state__action button").TextContent.Trim().Should().Be("Clear filters");
         });
 
-        await cut.InvokeAsync(() => cut.Find(".empty-state__action").Click());
+        await cut.InvokeAsync(() => cut.Find(".empty-state__action button").Click());
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Generic table proxy"));
     }
