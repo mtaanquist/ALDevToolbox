@@ -117,9 +117,9 @@ public sealed class AdminTranslationMemoryTests : IDisposable
         cut.Markup.Should().Contain("Nothing matches",
             "the search must succeed; the page reported a failure instead. What it logged:\n"
             + _logs.ErrorsForFailureMessage());
-        cut.Find(".empty-state__action").TextContent.Should().Contain("Clear filters");
+        cut.Find(".empty-state__action button").TextContent.Should().Contain("Clear filters");
 
-        cut.Find(".empty-state__action").Click();
+        cut.Find(".empty-state__action button").Click();
 
         cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().ContainSingle());
     }
