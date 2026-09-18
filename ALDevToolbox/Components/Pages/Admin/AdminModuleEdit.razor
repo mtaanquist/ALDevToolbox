@@ -17,37 +17,32 @@
 
 <PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">@PageTitleText</h1>
-            <p class="page-head__sub">
-                @if (IsEdit)
-                {
-                    <span>Editing module <code class="code">@Key</code>. Changes apply the next time someone generates a workspace.</span>
-                }
-                else
-                {
-                    <span>Create a new module. Dependencies and the optional ID range size override can be edited later.</span>
-                }
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin/modules">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to list</span>
-            </a>
-            <button type="button" class="btn btn--sm btn--primary"
-                    @onclick="SaveAsync"
-                    disabled="@(_saving || _form is null || _loadFailed)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving..." : (IsEdit ? "Save changes" : "Create module"))</span>
-            </button>
-        </div>
-    </header>
-
-    @if (IsEdit && _loadFailed)
-    {
+<EditPage Title="@PageTitleText"
+          IsLoading="@(!(IsEdit && _loadFailed) && _form is null)"
+          IsNotFound="@(IsEdit && _loadFailed)">
+    <SubtitleContent>
+        @if (IsEdit)
+        {
+            <span>Editing module <code class="code">@Key</code>. Changes apply the next time someone generates a workspace.</span>
+        }
+        else
+        {
+            <span>Create a new module. Dependencies and the optional ID range size override can be edited later.</span>
+        }
+    </SubtitleContent>
+    <Actions>
+        <a class="btn btn--sm" href="/admin/modules">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to list</span>
+        </a>
+        <button type="button" class="btn btn--sm btn--primary"
+                @onclick="SaveAsync"
+                disabled="@(_saving || _form is null || _loadFailed)">
+            <Icon Name="save" Width="14" Height="14" />
+            <span>@(_saving ? "Saving..." : (IsEdit ? "Save changes" : "Create module"))</span>
+        </button>
+    </Actions>
+    <NotFound>
         <p class="alert alert--danger" role="alert">
             <Icon Name="circle-alert" Width="16" Height="16" />
             <span>
@@ -55,13 +50,8 @@
                 renamed or permanently removed.
             </span>
         </p>
-    }
-    else if (_form is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else
-    {
+    </NotFound>
+    <ChildContent>
         @if (_isDeleted)
         {
             <p class="alert alert--warn" role="status">
@@ -92,7 +82,7 @@
                     <div class="form-grid">
                         <div class="field">
                             <label class="field__label" for="mod-key">Key</label>
-                            <input class="input" id="mod-key" type="text" @bind="_form.Key" @bind:event="oninput"
+                            <input class="input" id="mod-key" type="text" @bind="_form!.Key" @bind:event="oninput"
                                    readonly="@IsEdit" pattern="[a-z0-9-]+" required
                                    placeholder="e.g. document-capture" />
                             <span class="field__hint">
@@ -104,7 +94,7 @@
                         <div class="field">
                             <label class="field__label" for="mod-name">Name</label>
                             <input class="input" id="mod-name" type="text" required
-                                   @bind="_form.Name" @bind:event="oninput"
+                                   @bind="_form!.Name" @bind:event="oninput"
                                    placeholder="e.g. Document Capture" />
                             <span class="field__hint">Display name shown to users in the module picker.</span>
                             <FieldError Field="Name" Errors="_fieldErrors" />
@@ -114,7 +104,7 @@
                             <label class="field__label" for="mod-ext-name">Extension name</label>
                             <input class="input" id="mod-ext-name" type="text" required
                                    pattern="[A-Z][A-Za-z0-9]*"
-                                   @bind="_form.ExtensionName" @bind:event="oninput"
+                                   @bind="_form!.ExtensionName" @bind:event="oninput"
                                    placeholder="e.g. DocumentCapture" />
                             <span class="field__hint">
                                 PascalCase. Used as the folder name in the generated
@@ -127,7 +117,7 @@
                         <div class="field">
                             <label class="field__label" for="mod-id-range-size">ID range size override</label>
                             <input class="input" id="mod-id-range-size" type="number" min="1"
-                                   @bind="_form.IdRangeSize" @bind:event="oninput"
+                                   @bind="_form!.IdRangeSize" @bind:event="oninput"
                                    placeholder="(inherit from template)" />
                             <span class="field__hint">
                                 Optional. Leave blank and this module takes the size
@@ -137,8 +127,8 @@
                         </div>
                     </div>
 
-                    <label class="check @(_form.Deprecated ? "is-checked" : "")">
-                        <input type="checkbox" @bind="_form.Deprecated" />
+                    <label class="check @(_form!.Deprecated ? "is-checked" : "")">
+                        <input type="checkbox" @bind="_form!.Deprecated" />
                         <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                         <span>Deprecated - hide from the user-facing module picker but keep available for admin regeneration.</span>
                     </label>
@@ -157,18 +147,18 @@
                 }
                 @if (_catalog.Count == 0)
                 {
-                    <div class="empty-state">
-                        <span class="empty-state__icon"><Icon Name="book-open" Width="21" Height="21" /></span>
-                        <span class="empty-state__title">Nothing to depend on yet</span>
-                        <span class="empty-state__text">
+                    <EmptyState Icon="book-open" Title="Nothing to depend on yet">
+                        <Text>
                             Module dependencies are picked from the shared catalogue,
                             and it's empty. Add the apps your team depends on first.
-                        </span>
-                        <a class="btn empty-state__action" href="/admin/catalog">
-                            <Icon Name="book-open" Width="14" Height="14" />
-                            <span>Open the catalogue</span>
-                        </a>
-                    </div>
+                        </Text>
+                        <Action>
+                            <a class="btn" href="/admin/catalog">
+                                <Icon Name="book-open" Width="14" Height="14" />
+                                <span>Open the catalogue</span>
+                            </a>
+                        </Action>
+                    </EmptyState>
                 }
                 else
                 {
@@ -188,7 +178,7 @@
                             <span>Version</span>
                             <span><span class="u-sr">Actions</span></span>
                         </div>
-                        @if (_form.Dependencies.Count == 0)
+                        @if (_form!.Dependencies.Count == 0)
                         {
                             <p class="sub-rows__empty">
                                 No dependencies yet. Pick one below to add it.
@@ -196,10 +186,10 @@
                         }
                         else
                         {
-                            @for (var i = 0; i < _form.Dependencies.Count; i++)
+                            @for (var i = 0; i < _form!.Dependencies.Count; i++)
                             {
                                 var index = i;
-                                var row = _form.Dependencies[index];
+                                var row = _form!.Dependencies[index];
                                 var offCatalogue = !_catalog.Any(c => string.Equals(c.DepId, row.DepId, StringComparison.OrdinalIgnoreCase));
                                 <div class="sub-row">
                                     <span class="sub-row__move">
@@ -207,7 +197,7 @@
                                                 @onclick="() => MoveDependency(index, -1)" title="Move up">
                                             <Icon Name="arrow-up" Width="12" Height="12" />
                                         </button>
-                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Dependencies.Count - 1)"
+                                        <button type="button" class="btn btn--sm" disabled="@(index == _form!.Dependencies.Count - 1)"
                                                 @onclick="() => MoveDependency(index, 1)" title="Move down">
                                             <Icon Name="arrow-down" Width="12" Height="12" />
                                         </button>
@@ -294,26 +284,25 @@
                 </div>
                 <div class="card__body form-sec">
                     <MustacheVarsHint />
-                    @if (_form.Folders.Count == 0)
+                    @if (_form!.Folders.Count == 0)
                     {
-                        <div class="empty-state empty-state--quiet">
-                            <span class="empty-state__title">No folders yet</span>
-                            <span class="empty-state__text">
+                        <EmptyState Title="No folders yet" Quiet="true">
+                            <Text>
                                 Add one (for example <code class="code">src</code>) to give this
                                 module a starting layout. Leaving it empty is fine too.
-                            </span>
-                        </div>
+                            </Text>
+                        </EmptyState>
                     }
                     else
                     {
                         <div class="folder-editor__list">
-                            @for (var f = 0; f < _form.Folders.Count; f++)
+                            @for (var f = 0; f < _form!.Folders.Count; f++)
                             {
                                 var folderIndex = f;
-                                var folder = _form.Folders[folderIndex];
+                                var folder = _form!.Folders[folderIndex];
                                 <RecursiveFolderEditor Folder="folder"
                                                        Index="folderIndex"
-                                                       SiblingCount="_form.Folders.Count"
+                                                       SiblingCount="_form!.Folders.Count"
                                                        Depth="0"
                                                        FieldKeyPrefix="@($"Folders[{folderIndex}]")"
                                                        Errors="_fieldErrors"
@@ -329,13 +318,14 @@
                SaveAsync - the visible Save button moved to the header. *@
             <button type="submit" class="u-sr" aria-hidden="true" tabindex="-1">Save</button>
         </form>
-    }
-
-    @if (_form is not null && IsEdit && _existingId is not null)
-    {
-        <AuditHistoryPanel EntityType="AuditEntityType.Module" EntityId="_existingId.Value" Title="Module history" />
-    }
-</div>
+    </ChildContent>
+    <History>
+        @if (_form is not null && IsEdit && _existingId is not null)
+        {
+            <AuditHistoryPanel EntityType="AuditEntityType.Module" EntityId="_existingId.Value" Title="Module history" />
+        }
+    </History>
+</EditPage>
 
 @code {
     [Parameter] public string? Key { get; set; }
