@@ -236,11 +236,26 @@ public sealed class NewWorkspaceRepositoryTests : IDisposable
             // way to go and do it.
             card.TextContent.Should().Contain(Repo);
             card.TextContent.Should().Contain("only allows changes to");
-            card.TextContent.Should().Contain("waiting in one");
+            card.TextContent.Should().Contain("waiting in a");
+            card.TextContent.Should().Contain("Review and merge it");
             card.TextContent.Should().Contain("Open the pull request");
             card.InnerHtml.Should().Contain($"https://github.com/{Repo}/pull/1");
-            // The clone command stays: it is the next thing they do either way.
-            card.TextContent.Should().Contain("git clone");
+
+            // Cloning is the one thing they cannot usefully do yet: the branch
+            // holds a placeholder until the pull request merges, so a clone
+            // would hand them an empty workspace.
+            card.TextContent.Should().NotContain("git clone");
+            card.TextContent.Should().NotContain("Clone in VS Code");
+            card.QuerySelectorAll(".ws-repo-clone").Should().BeEmpty();
+            card.QuerySelectorAll("a[href^='vscode://']").Should().BeEmpty();
+            card.TextContent.Should().Contain("You can clone it once the pull request is merged");
+
+            // The pull request comes first in the actions row, because it is
+            // the thing still to do.
+            var actions = card.QuerySelectorAll(".ws-repo-actions a");
+            actions[0].TextContent.Should().Contain("Open the pull request");
+            actions[1].TextContent.Should().Contain("Open it on GitHub");
+            actions[0].TextContent.Should().Contain("opens in a new tab");
         }, TimeSpan.FromSeconds(10));
     }
 

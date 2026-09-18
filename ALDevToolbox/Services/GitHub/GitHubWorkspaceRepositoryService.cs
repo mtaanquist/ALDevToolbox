@@ -719,9 +719,6 @@ public sealed class GitHubWorkspaceRepositoryService
         var name = repository.Name;
         var branch = repository.DefaultBranch;
 
-        // Where the one seeded file is, for the refusal to name honestly if
-        // everything below is refused too.
-        var seedSits = SeedBranch;
         try
         {
             var head = await _github.GetBranchHeadShaAsync(token, owner, name, branch, ct);
@@ -729,7 +726,6 @@ public sealed class GitHubWorkspaceRepositoryService
             {
                 head = await StartDefaultBranchAsync(token, repository, seed, author, ct);
             }
-            seedSits = branch;
 
             var current = await _github.GetRepositoryAsync(token, owner, name, ct);
             if (!string.Equals(current?.DefaultBranch, branch, StringComparison.Ordinal))
@@ -751,8 +747,8 @@ public sealed class GitHubWorkspaceRepositoryService
             var pullRequest = await _github.CreatePullRequestAsync(
                 token, owner, name, $"Add the {plan.WorkspaceName} workspace",
                 WorkspaceBranch, branch,
-                $"AL Dev Toolbox generated this workspace: {fileCount} file(s) for "
-                + $"{plan.WorkspaceName}.\n\n"
+                $"AL Dev Toolbox generated this workspace: {fileCount} "
+                + $"{(fileCount == 1 ? "file" : "files")} for {plan.WorkspaceName}.\n\n"
                 + $"Your GitHub organisation only allows changes to {branch} through a pull request, so "
                 + "the files are here rather than committed straight to it. The workspace is in this "
                 + $"pull request, and {branch} holds only the one file the repository was started with "
@@ -767,17 +763,20 @@ public sealed class GitHubWorkspaceRepositoryService
         }
         catch (GitHubApiException ex)
         {
-            // Both routes refused. The repository exists and holds the one
-            // seeded file, which is worth saying plainly rather than reporting
-            // GitHub's wording at somebody who cannot act on it.
+            // Both routes refused. What is left on GitHub is one placeholder
+            // file, and the person needs the repository named so they can find
+            // it - not GitHub's wording, which they cannot act on, and not the
+            // name of a branch the toolbox invented, which means nothing to
+            // them.
             _logger.LogWarning(
                 ex, "GitHub refused the pull request holding the workspace for {RepoFullName} too.",
                 repository.FullName);
             throw Refuse(RepositoryField,
                 $"Your GitHub organisation only allows changes to {repository.DefaultBranch} through a "
-                + "pull request, and GitHub also refused the pull request the toolbox tried instead. "
-                + $"Nothing was left on the repository except one file on {seedSits}. Download the ZIP "
-                + "and push it through a pull request yourself.");
+                + "pull request, and GitHub refused the pull request AL Dev Toolbox opened as well. "
+                + $"{repository.FullName} was created but is empty apart from a single placeholder file. "
+                + "Use Download ZIP above and push the workspace yourself through a pull request, or "
+                + "delete the repository on GitHub and try again.");
         }
     }
 

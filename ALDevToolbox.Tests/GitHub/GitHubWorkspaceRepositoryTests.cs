@@ -722,11 +722,15 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         var message = (await act.Should().ThrowAsync<PlanValidationException>())
             .Which.Errors["GitHubRepository"];
         message.Should().Contain("pull request");
-        // What is actually on the repository, and what the person can do
-        // instead - not GitHub's wording quoted at somebody who cannot act on it.
-        message.Should().Contain("one file");
-        message.Should().Contain("Download the ZIP");
+        // What is actually on the repository, named so they can find it, and
+        // the two ways out - not GitHub's wording quoted at somebody who cannot
+        // act on it, and not the name of a branch the toolbox invented.
+        message.Should().Contain(Repo);
+        message.Should().Contain("single placeholder file");
+        message.Should().Contain("Download ZIP");
+        message.Should().Contain("delete the repository");
         message.Should().NotContain("Validation Failed");
+        message.Should().NotContain("aldt/");
     }
 
     /// <summary>
