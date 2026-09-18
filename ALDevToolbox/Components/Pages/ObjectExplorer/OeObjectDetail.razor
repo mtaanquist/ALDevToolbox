@@ -18,92 +18,79 @@
     here rather than a paragraph that happens to have a button in it.
 *@
 
-<div class="page">
-    @if (_object is null && _loaded)
-    {
+<DetailPage IsLoading="@(_object is null && !_loaded)"
+            LoadingText="Loading object..."
+            IsNotFound="@(_object is null && _loaded)"
+            ShowActions="@(_object?.SourceFileId is not null)"
+            Title="@(_object?.Name)">
+    <NotFound>
         @* An id that resolves to nothing used to leave the page on "Loading..."
            for ever, which reads as a hang rather than an answer. *@
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                <span class="empty-state__title">We couldn't find that object</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="funnel-x" Title="We couldn't find that object" Heading="true">
+                <Text>
                     The release it belonged to may have been removed or re-indexed
                     since this link was made.
-                </span>
-                <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
-            </div>
+                </Text>
+                <Action>
+                    <a class="btn" href="/object-explorer">Back to Object Explorer</a>
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else if (_object is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading object...</span></div>
-    }
-    else
-    {
-        <div class="page-head">
-            <div>
-                <div class="page-head__crumbs">
-                    <a href="/object-explorer">Object Explorer</a>
-                    @if (_releaseId is { } rid)
-                    {
-                        <Icon Name="chevron-right" Width="14" Height="14" />
-                        <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
-                    }
-                    <Icon Name="chevron-right" Width="14" Height="14" />
-                    <a href="@($"/object-explorer/module/{_object.ModuleId}")">@_object.ModuleName</a>
-                </div>
-                <h1 class="page-head__title">@_object.Name</h1>
-            </div>
-            @if (_object.SourceFileId is { } fid)
-            {
-                <div class="page-head__actions">
-                    <a class="btn btn--primary" href="@Links.SourceFile(fid, _object.LineNumber)">
-                        <Icon Name="file-code" Width="16" Height="16" />
-                        <span>View source</span>
-                    </a>
-                </div>
-            }
+    </NotFound>
+    <Crumbs>
+        <a href="/object-explorer">Object Explorer</a>
+        @if (_releaseId is { } rid)
+        {
+            <Icon Name="chevron-right" Width="14" Height="14" />
+            <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
+        }
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <a href="@($"/object-explorer/module/{_object!.ModuleId}")">@_object!.ModuleName</a>
+    </Crumbs>
+    <Actions>
+        <a class="btn btn--primary" href="@Links.SourceFile(_object!.SourceFileId!.Value, _object.LineNumber)">
+            <Icon Name="file-code" Width="16" Height="16" />
+            <span>View source</span>
+        </a>
+    </Actions>
+    <Meta>
+        <div class="meta-item">
+            <span class="meta-item__label">Type</span>
+            <span class="meta-item__value">@_object!.Kind</span>
         </div>
-
-        <div class="meta-row">
-            <div class="meta-item">
-                <span class="meta-item__label">Type</span>
-                <span class="meta-item__value">@_object.Kind</span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-item__label">Object ID</span>
-                <span class="meta-item__value meta-item__value--mono">@(_object.ObjectId?.ToString() ?? "—")</span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-item__label">Extension</span>
-                <span class="meta-item__value" title="@_object.ModuleName">@_object.ModuleName</span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-item__label">Namespace</span>
-                <span class="meta-item__value meta-item__value--mono"
-                      title="@(_object.Namespace ?? "None")">@(string.IsNullOrEmpty(_object.Namespace) ? "—" : _object.Namespace)</span>
-            </div>
+        <div class="meta-item">
+            <span class="meta-item__label">Object ID</span>
+            <span class="meta-item__value meta-item__value--mono">@(_object!.ObjectId?.ToString() ?? "—")</span>
         </div>
-
+        <div class="meta-item">
+            <span class="meta-item__label">Extension</span>
+            <span class="meta-item__value" title="@_object!.ModuleName">@_object!.ModuleName</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-item__label">Namespace</span>
+            <span class="meta-item__value meta-item__value--mono"
+                  title="@(_object!.Namespace ?? "None")">@(string.IsNullOrEmpty(_object!.Namespace) ? "—" : _object!.Namespace)</span>
+        </div>
+    </Meta>
+    <ChildContent>
         <section class="card">
             <div class="card__head"><h2 class="card__title">Symbols</h2>
                 @* No chip on an empty section - the empty state says the same
                    thing in words directly below it. *@
-                @if (_object.Symbols.Count > 0)
+                @if (_object!.Symbols.Count > 0)
                 {
-                    <span class="badge">@_object.Symbols.Count.ToString("N0")</span>
+                    <span class="badge">@_object!.Symbols.Count.ToString("N0")</span>
                 }</div>
-            @if (_object.Symbols.Count == 0)
+            @if (_object!.Symbols.Count == 0)
             {
                 <div class="card__body">
-                    <div class="empty-state empty-state--quiet">
-                        <span class="empty-state__title">No symbols recorded</span>
-                        <span class="empty-state__text">
+                    <EmptyState Title="No symbols recorded" Quiet="true">
+                        <Text>
                             No fields, procedures or triggers were found for this object.
                             That usually means the app shipped without its source.
-                        </span>
-                    </div>
+                        </Text>
+                    </EmptyState>
                 </div>
             }
             else
@@ -117,7 +104,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var s in _object.Symbols)
+                        @foreach (var s in _object!.Symbols)
                         {
                             <tr>
                                 <td>@s.Kind</td>
@@ -132,20 +119,19 @@
 
         <section class="card">
             <div class="card__head"><h2 class="card__title">Variables</h2>
-                @if (_object.Variables.Count > 0)
+                @if (_object!.Variables.Count > 0)
                 {
-                    <span class="badge">@_object.Variables.Count.ToString("N0")</span>
+                    <span class="badge">@_object!.Variables.Count.ToString("N0")</span>
                 }</div>
-            @if (_object.Variables.Count == 0)
+            @if (_object!.Variables.Count == 0)
             {
                 <div class="card__body">
-                    <div class="empty-state empty-state--quiet">
-                        <span class="empty-state__title">No variables</span>
-                        <span class="empty-state__text">
+                    <EmptyState Title="No variables" Quiet="true">
+                        <Text>
                             This object declares no variables of its own. Variables declared
                             inside a procedure are not listed here.
-                        </span>
-                    </div>
+                        </Text>
+                    </EmptyState>
                 </div>
             }
             else
@@ -159,7 +145,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var v in _object.Variables)
+                        @foreach (var v in _object!.Variables)
                         {
                             <tr>
                                 <td><strong>@v.Name</strong></td>
@@ -190,7 +176,7 @@
                 <div>
                     <h2 class="card__title">Find references</h2>
                     <p class="card__sub">
-                        Where @_object.Name is used, in this release and the releases it
+                        Where @_object!.Name is used, in this release and the releases it
                         builds on.
                         @if (_fromReleaseLabel is not null)
                         {
@@ -206,7 +192,7 @@
             @if (_referencesLoading)
             {
                 <div class="card__body">
-                    <div class="loading-block"><span class="spinner"></span><span>Searching...</span></div>
+                    <LoadingBlock Text="Searching..." />
                 </div>
             }
             else if (_references is null)
@@ -221,13 +207,12 @@
             else if (_references.Count == 0)
             {
                 <div class="card__body">
-                    <div class="empty-state empty-state--quiet">
-                        <span class="empty-state__title">No references found</span>
-                        <span class="empty-state__text">
+                    <EmptyState Title="No references found" Quiet="true">
+                        <Text>
                             Nothing in this release, or the releases it builds on, refers to
-                            @_object.Name. To include a newer release, open this object from there.
-                        </span>
-                    </div>
+                            @_object!.Name. To include a newer release, open this object from there.
+                        </Text>
+                    </EmptyState>
                 </div>
             }
             else
@@ -268,8 +253,8 @@
                 </table>
             }
         </section>
-    }
-</div>
+    </ChildContent>
+</DetailPage>
 
 @code {
     [Parameter] public long ObjectId { get; set; }

@@ -34,81 +34,76 @@
 
 <PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="page oe-release">
-    @if (_release is null && _loaded)
-    {
+<DetailPage IsLoading="@(_release is null && !_loaded)"
+            LoadingText="Loading release..."
+            IsNotFound="@(_release is null && _loaded)"
+            Title="@(_release?.Label)"
+            PageClass="oe-release"
+            ShowMeta="@(_repoUrls.Count > 0)">
+    <NotFound>
         @* An id that resolves to nothing - a removed release, or one that
            belongs to a solution the viewer can't see - used to leave the page on
            "Loading..." for ever. Same shape as OeModuleDetail. A private
            solution's release is deliberately indistinguishable from a missing
            one here; see .design/teams-and-visibility.md. *@
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                <span class="empty-state__title">We couldn't find that release</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="funnel-x" Title="We couldn't find that release" Heading="true">
+                <Text>
                     It may have been removed since this link was made, or it belongs
                     to a solution you don't have access to.
-                </span>
-                <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
-            </div>
+                </Text>
+                <Action>
+                    <a class="btn" href="/object-explorer">Back to Object Explorer</a>
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else if (_release is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading release...</span></div>
-    }
-    else
-    {
-        <div class="page-head">
-            <div>
-                <div class="page-head__crumbs">
-                    <a href="/object-explorer">Object Explorer</a>
-                    <Icon Name="chevron-right" Width="14" Height="14" />
-                    <span>@_release.Label</span>
-                </div>
-                <h1 class="page-head__title">@_release.Label</h1>
-                <p class="page-head__sub">
-                    @_release.ModuleCount extension@(_release.ModuleCount == 1 ? "" : "s")
-                    @if (!string.IsNullOrEmpty(_release.BcVersion))
-                    {
-                        <span> · BC @_release.BcVersion</span>
-                    }
-                    <span> · @FormatStatus(_release.Status)</span>
-                </p>
-                @if (_repoUrls.Count > 0)
+    </NotFound>
+    <Crumbs>
+        <a href="/object-explorer">Object Explorer</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>@_release!.Label</span>
+    </Crumbs>
+    <SubtitleContent>
+        @_release!.ModuleCount extension@(_release!.ModuleCount == 1 ? "" : "s")
+        @if (!string.IsNullOrEmpty(_release!.BcVersion))
+        {
+            <span> · BC @_release!.BcVersion</span>
+        }
+        <span> · @FormatStatus(_release!.Status)</span>
+    </SubtitleContent>
+    @* Where the release was built from. A second line under the subtitle until the
+       page moved onto the detail frame, which keeps facts in the meta row. *@
+    <Meta>
+        <span class="meta-item">
+            <span class="meta-item__label">@(_repoUrls.Count == 1 ? "Repository" : "Repositories")</span>
+            <span class="meta-item__value oe-release__repos">
+                @foreach (var url in _repoUrls)
                 {
-                    <p class="page-head__sub oe-release__repos">
-                        <Icon Name="git-merge" Width="13" Height="13" />
-                        @foreach (var (url, i) in _repoUrls.Select((u, i) => (u, i)))
-                        {
-                            @if (i > 0) { <span> · </span> }
-                            <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
-                        }
-                    </p>
+                    <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
                 }
-            </div>
-            <div class="page-head__actions">
-                @if (_artifactProjectId is { } pid)
-                {
-                    <a class="btn btn--sm" href="@($"/pipelines/{pid}")">
-                        <Icon Name="arrow-left" Width="14" Height="14" />
-                        <span>Back to artifact</span>
-                    </a>
-                }
-                <AuthorizeView Roles="Admin,Editor">
-                    <a class="btn btn--sm" href="/admin/object-explorer/release/@ReleaseId/modules">
-                        <Icon Name="package-plus" Width="14" Height="14" />
-                        <span>Add extensions</span>
-                    </a>
-                </AuthorizeView>
-                <a class="btn btn--sm" href="/object-explorer">
-                    <Icon Name="arrow-left" Width="14" Height="14" />
-                    <span>All releases</span>
-                </a>
-            </div>
-        </div>
-
+            </span>
+        </span>
+    </Meta>
+    <Actions>
+        @if (_artifactProjectId is { } pid)
+        {
+            <a class="btn btn--sm" href="@($"/pipelines/{pid}")">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to artifact</span>
+            </a>
+        }
+        <AuthorizeView Roles="Admin,Editor">
+            <a class="btn btn--sm" href="/admin/object-explorer/release/@ReleaseId/modules">
+                <Icon Name="package-plus" Width="14" Height="14" />
+                <span>Add extensions</span>
+            </a>
+        </AuthorizeView>
+        <a class="btn btn--sm" href="/object-explorer">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>All releases</span>
+        </a>
+    </Actions>
+    <ChildContent>
         @* Scope is pill-tabs, not a select: it is the control that decides what
            every other filter means, and the handoff's own Object Explorer bar
            spells that choice as tabs. The Alt+1..4 shortcuts moved off the
@@ -163,8 +158,8 @@
                 <span class="select-wrap" style="width: 280px">
                     <select class="select" @bind="_compareDirection" @bind:after="ReloadAsync"
                             aria-label="Which release to treat as the starting point">
-                        <option value="ab">@_release.Label → @CompareRightLabel</option>
-                        <option value="ba">@CompareRightLabel → @_release.Label</option>
+                        <option value="ab">@_release!.Label → @CompareRightLabel</option>
+                        <option value="ba">@CompareRightLabel → @_release!.Label</option>
                     </select>
                     <Icon Name="chevron-down" Css="select-wrap__caret" />
                 </span>
@@ -439,8 +434,8 @@
                                   ObjectResults="_objectCompareResults" />
                 break;
         }
-    }
-</div>
+    </ChildContent>
+</DetailPage>
 
 @* Shared "Compare with..." picker - opened from any object row's actions menu.
    One modal for the page rather than a per-row dropdown of every release. *@
