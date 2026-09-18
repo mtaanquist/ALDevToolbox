@@ -664,7 +664,7 @@
 
         _preview = rows.Select(r => r.CanPushDate
             ? new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
-                $"{WhenText(r.NextUpdateDate)} → {DateText(r.NextUpdateLatestDate)} (UTC)", PreviewGroup.Acting)
+                $"{WhenText(r.NextUpdateDate)} → {DateText(r.EffectiveLatestDate)} (UTC)", PreviewGroup.Acting)
             : new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
                 WhyNoPush(r), PreviewGroup.Skipped)).ToList();
 
@@ -1271,7 +1271,7 @@
     }
 
     private static string LatestText(UpgradeFleetRow row) =>
-        row.NextUpdateLatestDate is { } latest ? DateText(latest) : "—";
+        row.EffectiveLatestDate is { } latest ? DateText(latest) : "—";
 
     private static string DateText(DateTime? at) =>
         at is { } value ? value.ToString("yyyy-MM-dd") : "no date";
@@ -1286,7 +1286,7 @@
     private static string WhyNoPush(UpgradeFleetRow row)
     {
         if (!row.HasUpdate) return "no update is waiting";
-        if (row.NextUpdateLatestDate is null) return "Business Central hasn't given it a last possible date";
+        if (row.EffectiveLatestDate is null) return "Business Central hasn't given it a last possible date";
         return "its date is already the latest allowed";
     }
 

@@ -411,10 +411,18 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private async Task<IReadOnlySet<Guid>> ReleasedAppIdsAsync(
         int projectId, string environmentName, CancellationToken ct)
     {
+        // A delivery snapshots the environment's name at the time it was scheduled, so a
+        // soft-deleted environment — which Business Central renames, see the fold in
+        // UpsertEnvironmentsAsync — would otherwise lose every release made to it before
+        // the deletion. Its pre-deletion name is the same string with the stamp stripped,
+        // so match that too.
+        var formerName = SoftDeleteStampedBaseName(environmentName);
+
         var ids = await _db.OeProjectDeliveryResults.AsNoTracking()
             .Where(r => r.AppId != null
                         && r.ProjectDelivery!.ProjectId == projectId
-                        && r.ProjectDelivery.EnvironmentName == environmentName)
+                        && (r.ProjectDelivery.EnvironmentName == environmentName
+                            || (formerName != null && r.ProjectDelivery.EnvironmentName == formerName)))
             .Select(r => r.AppId!)
             .Distinct()
             .ToListAsync(ct);
@@ -661,16 +669,22 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var next = await ReadNextUpdateAsync(env, ct)
             ?? throw Validation("Update", "No update is available to reschedule.");
 
-        if (next.LatestSelectableDateTime is not { } latest)
+        if (BcUpdateSchedule.EffectiveLatest(next.LatestSelectableDateTime) is not { } latest)
         {
             throw Validation("Update", "Business Central hasn't given this update a last possible date, so it can't be moved.");
         }
-        if (next.SelectedDateTime == latest)
+        // On or after, by calendar day in UTC rather than by tick: Business Central stores
+        // the date at the start of the environment's own update window, so an update that
+        // is already as late as it can go reads back a different time of day from the one
+        // we would send — and a window starting after midnight UTC (02:00 in Copenhagen is
+        // 01:00 UTC) lands it on the following day. Either way there is nowhere left to
+        // move it to, and re-sending would only fail against the bound.
+        if (next.SelectedDateTime?.UtcDateTime.Date >= latest.UtcDateTime.Date)
         {
             throw Validation("Update", "This update's date is already the latest Microsoft allows.");
         }
 
-        await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct);
+        await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct, verifyDateMoved: true);
         await RecordUpdateActionAsync(
             projectId, env, next, "Moved the update date out to the latest Business Central allows", ct);
         _panelCache.Invalidate(projectId, environmentId);
@@ -728,13 +742,24 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// shows the new date without waiting for the nightly sweep. The PATCH also selects
     /// the update, which matters when the picked one was merely available: setting a date
     /// on it is the customer choosing it.
+    /// <para>
+    /// With <paramref name="verifyDateMoved"/> the re-read is also the proof that the
+    /// write landed. Issue #804 saw the move recorded as done while the date stayed exactly
+    /// where it was, so the write is verified rather than trusted, and a history entry
+    /// saying "done" for a date that never moved is worse than no entry at all. The test is
+    /// whether the date <em>changed</em>, not whether it landed where we asked: Business
+    /// Central puts it at the start of the customer's update window, which can be the
+    /// following UTC day. A re-read that <em>fails</em> still only costs the freshness — it
+    /// is a re-read that succeeds with an unchanged date that fails the action.
+    /// </para>
     /// </summary>
     private async Task WriteUpdateScheduleAsync(
         (string Token, string Family, string Name, int Id) env,
         BcEnvironmentUpdate update,
         DateTimeOffset selectedDateTime,
         bool? ignoreUpdateWindow,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool verifyDateMoved = false)
     {
         try
         {
@@ -750,13 +775,15 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         // Re-read rather than assume: Business Central decides what it actually stored,
         // and a mirror that says what we asked for would be a guess. A failure here loses
         // the freshness, never the write.
+        BcEnvironmentUpdate? stored;
         try
         {
             var updates = await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+            stored = PickNextUpdate(updates);
             var row = await _db.OeProjectEnvironments.FirstOrDefaultAsync(e => e.Id == env.Id, ct);
             if (row is not null)
             {
-                ApplyNextUpdate(row, PickNextUpdate(updates));
+                ApplyNextUpdate(row, stored);
                 await _db.SaveChangesAsync(ct);
             }
         }
@@ -765,7 +792,24 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             _logger.LogWarning(
                 "The update date on {Environment} was changed, but re-reading it failed: {Message}. The cached row stays stale until the next refresh.",
                 env.Name, ex.Message);
+            return;
         }
+
+        if (!verifyDateMoved) return;
+
+        // Did it move, not did it land where we asked: the stored date is the start of the
+        // customer's update window, so a window opening after midnight UTC legitimately
+        // puts it on the day after the one we sent. Two nulls count as unchanged.
+        if (stored?.SelectedDateTime != update.SelectedDateTime) return;
+
+        var landed = stored?.SelectedDateTime?.UtcDateTime;
+        _logger.LogWarning(
+            "Business Central kept {Environment} on {StoredDateTime} after being asked for {SelectedDateTime}, so the move was not recorded as done.",
+            env.Name, landed, selectedDateTime);
+
+        throw Validation("Update", landed is { } value
+            ? $"Business Central did not accept the new date. Its schedule still says {value:yyyy-MM-dd}."
+            : "Business Central did not accept the new date. Its schedule still has no date.");
     }
 
     /// <summary>
@@ -962,6 +1006,15 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// picked company), add new ones, and stamp <c>MissingSince</c> on any that the
     /// fetch no longer returns rather than deleting them — so a release pipeline's FK
     /// never dangles. Assumes the caller saves.
+    /// <para>
+    /// One wrinkle makes "match by name" not quite enough: when a customer soft-deletes
+    /// an environment, Business Central hands the name back under a <em>new</em> one with
+    /// the deletion time appended (<c>JLE</c> returns as <c>JLE-260911110359</c>), so the
+    /// original is free to be reused. Read literally that is one environment vanishing
+    /// and a stranger appearing, which is what issue #808 saw on screen. The fold below
+    /// puts the pair back onto the row the pipelines already point at. See
+    /// <c>.design/saas-delivery.md</c> ("soft_deleted_on and missing_since").
+    /// </para>
     /// </summary>
     private async Task UpsertEnvironmentsAsync(OeProject project, IReadOnlyList<BcEnvironment> fetched, CancellationToken ct)
     {
@@ -971,6 +1024,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var byName = existing.ToDictionary(e => e.Name, StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fetchedNames = fetched.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var env in fetched)
         {
@@ -979,18 +1033,34 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             {
                 ApplyFetched(row, env, now);
                 row.MissingSince = null; // back if it had vanished
+                continue;
             }
-            else
+
+            if (FoldTarget(env, byName, fetchedNames) is { } renamed)
             {
-                var row2 = new OeProjectEnvironment
-                {
-                    OrganizationId = project.OrganizationId,
-                    ProjectId = project.Id,
-                    Name = env.Name,
-                };
-                ApplyFetched(row2, env, now);
-                _db.OeProjectEnvironments.Add(row2);
+                _logger.LogInformation(
+                    "Business Central renamed soft-deleted environment {OldEnvironmentName} to {NewEnvironmentName} for project {ProjectId}; folded onto the existing row.",
+                    renamed.Name, env.Name, project.Id);
+                seen.Add(renamed.Name); // so the pass below doesn't call the old name missing
+                renamed.Name = env.Name; // the API name is what later admin-center calls address
+                byName[env.Name] = renamed;
+                ApplyFetched(renamed, env, now);
+                renamed.MissingSince = null;
+                continue;
             }
+
+            // Nothing to fold onto — including the reverse race, where the first refresh
+            // after the deletion is also the first time we hear of the environment at
+            // all. Then the suffixed name is simply a new environment, soft-deleted from
+            // the moment we meet it, and that is the honest thing to show.
+            var row2 = new OeProjectEnvironment
+            {
+                OrganizationId = project.OrganizationId,
+                ProjectId = project.Id,
+                Name = env.Name,
+            };
+            ApplyFetched(row2, env, now);
+            _db.OeProjectEnvironments.Add(row2);
         }
 
         foreach (var row in existing)
@@ -1000,6 +1070,55 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 row.MissingSince = now;
             }
         }
+    }
+
+    /// <summary>
+    /// The existing row a freshly-seen, soft-deleted environment is the renamed
+    /// continuation of, or null when there is none and it should be inserted as new.
+    /// Deliberately narrow: only a soft-deleted fetch with a deletion stamp on its name
+    /// folds, only onto a row that isn't itself soft-deleted, and only when the base name
+    /// is absent from this same fetch — a customer who has already created a fresh
+    /// <c>JLE</c> alongside the deleted one must keep two rows.
+    /// </summary>
+    private static OeProjectEnvironment? FoldTarget(
+        BcEnvironment env,
+        Dictionary<string, OeProjectEnvironment> byName,
+        HashSet<string> fetchedNames)
+    {
+        if (!IsSoftDeleted(env)) return null;
+        if (SoftDeleteStampedBaseName(env.Name) is not { } baseName) return null;
+        if (fetchedNames.Contains(baseName)) return null;
+        if (!byName.TryGetValue(baseName, out var row)) return null;
+        return row.SoftDeletedOn is null ? row : null;
+    }
+
+    /// <summary>
+    /// True when the API says this environment has been soft-deleted. Either signal is
+    /// enough, and the status is compared case-insensitively because enum-ish values are
+    /// stored verbatim from Microsoft (see <see cref="BcEnvironment"/>).
+    /// </summary>
+    private static bool IsSoftDeleted(BcEnvironment env) =>
+        env.SoftDeletedOn is not null
+        || string.Equals(env.Status?.Trim(), "SoftDeleted", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Strips the <c>-yyMMddHHmmss</c> deletion stamp Business Central appends when an
+    /// environment is soft-deleted, returning the name it had before
+    /// (<c>JLE-260911110359</c> → <c>JLE</c>), or null when the name carries no such
+    /// stamp. Twelve digits are all this checks: whether they parse as a plausible date
+    /// is Microsoft's business, and the caller only folds a name that the API has also
+    /// told us is soft-deleted.
+    /// </summary>
+    internal static string? SoftDeleteStampedBaseName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var dash = name.LastIndexOf('-');
+        if (dash <= 0 || name.Length - dash - 1 != 12) return null;
+        for (var i = dash + 1; i < name.Length; i++)
+        {
+            if (!char.IsAsciiDigit(name[i])) return null;
+        }
+        return name[..dash];
     }
 
     /// <summary>

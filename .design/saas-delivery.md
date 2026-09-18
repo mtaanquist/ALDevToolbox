@@ -148,7 +148,20 @@ Three rules that come with them:
   and `webServiceUrl` is derivable and unused.
 - **`soft_deleted_on` and `missing_since` are different signals.** A soft-deleted environment still
   comes back from the API; a hard-deleted one vanishes from it. The first is the customer's state,
-  the second is ours.
+  the second is ours. **A soft delete also renames the environment:** it returns under its old name
+  with the deletion time appended (`JLE` becomes `JLE-260911110359`, `yyMMddHHmmss`), presumably so
+  the name is free to be reused. Nothing here builds that name; the behaviour is inferred from a
+  customer tenant (issue #808), not from documentation we can cite. Matched on name alone that reads
+  as one environment vanishing and another appearing, so the upsert folds the suffixed, soft-deleted
+  fetch back onto the existing row — same row id, same pipelines, `missing_since` left clear — and
+  the row then carries the API name, because that is what addresses the environment in later
+  admin-center calls. It folds only when the base name is absent from the same fetch, so a reused
+  name stays a second environment. See `ProjectConnectionService.UpsertEnvironmentsAsync`.
+- **A soft-deleted environment is not part of the upgrade fleet.** Its update date cannot be moved,
+  so the Upgrades page leaves it out. The Environments page and the solution's Business Central tab
+  still list it, because "deleted, still restorable" is a state worth seeing and restoring it before
+  the hard delete is the useful action. Both pages read one query — `UpgradeFleetService.ListFleetAsync`,
+  whose `includeSoftDeleted` flag is the only difference between them.
 
 The refresh upsert still touches only fetched fields, so the user's own settings on the same row (the
 update window) survive a Refresh unchanged.
