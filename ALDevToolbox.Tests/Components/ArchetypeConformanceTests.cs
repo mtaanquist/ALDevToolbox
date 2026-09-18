@@ -74,7 +74,6 @@ public sealed class ArchetypeConformanceTests
         "ALDevToolbox/Components/Pages/ObjectExplorer/OeReleaseDetail.razor",
         "ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor",
         "ALDevToolbox/Components/Pages/ObjectExplorer/SourceFileViewer.razor",
-        "ALDevToolbox/Components/Pages/Pipelines/PipelinesBrowser.razor",
         "ALDevToolbox/Components/Pages/Piper.razor",
         "ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAudit.razor",
         "ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor",
