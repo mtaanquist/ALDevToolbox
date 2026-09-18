@@ -27,43 +27,45 @@
 
 <PageTitle>Releases · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <PageHead Title="Releases" ShowActions="@(_rows is { Count: > 0 })">
-        <SubtitleContent>
-            A release pipeline publishes a build pipeline's compiled
-            <span class="u-nowrap"><code>.app</code> files</span> to a Business Central
-            environment — one target per customer environment (Production, Sandbox, ...).
-        </SubtitleContent>
-        <Actions>
-            <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
-                <Icon Name="plus" Width="16" Height="16" />
-                <span>New release pipeline</span>
-            </button>
-        </Actions>
-    </PageHead>
+<ListPage Title="Releases" IsLoading="@(_rows is null)" IsEmpty="@(_rows is { Count: 0 })">
+    <Crumbs>
+        <a href="/">Home</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>Releases</span>
+    </Crumbs>
+    <SubtitleContent>
+        A release pipeline publishes a build pipeline's compiled
+        <span class="u-nowrap"><code>.app</code> files</span> to a Business Central
+        environment — one target per customer environment (Production, Sandbox, ...).
+    </SubtitleContent>
+    <Actions>
+        <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+            <Icon Name="plus" Width="16" Height="16" />
+            <span>New release pipeline</span>
+        </button>
+    </Actions>
 
-    @if (_error is { } error)
-    {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="triangle-alert" Width="16" Height="16" /><span>@error</span>
-        </p>
-    }
-
-    @if (_rows is null)
-    {
+    <Notices>
+        @if (_error is { } error)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" /><span>@error</span>
+            </p>
+        }
+    </Notices>
+    <Loading>
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Target health</span></th>
                 <th>Release pipeline</th><th>Solution</th><th>Target environment</th>
                 <th>Releases from</th><th>When installs run</th>
-                <th class="data-table__actions"></th>
+                <th class="data-table__actions">Actions</th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
         </table>
         <LoadingBlock Text="Loading release pipelines..." UnderTable="true" />
-    }
-    else if (_rows.Count == 0)
-    {
+    </Loading>
+    <Empty>
         <div class="card">
             @if (_projectOptions.Count > 0)
             {
@@ -98,9 +100,8 @@
                 </EmptyState>
             }
         </div>
-    }
-    else
-    {
+    </Empty>
+    <ChildContent>
         <table class="data-table data-table--edge">
             <thead>
                 <tr>
@@ -110,11 +111,11 @@
                     <th scope="col">Target environment</th>
                     <th scope="col">Releases from</th>
                     <th scope="col">When installs run</th>
-                    <th scope="col" class="data-table__actions"></th>
+                    <th scope="col" class="data-table__actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var r in _rows)
+                @foreach (var r in _rows ?? new())
                 {
                     <tr class="@(r.EnvironmentMissing ? "is-failed" : null)">
                         <td class="data-table__col-state">
@@ -179,8 +180,8 @@
                 }
             </tbody>
         </table>
-    }
-</div>
+    </ChildContent>
+</ListPage>
 
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnSavedAsync" />
 <ConfirmDialog @ref="_deleteConfirm" Title="Delete release pipeline?"

@@ -29,252 +29,230 @@
 
 <PageTitle>Pipelines · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Pipelines</h1>
-            <p class="page-head__sub">
-                A pipeline compiles a chosen set of a solution's extensions into downloadable
-                <span class="u-nowrap"><code>.app</code> files</span> — make one per environment
-                (Production, Test, ...).
-            </p>
-        </div>
-        @* While there are pipelines, offer "New pipeline" up here. When there are
-           none, the empty-state card below carries the single, guided call to
-           action — so we don't also surface a redundant button (which, with no
-           solutions, would read as a bare "go make a solution"). *@
-        @if (_rows is not null && _totalCount > 0)
-        {
-            <div class="page-head__actions">
-                <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
-                    <Icon Name="plus" Width="16" Height="16" />
-                    <span>New pipeline</span>
+<ListPage Title="Pipelines" SearchForm="true"
+          IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(Visible.Count == 0)">
+    <Crumbs>
+        <a href="/">Home</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>Pipelines</span>
+    </Crumbs>
+    <SubtitleContent>
+        A pipeline compiles a chosen set of a solution's extensions into downloadable
+        <span class="u-nowrap"><code>.app</code> files</span> — make one per environment
+        (Production, Test, ...).
+    </SubtitleContent>
+    @* ListPage shows this only while there are pipelines. When there are none, the
+       empty-state card carries the single, guided call to action - so there is no
+       redundant button (which, with no solutions, would read as a bare "go make a
+       solution"). *@
+    <Actions>
+        <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
+            <Icon Name="plus" Width="16" Height="16" />
+            <span>New pipeline</span>
+        </button>
+    </Actions>
+    @* A plain GET form, so the search survives a reload and stays a shareable URL.
+       The status tabs at the far end filter in memory - they're a view of what's
+       already loaded, not a second round trip. *@
+    <Search>
+        <input type="search" name="q" value="@_search" class="input"
+               placeholder="Search pipelines by name, solution, or owner..."
+               aria-label="Search pipelines" />
+    </Search>
+    <Trailing>
+        <div class="pill-tabs" role="group" aria-label="Filter by build status">
+            <button type="button" class="pill-tab @(_statusFilter is null ? "is-active" : "")"
+                    @onclick="() => _statusFilter = null" aria-pressed="@(_statusFilter is null)">
+                All<span class="pill-tab__count">@(_rows?.Count ?? 0)</span>
+            </button>
+            @if (_buildingCount > 0)
+            {
+                <button type="button" class="pill-tab @(_statusFilter == "building" ? "is-active" : "")"
+                        @onclick="@(() => _statusFilter = "building")" aria-pressed="@(_statusFilter == "building")">
+                    Building<span class="pill-tab__count">@_buildingCount</span>
                 </button>
-            </div>
+            }
+            @if (_failedCount > 0)
+            {
+                <button type="button" class="pill-tab @(_statusFilter == "failed" ? "is-active" : "")"
+                        @onclick="@(() => _statusFilter = "failed")" aria-pressed="@(_statusFilter == "failed")">
+                    Needs attention<span class="pill-tab__count">@_failedCount</span>
+                </button>
+            }
+        </div>
+        @if (!string.IsNullOrEmpty(_search))
+        {
+            <a class="btn btn--sm" href="/pipelines">Clear search</a>
         }
-    </div>
-
-    @if (_rows is null)
-    {
+    </Trailing>
+    <Loading>
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                 <th>Pipeline</th><th>Solution</th><th>Owner</th><th>Latest build</th><th>When</th>
-                <th class="data-table__actions"></th>
+                <th class="data-table__actions">Actions</th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
         </table>
-        <div class="loading-block loading-block--under-table">
-            <span class="spinner"></span><span>Loading pipelines...</span>
-        </div>
-    }
-    else if (_totalCount == 0)
-    {
+        <LoadingBlock Text="Loading pipelines..." UnderTable="true" />
+    </Loading>
+    <Empty>
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="rocket" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No pipelines yet</span>
-                @if (_projectOptions.Count > 0)
-                {
-                    <span class="empty-state__text">
+            @if (_projectOptions.Count > 0)
+            {
+                <EmptyState Icon="rocket" Title="No pipelines yet">
+                    <Text>
                         A pipeline picks which of a solution's extensions to compile. Create one to
                         start producing downloadable <code>.app</code> files.
-                    </span>
-                    <button type="button" class="btn btn--primary empty-state__action" @onclick="NewPipelineAsync">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>New pipeline</span>
-                    </button>
-                }
-                else
-                {
-                    <span class="empty-state__text">
+                    </Text>
+                    <Action>
+                        <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>New pipeline</span>
+                        </button>
+                    </Action>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Icon="rocket" Title="No pipelines yet">
+                    <Text>
                         A pipeline compiles the code in a solution (a customer), so the first step is
                         creating that solution and pointing it at its repositories. Once a solution
                         exists you can add a pipeline to it.
-                    </span>
-                    <a class="btn btn--primary empty-state__action" href="/solutions/new">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>Create a solution</span>
-                    </a>
-                }
-            </div>
-        </div>
-    }
-    else
-    {
-        <div class="filter-bar">
-            @* A plain GET form, so the search survives a reload and stays a
-               shareable URL. The status tabs beside it filter in memory — they're
-               a view of what's already loaded, not a second round trip. *@
-            <form method="get" role="search" class="filter-bar__search">
-                <span class="search">
-                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-                    <input type="search" name="q" value="@_search" class="input"
-                           placeholder="Search pipelines by name, solution, or owner..."
-                           aria-label="Search pipelines" />
-                </span>
-            </form>
-
-            <div class="pill-tabs" role="group" aria-label="Filter by build status">
-                <button type="button" class="pill-tab @(_statusFilter is null ? "is-active" : "")"
-                        @onclick="() => _statusFilter = null" aria-pressed="@(_statusFilter is null)">
-                    All<span class="pill-tab__count">@_rows.Count</span>
-                </button>
-                @if (_buildingCount > 0)
-                {
-                    <button type="button" class="pill-tab @(_statusFilter == "building" ? "is-active" : "")"
-                            @onclick="@(() => _statusFilter = "building")" aria-pressed="@(_statusFilter == "building")">
-                        Building<span class="pill-tab__count">@_buildingCount</span>
-                    </button>
-                }
-                @if (_failedCount > 0)
-                {
-                    <button type="button" class="pill-tab @(_statusFilter == "failed" ? "is-active" : "")"
-                            @onclick="@(() => _statusFilter = "failed")" aria-pressed="@(_statusFilter == "failed")">
-                        Needs attention<span class="pill-tab__count">@_failedCount</span>
-                    </button>
-                }
-            </div>
-
-            <span class="filter-bar__spacer"></span>
-            @if (!string.IsNullOrEmpty(_search))
-            {
-                <a class="btn btn--sm" href="/pipelines">Clear search</a>
+                    </Text>
+                    <Action>
+                        <a class="btn btn--primary" href="/solutions/new">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>Create a solution</span>
+                        </a>
+                    </Action>
+                </EmptyState>
             }
         </div>
-
-        @if (Visible.Count == 0)
-        {
-            <div class="card">
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">
-                        @if (string.IsNullOrEmpty(_search))
-                        {
-                            <text>No pipelines are @(_statusFilter == "failed" ? "failing" : "building") right now</text>
-                        }
-                        else
-                        {
-                            <text>No pipelines match "@_search"</text>
-                        }
-                    </span>
-                    <span class="empty-state__text">
-                        Try a shorter search term, or clear the filters to see all @_totalCount.
-                    </span>
+    </Empty>
+    <NoMatches>
+        <div class="card">
+            <EmptyState Icon="funnel-x" Title="@NoMatchesTitle">
+                <Text>Try a shorter search term, or clear the filters to see all @_totalCount.</Text>
+                <Action>
                     @if (string.IsNullOrEmpty(_search))
                     {
-                        <button type="button" class="btn empty-state__action" @onclick="() => _statusFilter = null">Clear filters</button>
+                        <button type="button" class="btn" @onclick="() => _statusFilter = null">Clear filters</button>
                     }
                     else
                     {
-                        <a class="btn empty-state__action" href="/pipelines">Clear filters</a>
+                        <a class="btn" href="/pipelines">Clear filters</a>
                     }
-                </div>
-            </div>
-        }
-        else
-        {
-            <table class="data-table data-table--edge">
-                <thead>
-                    <tr>
-                        <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
-                        <th scope="col">Pipeline</th>
-                        <th scope="col">Solution</th>
-                        <th scope="col">Owner</th>
-                        <th scope="col">Latest build</th>
-                        <th scope="col">When</th>
-                        <th scope="col" class="data-table__actions"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var p in Visible)
-                    {
-                        var sb = p.LatestSuccessfulBuildId;
-                        var failedLatest = p.Latest?.Status == "failed";
-                        <tr class="@(p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null)">
-                            <td class="data-table__col-state">
-                                @if (p.Latest is { } st)
-                                {
-                                    <RowStateIcon State="@st.Status" />
-                                }
-                            </td>
-                            <td><a href="@($"/pipelines/{p.Id}")"><strong>@p.Name</strong></a></td>
-                            <td><a href="@($"/solutions/{p.ProjectId}")">@p.ProjectName</a></td>
-                            <td class="u-muted">@(p.OwnerName ?? "—")</td>
-                            <td>
-                                @if (p.Latest is { } b)
-                                {
-                                    <span class="pl-build">
-                                        @if (!string.IsNullOrEmpty(b.CommitShort))
-                                        {
-                                            <span class="commit-chip">
-                                                <Icon Name="git-commit-vertical" Width="11" Height="11" />@b.CommitShort
-                                            </span>
-                                        }
-                                        @if (!string.IsNullOrEmpty(b.Branch))
-                                        {
-                                            <span class="pl-branch"><Icon Name="git-branch" Width="12" Height="12" />@b.Branch</span>
-                                        }
-                                        <span class="u-muted">@(string.IsNullOrEmpty(b.BcVersion) ? "BC —" : $"BC {b.BcVersion}")</span>
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="u-muted">No builds yet</span>
-                                }
-                            </td>
-                            <td class="u-muted">
-                                @if (p.Latest is { } w)
-                                {
-                                    <span title="@AbsoluteWhen(w)">@Verb(w.Status) @RelativeTime.Ago(w.FinishedAt ?? w.StartedAt)</span>
-                                }
-                                else
-                                {
-                                    <span>—</span>
-                                }
-                            </td>
-                            <td class="data-table__actions">
-                                <span class="ra">
-                                    <button type="button" class="btn btn--icon btn--sm" data-ra-toggle
-                                            title="More actions" aria-label="More actions"
-                                            aria-haspopup="menu" aria-expanded="false">
-                                        <Icon Name="ellipsis-vertical" Width="17" Height="17" />
-                                    </button>
-                                    <div class="ra__menu menu" role="menu">
-                                        <a class="menu__item" href="@($"/pipelines/{p.Id}")" role="menuitem">
-                                            <Icon Name="package" Width="15" Height="15" />
-                                            <span>View builds</span>
-                                        </a>
-                                        @if (sb is { } good2)
-                                        {
-                                            <a class="menu__item" href="@($"/artifacts/build/{good2}/all")" role="menuitem">
-                                                <Icon Name="archive" Width="15" Height="15" />
-                                                <span>@(failedLatest ? "Download last good build" : "Download all .app files")</span>
-                                            </a>
-                                        }
-                                        <a class="menu__item" href="@($"/solutions/{p.ProjectId}")" role="menuitem">
-                                            <Icon Name="folder-git-2" Width="15" Height="15" />
-                                            <span>Solution settings</span>
-                                        </a>
-                                        <div class="menu__sep"></div>
-                                        <button type="button" class="menu__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">
-                                            <Icon Name="copy" Width="15" Height="15" />
-                                            <span data-copy-label>Copy link</span>
-                                        </button>
-                                    </div>
+                </Action>
+            </EmptyState>
+        </div>
+    </NoMatches>
+    <ChildContent>
+        <table class="data-table data-table--edge">
+            <thead>
+                <tr>
+                    <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
+                    <th scope="col">Pipeline</th>
+                    <th scope="col">Solution</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">Latest build</th>
+                    <th scope="col">When</th>
+                    <th scope="col" class="data-table__actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Visible)
+                {
+                    var sb = p.LatestSuccessfulBuildId;
+                    var failedLatest = p.Latest?.Status == "failed";
+                    <tr class="@(p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null)">
+                        <td class="data-table__col-state">
+                            @if (p.Latest is { } st)
+                            {
+                                <RowStateIcon State="@st.Status" />
+                            }
+                        </td>
+                        <td><a href="@($"/pipelines/{p.Id}")"><strong>@p.Name</strong></a></td>
+                        <td><a href="@($"/solutions/{p.ProjectId}")">@p.ProjectName</a></td>
+                        <td class="u-muted">@(p.OwnerName ?? "—")</td>
+                        <td>
+                            @if (p.Latest is { } b)
+                            {
+                                <span class="pl-build">
+                                    @if (!string.IsNullOrEmpty(b.CommitShort))
+                                    {
+                                        <span class="commit-chip">
+                                            <Icon Name="git-commit-vertical" Width="11" Height="11" />@b.CommitShort
+                                        </span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(b.Branch))
+                                    {
+                                        <span class="pl-branch"><Icon Name="git-branch" Width="12" Height="12" />@b.Branch</span>
+                                    }
+                                    <span class="u-muted">@(string.IsNullOrEmpty(b.BcVersion) ? "BC —" : $"BC {b.BcVersion}")</span>
                                 </span>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    }
-</div>
+                            }
+                            else
+                            {
+                                <span class="u-muted">No builds yet</span>
+                            }
+                        </td>
+                        <td class="u-muted">
+                            @if (p.Latest is { } w)
+                            {
+                                <span title="@AbsoluteWhen(w)">@Verb(w.Status) @RelativeTime.Ago(w.FinishedAt ?? w.StartedAt)</span>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td class="data-table__actions">
+                            <span class="ra">
+                                <button type="button" class="btn btn--icon btn--sm" data-ra-toggle
+                                        title="More actions" aria-label="More actions"
+                                        aria-haspopup="menu" aria-expanded="false">
+                                    <Icon Name="ellipsis-vertical" Width="17" Height="17" />
+                                </button>
+                                <div class="ra__menu menu" role="menu">
+                                    <a class="menu__item" href="@($"/pipelines/{p.Id}")" role="menuitem">
+                                        <Icon Name="package" Width="15" Height="15" />
+                                        <span>View builds</span>
+                                    </a>
+                                    @if (sb is { } good2)
+                                    {
+                                        <a class="menu__item" href="@($"/artifacts/build/{good2}/all")" role="menuitem">
+                                            <Icon Name="archive" Width="15" Height="15" />
+                                            <span>@(failedLatest ? "Download last good build" : "Download all .app files")</span>
+                                        </a>
+                                    }
+                                    <a class="menu__item" href="@($"/solutions/{p.ProjectId}")" role="menuitem">
+                                        <Icon Name="folder-git-2" Width="15" Height="15" />
+                                        <span>Solution settings</span>
+                                    </a>
+                                    <div class="menu__sep"></div>
+                                    <button type="button" class="menu__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">
+                                        <Icon Name="copy" Width="15" Height="15" />
+                                        <span data-copy-label>Copy link</span>
+                                    </button>
+                                </div>
+                            </span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </ChildContent>
+</ListPage>
 
 <PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineCreatedAsync" />
 
 @code {
+    private string NoMatchesTitle => string.IsNullOrEmpty(_search)
+        ? $"No pipelines are {(_statusFilter == "failed" ? "failing" : "building")} right now"
+        : $"No pipelines match \"{_search}\"";
+
     private List<PipelineArtifactsRow>? _rows;
     private List<PipelineProjectOption> _projectOptions = new();
     private int _totalCount;

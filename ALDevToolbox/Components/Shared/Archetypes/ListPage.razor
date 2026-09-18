@@ -1,0 +1,132 @@
+@*
+    The handoff's archetype 2, List / index (.design/handoff/PageList.dc.html, and
+    the list frames in PagesStandard.dc.html): a page head, a filter row, then
+    exactly one of four bodies.
+
+    The states are structural, which is the point. A page says which state it is in
+    and hands over a fragment for each; it cannot render a bare table over no rows,
+    or a filter row over a first-run empty state, by forgetting a branch:
+
+      loading      Loading, or a LoadingBlock when the page gives none. Pages with a
+                   table pass the real <thead> over TableSkeletonRows plus an
+                   under-table LoadingBlock, as the sheet does, so the columns are
+                   already where they will be when the data lands.
+      empty        Nothing exists yet. No filter row - there is nothing to filter,
+                   unless the page says a filter could be why (FiltersWhenEmpty) -
+                   and the head's actions step aside for the empty state's own
+                   button unless the page says otherwise.
+      no matches   Something exists, the filters hid all of it. The filter row stays,
+                   because it is the way back.
+      populated    ChildContent, then Footer.
+
+    It owns the frame, not the table. What goes in ChildContent is the page's own -
+    a data-table, a card-grid, two sections of either.
+
+    Composition only: the head and the filter row are PageHead and FilterBar, with
+    their parameters passed straight through. See PROJECT.md, "Page archetypes".
+*@
+
+<div class="page@(string.IsNullOrEmpty(PageClass) ? "" : " " + PageClass)">
+    <PageHead Title="@Title" Subtitle="@Subtitle" SubtitleContent="SubtitleContent"
+              Crumbs="Crumbs" Actions="Actions"
+              ShowActions="@(ShowActions ?? (!IsLoading && !IsEmpty))" />
+
+    @Notices
+
+    @if (HasFilters && (IsLoading ? FiltersWhileLoading : !IsEmpty || FiltersWhenEmpty))
+    {
+        <FilterBar Search="Search" ChildContent="Filters" Trailing="Trailing"
+                   SearchForm="SearchForm" SearchFormAction="@SearchFormAction"
+                   SearchFormExtras="SearchFormExtras" />
+    }
+
+    @if (IsLoading)
+    {
+        @if (Loading is not null)
+        {
+            @Loading
+        }
+        else
+        {
+            <LoadingBlock Text="@LoadingText" />
+        }
+    }
+    else if (IsEmpty)
+    {
+        @Empty
+    }
+    else if (HasNoMatches)
+    {
+        @NoMatches
+    }
+    else
+    {
+        @ChildContent
+        @Footer
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Subtitle { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    [Parameter] public RenderFragment? Crumbs { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>
+    /// Whether the head shows its actions. Left unset, they show once there are rows:
+    /// a first-run page has one next step, and it is the empty state's button - and
+    /// until the load returns the page does not know which of the two it is.
+    /// </summary>
+    [Parameter] public bool? ShowActions { get; set; }
+
+    /// <summary>Extra class on the <c>.page</c> wrapper, for a page-scoped stylesheet to hang on.</summary>
+    [Parameter] public string? PageClass { get; set; }
+
+    /// <summary>Alerts and notices that belong between the head and the list, in every state.</summary>
+    [Parameter] public RenderFragment? Notices { get; set; }
+
+    // The filter row: FilterBar's own parameters, unchanged.
+    [Parameter] public RenderFragment? Search { get; set; }
+    [Parameter] public RenderFragment? Filters { get; set; }
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    [Parameter] public bool SearchForm { get; set; }
+    [Parameter] public string? SearchFormAction { get; set; }
+    [Parameter] public RenderFragment? SearchFormExtras { get; set; }
+
+    /// <summary>
+    /// Keep the filter row up while loading. For a page whose filters are in the
+    /// address, so they are known before the rows are; off by default because most
+    /// pages only learn whether there is anything to filter once the load returns.
+    /// </summary>
+    [Parameter] public bool FiltersWhileLoading { get; set; }
+
+    /// <summary>
+    /// Keep the filter row over the empty state. Only for a list where "nothing to
+    /// show" can still be a filter's doing - the Cookbook hides deprecated recipes
+    /// by default, so an org holding only those is empty until the box is ticked.
+    /// </summary>
+    [Parameter] public bool FiltersWhenEmpty { get; set; }
+
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public RenderFragment? Loading { get; set; }
+    [Parameter] public string LoadingText { get; set; } = "Loading...";
+
+    /// <summary>Nothing exists yet, filters aside.</summary>
+    [Parameter] public bool IsEmpty { get; set; }
+
+    /// <summary>The first-run state, card included: it must name the next step and offer it.</summary>
+    [Parameter] public RenderFragment? Empty { get; set; }
+
+    /// <summary>Rows exist but the current filters match none of them.</summary>
+    [Parameter] public bool HasNoMatches { get; set; }
+    [Parameter] public RenderFragment? NoMatches { get; set; }
+
+    /// <summary>The populated list.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Counts and the pager, under the populated list only.</summary>
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private bool HasFilters => Search is not null || Filters is not null || Trailing is not null;
+}
