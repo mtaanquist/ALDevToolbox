@@ -652,10 +652,22 @@
                                    away, but this is the button that was pressed,
                                    so this is where the refusal has to be. *@
                                 <FieldError Field="SolutionId" Errors="_repoErrors" />
-                                <button type="button" class="btn" disabled="@_repoBusy"
+                                @* Same spinner-and-busy-label treatment the
+                                   Download ZIP button gets. Creating the
+                                   repository runs for seconds, and "disabled"
+                                   on its own reads as "broken" rather than
+                                   "working" (#812). The class is driven from
+                                   Blazor here rather than by generate.js: this
+                                   button posts nothing, so there is no form
+                                   submission for that script to hang off. *@
+                                <button type="button" class="btn @(_repoBusy ? "btn--loading" : null)"
+                                        disabled="@_repoBusy" aria-busy="@(_repoBusy ? "true" : null)"
                                         @onclick="CreateRepositoryAsync">
-                                    <Icon Name="folder-git-2" Width="15" Height="15" />
-                                    <span>@(_repoBusy ? "Creating repository..." : "Create repository")</span>
+                                    <span class="btn__spinner" aria-hidden="true"></span>
+                                    <span class="btn__label">
+                                        <Icon Name="folder-git-2" Width="15" Height="15" /> Create repository
+                                    </span>
+                                    <span class="btn__label-busy">Creating repository...</span>
                                 </button>
                             }
                         </div>
@@ -1036,15 +1048,22 @@
     /// </summary>
     private async Task CreateRepositoryAsync()
     {
+        // Every one of these has to be set before the first await. Blazor
+        // renders an event handler's synchronous prefix when it first yields
+        // and again when the whole handler finishes - not at each await in
+        // between. Setting the flag after validating the plan meant the render
+        // that happens at that yield still saw an idle button, and the create
+        // itself (one call per generated file) ran with nothing on screen to
+        // say so, which is what invited the second click (#812).
         _repoErrors = new();
         _createdRepo = null;
-
-        var plan = await BuildValidPlanAsync();
-        if (plan is null) return;
-
         _repoBusy = true;
+
         try
         {
+            var plan = await BuildValidPlanAsync();
+            if (plan is null) return;
+
             _createdRepo = await GitHubCreate.CreateAsync(
                 plan, RepositoryName, isPrivate: _repoVisibility != "public", solutionId: _solutionId);
 
