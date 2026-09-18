@@ -75,10 +75,26 @@ internal sealed class ModuleSystemReferenceConfiguration : IEntityTypeConfigurat
         entity.HasIndex(e => e.SourceObjectId)
             .HasDatabaseName("ix_oe_module_system_references_source_object");
 
-        // Forward-edge "what system methods does this procedure call?", parity
-        // with ix_oe_module_references_source_symbol — partial-filtered to the
-        // minority of rows emitted from inside a procedure body. Also backs the
-        // nullable source_symbol_id FK. See issue #391.
+        // Backs the nullable source_symbol_id FK, which is ON DELETE SET NULL.
+        // That is the load-bearing job, and #723 nearly dropped this index for
+        // reading zero scans in production. Measured against postgres:18 on the
+        // real schema, 200k symbols and 4M system references in one release:
+        // deleting that release took 17s with the index and did not finish in
+        // ten minutes without it, because the cascade runs
+        // `UPDATE ... SET source_symbol_id = NULL WHERE $1 = source_symbol_id`
+        // once per deleted symbol - an index scan each time, or a seq scan over
+        // the whole table each time. Ten minutes is the command timeout
+        // ReleaseManagementService sets, so without this index a release delete
+        // does not slowly degrade, it fails.
+        //
+        // The zero scans are not evidence of disuse: the same measurement
+        // registered 200,000 scans on this index from one release delete, so a
+        // lifetime zero says only that no release has been deleted yet.
+        //
+        // It is also the forward edge for "what system methods does this
+        // procedure call?", parity with ix_oe_module_references_source_symbol
+        // (#391), partial-filtered to the minority of rows emitted from inside
+        // a procedure body.
         entity.HasIndex(e => e.SourceSymbolId)
             .HasDatabaseName("ix_oe_module_system_references_source_symbol")
             .HasFilter("\"source_symbol_id\" IS NOT NULL");

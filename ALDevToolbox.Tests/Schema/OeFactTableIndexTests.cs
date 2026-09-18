@@ -49,6 +49,14 @@ public sealed class OeFactTableIndexTests
     /// <summary>
     /// The replacement convention must only touch the five fact tables: every
     /// other foreign key in the model still gets its covering index.
+    ///
+    /// <para>This is the guard that stops an index audit dropping something a
+    /// referential action needs. #723 proposed dropping
+    /// <c>ix_oe_module_system_references_source_symbol</c> for reading zero
+    /// scans; it covers a <c>SET NULL</c> foreign key, and measured on the real
+    /// schema a release delete goes from 17 seconds to not finishing inside
+    /// ReleaseManagementService's ten-minute timeout without it. See the
+    /// migration-discipline section of CLAUDE.md.</para>
     /// </summary>
     [Fact]
     public void Every_other_foreign_key_still_has_a_covering_index()
