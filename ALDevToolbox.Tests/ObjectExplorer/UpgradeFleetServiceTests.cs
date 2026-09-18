@@ -257,22 +257,29 @@ public sealed class UpgradeFleetServiceTests : IDisposable
         rows.Should().ContainSingle().Which.EnvironmentName.Should().Be("Production");
     }
 
-    [Fact]
-    public async Task A_soft_deleted_environment_is_left_out()
+    /// <summary>
+    /// Seeds a live environment and one the customer has soft-deleted. Business Central
+    /// renames an environment when it is soft-deleted, which is why the deleted one
+    /// carries a deletion stamp; see issue #808.
+    /// </summary>
+    private async Task<int> SeedProjectWithASoftDeletedEnvironmentAsync()
     {
         var project = await SeedProjectAsync("CRONUS Denmark");
         await SeedTeamAsync(project, flagHolders: new[] { FlagUserId }, plainMembers: Array.Empty<int>());
         await SeedEnvironmentAsync(project, "Production");
-        // Business Central renames an environment when it is soft-deleted, which is why
-        // this one carries a deletion stamp; see issue #808.
         var deleted = await SeedEnvironmentAsync(project, "JLE-260911110359", "Sandbox");
-        await using (var seed = _db.NewContext())
-        {
-            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == deleted);
-            env.Status = "SoftDeleted";
-            env.SoftDeletedOn = new DateTime(2026, 9, 11, 11, 3, 59, DateTimeKind.Utc);
-            await seed.SaveChangesAsync();
-        }
+        await using var seed = _db.NewContext();
+        var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == deleted);
+        env.Status = "SoftDeleted";
+        env.SoftDeletedOn = new DateTime(2026, 9, 11, 11, 3, 59, DateTimeKind.Utc);
+        await seed.SaveChangesAsync();
+        return project;
+    }
+
+    [Fact]
+    public async Task A_soft_deleted_environment_is_left_out_of_the_fleet()
+    {
+        await SeedProjectWithASoftDeletedEnvironmentAsync();
 
         ActAs(FlagUserId);
         await using var ctx = _db.NewContext();
@@ -280,6 +287,19 @@ public sealed class UpgradeFleetServiceTests : IDisposable
 
         rows.Should().ContainSingle("a deleted environment cannot have its update date moved")
             .Which.EnvironmentName.Should().Be("Production");
+    }
+
+    [Fact]
+    public async Task A_soft_deleted_environment_comes_back_when_the_caller_asks_for_it()
+    {
+        await SeedProjectWithASoftDeletedEnvironmentAsync();
+
+        ActAs(FlagUserId);
+        await using var ctx = _db.NewContext();
+        var rows = await Svc(ctx).ListFleetAsync(includeSoftDeleted: true);
+
+        rows.Should().HaveCount(2, "the Environments page lists every environment's state");
+        rows.Single(r => r.EnvironmentName == "JLE-260911110359").Status.Should().Be("SoftDeleted");
     }
 
     [Fact]

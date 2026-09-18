@@ -158,8 +158,10 @@ Three rules that come with them:
   admin-center calls. It folds only when the base name is absent from the same fetch, so a reused
   name stays a second environment. See `ProjectConnectionService.UpsertEnvironmentsAsync`.
 - **A soft-deleted environment is not part of the upgrade fleet.** Its update date cannot be moved,
-  so `UpgradeFleetService.ListFleetAsync` leaves it out; it stays on the solution's Business Central
-  tab, where restoring it before the hard delete is the useful information.
+  so the Upgrades page leaves it out. The Environments page and the solution's Business Central tab
+  still list it, because "deleted, still restorable" is a state worth seeing and restoring it before
+  the hard delete is the useful action. Both pages read one query — `UpgradeFleetService.ListFleetAsync`,
+  whose `includeSoftDeleted` flag is the only difference between them.
 
 The refresh upsert still touches only fetched fields, so the user's own settings on the same row (the
 update window) survive a Refresh unchanged.
