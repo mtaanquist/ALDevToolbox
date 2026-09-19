@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
@@ -85,25 +86,7 @@ public sealed class UpgradeFleetService
         var rows = await query
             .Where(e => _db.OeProjects.Where(visible)
                 .Any(p => p.Id == e.ProjectId && p.DeletedAt == null))
-            .Select(e => new UpgradeFleetRow(
-                e.ProjectId,
-                e.Project!.Name,
-                e.Project!.BcTimeZone,
-                e.Id,
-                e.Name,
-                e.Type,
-                e.Status,
-                e.Version,
-                e.BcNextUpdateVersion,
-                e.BcNextUpdateType,
-                e.BcNextUpdateStatus,
-                e.BcNextUpdateDate,
-                e.BcNextUpdateLatestDate,
-                e.BcNextUpdateIgnoresWindow,
-                e.BcNextUpdateFetchedAt,
-                _db.OeProjects.Where(actionable).Any(p => p.Id == e.ProjectId),
-                e.FetchedAt,
-                e.AadTenantId ?? e.Project!.BcTenantId))
+            .Select(ToRow(actionable))
             .ToListAsync(ct).ConfigureAwait(false);
 
         // Ordered in memory: "Production first" is a presentation rule, not something
@@ -114,6 +97,87 @@ public sealed class UpgradeFleetService
             .ThenBy(r => r.EnvironmentName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    /// <summary>
+    /// One environment, for its own page - reached through the same visibility join as
+    /// the fleet, so an id from a solution the caller cannot see answers exactly as an id
+    /// that does not exist. Null for both, and for an environment Business Central no
+    /// longer reports.
+    ///
+    /// <para>Soft-deleted environments are kept: "deleted, still restorable" is a state
+    /// worth a page, and the links from the Environments list have to land somewhere.</para>
+    /// </summary>
+    public async Task<EnvironmentDetailRow?> GetEnvironmentAsync(int environmentId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var actionable = ProjectAccess.UpdateOpsProjectPredicate(snapshot);
+
+        var found = _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId && e.MissingSince == null)
+            .Where(e => _db.OeProjects.Where(visible)
+                .Any(p => p.Id == e.ProjectId && p.DeletedAt == null));
+
+        var row = await found.Select(ToRow(actionable)).FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (row is null) return null;
+
+        // The same filtered query, so visibility is decided once and not re-argued here.
+        var rest = await found
+            .Select(e => new
+            {
+                e.Project!.CreatedByUserId,
+                e.CountryCode,
+                e.LocationName,
+                e.UpdateWindowStart,
+                e.UpdateWindowEnd,
+                e.BcUpdateWindowStart,
+                e.BcUpdateWindowEnd,
+                e.BcUpdateWindowTimeZoneIana,
+                e.BcUpdateWindowFetchedAt,
+                e.AppSourceAppsUpdateCadence,
+            })
+            .FirstAsync(ct).ConfigureAwait(false);
+
+        return new EnvironmentDetailRow(
+            row,
+            rest.CreatedByUserId,
+            rest.CountryCode,
+            rest.LocationName,
+            rest.UpdateWindowStart,
+            rest.UpdateWindowEnd,
+            rest.BcUpdateWindowStart,
+            rest.BcUpdateWindowEnd,
+            rest.BcUpdateWindowTimeZoneIana,
+            rest.BcUpdateWindowFetchedAt,
+            rest.AppSourceAppsUpdateCadence);
+    }
+
+    /// <summary>
+    /// The fleet row for one environment. Shared by the list and the single read so the
+    /// two cannot disagree about what a row says; the "may act" answer stays a subquery
+    /// either way.
+    /// </summary>
+    private Expression<Func<OeProjectEnvironment, UpgradeFleetRow>> ToRow(
+        Expression<Func<OeProject, bool>> actionable) =>
+        e => new UpgradeFleetRow(
+            e.ProjectId,
+            e.Project!.Name,
+            e.Project!.BcTimeZone,
+            e.Id,
+            e.Name,
+            e.Type,
+            e.Status,
+            e.Version,
+            e.BcNextUpdateVersion,
+            e.BcNextUpdateType,
+            e.BcNextUpdateStatus,
+            e.BcNextUpdateDate,
+            e.BcNextUpdateLatestDate,
+            e.BcNextUpdateIgnoresWindow,
+            e.BcNextUpdateFetchedAt,
+            _db.OeProjects.Where(actionable).Any(p => p.Id == e.ProjectId),
+            e.FetchedAt,
+            e.AadTenantId ?? e.Project!.BcTenantId);
 
     /// <summary>
     /// Asks Business Central for fresh answers about <paramref name="projectIds"/> by
@@ -268,3 +332,21 @@ public sealed record UpgradeFleetRow(
 /// were left alone because the caller may not act on them.
 /// </summary>
 public sealed record UpgradeRefreshResult(int Queued, int AlreadyRunning, int Skipped);
+
+/// <summary>
+/// One environment for its own page: the fleet row, plus what only that page shows -
+/// where the environment is, the two windows, and the AppSource cadence.
+/// </summary>
+/// <param name="CreatedByUserId">The solution's owner, which the manage check needs.</param>
+public sealed record EnvironmentDetailRow(
+    UpgradeFleetRow Fleet,
+    int? CreatedByUserId,
+    string? CountryCode,
+    string? LocationName,
+    TimeOnly? DeliveryWindowStart,
+    TimeOnly? DeliveryWindowEnd,
+    TimeOnly? BcUpdateWindowStart,
+    TimeOnly? BcUpdateWindowEnd,
+    string? BcUpdateWindowTimeZoneIana,
+    DateTime? BcUpdateWindowFetchedAt,
+    string? AppSourceAppsUpdateCadence);

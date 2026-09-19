@@ -243,12 +243,8 @@
                         </td>
                         <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
                         <td>
-                            @* The name is not a link yet: an environment has no page of
-                               its own until the environment detail screen lands, and a
-                               link that goes back to the solution the row already links
-                               to is worse than plain text. *@
                             <span class="cell-stack">
-                                <span class="cell-stack__main">@row.EnvironmentName</span>
+                                <a class="cell-stack__main" href="@($"/environments/{row.EnvironmentId}")">@row.EnvironmentName</a>
                                 <span class="cell-stack__sub">@row.EnvironmentType</span>
                             </span>
                         </td>
@@ -261,16 +257,17 @@
                         </td>
                         <td class="u-muted">@Checked(row)</td>
                         <td class="data-table__actions">
-                            @* The sheet's other two entries are not here yet: the
-                               environment's own page is #809, and a refresh is per
-                               solution, not per environment. *@
-                            @if (row.BusinessCentralUrl is { } bcUrl)
-                            {
-                                <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
+                            @* The sheet's third entry, a refresh, is not here: a refresh
+                               is per solution, not per environment, and the strip above
+                               already does it. *@
+                            <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
+                                <a class="menu__item" role="menuitem" href="@($"/environments/{row.EnvironmentId}")">Open environment</a>
+                                @if (row.BusinessCentralUrl is { } bcUrl)
+                                {
                                     <a class="menu__item" role="menuitem" href="@bcUrl"
                                        target="_blank" rel="noopener">Open in Business Central</a>
-                                </RowActions>
-                            }
+                                }
+                            </RowActions>
                         </td>
                     </tr>
                 }

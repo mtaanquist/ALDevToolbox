@@ -309,8 +309,7 @@ Where it still differs, and why:
 | The sheet has | We have | Why |
 | --- | --- | --- |
 | "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
-| The environment name links to its detail page | Plain text | The page does not exist until #809. A link back to the solution the row already links to is worse than none. |
-| A row menu: Open environment, Open in Business Central, Refresh this environment | Open in Business Central only | The first waits on #809; refresh is per solution, not per environment. |
+| A row menu: Open environment, Open in Business Central, Refresh this environment | The first two | A refresh is per solution, not per environment, and the freshness strip already does it. |
 | Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
 | Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
 
@@ -332,7 +331,6 @@ Where it still differs, and why:
 | "Customer" | "Solution" | The house name for the record; see CLAUDE.md. |
 | A fixed view list: Production / Sandbox, each with "update waiting" | The same list built from the environment types actually present | Business Central reports the type as text, and a fleet with no sandboxes should not offer one. |
 | An overflow menu: delivery window, two exports, fleet-wide history, cancel the scheduled update | No overflow menu | None of the five exists yet. A booking is cancelled from its own marker or from the history. An empty kebab is worse than none; add it with the first entry. |
-| The environment name links to its detail page | Plain text | Waits on #809. |
 | Every row has a checkbox | A padlock instead, on rows of a team the viewer is not on, with a legend under the table | The sheet has no notion of a row you may see but not change. Their row menu holds history only. |
 | Nothing under the next update's date | The out-of-window warning, a booking marker with its Cancel, and the live per-row result of a run | Behaviour the sheet does not draw. They sit under the date because a booked slot and Business Central's date are two answers to one question. |
 | Sortable Customer and Next update headers; Previous / Next | Fixed order; count only | As on the Environments list. |
@@ -340,6 +338,51 @@ Where it still differs, and why:
 
 Row menus anywhere in the app now open upwards when there is no room under them
 (`row-actions-menu.js` sets the sheet's `.ra--up`), which this table needed for its last rows.
+
+## The environment's own page, against its designed sheet
+
+`/environments/{id}` is `.design/handoff/PageEnvironmentDetail.dc.html` on the `DetailPage`
+frame (#809). Named user: an ops engineer with a fleet of customer environments, who would
+otherwise open each customer's admin centre. It follows the sheet top to bottom: crumbs
+through the solution, a `detail-head` with the state pill and the type as a `.tag`, the
+freshness strip, the six-item `.meta-row`, the Updates card's `.kv-grid` with the info alert
+when the two windows overlap, then Apps (Scheduled installs, Installed apps, AppSource
+updates waiting - ready ones first, "Waits for N" with the prerequisites as `.tag`s) and
+Environment settings as a `.setting-list` ending in the `setting--danger` row.
+
+**Two readings share the page.** The head, the meta row and the Updates card come from our
+own mirror, reached through `UpgradeFleetService.GetEnvironmentAsync` - the same
+visible-projects join as the fleet, so an id from a solution the viewer cannot see answers
+exactly like an id that does not exist. Apps and Environment settings are the existing
+cached panel read (`ProjectConnectionService.GetEnvironmentPanelAsync`; no second fetch
+path) and keep the gate they had on the solution's Business Central tab: people who manage
+the solution. Everyone else gets the mirror and a quiet card saying who can open the rest.
+Update history sits outside both, because it is our record and must survive a tenant that
+will not answer.
+
+The inline "Environment details" panel on the solution's Business Central tab is retired;
+its button goes here. The tab keeps the connection and the delivery window, and
+`/solutions/{id}?tab=bc` opens on it so this page can send people there.
+
+Where it differs from the sheet, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Nothing on this page is stored by the toolbox." | "Apps and settings read from Business Central {age}. Version and update dates last checked {age}." | The sheet's sentence is not true for us: the environment row and its next update are mirrored, and the app lists are cached for fifteen minutes. The strip says which half is which. |
+| An overflow menu: Copy environment ID, Open the admin centre, Export the app list, Remove from this solution | "Open the admin centre" as a second button; no menu | We mirror no Business Central environment id, there is no export, and environments are mirrored from Business Central rather than attached by hand, so nothing can be removed. One entry is not a menu. |
+| Refresh for everyone | Refresh for people who manage the solution | It reads the customer's tenant with their credentials. |
+| A region in the subtitle and a country in the meta row | Both, when Business Central reported them | `location_name` and `country_code` are mirrored; an environment read before they were captured shows a dash. |
+| Overlap alert naming the overlapping hours | The alert without the hours, linking to where the delivery window is set | The two windows can be in different time zones and the overlap moves with daylight saving; `BcUpdateWindow.Overlaps` answers yes or no. |
+| "Reschedule the update" as a button in the Updates card | "Change the next version", with a down arrow, linking to the "Next Business Central update" setting further down | One control writes the version, and it carries the warning and the lock line; a second one in the card would skip both. The label says it goes down the page, because a button that scrolls reads as a button that did nothing. |
+| "Blocked" in the filter, "Waits for N" on the pill | "Waiting" and "Waits for N" | One word for one state on one card. |
+| "Scheduled for" in UTC | The customer's local time first, UTC second | The two windows beside it are local, and whether they collide is what the card is for. |
+| An empty Scheduled installs card that only warns about Extension Management | It says what puts a row there and links to Releases; the warning moves under the populated table | The first-run state has to name the next step. |
+| Next-update options as version and date pairs | Versions, with the one already queued marked | Business Central offers versions; the date comes from the customer's update window once a version is chosen. Moving the date is what Upgrades is for. |
+| A sortable App header on the waiting updates | Fixed order, ready first | The order is the point of the table. |
+| Cadence saves from the select; Microsoft 365 is a switch | The same, each behind a confirm | They write to the customer's tenant. Declining puts the control back. |
+| Nothing after Environment settings | Update history | Who moved this environment's dates and what is still booked; the same feed the Upgrades page shows. |
+| No per-app Update action | None | The sheet has none and `IBcAppManagementClient` has no update call. Its own issue, with its own design pass. |
+| Scheduled installs drawn only as an empty state | A table with a Cancel install action when there are any | The write exists and a booked install has to be reachable from somewhere. |
 
 ## Deliberately out of scope
 

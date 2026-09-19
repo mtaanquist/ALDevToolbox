@@ -406,7 +406,8 @@ because the second step happens outside Entra and is invisible from the app.
 
 ## The environment panel (read on demand, cached for fifteen minutes)
 
-A per-environment panel on the project's Business Central tab answers the question a
+The environment's own page (`/environments/{id}`, see `.design/environment-updates.md`) - until
+#809 an inline panel on the solution's Business Central tab - answers the question a
 consultant otherwise opens the admin center for: *what is on this customer's environment,
 and what is about to change?* It shows four things, read from Business Central when the
 panel opens and reused for a short window after that:

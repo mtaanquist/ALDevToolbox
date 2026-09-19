@@ -150,9 +150,10 @@ public sealed class UpgradesPageTests : IDisposable
         var items = cells.Last().QuerySelectorAll(".ra__menu .menu__item")
             .Select(i => i.TextContent.Trim()).ToList();
         items.Should().Equal(
-            "Update history", "Move this date to the latest", "Start this update now", "Open in Business Central");
+            "Update history", "Move this date to the latest", "Start this update now",
+            "Open environment", "Open in Business Central");
         // The tenant comes from the solution's own connection; the name is a path segment.
-        cells.Last().QuerySelector("a.menu__item")!.GetAttribute("href").Should().Be(
+        cells.Last().QuerySelector("a.menu__item[target=_blank]")!.GetAttribute("href").Should().Be(
             "https://businesscentral.dynamics.com/11111111-2222-3333-4444-555555555555/Production");
         cells.Take(cells.Count - 1).SelectMany(c => c.QuerySelectorAll("button")).Should().BeEmpty();
 
@@ -182,8 +183,11 @@ public sealed class UpgradesPageTests : IDisposable
 
         cut.Find("tbody .data-table__col-check input").Change(true);
 
-        cut.Find("tbody tr").ClassList.Should().Contain("is-selected");
-        cut.FindAll(".cmdbar .cmdbar__group:last-child button")[0].HasAttribute("disabled").Should().BeFalse();
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tbody tr").ClassList.Should().Contain("is-selected");
+            cut.FindAll(".cmdbar .cmdbar__group:last-child button")[0].HasAttribute("disabled").Should().BeFalse();
+        });
     }
 
     [Fact]
@@ -210,8 +214,13 @@ public sealed class UpgradesPageTests : IDisposable
 
         cut.Find(".cmdbar__search input").Input("nothing like it");
 
-        cut.FindAll(".data-table tbody tr").Should().BeEmpty();
-        cut.Find(".empty-state__title").TextContent.Should().Be("No environments match these filters");
+        // Waited for, not read straight off: the table is drawn by the list frame, and
+        // under a loaded test run the redraw has been seen to land a beat later.
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().BeEmpty();
+            cut.Find(".empty-state__title").TextContent.Should().Be("No environments match these filters");
+        });
     }
 
     [Fact]
@@ -222,52 +231,5 @@ public sealed class UpgradesPageTests : IDisposable
 
         row.BusinessCentralUrl.Should().BeNull();
         (row with { TenantId = TenantId }).BusinessCentralUrl.Should().EndWith("/UAT%202");
-    }
-
-    // ── Business Central is never reached by a render ───────────────────
-
-    private sealed class UnreachableHttpClientFactory : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => throw new NotSupportedException();
-    }
-
-    private sealed class UnreachableAdminClient : IBcAdminClient
-    {
-        public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetAppUpdateCadenceAsync(string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<bool?> GetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
-            => throw new NotSupportedException();
-    }
-
-    private sealed class UnreachableAppManagementClient : IBcAppManagementClient
-    {
-        public Task<IReadOnlyList<BcInstalledApp>> ListInstalledAppsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcAppOperation> RemoveScheduledPteVersionAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
-            => throw new NotSupportedException();
     }
 }

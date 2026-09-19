@@ -246,7 +246,7 @@
                         <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
                         <td>
                             <span class="cell-stack">
-                                <span class="cell-stack__main">@row.EnvironmentName</span>
+                                <a class="cell-stack__main" href="@($"/environments/{row.EnvironmentId}")">@row.EnvironmentName</a>
                                 <span class="cell-stack__sub">@row.EnvironmentType</span>
                             </span>
                         </td>
@@ -336,9 +336,11 @@
                                     <button type="button" class="menu__item" role="menuitem" disabled="@_running"
                                             @onclick="() => ConfirmUpdateNowAsync(row)">Start this update now</button>
                                 }
+                                @* The two ways out of this page, after the things done on it. *@
+                                <div class="menu__sep"></div>
+                                <a class="menu__item" role="menuitem" href="@($"/environments/{row.EnvironmentId}")">Open environment</a>
                                 @if (row.BusinessCentralUrl is { } bcUrl)
                                 {
-                                    <div class="menu__sep"></div>
                                     <a class="menu__item" role="menuitem" href="@bcUrl"
                                        target="_blank" rel="noopener">Open in Business Central</a>
                                 }

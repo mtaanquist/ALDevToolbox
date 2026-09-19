@@ -208,6 +208,13 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
+    /// <summary>
+    /// Opens on a named tab. Only for links from elsewhere - the environment page sends
+    /// people to "bc" for the connection and the delivery window - so the tabs
+    /// themselves still switch in place and never rewrite the address.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "tab")] public string? OpenTab { get; set; }
+
     private enum Section { General, Repos, Bc, Pipelines, Access }
     private Section _section = Section.General;
 
@@ -313,6 +320,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (string.Equals(OpenTab, "bc", StringComparison.OrdinalIgnoreCase)) _section = Section.Bc;
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
 
         if (Id is null)
