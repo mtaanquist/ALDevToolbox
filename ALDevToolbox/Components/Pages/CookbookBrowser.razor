@@ -22,12 +22,8 @@
 
 <ListPage Title="Cookbook" FiltersWhileLoading="true" FiltersWhenEmpty="true" LoadingText="Loading recipes..."
           Subtitle="Reusable AL recipes - from one-file snippets to almost-complete modules. Search by title, description, or keywords; open one to view its files and copy them into your project."
-          IsLoading="@(_results is null)" IsEmpty="@(IsFirstRun && Rows.Count == 0)" HasNoMatches="@(Rows.Count == 0)">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Cookbook</span>
-    </Crumbs>
+          IsLoading="@(_results is null)" IsEmpty="@(IsFirstRun && Rows.Count == 0)" HasNoMatches="@(Rows.Count == 0)"
+          Trail='@([new("Home", "/"), new("Cookbook")])'>
     <Actions>
         <a class="btn" href="/cookbook/suggest">
             <Icon Name="lightbulb" Width="16" Height="16" />

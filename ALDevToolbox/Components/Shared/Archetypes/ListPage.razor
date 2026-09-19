@@ -28,7 +28,7 @@
 
 <div class="page@(string.IsNullOrEmpty(PageClass) ? "" : " " + PageClass)">
     <PageHead Title="@Title" Subtitle="@Subtitle" SubtitleContent="SubtitleContent"
-              Crumbs="Crumbs" Actions="Actions"
+              Trail="Trail" Crumbs="Crumbs" Actions="Actions"
               ShowActions="@(ShowActions ?? (!IsLoading && !IsEmpty))" Sticky="Sticky" />
 
     @Notices
@@ -76,6 +76,9 @@
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
     [Parameter] public string Subtitle { get; set; } = string.Empty;
     [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    /// <summary>The breadcrumb steps, the page itself last and unlinked.</summary>
+    [Parameter] public IReadOnlyList<Crumb>? Trail { get; set; }
+
     [Parameter] public RenderFragment? Crumbs { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
 

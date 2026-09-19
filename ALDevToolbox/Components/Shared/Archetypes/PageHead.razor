@@ -10,10 +10,7 @@
 
 <header class="page-head@(Sticky ? " page-head--sticky" : "")">
     <div>
-        @if (Crumbs is not null)
-        {
-            <nav class="page-head__crumbs" aria-label="Breadcrumb">@Crumbs</nav>
-        }
+        <CrumbNav Trail="Trail" Crumbs="Crumbs" />
         <h1 class="page-head__title">@Title</h1>
         @if (SubtitleContent is not null)
         {
@@ -38,6 +35,9 @@
 
     /// <summary>Subtitle with markup (a <c>code</c> span, a link). Wins over <see cref="Subtitle"/>.</summary>
     [Parameter] public RenderFragment? SubtitleContent { get; set; }
+
+    /// <summary>The breadcrumb steps, the page itself last and unlinked.</summary>
+    [Parameter] public IReadOnlyList<Crumb>? Trail { get; set; }
 
     /// <summary>The links and chevrons only; the component supplies the <c>nav</c>.</summary>
     [Parameter] public RenderFragment? Crumbs { get; set; }

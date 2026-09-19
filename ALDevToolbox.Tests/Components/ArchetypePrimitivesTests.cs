@@ -52,6 +52,35 @@ public sealed class ArchetypePrimitivesTests : IDisposable
     }
 
     [Fact]
+    public void PageHead_draws_a_trail_as_links_with_a_chevron_between_and_the_page_last()
+    {
+        var cut = _ctx.Render<PageHead>(p => p
+            .Add(c => c.Title, "Modules")
+            .Add(c => c.Trail, [new Crumb("Admin", "/admin"), new Crumb("Content & more", "/admin/content"), new Crumb("Modules")]));
+
+        var nav = cut.Find("nav.page-head__crumbs[aria-label=Breadcrumb]");
+        nav.Children.Select(c => c.TagName.ToLowerInvariant()).Should().Equal("a", "svg", "a", "svg", "span");
+        nav.QuerySelectorAll("a").Select(a => a.GetAttribute("href")).Should().Equal("/admin", "/admin/content");
+        // A label is text, never markup: the ampersand arrives encoded once.
+        nav.QuerySelectorAll("a")[1].TextContent.Should().Be("Content & more");
+        nav.QuerySelector("span")!.TextContent.Should().Be("Modules");
+    }
+
+    [Fact]
+    public void PageHead_with_an_empty_trail_draws_no_nav_and_a_fragment_wins_over_a_trail()
+    {
+        _ctx.Render<PageHead>(p => p.Add(c => c.Title, "Modules").Add(c => c.Trail, []))
+            .FindAll("nav").Should().BeEmpty();
+
+        var both = _ctx.Render<PageHead>(p => p
+            .Add(c => c.Title, "Modules")
+            .Add(c => c.Trail, [new Crumb("Admin", "/admin")])
+            .Add(c => c.Crumbs, "<a href=\"/x\">Own</a>"));
+        both.FindAll("nav").Should().ContainSingle();
+        both.Find("nav a").TextContent.Should().Be("Own");
+    }
+
+    [Fact]
     public void PageHead_omits_the_optional_parts_rather_than_rendering_them_empty()
     {
         var cut = _ctx.Render<PageHead>(p => p.Add(c => c.Title, "Releases"));

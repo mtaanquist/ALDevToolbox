@@ -38,14 +38,8 @@
 <PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <PageHead Title="@PageTitleText" Sticky="true">
-        <Crumbs>
-            <a href="/admin">Admin</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <a href="/admin/templates">Templates</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>@PageTitleText</span>
-        </Crumbs>
+    <PageHead Title="@PageTitleText" Sticky="true"
+              Trail='@([new("Admin", "/admin"), new("Templates", "/admin/templates"), new(PageTitleText)])'>
         <SubtitleContent>
             @if (IsEdit)
             {

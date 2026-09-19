@@ -1,0 +1,41 @@
+@*
+    The breadcrumb row inside a page head: .page-head__crumbs from
+    .design/handoff/ComponentsPanel.dc.html. Links, a chevron between each pair, and
+    the page itself as the last, unlinked step.
+
+    Trail is the normal way in. The Crumbs fragment stays for the rare trail a list
+    cannot say - a step that is only there when the page came from a release, say -
+    and wins when both are given. Draws nothing when it has neither, so a head
+    without crumbs gets no empty nav.
+*@
+
+@if (Crumbs is not null)
+{
+    <nav class="page-head__crumbs" aria-label="Breadcrumb">@Crumbs</nav>
+}
+else if (Trail is { Count: > 0 })
+{
+    <nav class="page-head__crumbs" aria-label="Breadcrumb">
+        @for (var i = 0; i < Trail.Count; i++)
+        {
+            var step = Trail[i];
+            if (i > 0)
+            {
+                <Icon Name="chevron-right" Width="12" Height="12" />
+            }
+            if (string.IsNullOrEmpty(step.Href))
+            {
+                <span>@step.Label</span>
+            }
+            else
+            {
+                <a href="@step.Href">@step.Label</a>
+            }
+        }
+    </nav>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<Crumb>? Trail { get; set; }
+    [Parameter] public RenderFragment? Crumbs { get; set; }
+}

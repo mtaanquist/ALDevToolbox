@@ -28,12 +28,8 @@
 <PageTitle>Email delivery · Site administration · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <PageHead Title="Email delivery">
-        <Crumbs>
-            <a href="/site-admin">Site administration</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>Email delivery</span>
-        </Crumbs>
+    <PageHead Title="Email delivery"
+              Trail='@([new("Site administration", "/site-admin"), new("Email delivery")])'>
         <SubtitleContent>
             @if (_snapshot is null)
             {
