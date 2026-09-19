@@ -75,6 +75,11 @@ public enum GitHubWorkspaceDelivery
 /// The pull request holding the workspace, when there is one - null whenever
 /// <paramref name="Delivery"/> is <see cref="GitHubWorkspaceDelivery.DefaultBranch"/>.
 /// </param>
+/// <param name="DefaultBranchWarning">
+/// What to do on GitHub when the workspace is on its branch but GitHub would
+/// not make that branch the default - or null, which is the usual case. A
+/// warning on a success, like the other two.
+/// </param>
 public sealed record GitHubWorkspaceRepository(
     GitHubRepositorySummary Repository,
     int FileCount,
@@ -87,7 +92,8 @@ public sealed record GitHubWorkspaceRepository(
     bool SolutionCreated = false,
     string? SolutionWarning = null,
     GitHubWorkspaceDelivery Delivery = GitHubWorkspaceDelivery.DefaultBranch,
-    string? PullRequestUrl = null);
+    string? PullRequestUrl = null,
+    string? DefaultBranchWarning = null);
 
 /// <summary>
 /// Creates a repository in the connected GitHub organisation and puts a freshly
@@ -369,7 +375,7 @@ public sealed class GitHubWorkspaceRepositoryService
             repository, files.Count, archiveName, archiveBytes,
             fill.StandardsFileCount, rulesetWarning,
             solution.Id, solution.Name, solution.Created, solution.Warning,
-            fill.Delivery, fill.PullRequestUrl);
+            fill.Delivery, fill.PullRequestUrl, fill.DefaultBranchWarning);
     }
 
     /// <summary>
@@ -574,7 +580,7 @@ public sealed class GitHubWorkspaceRepositoryService
     ///
     /// <para>See <c>.design/github-integration.md</c>, "#622 New workspace".</para>
     /// </summary>
-    private async Task<(int StandardsFileCount, GitHubWorkspaceDelivery Delivery, string? PullRequestUrl)> FillAsync(
+    private async Task<(int StandardsFileCount, GitHubWorkspaceDelivery Delivery, string? PullRequestUrl, string? DefaultBranchWarning)> FillAsync(
         string token, GitHubRepositorySummary repository, ProjectPlan plan,
         List<GitHubCommitFile> files, IReadOnlyList<GitHubRepositoryStandardFile> standardsFiles,
         int userId, CancellationToken ct)
@@ -589,7 +595,7 @@ public sealed class GitHubWorkspaceRepositoryService
             _logger.LogWarning(
                 "The '{Template}' template generated no files, so {RepoFullName} was left empty.",
                 plan.TemplateKey, repository.FullName);
-            return (0, GitHubWorkspaceDelivery.DefaultBranch, null);
+            return (0, GitHubWorkspaceDelivery.DefaultBranch, null, null);
         }
 
         // Every commit names the same person: without an author the seed is
@@ -663,13 +669,12 @@ public sealed class GitHubWorkspaceRepositoryService
                     throw RaceRefusal(repository);
                 }
                 refCreated = true;
-                await _github.SetDefaultBranchAsync(token, owner, name, defaultBranch, ct);
-                await _github.DeleteBranchAsync(token, owner, name, SeedBranch, ct);
+                var defaultBranchWarning = await MakeDefaultAsync(token, repository, ct);
 
                 _logger.LogInformation(
                     "Filled {RepoFullName} with {FileCount} file(s) in one commit on {Branch}.",
                     repository.FullName, contents.Count, defaultBranch);
-                return (standardsFiles.Count, GitHubWorkspaceDelivery.DefaultBranch, null);
+                return (standardsFiles.Count, GitHubWorkspaceDelivery.DefaultBranch, null, defaultBranchWarning);
             }
             catch (GitHubApiException ex) when (ex.IsRuleViolation)
             {
@@ -684,7 +689,59 @@ public sealed class GitHubWorkspaceRepositoryService
         }
 
         return (standardsFiles.Count, GitHubWorkspaceDelivery.PullRequest,
-            await OpenPullRequestAsync(token, repository, plan, seed, tree, author, contents.Count, ct));
+            await OpenPullRequestAsync(token, repository, plan, seed, tree, author, contents.Count, ct), null);
+    }
+
+    /// <summary>
+    /// Makes the branch that now holds the workspace the repository's default
+    /// and removes the throwaway one, returning a sentence for the success
+    /// state when GitHub would not.
+    ///
+    /// <para><strong>A refusal here is a warning, not a failure.</strong> The
+    /// workspace is already whole on its branch, so throwing would report
+    /// "GitHub refused to create the repository" about a repository that
+    /// exists and is full, and skip the solution and the audit entry with it.
+    /// A rule violation is the one exception: it still goes to the caller,
+    /// whose pull-request route puts the repository in shape another way.</para>
+    /// </summary>
+    private async Task<string?> MakeDefaultAsync(
+        string token, GitHubRepositorySummary repository, CancellationToken ct)
+    {
+        var owner = repository.Owner;
+        var name = repository.Name;
+        var branch = repository.DefaultBranch;
+        try
+        {
+            await _github.SetDefaultBranchAsync(token, owner, name, branch, ct);
+        }
+        catch (GitHubApiException ex) when (!ex.IsRuleViolation)
+        {
+            // Refused is not the same as wrong: if the seed never took the
+            // default away, there was nothing to change.
+            GitHubRepositorySummary? current = null;
+            try
+            {
+                current = await _github.GetRepositoryAsync(token, owner, name, ct);
+            }
+            catch (GitHubApiException)
+            {
+            }
+
+            if (!string.Equals(current?.DefaultBranch, branch, StringComparison.Ordinal))
+            {
+                _logger.LogWarning(
+                    ex, "{RepoFullName} holds the workspace on {Branch}, but its default branch is still {Current}.",
+                    repository.FullName, branch, current?.DefaultBranch ?? "(unknown)");
+                // The throwaway branch stays: it is the default, and GitHub
+                // does not delete a default branch.
+                return $"The workspace is on {branch}, but GitHub would not make {branch} the default branch. "
+                    + $"On GitHub, open {repository.FullName} → Settings → General → Default branch, "
+                    + $"switch it to {branch}, then delete the other branch.";
+            }
+        }
+
+        await _github.DeleteBranchAsync(token, owner, name, SeedBranch, ct);
+        return null;
     }
 
     /// <summary>

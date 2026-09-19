@@ -568,6 +568,14 @@
                             }
                         </span>
                     </Alert>
+                    @if (!string.IsNullOrEmpty(_createdRepo.DefaultBranchWarning))
+                    {
+                        @* The repository is there and holds the files; only
+                           a setting on GitHub is left to change by hand. *@
+                        <Alert Tone="AlertTone.Warn">
+                            <span>@_createdRepo.DefaultBranchWarning</span>
+                        </Alert>
+                    }
                     @if (!string.IsNullOrEmpty(_createdRepo.SolutionWarning))
                     {
                         @* The repository is there and holds the files;

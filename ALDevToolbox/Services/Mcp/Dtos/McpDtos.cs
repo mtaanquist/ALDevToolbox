@@ -135,6 +135,10 @@ public sealed record WorkspaceResult(
 /// Why the repository is not on a solution, or null when it is. The repository
 /// exists either way.
 /// </param>
+/// <param name="DefaultBranchWarning">
+/// What to change on GitHub when the files are on their branch but GitHub would
+/// not make it the repository's default, or null when it did.
+/// </param>
 /// <param name="OpenedPullRequest">
 /// True when the organisation only allows changes to the default branch through
 /// a pull request, so the files are waiting in one instead of being on that
@@ -159,7 +163,8 @@ public sealed record RepositoryCreationResult(
     bool SolutionCreated = false,
     string? SolutionWarning = null,
     bool OpenedPullRequest = false,
-    string? PullRequestUrl = null)
+    string? PullRequestUrl = null,
+    string? DefaultBranchWarning = null)
 {
     /// <summary>
     /// The projection of a created repository, written once because two tools
@@ -180,7 +185,8 @@ public sealed record RepositoryCreationResult(
         SolutionCreated: created.SolutionCreated,
         SolutionWarning: created.SolutionWarning,
         OpenedPullRequest: created.Delivery == ALDevToolbox.Services.GitHub.GitHubWorkspaceDelivery.PullRequest,
-        PullRequestUrl: created.PullRequestUrl);
+        PullRequestUrl: created.PullRequestUrl,
+        DefaultBranchWarning: created.DefaultBranchWarning);
 }
 
 /// <summary>
