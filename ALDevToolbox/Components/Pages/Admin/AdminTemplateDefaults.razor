@@ -21,16 +21,17 @@
 <PageTitle>Defaults · Configuration · AL Dev Toolbox</PageTitle>
 
 <EditPage Title="Defaults"
-          IsLoading="@(_loading)">
+          IsLoading="@(_loading)" Sticky="true">
+    <Crumbs>
+        <a href="/admin">Admin</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Defaults</span>
+    </Crumbs>
     <SubtitleContent>
         Pre-filled into the New Workspace and New Extension forms. Users
         can still edit on the form - these are defaults, not locks.
     </SubtitleContent>
     <Actions>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
         @* Save lives in the sticky .form-actions bar at the foot of the form,
            not up here — this page is longer than a viewport and the archetype
            ends a long form with its action bar. *@

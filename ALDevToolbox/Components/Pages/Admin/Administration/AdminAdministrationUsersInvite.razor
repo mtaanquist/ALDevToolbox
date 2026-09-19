@@ -21,18 +21,12 @@
 
 <div class="page">
     <PageHead Title="Add a user"
-              Subtitle="Adds someone to this organisation and sends them an invite.">
+              Subtitle="Adds someone to this organisation and sends them an invite." Sticky="true">
         <Crumbs>
             <a href="/admin/administration/users">Users</a>
             <Icon Name="chevron-right" Width="12" Height="12" />
             <span>Add a user</span>
         </Crumbs>
-        <Actions>
-            <a class="btn btn--sm" href="/admin/administration/users">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to users</span>
-            </a>
-        </Actions>
     </PageHead>
 
     @if (!string.IsNullOrEmpty(Error))

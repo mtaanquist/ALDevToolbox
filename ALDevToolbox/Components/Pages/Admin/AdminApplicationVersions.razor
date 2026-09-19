@@ -24,7 +24,12 @@
 <PageTitle>Application versions · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <PageHead Title="Application versions">
+    <PageHead Title="Application versions" Sticky="true">
+        <Crumbs>
+            <a href="/admin">Admin</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>Application versions</span>
+        </Crumbs>
         <SubtitleContent>
             These rows back the Application Version select on the New
             Workspace and New Extension forms. Picking an entry there fills
@@ -33,10 +38,6 @@
             <code class="code">app.json</code>.
         </SubtitleContent>
         <Actions>
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
             <button type="button" class="btn btn--sm btn--primary"
                     @onclick="SaveAsync"
                     disabled="@(_saving || _form is null)">

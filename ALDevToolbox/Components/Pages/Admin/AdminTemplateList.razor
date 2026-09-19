@@ -16,17 +16,18 @@
 <ListPage Title="Templates" ShowActions="true" FiltersWhenEmpty="true"
           IsLoading="@(_rows is null)"
           IsEmpty="@(_rows is not null && FilteredRows.Count == 0 && _rows.Count == 0)"
-          HasNoMatches="@(_rows is not null && FilteredRows.Count == 0)">
+          HasNoMatches="@(_rows is not null && FilteredRows.Count == 0)" Sticky="true">
+    <Crumbs>
+        <a href="/admin">Admin</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Templates</span>
+    </Crumbs>
     <SubtitleContent>
         Runtime templates back the New Workspace dropdown. Edits here
         take effect the next time someone generates, and every change is
         recorded in the history.
     </SubtitleContent>
     <Actions>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
         <a class="btn btn--sm btn--primary" href="/admin/templates/new">
             <Icon Name="folder-plus" Width="14" Height="14" />
             <span>New template</span>

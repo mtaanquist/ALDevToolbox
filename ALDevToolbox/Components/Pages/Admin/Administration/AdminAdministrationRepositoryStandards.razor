@@ -20,18 +20,19 @@
 <PageTitle>Repository standards · Administration · AL Dev Toolbox</PageTitle>
 
 <EditPage Title="Repository standards"
-          IsLoading="@(_loading)">
+          IsLoading="@(_loading)" Sticky="true">
+    <Crumbs>
+        <a href="/admin/administration">Administration</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <a href="/admin/administration/repositories">Repositories</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Repository standards</span>
+    </Crumbs>
     <SubtitleContent>
         What every GitHub repository the toolbox creates starts with: the files your
         team expects to find, and the rules on its default branch. Repositories on
         Azure DevOps are not affected.
     </SubtitleContent>
-    <Actions>
-        <a class="btn btn--sm" href="/admin/administration/repositories">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to Repositories</span>
-        </a>
-    </Actions>
     <ChildContent>
         @if (!string.IsNullOrEmpty(_okMessage))
         {

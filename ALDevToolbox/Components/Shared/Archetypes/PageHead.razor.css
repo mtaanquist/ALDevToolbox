@@ -1,0 +1,10 @@
+/* pages-forms.css zeroes --sticky-head on .gen (its DIVERGENCE 7) because no page
+   applied .page-head--sticky, and says to restore the handoff's value if one ever
+   did. The admin edit pages do now, and three of them have a sticky rail
+   (.gen__aside) that would otherwise slide up underneath the head. Restored here,
+   by the component that makes a head sticky, and only after a head that is - so
+   the generators keep their zero. */
+.page-head--sticky ~ ::deep .gen,
+.page-head--sticky ~ ::deep * .gen {
+    --sticky-head: 132px;
+}

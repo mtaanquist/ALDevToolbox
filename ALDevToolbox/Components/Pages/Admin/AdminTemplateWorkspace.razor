@@ -21,17 +21,18 @@
 <PageTitle>Workspace settings · Configuration · AL Dev Toolbox</PageTitle>
 
 <EditPage Title="Workspace settings"
-          IsLoading="@(_loading)">
+          IsLoading="@(_loading)" Sticky="true">
+    <Crumbs>
+        <a href="/admin">Admin</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Workspace settings</span>
+    </Crumbs>
     <SubtitleContent>
         The VS Code workspace file that ships with every generated workspace.
         The folder list is filled in for you - everything else here, editor
         settings and custom tasks included, is yours.
     </SubtitleContent>
     <Actions>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
         <button type="button" class="btn btn--sm" @onclick="ResetToDefaultAsync" disabled="@_saving">
             <Icon Name="rotate-ccw" Width="14" Height="14" />
             <span>Reset to default</span>
