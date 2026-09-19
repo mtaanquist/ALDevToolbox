@@ -15,7 +15,8 @@
     margin-top: var(--space-2);
 }
 
-.ws-repo p {
+/* ::deep so the rule also reaches a paragraph a child component renders (an Alert). */
+.ws-repo ::deep p {
     margin: 0;
 }
 

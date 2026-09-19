@@ -25,19 +25,12 @@
     margin-right: auto;
 }
 
-.env-detail__overlap {
-    margin-top: var(--space-4);
-}
 
 .env-detail__later {
     margin: var(--space-3) 0 0;
     font-size: var(--text-sm);
 }
 
-/* Alerts inside the settings card sit inside its padding, above the setting list. */
-.env-detail__warn {
-    margin: var(--space-4) var(--space-4) 0;
-}
 
 /* The UTC equivalent of a local scheduled time, as a second line under it. */
 .env-detail__utc {
