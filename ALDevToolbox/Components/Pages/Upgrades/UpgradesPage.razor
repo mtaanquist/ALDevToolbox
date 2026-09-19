@@ -177,16 +177,6 @@
             </div>
         }
 
-        @if (_running)
-        {
-            <div class="upg-notice upg-notice--busy">
-                <span class="spinner"></span>
-                <span>@_progressText</span>
-                <button type="button" class="btn btn--sm" @onclick="() => _stopRequested = true" disabled="@_stopRequested">
-                    <span>@(_stopRequested ? "Stopping after this one" : "Stop")</span>
-                </button>
-            </div>
-        }
     </Toolbar>
     <NoMatches>
         <div class="card">
@@ -259,6 +249,24 @@
                                     <span>Runs outside the solution's update window</span>
                                 </div>
                             }
+                            @* A short outcome sits here, under the update it is about and
+                               in line with the marker above. Only a result that needs
+                               room - a refusal, a link, a booking to call off - gets the
+                               full-width line under the row. *@
+                            @if (_results.TryGetValue(row.EnvironmentId, out var brief) && brief.IsBrief)
+                            {
+                                <div class="@brief.CssClass">
+                                    @if (brief.Tone == "busy")
+                                    {
+                                        <span class="spinner"></span>
+                                    }
+                                    else if (brief.Tone == "ok")
+                                    {
+                                        <Icon Name="circle-check" Width="12" Height="12" />
+                                    }
+                                    <span>@brief.Text</span>
+                                </div>
+                            }
                             @* A booking survives a reload, and this marker is the only
                                trace of one on the table - the batch result that announced
                                it is gone the moment the page reloads. So it carries the
@@ -321,9 +329,11 @@
                     @* What the last run did to this row, on a line of its own. It used
                        to sit in the Next update cell, where a long refusal from Business
                        Central widened that column and squeezed every other one. *@
-                    @if (_results.TryGetValue(row.EnvironmentId, out var result))
+                    @if (_results.TryGetValue(row.EnvironmentId, out var result) && !result.IsBrief)
                     {
-                        <tr class="is-subrow upg-result-row @(picked ? "is-selected" : null)" @key="@($"result-{row.EnvironmentId}")">
+                        @* The row's own classes, so its state bar and its ticked tint run
+                           through the result: the two read as one block. *@
+                        <tr class="is-subrow upg-result-row @RowClass(row, picked)" @key="@($"result-{row.EnvironmentId}")">
                             <td colspan="3"></td>
                             <td colspan="6">
                                 <div class="upg-result">
@@ -398,7 +408,8 @@
 <ConfirmDialog @ref="_pushConfirm" Wide="true"
                Title="@(_single is null ? "Move these update dates?" : "Move this update date?")"
                Message="The version each environment updates to doesn't change - only the date it runs. Each date moves to the latest Business Central still allows."
-               ConfirmLabel="Move the dates" ConfirmButtonClass="btn" ConfirmIcon="calendar">
+               ConfirmLabel="Move the dates" ConfirmButtonClass="btn" ConfirmIcon="calendar"
+               WorkingContent="@RunProgress()">
     @PreviewList()
 </ConfirmDialog>
 
@@ -414,7 +425,10 @@
                ConfirmButtonClass="@(_scheduleLater ? "btn" : "btn--danger")"
                ConfirmIcon="@(_scheduleLater ? "clock" : "zap")"
                ConfirmDisabled="@(_scheduleLater && SlotProblem() is not null)"
-               RequireWord="@(_scheduleLater ? null : "update")">
+               RequireWord="@(_scheduleLater ? null : "update")"
+               GraceSeconds="@(_scheduleLater ? 0 : StartGraceSeconds)"
+               GraceContent="@PreviewList()"
+               WorkingContent="@RunProgress()">
     @PreviewList()
 
     @* The whole reason a slot exists: the team agrees "tonight at 20:00" with a
@@ -482,6 +496,34 @@
     private bool _running;
     private bool _stopRequested;
     private string _progressText = string.Empty;
+    private int _progressDone;
+    private int _progressTotal;
+
+    /// <summary>
+    /// How long an immediate update waits after the confirm before anything is sent.
+    /// Starting one cannot be taken back, so the dialog gives the person this long to
+    /// notice the wrong customer. A booking has no wait: it can be cancelled for hours.
+    /// </summary>
+    private const int StartGraceSeconds = 10;
+
+    /// <summary>
+    /// The run, reported in the dialog that started it rather than in a strip above a
+    /// table the scrim has just uncovered. Stop only appears when there is a next one
+    /// to stop before.
+    /// </summary>
+    private RenderFragment RunProgress() => @<div class="upg-run" role="status">
+        <p class="upg-run__text">@_progressText</p>
+        <progress class="progress" value="@_progressDone" max="@Math.Max(1, _progressTotal)"></progress>
+        @if (_progressTotal > 1)
+        {
+            <div class="upg-run__foot">
+                <span class="u-muted">@_progressDone of @_progressTotal done. Each result appears on its row.</span>
+                <button type="button" class="btn btn--sm" @onclick="() => _stopRequested = true" disabled="@_stopRequested">
+                    <span>@(_stopRequested ? "Stopping after this one" : "Stop after this one")</span>
+                </button>
+            </div>
+        }
+    </div>;
     private Notice? _notice;
 
     private ConfirmDialog? _pushConfirm;
@@ -755,6 +797,8 @@
         _notice = null;
         _results.Clear();
         foreach (var row in rows) _results[row.EnvironmentId] = new RowResult("Waiting", "muted");
+        _progressDone = 0;
+        _progressTotal = rows.Count;
 
         var done = 0;
         var skipped = 0;
@@ -770,7 +814,9 @@
             }
 
             var booking = !push && _scheduleLater;
-            _progressText = $"Working through {i + 1} of {rows.Count}...";
+            _progressDone = i;
+            _progressText = (push ? "Moving the date on " : booking ? "Booking " : "Starting the update on ")
+                + $"{row.ProjectName} {row.EnvironmentName}...";
             _results[row.EnvironmentId] = new RowResult(
                 push ? "Moving the date..." : booking ? "Booking..." : "Starting the update...", "busy");
             StateHasChanged();
@@ -822,11 +868,15 @@
                 failed++;
             }
 
+            _progressDone = i + 1;
             StateHasChanged();
         }
 
         _running = false;
         _progressText = string.Empty;
+        // The dialog stayed open to show the run; the rows and the summary take over.
+        _nowConfirm?.Close();
+        _pushConfirm?.Close();
         _notice = Summary(done, skipped, failed, needSetup, push,
             !push && _scheduleLater ? BookedForText() : null);
 
@@ -1395,6 +1445,12 @@
         string Text, string Tone, int? ProjectId = null, string? LinkLabel = null, int? ActionId = null)
     {
         public string CssClass => $"upg-note upg-note--{Tone}";
+
+        /// <summary>
+        /// Short enough for the Next update cell without widening it: a few words, and
+        /// nothing to click. Refusals carry Business Central's sentence and stay below.
+        /// </summary>
+        public bool IsBrief => ProjectId is null && LinkLabel is null && ActionId is null && Text.Length <= 28;
     }
 
     /// <summary>

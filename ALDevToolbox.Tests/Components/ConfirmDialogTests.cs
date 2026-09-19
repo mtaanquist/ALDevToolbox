@@ -148,6 +148,63 @@ public sealed class ConfirmDialogTests : IDisposable
     }
 
     [Fact]
+    public async Task A_grace_period_holds_the_yes_back_and_cancelling_in_it_answers_no()
+    {
+        var cut = _ctx.Render<ConfirmDialog>(p => p.Add(c => c.GraceSeconds, 30));
+        Task<bool>? resultTask = null;
+        await cut.InvokeAsync(() => { resultTask = cut.Instance.OpenAsync("Start?", "It can't be recalled.", "Start"); });
+
+        cut.Find("button.btn--danger").Click();
+
+        resultTask!.IsCompleted.Should().BeFalse("the caller must not hear yes until the bar has run out");
+        cut.Find(".confirm-dialog__grace").TextContent.Should().Contain("Nothing has been sent yet");
+
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel - send nothing").Click();
+
+        (await resultTask).Should().BeFalse();
+        cut.FindAll("div.modal-layer").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_grace_period_that_runs_out_answers_yes_and_so_does_start_now()
+    {
+        var cut = _ctx.Render<ConfirmDialog>(p => p.Add(c => c.GraceSeconds, 1));
+        Task<bool>? ranOut = null;
+        await cut.InvokeAsync(() => { ranOut = cut.Instance.OpenAsync("Start?", "", "Start"); });
+        cut.Find("button.btn--danger").Click();
+        (await ranOut!.WaitAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+
+        cut.Render(p => p.Add(c => c.GraceSeconds, 30));
+        Task<bool>? skipped = null;
+        await cut.InvokeAsync(() => { skipped = cut.Instance.OpenAsync("Start?", "", "Start"); });
+        cut.Find("button.btn--danger").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Start now").Click();
+        (await skipped!).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_dialog_with_work_to_show_stays_open_after_yes_until_the_caller_closes_it()
+    {
+        var cut = _ctx.Render<ConfirmDialog>(p => p
+            .Add(c => c.WorkingContent, b => b.AddMarkupContent(0, "<p class=\"working\">2 of 5</p>")));
+        Task<bool>? resultTask = null;
+        await cut.InvokeAsync(() => { resultTask = cut.Instance.OpenAsync("Start?", "Sure?", "Start"); });
+
+        cut.Find("button.btn--danger").Click();
+
+        (await resultTask!).Should().BeTrue();
+        cut.Find(".working").TextContent.Should().Be("2 of 5");
+        cut.FindAll(".confirm-dialog__actions").Should().BeEmpty("there is no question left to answer");
+
+        // Escape must not dismiss a run that is still going.
+        cut.Find("div.modal-layer").KeyDown(new KeyboardEventArgs { Key = "Escape" });
+        cut.FindAll(".working").Should().HaveCount(1);
+
+        await cut.InvokeAsync(() => cut.Instance.Close());
+        cut.FindAll("div.modal-layer").Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Cancel_button_resolves_OpenAsync_with_false()
     {
         var cut = _ctx.Render<ConfirmDialog>();

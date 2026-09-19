@@ -26,3 +26,29 @@
     font-size: var(--text-sm);
     color: var(--ink-2);
 }
+
+/* The grace period: a bar that empties over the seconds left to call it off. It is
+   the design system's .progress track drawn by hand, because a native <progress>
+   only moves when the server sends a new value - once a second, in steps. */
+.confirm-dialog__grace p { margin: 0 0 var(--space-3); }
+
+.confirm-dialog__grace-bar {
+    height: 8px;
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    overflow: hidden;
+}
+
+.confirm-dialog__grace-bar span {
+    display: block;
+    height: 100%;
+    border-radius: var(--r-pill);
+    background: var(--danger-strong);
+    transform-origin: left;
+    animation: confirm-grace-drain linear forwards;
+}
+
+@keyframes confirm-grace-drain {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}
