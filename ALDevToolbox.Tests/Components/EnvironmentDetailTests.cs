@@ -227,7 +227,10 @@ public sealed class EnvironmentDetailTests : IDisposable
         _panels.Set(projectId, envId, Panel());
         var cut = Render(envId);
 
-        cut.FindAll("table.u-compact tbody tr")[1].QuerySelector(".data-table__actions button")!.Click();
+        // The page is still settling its own reads when it first renders, and a click
+        // on an element found before a re-render lands on a handler that is gone.
+        cut.WaitForAssertion(() =>
+            cut.FindAll("table.u-compact tbody tr")[1].QuerySelector(".data-table__actions button")!.Click());
 
         cut.WaitForAssertion(() =>
             cut.FindAll(".env-detail__alongside-list li").Select(li => li.Children[0].TextContent)
@@ -242,7 +245,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         _panels.Set(projectId, envId, Panel());
         var cut = Render(envId);
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload an app").Click();
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload an app").Click());
 
         cut.WaitForAssertion(() => cut.Find("#upload-app-file").GetAttribute("accept").Should().Be(".app"));
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload and install")

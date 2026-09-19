@@ -162,7 +162,8 @@ public sealed class EnvironmentsListTests : IDisposable
         var cut = _ctx.Render<EnvironmentsList>();
         cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
 
-        cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Upload an app...").Click();
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Upload an app...").Click());
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Upload an app to Production, a production environment?"));
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload and install")
