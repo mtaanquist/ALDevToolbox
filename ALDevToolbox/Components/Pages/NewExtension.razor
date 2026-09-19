@@ -55,8 +55,7 @@
     <Notices>
         @if (_errors.Count > 0)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>
                     @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
                     before this extension can be @_errorAction. Nothing you typed has been lost.
@@ -65,7 +64,7 @@
                         <text> @string.Join(" ", _unfieldedErrors)</text>
                     }
                 </span>
-            </p>
+            </Alert>
         }
     </Notices>
     <Form>
@@ -351,8 +350,7 @@
                 <div class="card__foot ext-deliver">
                     @if (_delivery is not null)
                     {
-                        <p class="alert alert--success" role="status">
-                            <Icon Name="circle-check" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Success">
                             <span class="u-stack">
                                 <span>
                                     Pull request #@_delivery.PullRequest.Number was opened on
@@ -369,7 +367,7 @@
                                     </a>
                                 </span>
                             </span>
-                        </p>
+                        </Alert>
                     }
                     <p>
                         @(_delivery is null ? "Adds" : "Adding again puts")

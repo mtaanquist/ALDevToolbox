@@ -25,7 +25,8 @@
 <DetailPage IsLoading="@(_template is null && !_loadFailed)" IsNotFound="@(_template is null)"
             Title="@PageTitleText"
             ShowActions="@(_template is { Deprecated: false, DeletedAt: null })"
-            Subtitle="A read-only look at this template's layout and defaults.">
+            Subtitle="A read-only look at this template's layout and defaults."
+            Trail='@([new("Templates", "/templates"), new(PageTitleText)])'>
     <NotFound>
         <div class="card">
             @* search-x is what the hand-off's not-found state uses; it is not
@@ -41,11 +42,6 @@
             </EmptyState>
         </div>
     </NotFound>
-    <Crumbs>
-        <a href="/templates">Templates</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <span>@PageTitleText</span>
-    </Crumbs>
     <TitleRow>
         @if (_template?.Deprecated == true)
         {

@@ -12,12 +12,8 @@
 <PageTitle>Review suggestion · Admin · AL Dev Toolbox</PageTitle>
 
 <EditPage Title="@(_suggestion?.Title ?? (_loaded ? "Suggestion not found" : "Review suggestion"))"
-          IsLoading="@(!_loaded)" IsNotFound="@(_suggestion is null)" Sticky="true">
-    <Crumbs>
-        <a href="/admin/cookbook/suggestions">Suggestions</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <span>Review</span>
-    </Crumbs>
+          IsLoading="@(!_loaded)" IsNotFound="@(_suggestion is null)" Sticky="true"
+          Trail='@([new("Suggestions", "/admin/cookbook/suggestions"), new("Review")])'>
     <SubtitleContent>
         @if (_suggestion is { } s)
         {
@@ -34,9 +30,9 @@
     <Notices>
         @if (!string.IsNullOrEmpty(_lastError))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_lastError</span>
+            </Alert>
         }
     </Notices>
     @* Not found has no body of its own: the head already says it, and offers the way back. *@

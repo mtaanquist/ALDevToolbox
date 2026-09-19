@@ -26,12 +26,8 @@
 <PageTitle>Solutions · AL Dev Toolbox</PageTitle>
 
 <ListPage Title="Solutions" SearchForm="true"
-          IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(_rows is { Count: 0 })">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Solutions</span>
-    </Crumbs>
+          IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(_rows is { Count: 0 })"
+          Trail='@([new("Home", "/"), new("Solutions")])'>
     <SubtitleContent>
         Each solution points at one or more Git repositories and builds them into a set of
         compiled <code>.app</code> files. Open one to manage its repositories and start a build.

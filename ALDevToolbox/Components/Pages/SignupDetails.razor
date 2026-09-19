@@ -60,8 +60,7 @@ else
         <Alerts>
             @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
             {
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Danger">
                     <span>
                         @if (AuthCard.FieldLabel(@Field) is { } label)
                         {
@@ -69,7 +68,7 @@ else
                         }
                         @Message
                     </span>
-                </p>
+                </Alert>
             }
         </Alerts>
         <ChildContent>

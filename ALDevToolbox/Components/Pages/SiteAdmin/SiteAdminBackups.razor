@@ -32,27 +32,27 @@
 
         @if (!string.IsNullOrEmpty(Message))
         {
-            <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@Message</span></p>
+            <Alert Tone="AlertTone.Danger"><span>@Message</span></Alert>
         }
         @if (Ok == "created")
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup created.</span></p>
+            <Alert Tone="AlertTone.Success"><span>Backup created.</span></Alert>
         }
         else if (Ok == "pinned")
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup pinned.</span></p>
+            <Alert Tone="AlertTone.Success"><span>Backup pinned.</span></Alert>
         }
         else if (Ok == "unpinned")
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup unpinned.</span></p>
+            <Alert Tone="AlertTone.Success"><span>Backup unpinned.</span></Alert>
         }
         else if (Ok == "deleted")
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup deleted.</span></p>
+            <Alert Tone="AlertTone.Success"><span>Backup deleted.</span></Alert>
         }
         else if (Ok == "restored")
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Restore complete - the application is back online.</span></p>
+            <Alert Tone="AlertTone.Success"><span>Restore complete - the application is back online.</span></Alert>
         }
 
         @if (_activeJobs is { Count: > 0 })
@@ -78,7 +78,7 @@
                             </div>
                             @if (job.Status == OffsiteRestoreJobStatus.Failed)
                             {
-                                <p class="alert alert--danger" role="alert" data-job-error><Icon Name="circle-alert" Width="16" Height="16" /><span>@job.Error</span></p>
+                                <Alert Tone="AlertTone.Danger" data-job-error><span>@job.Error</span></Alert>
                             }
                             else
                             {
@@ -119,7 +119,7 @@
                 </p>
                 @if (_offsiteError is not null)
                 {
-                    <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@_offsiteError</span></p>
+                    <Alert Tone="AlertTone.Danger"><span>@_offsiteError</span></Alert>
                 }
                 else if (_offsite is null)
                 {

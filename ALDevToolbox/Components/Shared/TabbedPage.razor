@@ -14,7 +14,7 @@
     @* Attributes, not slots: a slot is never null, so wrapping a null fragment in
        one would draw an empty crumb row or actions box. *@
     <PageHead Title="@Title" SubtitleContent="Sub" Actions="Actions"
-              Crumbs="@(string.IsNullOrEmpty(CrumbHref) ? null : CrumbTrail)" />
+              Trail="CrumbTrail" />
 
     <HeaderTabs Items="@Tabs" AriaLabel="@TabsLabel" />
 
@@ -34,9 +34,6 @@
     [Parameter] public RenderFragment? Actions { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     /// <summary>One step back to the page this one hangs off, then where we are.</summary>
-    private RenderFragment CrumbTrail => @<text>
-        <a href="@CrumbHref">@CrumbLabel</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <span>@Title</span>
-    </text>;
+    private IReadOnlyList<Crumb>? CrumbTrail =>
+        string.IsNullOrEmpty(CrumbHref) ? null : [new(CrumbLabel ?? string.Empty, CrumbHref), new(Title)];
 }

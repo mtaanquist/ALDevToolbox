@@ -35,10 +35,9 @@
 
 @if (HasDangerRows)
 {
-    <p class="alert alert--info">
-        <Icon Name="info" Width="16" Height="16" />
+    <Alert Tone="AlertTone.Info">
         <span>Settings with a red keyline sign people out or delete data. They always ask you to confirm first.</span>
-    </p>
+    </Alert>
 }
 @ChildContent
 

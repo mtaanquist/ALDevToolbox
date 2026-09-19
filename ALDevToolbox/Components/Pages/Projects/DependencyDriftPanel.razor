@@ -49,10 +49,9 @@
 
         @if (_failed)
         {
-            <p class="alert alert--warn" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="alert">
                 <span>The toolbox could not reach GitHub just now, so nothing was changed. Try again in a moment.</span>
-            </p>
+            </Alert>
         }
 
         <ul class="drift__list">

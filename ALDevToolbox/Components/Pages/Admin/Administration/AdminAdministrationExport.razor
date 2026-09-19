@@ -18,15 +18,15 @@
     <Alerts>
         @if (Ok == "imported")
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>Configuration restored.</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>Configuration restored.</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(Msg))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@Msg</span>
+            </Alert>
         }
     </Alerts>
     <Body>
@@ -75,10 +75,9 @@
         @* Was "settings with a red keyline delete data", which explains a
            colour convention on a page with exactly one such row that already
            says so in words. This says something the reader can act on. *@
-        <p class="alert alert--info">
-            <Icon Name="info" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Info">
             <span>Take a copy before you restore one - a restore cannot be undone.</span>
-        </p>
+        </Alert>
     </Aside>
 </AdministrationHeader>
 

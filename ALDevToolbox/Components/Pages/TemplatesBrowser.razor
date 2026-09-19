@@ -22,12 +22,8 @@
 @* Two lists share this frame, so each section keeps its own loading, empty and
    no-match states; ListPage supplies the head and the filter row over both. *@
 <ListPage Title="Templates"
-          Subtitle="The workspace templates and modules available in your organisation. Browse them here; an admin edits them under Administration.">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Templates</span>
-    </Crumbs>
+          Subtitle="The workspace templates and modules available in your organisation. Browse them here; an admin edits them under Administration."
+          Trail='@([new("Home", "/"), new("Templates")])'>
     <Search>
         <input class="input" type="search" placeholder="Filter by name or runtime..."
                value="@_query" @oninput="OnSearch" aria-label="Filter templates and modules" />

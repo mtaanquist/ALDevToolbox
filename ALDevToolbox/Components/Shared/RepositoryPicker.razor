@@ -174,13 +174,12 @@
         }
         else if (_loadFailed)
         {
-            <p class="alert alert--warn" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="alert">
                 <span class="u-stack">
                     <span>@_loadError</span>
                     <span><button type="button" class="btn btn--sm" @onclick="ReloadAsync">Try again</button></span>
                 </span>
-            </p>
+            </Alert>
         }
         else if (_loaded)
         {

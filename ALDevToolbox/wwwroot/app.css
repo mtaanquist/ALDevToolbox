@@ -290,3 +290,44 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     font-size: var(--text-xs);
     white-space: nowrap;
 }
+
+/* ── Classes handed to a shared component's root (Alert Class="...") ──────────
+   These would normally live in the page's own scoped stylesheet, and cannot: a
+   scoped rule only reaches elements the page itself renders, and the element
+   that wears one of these classes is rendered by the component. ::deep does not
+   help where the component is the page's outermost element, or sits in a
+   frame's slot with no page-rendered ancestor. Each name is page-prefixed, so
+   being global costs nothing. */
+
+/* Frame, tint and icon slot are .alert .alert--warn from components.css; this
+   only turns it into a full-width strip above the shell — square corners, no
+   side border, and never squeezed by the flex column it sits in. */
+.site-banner {
+    flex: none;
+    border-width: 0 0 1px 0;
+    border-radius: 0;
+    align-items: center;
+    padding: var(--space-2) var(--space-5);
+}
+
+/* Layout only. The frame, tint and icon slot are .alert .alert--info; the bar
+   is .progress, which this component is the reason exists (#586). What is left
+   is that .alert is a flex row (icon | text) and this banner has no icon, so
+   the body has to claim the full width itself. */
+
+.oe-import-progress:not([hidden]) { display: flex; }
+
+/* What the last "Refresh from repositories" run did, and where a learned pair
+   came from - the repository, linked to the file itself on GitHub. */
+.tr-mem-refresh { margin-bottom: 14px; }
+
+.tr-mem-load-error { margin-bottom: 14px; }
+
+.env-detail__overlap {
+    margin-top: var(--space-4);
+}
+
+/* Alerts inside the settings card sit inside its padding, above the setting list. */
+.env-detail__warn {
+    margin: var(--space-4) var(--space-4) 0;
+}

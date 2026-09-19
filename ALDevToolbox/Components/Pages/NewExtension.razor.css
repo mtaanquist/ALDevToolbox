@@ -18,12 +18,14 @@
     gap: var(--space-2);
 }
 
-.ext-deliver > .alert {
+/* ::deep: the alert is rendered by the Alert component, outside this file's scope. */
+.ext-deliver ::deep > .alert {
     justify-self: stretch;
 }
 
-.ext-repo p,
-.ext-deliver p {
+/* ::deep so the rule also reaches a paragraph a child component renders (an Alert). */
+.ext-repo ::deep p,
+.ext-deliver ::deep p {
     margin: 0;
 }
 

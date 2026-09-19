@@ -30,12 +30,8 @@
 <PageTitle>Pipelines · AL Dev Toolbox</PageTitle>
 
 <ListPage Title="Pipelines" SearchForm="true"
-          IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(Visible.Count == 0)">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Pipelines</span>
-    </Crumbs>
+          IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(Visible.Count == 0)"
+          Trail='@([new("Home", "/"), new("Pipelines")])'>
     <SubtitleContent>
         A pipeline compiles a chosen set of a solution's extensions into downloadable
         <span class="u-nowrap"><code>.app</code> files</span> — make one per environment

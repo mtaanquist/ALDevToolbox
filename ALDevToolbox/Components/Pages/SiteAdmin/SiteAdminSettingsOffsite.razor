@@ -14,18 +14,16 @@
         <SettingsBanner Message="@Message" Ok="@Ok">
             @if (Ok == "offsite-saved")
             {
-                <p class="alert alert--success" role="status">
-                    <Icon Name="circle-check" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Success">
                     <span>Off-site backup settings saved.</span>
-                </p>
+                </Alert>
             }
             @if (TestResult is not null)
             {
                 var passed = TestResult.StartsWith("OK");
-                <p class="alert @(passed ? "alert--success" : "alert--danger")" role="status">
-                    <Icon Name="@(passed ? "circle-check" : "circle-alert")" Width="16" Height="16" />
+                <Alert Tone="@(passed ? AlertTone.Success : AlertTone.Danger)" Role="status">
                     <span>@TestResult</span>
-                </p>
+                </Alert>
             }
         </SettingsBanner>
     </Alerts>

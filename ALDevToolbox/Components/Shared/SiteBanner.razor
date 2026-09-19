@@ -28,10 +28,9 @@
 
 @if (!string.IsNullOrWhiteSpace(_text))
 {
-    <div class="site-banner alert alert--warn" role="status">
-        <Icon Name="triangle-alert" Width="16" Height="16" />
+    <Alert Tone="AlertTone.Warn" Class="site-banner" Block="true">
         <span>@_text</span>
-    </div>
+    </Alert>
 }
 
 @code {
