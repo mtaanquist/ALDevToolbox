@@ -1,3 +1,5 @@
+using ALDevToolbox.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using ALDevToolbox.Tests.Infrastructure;
@@ -33,6 +35,38 @@ public sealed class EnvironmentRefreshSchedulerTests : IDisposable
         targets.Should().ContainSingle().Which.Should().Be(connected,
             "a project missing a credential part could only produce a nightly token failure, "
             + "and a deleted project has no customer to sweep");
+    }
+
+    [Fact]
+    public async Task A_solution_with_only_a_tenant_is_swept_once_the_organisation_has_a_registration()
+    {
+        var tenantOnly = await SeedProjectAsync("CRONUS A/S", tenant: Guid.NewGuid(), clientId: null, secret: null);
+        var halfOwn = await SeedProjectAsync("Own client id, no secret", tenant: Guid.NewGuid(), clientId: "client-abc", secret: null);
+
+        await using (var before = _db.NewContext())
+        {
+            (await EnvironmentRefreshScheduler.ResolveProjectIdsAsync(before, default)).Should().BeEmpty();
+        }
+
+        await using (var seed = _db.NewContext())
+        {
+            var settings = await seed.OrganizationSettings.FirstOrDefaultAsync(o => o.OrganizationId == TestDb.DefaultOrgId);
+            if (settings is null)
+            {
+                settings = new OrganizationSettings { OrganizationId = TestDb.DefaultOrgId };
+                seed.OrganizationSettings.Add(settings);
+            }
+            settings.BcClientId = "11111111-1111-1111-1111-111111111111";
+            settings.BcClientSecretEncrypted = "cipher";
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var targets = await EnvironmentRefreshScheduler.ResolveProjectIdsAsync(ctx, default);
+
+        targets.Should().ContainSingle().Which.Should().Be(tenantOnly,
+            "a solution that chose its own registration never falls back to the organisation's");
+        targets.Should().NotContain(halfOwn);
     }
 
     private async Task<int> SeedProjectAsync(

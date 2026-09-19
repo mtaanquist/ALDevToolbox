@@ -356,6 +356,18 @@ longer exists.
   `grant_type=client_credentials`, `scope=https://api.businesscentral.dynamics.com/.default`,
   client id + secret. Tokens are ~1 h — **cache in memory** keyed by project (a singleton, like the
   compiler gate), **never persisted**. Refresh on expiry/401.
+- **Whose app registration.** An organisation can hold one registration for all its customers
+  (`organization_settings.bc_client_id`, `bc_client_secret_encrypted`,
+  `bc_client_secret_expires_at`; Administration → Business Central, Admins only), because each
+  customer authorises it in their own admin center. A solution then needs only a tenant id. A
+  solution's own `bc_client_id` is the override, and it is the *choice*, not merely a value: when
+  it is set the organisation's registration is never tried, even if the solution's own secret is
+  missing or has expired. A silent fallback would connect a customer through a registration
+  nobody chose for them, so that case fails and says which secret expired and who can fix it.
+  Both secrets are encrypted under the same Data Protection purpose, so
+  `ProjectConnectionService` is the only reader of either. Saving or removing the organisation's
+  registration drops the cached tokens of every solution on it and clears their "verified" stamp.
+  The secret is redacted in the audit trail like the other organisation secrets.
 - **Customer-side prerequisites (document for onboarding, we can't do it for them):** the Entra app
   needs the `AdminCenter.ReadWrite.All` permission with admin consent granted, and must be authorized
   in the customer's BC admin center. It used to *also* need registering inside each environment as an

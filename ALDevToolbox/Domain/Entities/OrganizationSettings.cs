@@ -215,6 +215,25 @@ public class OrganizationSettings
     public string? EntraClientSecretEncrypted { get; set; }
 
     /// <summary>
+    /// The app registration this organisation uses to reach its customers' Business
+    /// Central by default. One registration can serve every customer, because each
+    /// customer authorises it in their own admin centre; a solution that needs a
+    /// different one overrides it with its own (<c>OeProject.BcClientId</c>). Null
+    /// until an Admin sets one. See <c>.design/saas-delivery.md</c> ("Authentication").
+    /// </summary>
+    public string? BcClientId { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted client secret paired with <see cref="BcClientId"/>,
+    /// under the same purpose as a solution's own secret so
+    /// <c>ProjectConnectionService</c> reads either. The audit interceptor redacts it.
+    /// </summary>
+    public string? BcClientSecretEncrypted { get; set; }
+
+    /// <summary>When the secret in <see cref="BcClientSecretEncrypted"/> expires, as Entra reported it (UTC).</summary>
+    public DateTime? BcClientSecretExpiresAt { get; set; }
+
+    /// <summary>
     /// Which sign-in methods this org's members may use. Defaults to
     /// <see cref="ValueObjects.LocalLoginPolicy.AllowAll"/>; enforcement of
     /// <see cref="ValueObjects.LocalLoginPolicy.EntraOnly"/> ships with the

@@ -139,8 +139,13 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
         => db.OeProjects.AsNoTracking()
             .Where(p => p.DeletedAt == null
                 && p.BcTenantId != null
-                && p.BcClientId != null
-                && p.BcClientSecretEncrypted != null)
+                // Its own registration, complete - or none of its own and the
+                // organisation's to fall back on. Same org as the solution, and the
+                // query filter scopes both halves.
+                && (p.BcClientId != null
+                    ? p.BcClientSecretEncrypted != null
+                    : db.OrganizationSettings.Any(o => o.OrganizationId == p.OrganizationId
+                        && o.BcClientId != null && o.BcClientSecretEncrypted != null)))
             .Select(p => p.Id)
             .ToListAsync(ct);
 }

@@ -94,6 +94,9 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .IsRequired();
         entity.Property(e => e.EntraClientId).HasColumnName("entra_client_id").HasMaxLength(64);
         entity.Property(e => e.EntraClientSecretEncrypted).HasColumnName("entra_client_secret_encrypted");
+        entity.Property(e => e.BcClientId).HasColumnName("bc_client_id").HasMaxLength(64);
+        entity.Property(e => e.BcClientSecretEncrypted).HasColumnName("bc_client_secret_encrypted");
+        entity.Property(e => e.BcClientSecretExpiresAt).HasColumnName("bc_client_secret_expires_at");
         // HasSentinel as above (#767). AllowAll is the zero value, so an insert
         // that sets it explicitly was indistinguishable from one that left it
         // alone. Harmless while the store default is also AllowAll; a bug the

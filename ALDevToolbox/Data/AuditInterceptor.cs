@@ -446,7 +446,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 dict[property.Name] = string.IsNullOrEmpty(value as string) ? value : "[redacted]";
             }
             else if (redactOrgSecrets && property.Name is nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted)
-                         or nameof(OrganizationSettings.EntraClientSecretEncrypted))
+                         or nameof(OrganizationSettings.EntraClientSecretEncrypted)
+                         or nameof(OrganizationSettings.BcClientSecretEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }

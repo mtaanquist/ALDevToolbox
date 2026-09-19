@@ -82,10 +82,151 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .FirstOrDefaultAsync(ct);
         if (p is null) return null;
 
-        var configured = p.BcTenantId is not null && !string.IsNullOrEmpty(p.BcClientId) && p.HasSecret;
+        var orgId = RequireOrganizationId();
+        var shared = await _db.OrganizationSettings.AsNoTracking()
+            .Where(o => o.OrganizationId == orgId)
+            .Select(o => new { o.BcClientId, HasSecret = o.BcClientSecretEncrypted != null, o.BcClientSecretExpiresAt })
+            .FirstOrDefaultAsync(ct);
+        var sharedAvailable = !string.IsNullOrEmpty(shared?.BcClientId) && shared.HasSecret;
+
+        var usesShared = string.IsNullOrEmpty(p.BcClientId);
+        var configured = p.BcTenantId is not null
+            && (usesShared ? sharedAvailable : p.HasSecret);
         return new BcConnectionStatus(
             configured, p.BcTenantId, p.BcClientId, p.HasSecret,
-            p.BcClientSecretExpiresAt, p.BcCredentialsUpdatedAt, p.BcTimeZone, p.BcConnectionVerifiedAt);
+            p.BcClientSecretExpiresAt, p.BcCredentialsUpdatedAt, p.BcTimeZone, p.BcConnectionVerifiedAt,
+            UsesOrganizationRegistration: usesShared && sharedAvailable,
+            OrganizationRegistrationAvailable: sharedAvailable,
+            EffectiveSecretExpiresAt: usesShared ? (sharedAvailable ? shared!.BcClientSecretExpiresAt : null) : p.BcClientSecretExpiresAt,
+            // Not a secret, and the person wiring up a customer needs it: it is what the
+            // customer types into their admin centre to authorise the connection.
+            OrganizationClientId: sharedAvailable ? shared!.BcClientId : null);
+    }
+
+    // ── The organisation's own app registration ───────────────────────────────
+
+    /// <summary>
+    /// The organisation's default app registration, as the Administration page shows it -
+    /// never the secret. Admin-only, like the write.
+    /// </summary>
+    public async Task<OrganizationBcRegistration> GetOrganizationRegistrationAsync(CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        await EnsureOrganizationAdminAsync(ct);
+        var row = await _db.OrganizationSettings.AsNoTracking()
+            .Where(o => o.OrganizationId == orgId)
+            .Select(o => new { o.BcClientId, HasSecret = o.BcClientSecretEncrypted != null, o.BcClientSecretExpiresAt })
+            .FirstOrDefaultAsync(ct);
+        var (usingIt, withTheirOwn) = await CountSolutionsByRegistrationAsync(ct);
+        return new OrganizationBcRegistration(
+            row?.BcClientId, row?.HasSecret ?? false, row?.BcClientSecretExpiresAt, usingIt, withTheirOwn);
+    }
+
+    /// <summary>
+    /// Saves the organisation's default app registration. The secret is keep-on-blank,
+    /// as on a solution. Every solution connecting through it re-authenticates on its
+    /// next call, and has to be tested again: the last successful test was of the old
+    /// credentials.
+    /// </summary>
+    public async Task SaveOrganizationRegistrationAsync(OrganizationBcRegistrationInput input, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        await EnsureOrganizationAdminAsync(ct);
+
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(o => o.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+
+        var errors = new Dictionary<string, string>();
+        var clientId = (input.ClientId ?? string.Empty).Trim();
+        if (!Guid.TryParse(clientId, out _))
+        {
+            errors["BcClientId"] = "Enter the app registration's Application (client) ID - a GUID like 00000000-0000-0000-0000-000000000000.";
+        }
+        var newSecret = input.ClientSecret?.Trim();
+        var settingSecret = !string.IsNullOrEmpty(newSecret);
+        if (!settingSecret && row.BcClientSecretEncrypted is null)
+        {
+            errors["BcClientSecret"] = "Enter the app registration's client secret.";
+        }
+        if (settingSecret && input.SecretExpiresAt is null)
+        {
+            errors["BcClientSecretExpiresAt"] = "Enter when the secret expires (Entra shows this when you create it).";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        row.BcClientId = clientId.ToLowerInvariant();
+        if (settingSecret)
+        {
+            row.BcClientSecretEncrypted = _secretProtector.Protect(newSecret!);
+            row.BcClientSecretExpiresAt = DateTime.SpecifyKind(input.SecretExpiresAt!.Value, DateTimeKind.Utc);
+        }
+        row.UpdatedAt = DateTime.UtcNow;
+
+        var affected = await ResetSolutionsOnOrganizationRegistrationAsync(ct);
+        await _db.SaveChangesAsync(ct);
+        foreach (var projectId in affected) _tokens.Invalidate(projectId);
+
+        _logger.LogInformation(
+            "User {UserId} saved org {OrgId}'s Business Central app registration (secretChanged={SecretChanged}); {Count} solutions connect through it.",
+            _orgContext.CurrentUserId, orgId, settingSecret, affected.Count);
+    }
+
+    /// <summary>
+    /// Removes the organisation's default app registration. Solutions that were
+    /// connecting through it stop connecting until they are given a registration of
+    /// their own or a new default is saved - which is why the page says how many first.
+    /// </summary>
+    public async Task ClearOrganizationRegistrationAsync(CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        await EnsureOrganizationAdminAsync(ct);
+
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(o => o.OrganizationId == orgId, ct);
+        if (row is null || row.BcClientId is null) return;
+
+        row.BcClientId = null;
+        row.BcClientSecretEncrypted = null;
+        row.BcClientSecretExpiresAt = null;
+        row.UpdatedAt = DateTime.UtcNow;
+
+        var affected = await ResetSolutionsOnOrganizationRegistrationAsync(ct);
+        await _db.SaveChangesAsync(ct);
+        foreach (var projectId in affected) _tokens.Invalidate(projectId);
+
+        _logger.LogInformation(
+            "User {UserId} removed org {OrgId}'s Business Central app registration; {Count} solutions were connecting through it.",
+            _orgContext.CurrentUserId, orgId, affected.Count);
+    }
+
+    /// <summary>Clears "verified" on every solution with no registration of its own, and returns their ids. The caller saves.</summary>
+    private async Task<List<int>> ResetSolutionsOnOrganizationRegistrationAsync(CancellationToken ct)
+    {
+        var solutions = await _db.OeProjects
+            .Where(p => p.DeletedAt == null && p.BcTenantId != null && p.BcClientId == null)
+            .ToListAsync(ct);
+        foreach (var solution in solutions) solution.BcConnectionVerifiedAt = null;
+        return solutions.Select(p => p.Id).ToList();
+    }
+
+    private async Task<(int UsingIt, int WithTheirOwn)> CountSolutionsByRegistrationAsync(CancellationToken ct)
+    {
+        var connected = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.DeletedAt == null && p.BcTenantId != null)
+            .Select(p => p.BcClientId != null)
+            .ToListAsync(ct);
+        return (connected.Count(own => !own), connected.Count(own => own));
+    }
+
+    private async Task EnsureOrganizationAdminAsync(CancellationToken ct)
+    {
+        if (!await _access.IsOrganizationAdminAsync(ct))
+        {
+            throw new ProjectAccessDeniedException("Only an administrator can change your organisation's Business Central app registration.");
+        }
     }
 
     /// <summary>
@@ -110,21 +251,33 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             errors["BcTenantId"] = "Enter the customer's Microsoft Entra tenant ID (a GUID).";
         }
         var clientId = (input.ClientId ?? string.Empty).Trim();
-        if (clientId.Length == 0)
-        {
-            errors["BcClientId"] = "Enter the app registration's client ID.";
-        }
-
         var newSecret = input.ClientSecret?.Trim();
-        var settingSecret = !string.IsNullOrEmpty(newSecret);
-        var hasExistingSecret = project.BcClientSecretEncrypted is not null;
-        if (!settingSecret && !hasExistingSecret)
+        var settingSecret = !input.UseOrganizationRegistration && !string.IsNullOrEmpty(newSecret);
+        if (input.UseOrganizationRegistration)
         {
-            errors["BcClientSecret"] = "Enter the app registration's client secret.";
+            var orgId = project.OrganizationId;
+            var sharedAvailable = await _db.OrganizationSettings.AsNoTracking()
+                .AnyAsync(o => o.OrganizationId == orgId && o.BcClientId != null && o.BcClientSecretEncrypted != null, ct);
+            if (!sharedAvailable)
+            {
+                errors["BcClientId"] = "Your organisation has no app registration of its own yet. An administrator can add one under Administration, or enter this customer's here.";
+            }
         }
-        if (settingSecret && input.SecretExpiresAt is null)
+        else
         {
-            errors["BcClientSecretExpiresAt"] = "Enter when the secret expires (Entra shows this when you create it).";
+            if (clientId.Length == 0)
+            {
+                errors["BcClientId"] = "Enter the app registration's client ID.";
+            }
+            var hasExistingSecret = project.BcClientSecretEncrypted is not null;
+            if (!settingSecret && !hasExistingSecret)
+            {
+                errors["BcClientSecret"] = "Enter the app registration's client secret.";
+            }
+            if (settingSecret && input.SecretExpiresAt is null)
+            {
+                errors["BcClientSecretExpiresAt"] = "Enter when the secret expires (Entra shows this when you create it).";
+            }
         }
 
         string? timeZone = null;
@@ -140,8 +293,20 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         project.BcTenantId = input.TenantId;
-        project.BcClientId = clientId;
         project.BcTimeZone = timeZone;
+        if (input.UseOrganizationRegistration)
+        {
+            // The solution's own registration goes with the choice: a client id left
+            // behind is what says "this customer has their own", and a stored secret
+            // nobody uses is one more thing to leak.
+            project.BcClientId = null;
+            project.BcClientSecretEncrypted = null;
+            project.BcClientSecretExpiresAt = null;
+        }
+        else
+        {
+            project.BcClientId = clientId;
+        }
         if (settingSecret)
         {
             project.BcClientSecretEncrypted = _secretProtector.Protect(newSecret!);
@@ -155,7 +320,9 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         await _db.SaveChangesAsync(ct);
         _tokens.Invalidate(projectId);
-        _logger.LogInformation("Saved BC connection for project {ProjectId} (secretChanged={SecretChanged}).", projectId, settingSecret);
+        _logger.LogInformation(
+            "Saved BC connection for project {ProjectId} (secretChanged={SecretChanged}, organisation's registration={UsesOrganization}).",
+            projectId, settingSecret, input.UseOrganizationRegistration);
     }
 
     /// <summary>
@@ -212,7 +379,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private async Task<BcConnectionTestResult> RefreshEnvironmentsCoreAsync(OeProject project, bool markVerified, CancellationToken ct)
     {
         var projectId = project.Id;
-        var creds = ResolveCredentials(project);
+        var creds = await ResolveCredentialsAsync(project, ct);
         if (creds is null)
         {
             return new BcConnectionTestResult(BcConnectionResult.AuthFailed, 0,
@@ -222,7 +389,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         string token;
         try
         {
-            token = await _tokens.GetTokenAsync(projectId, creds.Value.TenantId, creds.Value.ClientId, creds.Value.Secret, forceRefresh: true, ct);
+            token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, forceRefresh: true, ct);
         }
         catch (BcApiException ex)
         {
@@ -352,7 +519,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
 
-        var creds = ResolveCredentials(project)
+        var creds = await ResolveCredentialsAsync(project, ct)
             ?? throw Validation("Environment", "Enter the Business Central connection details first.");
 
         string token;
@@ -490,7 +657,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
 
-        var creds = ResolveCredentials(project)
+        var creds = await ResolveCredentialsAsync(project, ct)
             ?? throw Validation("Environment", "Enter the Business Central connection details first.");
 
         string token;
@@ -903,7 +1070,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("Environment", "That environment no longer exists.");
 
-        var creds = ResolveCredentials(project)
+        var creds = await ResolveCredentialsAsync(project, ct)
             ?? throw Validation("Environment", "Enter the Business Central connection details first.");
 
         string token;
@@ -1123,14 +1290,17 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw new BcApiException(null, "This project no longer exists.");
 
-        var creds = ResolveCredentials(project)
+        var creds = await ResolveCredentialsAsync(project, ct)
             ?? throw new BcApiException(null,
                 "The Business Central connection isn't set up (or its secret can't be decrypted). Re-enter it on the project's Business Central page.");
 
-        if (project.BcClientSecretExpiresAt is { } expiry && expiry <= DateTime.UtcNow)
+        if (creds.ExpiresAt is { } expiry && expiry <= DateTime.UtcNow)
         {
-            throw new BcApiException(null,
-                "The Business Central client secret has expired. Rotate it in Entra and re-enter it before releasing.");
+            // Never a quiet switch to the other registration: which one a customer has
+            // authorised is theirs to know, and a fallback would hide it.
+            throw new BcApiException(null, creds.FromOrganization
+                ? "Your organisation's Business Central client secret has expired. An administrator has to rotate it in Entra and re-enter it under Administration before releasing."
+                : "This solution's own Business Central client secret has expired. Rotate it in Entra and re-enter it on the solution's Business Central tab, or switch the solution to your organisation's app registration there.");
         }
 
         var token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct)
@@ -1409,20 +1579,52 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>Decrypts the stored credentials, or null when not fully configured / the key ring can't decrypt the secret.</summary>
-    private (Guid TenantId, string ClientId, string Secret)? ResolveCredentials(OeProject project)
+    /// <summary>The credentials a solution connects with, and where they came from. Never leaves this service.</summary>
+    private sealed record ResolvedCredentials(Guid TenantId, string ClientId, string Secret, DateTime? ExpiresAt, bool FromOrganization);
+
+    /// <summary>
+    /// A solution connects with its own app registration when it has one, and otherwise
+    /// with the organisation's. The choice is the solution's client id: set means "this
+    /// customer has a registration of their own", and then the organisation's is never
+    /// tried - not even when the solution's own secret is missing or has expired. A
+    /// fallback there would connect a customer through a registration nobody chose for
+    /// them, so it fails and says so instead.
+    /// </summary>
+    private async Task<ResolvedCredentials?> ResolveCredentialsAsync(OeProject project, CancellationToken ct)
     {
         if (project.BcTenantId is null || project.BcTenantId == Guid.Empty) return null;
-        if (string.IsNullOrEmpty(project.BcClientId)) return null;
-        if (string.IsNullOrEmpty(project.BcClientSecretEncrypted)) return null;
+
+        string clientId;
+        string? encrypted;
+        DateTime? expiresAt;
+        var fromOrganization = string.IsNullOrEmpty(project.BcClientId);
+        if (fromOrganization)
+        {
+            // Scoped by the query filter as well; the predicate names the solution's own
+            // organisation so the read is pinned whichever context it runs under.
+            var shared = await _db.OrganizationSettings.AsNoTracking()
+                .Where(o => o.OrganizationId == project.OrganizationId)
+                .Select(o => new { o.BcClientId, o.BcClientSecretEncrypted, o.BcClientSecretExpiresAt })
+                .FirstOrDefaultAsync(ct);
+            if (string.IsNullOrEmpty(shared?.BcClientId)) return null;
+            (clientId, encrypted, expiresAt) = (shared.BcClientId, shared.BcClientSecretEncrypted, shared.BcClientSecretExpiresAt);
+        }
+        else
+        {
+            (clientId, encrypted, expiresAt) = (project.BcClientId!, project.BcClientSecretEncrypted, project.BcClientSecretExpiresAt);
+        }
+        if (string.IsNullOrEmpty(encrypted)) return null;
 
         try
         {
-            var secret = _secretProtector.Unprotect(project.BcClientSecretEncrypted);
-            return (project.BcTenantId.Value, project.BcClientId, secret);
+            return new ResolvedCredentials(
+                project.BcTenantId.Value, clientId, _secretProtector.Unprotect(encrypted), expiresAt, fromOrganization);
         }
         catch (System.Security.Cryptography.CryptographicException ex)
         {
-            _logger.LogError(ex, "Could not decrypt the BC client secret for project {ProjectId}; it must be re-entered.", project.Id);
+            _logger.LogError(ex,
+                "Could not decrypt the BC client secret for project {ProjectId} (organisation's registration: {FromOrganization}); it must be re-entered.",
+                project.Id, fromOrganization);
             return null;
         }
     }
@@ -1445,13 +1647,29 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         new(new Dictionary<string, string> { [field] = message });
 }
 
+/// <summary>The organisation's default app registration as the Administration page shows it. Never carries the secret.</summary>
+public sealed record OrganizationBcRegistration(
+    string? ClientId,
+    bool HasSecret,
+    DateTime? SecretExpiresAt,
+    int SolutionsUsingIt,
+    int SolutionsWithTheirOwn)
+{
+    public bool IsConfigured => !string.IsNullOrEmpty(ClientId) && HasSecret;
+}
+
+/// <summary>Form-post shape for the organisation's app registration. The secret is keep-on-blank.</summary>
+public sealed record OrganizationBcRegistrationInput(string? ClientId, string? ClientSecret, DateTime? SecretExpiresAt);
+
 /// <summary>Form-post shape for a project's BC connection. The secret is keep-on-blank (empty leaves the stored one).</summary>
 public sealed record BcConnectionInput(
     Guid? TenantId,
     string? ClientId,
     string? ClientSecret,
     DateTime? SecretExpiresAt,
-    string? TimeZone);
+    string? TimeZone,
+    /// <summary>True to connect with the organisation's app registration; the solution's own client id, secret and expiry are then cleared.</summary>
+    bool UseOrganizationRegistration = false);
 
 /// <summary>Presence/verification view of a project's BC connection. Never carries the secret.</summary>
 public sealed record BcConnectionStatus(
@@ -1462,7 +1680,15 @@ public sealed record BcConnectionStatus(
     DateTime? SecretExpiresAt,
     DateTime? CredentialsUpdatedAt,
     string? TimeZone,
-    DateTime? VerifiedAt);
+    DateTime? VerifiedAt,
+    /// <summary>True when the solution has no registration of its own and the organisation's is what it connects with.</summary>
+    bool UsesOrganizationRegistration = false,
+    /// <summary>True when the organisation has a complete app registration a solution could use.</summary>
+    bool OrganizationRegistrationAvailable = false,
+    /// <summary>When the secret actually in use expires - the solution's own, or the organisation's.</summary>
+    DateTime? EffectiveSecretExpiresAt = null,
+    /// <summary>The organisation's client id, when it has a complete registration - what a customer authorises in their admin centre.</summary>
+    string? OrganizationClientId = null);
 
 /// <summary>One fetched BC environment — the project detail page's environment row.</summary>
 public sealed record ProjectEnvironmentRow(
