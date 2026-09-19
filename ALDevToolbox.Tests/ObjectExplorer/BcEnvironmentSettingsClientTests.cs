@@ -111,7 +111,7 @@ public sealed class BcEnvironmentSettingsClientTests
 
         handler.Body.Should().NotContain("targetVersionType",
             "the API defaults it to GA, and sending an empty one would be a different request");
-        handler.Body.Should().NotContain("selectedDateTime").And.NotContain("ignoreUpdateWindow",
+        handler.Body.Should().NotContain("scheduleDetails",
             "a version pick that carries no date must leave the customer's slot alone");
     }
 
@@ -125,10 +125,11 @@ public sealed class BcEnvironmentSettingsClientTests
             new DateTimeOffset(2026, 10, 29, 3, 0, 0, TimeSpan.FromHours(1)), ignoreUpdateWindow: true);
 
         handler.Method.Should().Be(HttpMethod.Patch);
-        handler.Body.Should().Contain("\"selectedDateTime\":\"2026-10-29T02:00:00Z\"",
-            "the date travels in UTC whatever offset the caller had");
-        handler.Body.Should().Contain("\"ignoreUpdateWindow\":true",
-            "this body already carries 'selected' as a real boolean, so both flags keep the same shape");
+        // Asserted as one nested block: at the top level Business Central answers 200 and
+        // ignores both fields, which is how a date move once failed without an error.
+        handler.Body.Should().Contain(
+            "\"scheduleDetails\":{\"selectedDateTime\":\"2026-10-29T02:00:00Z\",\"ignoreUpdateWindow\":true}",
+            "the date travels in UTC inside scheduleDetails, with the window flag as a real boolean beside it");
     }
 
     [Fact]

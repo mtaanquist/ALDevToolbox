@@ -31,8 +31,8 @@
     margin-left: auto;
 }
 
-/* A short line under a value: the ignores-window marker, and each row's live
-   result while a run is going through. */
+/* A short line: the ignores-window marker under a value, and each row's result
+   on the line below it. */
 .upg-note {
     display: flex;
     align-items: center;
@@ -436,4 +436,38 @@
    the first letter of the heading clipped at the left edge. */
 .upg-scroll tr.is-subrow td {
     padding: 0;
+}
+
+/* A row's result, on its own line under the row and starting where the
+   environment's name does. Zero width with a full min-width: the sentence fills
+   the cell but adds nothing to the table's column sizing, so a long refusal
+   cannot move a column. The feed's zero-padding rule is undone for this one. */
+.upg-scroll tr.upg-result-row td {
+    padding: 0 var(--cell-pad-x) var(--space-2);
+}
+
+.upg-result {
+    width: 0;
+    min-width: 100%;
+}
+
+.upg-result .upg-note {
+    margin-top: 0;
+    font-size: var(--text-sm);
+}
+
+/* The result belongs to the row above it, so it takes that row's background
+   (ticked or not) rather than the sunken tone a sub-panel gets, and the line
+   between the two goes. */
+.upg-scroll tr.upg-result-row td,
+.upg-scroll tr.upg-result-row:hover td {
+    background: var(--surface);
+}
+
+.upg-scroll tr.upg-result-row.is-selected td {
+    background: var(--primary-weak);
+}
+
+.upg-scroll tr:has(+ tr.upg-result-row) td {
+    border-bottom: 0;
 }

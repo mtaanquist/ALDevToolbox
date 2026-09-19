@@ -191,6 +191,29 @@ public sealed class UpgradesPageTests : IDisposable
     }
 
     [Fact]
+    public async Task A_rows_result_gets_a_line_of_its_own_under_the_row()
+    {
+        await SeedOneEnvironmentAsync();
+        var cut = RenderWithOneRow();
+
+        cut.Find("tbody .data-table__col-check input").Change(true);
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".cmdbar .cmdbar__group:last-child button")[0].HasAttribute("disabled").Should().BeFalse());
+        cut.FindAll(".cmdbar .cmdbar__group:last-child button")[0].Click();
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions .btn")
+            .Should().Contain(b => b.TextContent.Trim() == "Move the dates"));
+        cut.FindAll(".confirm-dialog__actions .btn").First(b => b.TextContent.Trim() == "Move the dates").Click();
+
+        // Inside the Next update cell a long refusal from Business Central widened that
+        // column and squeezed the others; on its own row it cannot size a column.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tr.upg-result-row .upg-result .upg-note").TextContent.Should().Contain("Skipped");
+            cut.FindAll("tbody tr:not(.is-subrow) .upg-note--muted").Should().BeEmpty();
+        });
+    }
+
+    [Fact]
     public async Task State_is_a_named_glyph_and_the_type_sits_under_the_environment()
     {
         await SeedOneEnvironmentAsync();

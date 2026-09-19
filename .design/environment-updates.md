@@ -121,15 +121,17 @@ a failure of the batch.
 ### The wire shape
 
 Both go through the same `PATCH .../environments/{family}/{name}/updates/{targetVersion}`
-the environment panel's version pick uses, with `selectedDateTime` and
-`ignoreUpdateWindow` added alongside the `selected` / `targetVersionType` it already sent:
+the environment panel's version pick uses, with a `scheduleDetails` object added alongside
+the `selected` / `targetVersionType` it already sent. The two scheduling fields go **inside**
+that object, where the updates read also returns them. Sent at the top level they are
+ignored with a 200, which is how the first version of this failed to move any date:
 
 | Field | Shape | Sent when |
 |---|---|---|
 | `selected` | JSON boolean, always `true` | always — a date set on an update the customer had not picked selects it in the same request |
 | `targetVersionType` | string, verbatim from the updates read | when the read gave one |
-| `selectedDateTime` | ISO-8601 in **UTC** (`yyyy-MM-ddTHH:mm:ssZ`) | only when the caller is moving the date; omitting it leaves the customer's existing slot alone |
-| `ignoreUpdateWindow` | **a real JSON boolean** | only by "update now" |
+| `scheduleDetails.selectedDateTime` | ISO-8601 in **UTC** (`yyyy-MM-ddTHH:mm:ssZ`) | only when the caller is moving the date; omitting it leaves the customer's existing slot alone |
+| `scheduleDetails.ignoreUpdateWindow` | **a real JSON boolean** | only by "update now" |
 
 `ignoreUpdateWindow` is a boolean and not the string `"true"` the Microsoft 365 licence
 endpoint documents, because this body already carries `selected` as a boolean and the same

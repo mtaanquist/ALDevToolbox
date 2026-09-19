@@ -292,28 +292,6 @@
                                     }
                                 </div>
                             }
-                            @if (_results.TryGetValue(row.EnvironmentId, out var result))
-                            {
-                                <div class="@result.CssClass">
-                                    @if (result.Tone == "busy")
-                                    {
-                                        <span class="spinner"></span>
-                                    }
-                                    <span>@result.Text</span>
-                                    @if (result.LinkLabel is { } linkLabel)
-                                    {
-                                        <a class="upg-note__link" href="@($"/solutions/{result.ProjectId}")">@linkLabel</a>
-                                    }
-                                    @* A booked slot is the one result you might want to
-                                       take back, so the way to do that is on the result
-                                       itself rather than two clicks away in the feed. *@
-                                    @if (result.ActionId is { } bookedId)
-                                    {
-                                        <button type="button" class="btn btn--sm upg-note__cancel"
-                                                @onclick="() => CancelActionAsync(bookedId)">Cancel booking</button>
-                                    }
-                                </div>
-                            }
                         </td>
                         <td>@LatestText(row)</td>
                         <td class="upg-checked @(IsStale(row) ? "upg-stale" : "u-muted")">
@@ -347,6 +325,38 @@
                             </RowActions>
                         </td>
                     </tr>
+                    @* What the last run did to this row, on a line of its own. It used
+                       to sit in the Next update cell, where a long refusal from Business
+                       Central widened that column and squeezed every other one. *@
+                    @if (_results.TryGetValue(row.EnvironmentId, out var result))
+                    {
+                        <tr class="is-subrow upg-result-row @(picked ? "is-selected" : null)" @key="@($"result-{row.EnvironmentId}")">
+                            <td colspan="3"></td>
+                            <td colspan="6">
+                                <div class="upg-result">
+                                    <div class="@result.CssClass">
+                                        @if (result.Tone == "busy")
+                                        {
+                                            <span class="spinner"></span>
+                                        }
+                                        <span>@result.Text</span>
+                                        @if (result.LinkLabel is { } linkLabel)
+                                        {
+                                            <a class="upg-note__link" href="@($"/solutions/{result.ProjectId}")">@linkLabel</a>
+                                        }
+                                        @* A booked slot is the one result you might want to
+                                           take back, so the way to do that is on the result
+                                           itself rather than two clicks away in the feed. *@
+                                        @if (result.ActionId is { } bookedId)
+                                        {
+                                            <button type="button" class="btn btn--sm upg-note__cancel"
+                                                    @onclick="() => CancelActionAsync(bookedId)">Cancel booking</button>
+                                        }
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
                     @if (_feedEnvId == row.EnvironmentId)
                     {
                         <tr class="is-subrow" @key="@($"feed-{row.EnvironmentId}")">
