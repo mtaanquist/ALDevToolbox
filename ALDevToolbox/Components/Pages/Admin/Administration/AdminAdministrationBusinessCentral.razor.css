@@ -1,0 +1,11 @@
+/* The setup checklist beside the form. Moved here from the solution's Business
+   Central tab with the registration it describes. */
+.bc-setup { display: grid; gap: var(--space-3); margin: 0; padding: 0 0 0 var(--space-4); font-size: var(--text-xs); color: var(--ink-3); }
+.bc-setup li { display: grid; gap: 2px; text-wrap: pretty; }
+.bc-setup li::marker { color: var(--ink-4); font-weight: var(--fw-semibold); }
+.bc-setup__where { font-weight: var(--fw-medium); color: var(--ink); overflow-wrap: anywhere; }
+.bc-setup code { font-family: var(--font-mono); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+.bc-setup__lead { margin: 0; font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; }
+.bc-setup__note { margin: 0; padding-top: var(--space-2); border-top: 1px solid var(--border); font-size: var(--text-2xs); color: var(--ink-4); text-wrap: pretty; }
+
+.bc-lead { margin: 0 0 var(--space-4); color: var(--ink-3); font-size: var(--text-sm); max-width: 70ch; text-wrap: pretty; }

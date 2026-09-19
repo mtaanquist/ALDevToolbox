@@ -222,6 +222,16 @@ public sealed class ProjectAccess
         return p => p.Teams.Any(t => updateOpsTeamIds.Contains(t.TeamId));
     }
 
+    /// <summary>
+    /// True for an org Admin or a SiteAdmin. For the settings every solution in the
+    /// organisation shares, where owning or managing one solution is not enough.
+    /// </summary>
+    public async Task<bool> IsOrganizationAdminAsync(CancellationToken ct = default)
+    {
+        var snapshot = await GetSnapshotAsync(ct).ConfigureAwait(false);
+        return snapshot.IsSiteAdmin || (snapshot.UserId is not null && snapshot.IsOrgAdmin);
+    }
+
     // ── Delete axis (stricter than manage — no team grant) ──────────────
 
     /// <summary>

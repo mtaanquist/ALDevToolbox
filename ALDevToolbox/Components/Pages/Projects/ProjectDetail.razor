@@ -158,7 +158,7 @@
                 <HeaderTabs Items="@SectionTabs" AriaLabel="Solution settings" />
             </div>
 
-            <div class="settings__body @(ShowBcAside ? "" : "settings__body--wide")">
+            <div class="settings__body settings__body--wide">
                 @if (_section == Section.General)
                 {
                     <ProjectDetailGeneral Id="Id"
@@ -217,13 +217,6 @@
 
     private enum Section { General, Repos, Bc, Pipelines, Access }
     private Section _section = Section.General;
-
-    /// <summary>
-    /// Only the Business Central tab has anything to put in the 280px rail, and an
-    /// empty rail would stop the other tabs' cards short of the page edge for no
-    /// reason a reader could see - so the column is reserved per section, not per page.
-    /// </summary>
-    private bool ShowBcAside => _section == Section.Bc && Id is not null && _canManage;
 
     /// <summary>
     /// The section tab row. Every tab carries OnSelected rather than an Href:

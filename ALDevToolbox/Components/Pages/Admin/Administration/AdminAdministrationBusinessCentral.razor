@@ -1,0 +1,289 @@
+@page "/admin/administration/business-central"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
+@inject ILogger<AdminAdministrationBusinessCentral> Log
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+
+@*
+    The organisation's own app registration for reaching customers' Business Central.
+    One registration serves every customer, because each customer authorises it in
+    their own admin center; a solution then needs only a tenant ID, and one that has a
+    registration of its own overrides this on its Business Central tab.
+
+    Named user: the administrator of a partner that looks after many customers, setting
+    this up once - and coming back every year or two when the secret is about to expire.
+
+    The secret is encrypted with the Data Protection key ring and never shown again.
+    See .design/saas-delivery.md, "Authentication".
+*@
+
+<PageTitle>Business Central · Administration · AL Dev Toolbox</PageTitle>
+
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.BusinessCentral">
+    <Alerts>
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <Alert Tone="AlertTone.Success"><span>@_okMessage</span></Alert>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <Alert Tone="AlertTone.Danger"><span>@_errMessage</span></Alert>
+        }
+        @if (_view?.SecretExpiresAt is { } expiry && _view.IsConfigured && expiry <= DateTime.UtcNow.AddDays(30))
+        {
+            <Alert Tone="@(expiry <= DateTime.UtcNow ? AlertTone.Danger : AlertTone.Warn)">
+                <span>
+                    @(expiry <= DateTime.UtcNow
+                        ? $"The client secret expired on {expiry:d MMM yyyy}."
+                        : $"The client secret expires on {expiry:d MMM yyyy}.")
+                    @ExpiryConsequence(_view.SolutionsUsingIt, expiry <= DateTime.UtcNow)
+                    Create a new secret in Entra and enter it below.
+                </span>
+            </Alert>
+        }
+    </Alerts>
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <p class="bc-lead">One app registration for every customer, set up once here. Each customer authorises it in their own Business Central admin center, and a solution then needs only that customer's tenant ID.</p>
+            <div class="setting-list">
+                <SettingRow Name="Client ID">
+                    <HintContent>
+                        The Application (client) ID of the app registration your organisation uses for every customer.
+                    </HintContent>
+                    <ChildContent>
+                        <input id="org-bc-client" type="text" class="input" @bind="_clientId" disabled="@_saving"
+                               aria-label="Client ID" placeholder="00000000-0000-0000-0000-000000000000"
+                               pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" />
+                        @if (Err("BcClientId") is { } eBcClientId)
+                        {
+                            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@eBcClientId</span>
+                        }
+                    </ChildContent>
+                </SettingRow>
+
+                <SettingRow Name="Client secret">
+                    <HintContent>
+                        @(_view?.HasSecret == true
+                            ? "A secret is stored. Enter a new one only to replace it."
+                            : "Stored encrypted and never shown again. Entra shows the value once, when you create it.")
+                    </HintContent>
+                    <ChildContent>
+                        <input id="org-bc-secret" type="password" class="input" autocomplete="off" @bind="_secret" disabled="@_saving"
+                               aria-label="Client secret" placeholder="@(_view?.HasSecret == true ? "Unchanged" : "Paste the secret's value")" />
+                        @if (Err("BcClientSecret") is { } eBcClientSecret)
+                        {
+                            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@eBcClientSecret</span>
+                        }
+                    </ChildContent>
+                </SettingRow>
+
+                <SettingRow Name="Secret expires">
+                    <HintContent>
+                        Entra shows this when you create the secret (it lasts at most two years). Once it has passed, solutions stop connecting and releases to customers are refused.
+                    </HintContent>
+                    <ChildContent>
+                        <input id="org-bc-expiry" type="date" class="input" style="max-width:220px" @bind="_expires" disabled="@_saving"
+                               aria-label="Secret expires" />
+                        @if (Err("BcClientSecretExpiresAt") is { } eBcClientSecretExpiresAt)
+                        {
+                            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@eBcClientSecretExpiresAt</span>
+                        }
+                    </ChildContent>
+                </SettingRow>
+
+                @if (_view?.IsConfigured == true)
+                {
+                    <SettingRow Name="Solutions">
+                        <HintContent>
+                            A solution with a registration of its own keeps using it; that is chosen on the solution's Business Central tab.
+                        </HintContent>
+                        <ChildContent>
+                            <span>@Count(_view.SolutionsUsingIt) @(_view.SolutionsUsingIt == 1 ? "connects" : "connect") through this registration. @Count(_view.SolutionsWithTheirOwn) @(_view.SolutionsWithTheirOwn == 1 ? "uses" : "use") a registration of @(_view.SolutionsWithTheirOwn == 1 ? "its" : "their") own.</span>
+                        </ChildContent>
+                    </SettingRow>
+
+                    <SettingRow Name="Remove" Danger="true">
+                        <HintContent>
+                            @(_view.SolutionsUsingIt == 0
+                                ? "No solution uses it yet, so removing it changes nothing for anyone."
+                                : StopsConnecting(_view.SolutionsUsingIt) + " until a new one is saved here, or the solution is given a registration of its own.")
+                        </HintContent>
+                        <ChildContent>
+                            <span>
+                                <button type="button" class="btn btn--danger" @onclick="RemoveAsync" disabled="@_saving">Remove the app registration</button>
+                            </span>
+                        </ChildContent>
+                    </SettingRow>
+                }
+            </div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading)
+        {
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save app registration")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <section class="card">
+            <div class="card__head"><div><h2 class="card__title">Before this will connect</h2></div></div>
+            <div class="card__body settings-aside__body">
+                <p class="bc-setup__lead">One app registration, set up once here. Each customer then authorises it themselves.</p>
+                <ol class="bc-setup">
+                    <li>
+                        <span class="bc-setup__where">Microsoft Entra admin center, in your own tenant</span>
+                        <span>Register an app that accounts in <b>any organisational directory</b> can use, and add the Business Central <b>application</b> permission <code>AdminCenter.ReadWrite.All</code> - not the delegated one, because the connection signs in as the app rather than as a person. Create a client secret and copy its value and expiry date into this form.</span>
+                    </li>
+                    <li>
+                        <span class="bc-setup__where">Each customer's Business Central admin center → Authorized Microsoft Entra apps</span>
+                        <span>The customer adds the client ID and grants consent. Until they do, that customer's solution gets no environments back. The solution's Business Central tab shows the client ID to give them.</span>
+                    </li>
+                </ol>
+                <p class="bc-setup__note">Managing tenants as the customer's partner? Also add the app to the AdminAgents group in Partner Center, and check that each delegated admin (GDAP) relationship covers Business Central.</p>
+                <a class="btn btn--sm" href="https://learn.microsoft.com/dynamics365/business-central/dev-itpro/administration/administration-center-api" target="_blank" rel="noopener">
+                    <Icon Name="external-link" Width="14" Height="14" />
+                    <span>Microsoft's admin center API docs</span>
+                </a>
+            </div>
+        </section>
+    </Aside>
+</AdministrationHeader>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private OrganizationBcRegistration? _view;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+    private Dictionary<string, string> _errors = new();
+    private string _clientId = string.Empty;
+    private string _secret = string.Empty;
+    private DateTime? _expires;
+    private ConfirmDialog? _confirm;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _view = await Connection.GetOrganizationRegistrationAsync();
+            _clientId = _view.ClientId ?? string.Empty;
+            _secret = string.Empty;
+            _expires = _view.SecretExpiresAt?.Date;
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _errMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string? Err(string key) => _errors.TryGetValue(key, out var message) ? message : null;
+
+    /// <summary>What losing this registration costs, as a clause a sentence can finish: "... until a new one is saved."</summary>
+    private static string StopsConnecting(int count) => count switch
+    {
+        0 => "No solution uses it yet, so nothing stops connecting",
+        1 => "The 1 solution that uses it stops connecting",
+        _ => $"The {count} solutions that use it stop connecting",
+    };
+
+    private static string ExpiryConsequence(int count, bool expired) => (count, expired) switch
+    {
+        (0, _) => "No solution uses it yet.",
+        (1, true) => "The 1 solution that uses it has stopped connecting.",
+        (1, false) => "The 1 solution that uses it stops connecting that day.",
+        (_, true) => $"The {count} solutions that use it have stopped connecting.",
+        (_, false) => $"The {count} solutions that use it stop connecting that day.",
+    };
+
+    private static string Count(int solutions) => solutions == 1 ? "1 solution" : $"{solutions} solutions";
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _okMessage = _errMessage = null;
+        _errors = new();
+        try
+        {
+            var expires = _expires is { } d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : (DateTime?)null;
+            await Connection.SaveOrganizationRegistrationAsync(new OrganizationBcRegistrationInput(
+                _clientId, string.IsNullOrWhiteSpace(_secret) ? null : _secret, expires));
+            await LoadAsync();
+            _okMessage = _view?.SolutionsUsingIt > 0
+                ? "App registration saved. Open each solution's Business Central tab and test its connection to confirm it still works."
+                : "App registration saved. A solution now needs only the customer's tenant ID to connect - try it on a solution's Business Central tab.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+            _errMessage = "Check the fields marked below.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _errMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving the organisation's Business Central app registration failed.");
+            _errMessage = "Couldn't save the app registration. Try again in a moment.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (_confirm is null || _view is null) return;
+        var confirmed = await _confirm.OpenAsync(
+            "Remove your organisation's app registration?",
+            (_view.SolutionsUsingIt == 0
+                ? "No solution uses it yet."
+                : StopsConnecting(_view.SolutionsUsingIt) + " to Business Central until a new one is saved, and releases to those customers are refused.")
+            + " The stored secret is deleted.",
+            "Remove it", "btn--danger");
+        if (!confirmed) return;
+
+        _saving = true;
+        _okMessage = _errMessage = null;
+        try
+        {
+            await Connection.ClearOrganizationRegistrationAsync();
+            await LoadAsync();
+            _okMessage = "App registration removed.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _errMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Removing the organisation's Business Central app registration failed.");
+            _errMessage = "Couldn't remove the app registration. Try again in a moment.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

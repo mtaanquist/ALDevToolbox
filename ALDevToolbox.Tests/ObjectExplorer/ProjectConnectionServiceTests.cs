@@ -242,13 +242,13 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public void Advance(TimeSpan delta) => _now = _now.Add(delta);
     }
 
-    private async Task<int> SeedProjectAsync()
+    private async Task<int> SeedProjectAsync(string name = "CRONUS A/S")
     {
         await using var ctx = _db.NewContext();
         var p = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
-            Name = "CRONUS A/S",
+            Name = name,
             CreatedByUserId = OwnerUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -2078,6 +2078,211 @@ public sealed class ProjectConnectionServiceTests : IDisposable
                 .Should().ThrowAsync<ProjectAccessDeniedException>();
             await ((Func<Task>)(() => svc.TestConnectionAsync(id)))
                 .Should().ThrowAsync<ProjectAccessDeniedException>();
+        }
+        finally
+        {
+            _db.OrgContext.CurrentUserId = OwnerUserId;
+        }
+    }
+
+    // ── The organisation's own app registration ───────────────────────────
+
+    /// <summary>Records the client id each token request signs in with.</summary>
+    private sealed class CapturingTokenHandler : HttpMessageHandler
+    {
+        public List<string> ClientIds { get; } = new();
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var form = await request.Content!.ReadAsStringAsync(ct);
+            ClientIds.Add(System.Web.HttpUtility.ParseQueryString(form)["client_id"] ?? string.Empty);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"access_token\":\"tok\",\"expires_in\":3600}") };
+        }
+    }
+
+    private const string OrgClientId = "22222222-2222-2222-2222-222222222222";
+
+    private async Task SaveOrgRegistrationAsAdminAsync(DateTime? expires = null)
+    {
+        await using (var users = _db.NewContext())
+        {
+            if (!await users.Users.AnyAsync(u => u.Id == 9790))
+            {
+                await SeedUserAsync(9790, "registration-admin@example.com", UserRole.Admin);
+            }
+        }
+        var previous = _db.OrgContext.CurrentUserId;
+        _db.OrgContext.CurrentUserId = 9790;
+        try
+        {
+            await using var ctx = _db.NewContext();
+            await Svc(ctx, TokenOk()).SaveOrganizationRegistrationAsync(
+                new OrganizationBcRegistrationInput(OrgClientId.ToUpperInvariant(), "org-secret", expires ?? DateTime.UtcNow.AddYears(1)));
+        }
+        finally
+        {
+            _db.OrgContext.CurrentUserId = previous;
+        }
+    }
+
+    [Fact]
+    public async Task A_solution_with_only_a_tenant_connects_with_the_organisations_registration()
+    {
+        var id = await SeedProjectAsync();
+        await SaveOrgRegistrationAsAdminAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id,
+                new BcConnectionInput(Guid.NewGuid(), null, null, null, null, UseOrganizationRegistration: true));
+        }
+
+        var handler = new CapturingTokenHandler();
+        var tokens = new BcTokenService(new StubFactory(handler), NullLogger<BcTokenService>.Instance);
+        await using (var ctx = _db.NewContext())
+        {
+            var result = await Svc(ctx, tokens).TestConnectionAsync(id);
+            result.Result.Should().Be(BcConnectionResult.Success);
+        }
+
+        handler.ClientIds.Should().Equal(OrgClientId);
+        await using var read = _db.NewContext();
+        var status = await Svc(read, TokenOk()).GetConnectionAsync(id);
+        status!.IsConfigured.Should().BeTrue();
+        status.UsesOrganizationRegistration.Should().BeTrue();
+        status.OrganizationClientId.Should().Be(OrgClientId);
+    }
+
+    [Fact]
+    public async Task A_solution_with_its_own_registration_keeps_it_and_switching_clears_it()
+    {
+        var id = await SeedProjectAsync();
+        await SaveOrgRegistrationAsAdminAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var handler = new CapturingTokenHandler();
+        var tokens = new BcTokenService(new StubFactory(handler), NullLogger<BcTokenService>.Instance);
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, tokens).TestConnectionAsync(id);
+        handler.ClientIds.Should().Equal("client-abc");
+
+        await using (var ctx = _db.NewContext())
+        {
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id,
+                new BcConnectionInput(Guid.NewGuid(), "ignored", "ignored", null, null, UseOrganizationRegistration: true));
+        }
+        await using var read = _db.NewContext();
+        var row = await read.OeProjects.AsNoTracking().SingleAsync(p => p.Id == id);
+        row.BcClientId.Should().BeNull();
+        row.BcClientSecretEncrypted.Should().BeNull("a stored secret nobody uses is one more thing to leak");
+        row.BcClientSecretExpiresAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Choosing_the_organisations_registration_is_refused_when_there_is_none()
+    {
+        var id = await SeedProjectAsync();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk()).SaveConnectionAsync(id,
+            new BcConnectionInput(Guid.NewGuid(), null, null, null, null, UseOrganizationRegistration: true));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["BcClientId"]
+            .Should().Contain("Administration");
+    }
+
+    [Fact]
+    public async Task An_expired_own_secret_is_refused_by_name_and_never_falls_back_to_the_organisations()
+    {
+        var id = await SeedProjectAsync();
+        await SaveOrgRegistrationAsAdminAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id,
+                new BcConnectionInput(Guid.NewGuid(), "client-abc", "own-secret", DateTime.UtcNow.AddDays(-1), null));
+        }
+
+        var handler = new CapturingTokenHandler();
+        var tokens = new BcTokenService(new StubFactory(handler), NullLogger<BcTokenService>.Instance);
+        await using var act = _db.NewContext();
+        var acquire = () => Svc(act, tokens).AcquireDeliveryContextAsync(id);
+
+        (await acquire.Should().ThrowAsync<BcApiException>()).Which.Message
+            .Should().Contain("This solution's own").And.Contain("switch the solution");
+        handler.ClientIds.Should().BeEmpty("nothing may sign in as a registration nobody chose for this customer");
+    }
+
+    [Fact]
+    public async Task An_expired_organisation_secret_sends_the_person_to_an_administrator()
+    {
+        var id = await SeedProjectAsync();
+        await SaveOrgRegistrationAsAdminAsync(expires: DateTime.UtcNow.AddDays(-1));
+        await using (var ctx = _db.NewContext())
+        {
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id,
+                new BcConnectionInput(Guid.NewGuid(), null, null, null, null, UseOrganizationRegistration: true));
+        }
+
+        await using var act = _db.NewContext();
+        var acquire = () => Svc(act, TokenOk()).AcquireDeliveryContextAsync(id);
+
+        (await acquire.Should().ThrowAsync<BcApiException>()).Which.Message.Should().Contain("administrator");
+    }
+
+    [Fact]
+    public async Task Only_an_administrator_reads_or_changes_the_organisations_registration()
+    {
+        // The fixture's owner is an Editor: enough to own a solution, not enough for this.
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk());
+
+        await ((Func<Task>)(() => svc.GetOrganizationRegistrationAsync())).Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.SaveOrganizationRegistrationAsync(
+            new OrganizationBcRegistrationInput(OrgClientId, "s", DateTime.UtcNow.AddYears(1))))).Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.ClearOrganizationRegistrationAsync())).Should().ThrowAsync<ProjectAccessDeniedException>();
+    }
+
+    [Fact]
+    public async Task Saving_the_organisations_registration_encrypts_the_secret_and_unverifies_the_solutions_on_it()
+    {
+        var onOrg = await SeedProjectAsync();
+        var onOwn = await SeedProjectAsync("CRONUS International Ltd.");
+        await SaveOrgRegistrationAsAdminAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(onOrg,
+                new BcConnectionInput(Guid.NewGuid(), null, null, null, null, UseOrganizationRegistration: true));
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(onOwn, ValidConnection());
+            await Svc(ctx, TokenOk()).TestConnectionAsync(onOrg);
+            await Svc(ctx, TokenOk()).TestConnectionAsync(onOwn);
+        }
+
+        await SaveOrgRegistrationAsAdminAsync();
+
+        await using var read = _db.NewContext();
+        var settings = await read.OrganizationSettings.AsNoTracking().SingleAsync(o => o.OrganizationId == TestDb.DefaultOrgId);
+        settings.BcClientId.Should().Be(OrgClientId, "stored lowercased, whatever was typed");
+        settings.BcClientSecretEncrypted.Should().NotBeNullOrEmpty().And.NotContain("org-secret");
+        (await read.OeProjects.AsNoTracking().SingleAsync(p => p.Id == onOrg)).BcConnectionVerifiedAt
+            .Should().BeNull("the last successful test was of the old credentials");
+        (await read.OeProjects.AsNoTracking().SingleAsync(p => p.Id == onOwn)).BcConnectionVerifiedAt
+            .Should().NotBeNull("a solution on its own registration is not touched");
+    }
+
+    [Theory]
+    [InlineData("not-a-guid", "secret", true, "BcClientId")]
+    [InlineData(OrgClientId, null, true, "BcClientSecret")]
+    [InlineData(OrgClientId, "secret", false, "BcClientSecretExpiresAt")]
+    public async Task The_organisations_registration_says_which_field_is_wrong(string clientId, string? secret, bool withExpiry, string field)
+    {
+        await SeedUserAsync(9791, $"admin-{Guid.NewGuid():N}@example.com", UserRole.Admin);
+        _db.OrgContext.CurrentUserId = 9791;
+        try
+        {
+            await using var ctx = _db.NewContext();
+            var act = () => Svc(ctx, TokenOk()).SaveOrganizationRegistrationAsync(
+                new OrganizationBcRegistrationInput(clientId, secret, withExpiry ? DateTime.UtcNow.AddYears(1) : null));
+
+            (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey(field);
         }
         finally
         {
