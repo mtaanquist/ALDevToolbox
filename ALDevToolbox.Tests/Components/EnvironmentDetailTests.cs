@@ -244,7 +244,7 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload an app").Click();
 
-        cut.WaitForAssertion(() => cut.Find("#env-upload-file").GetAttribute("accept").Should().Be(".app"));
+        cut.WaitForAssertion(() => cut.Find("#upload-app-file").GetAttribute("accept").Should().Be(".app"));
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload and install")
             .HasAttribute("disabled").Should().BeTrue();
     }

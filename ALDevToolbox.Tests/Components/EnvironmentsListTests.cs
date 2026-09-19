@@ -42,6 +42,16 @@ public sealed class EnvironmentsListTests : IDisposable
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<UpgradeFleetService>();
         _ctx.Services.AddSingleton(new EnvironmentRefreshQueue());
+        // The row menu's upload goes through the connection service.
+        _ctx.Services.AddScoped<ProjectConnectionService>();
+        _ctx.Services.AddSingleton<IBcAdminClient>(new UnreachableAdminClient());
+        _ctx.Services.AddSingleton<IBcAppManagementClient>(new UnreachableAppManagementClient());
+        _ctx.Services.AddSingleton(new BcTokenService(
+            new UnreachableHttpClientFactory(), NullLogger<BcTokenService>.Instance));
+        _ctx.Services.AddSingleton(_db.DataProtectionProvider);
+        _ctx.Services.AddSingleton(new BcPanelCache(TimeProvider.System));
+        _ctx.Services.AddSingleton(TimeProvider.System);
+        _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
             new Microsoft.AspNetCore.Http.HttpContextAccessor());
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
@@ -140,6 +150,23 @@ public sealed class EnvironmentsListTests : IDisposable
         lastChecked.Should().NotBe("never",
             "the environment was read half an hour ago - only its updates were unreadable");
         lastChecked.Should().Contain("minutes ago");
+    }
+
+    [Fact]
+    public async Task A_row_offers_to_upload_an_app_and_the_dialog_names_that_environment()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
+
+        cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Upload an app...").Click();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Upload an app to Production, a production environment?"));
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload and install")
+            .HasAttribute("disabled").Should().BeTrue("nothing has been chosen yet");
     }
 
     [Fact]

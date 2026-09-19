@@ -229,7 +229,7 @@
                 else if (panel.ScheduledInstalls.Count == 0)
                 {
                     <EmptyState Icon="calendar" Title="Nothing waiting to install" Quiet="true">
-                        <Text>A release you schedule for this environment waits here until Business Central installs it. For an app another company sent you, use Upload an app.</Text>
+                        <Text>A release you schedule for this environment waits here until Business Central installs it.</Text>
                         <Action>
                             <a class="btn btn--sm" href="/releases">Open Releases</a>
                         </Action>
@@ -457,7 +457,7 @@
                                                     aria-label="@(ready
                                                         ? $"Update {up.Name} to {up.Version}"
                                                         : $"Update {up.Name} to {up.Version}, along with the {up.Requirements.Count} it waits for")">
-                                                <span class="btn__label">Update</span>
+                                                <span class="btn__label">@(ready ? "Update" : $"Update + {up.Requirements.Count}")</span>
                                             </button>
                                         </td>
                                     </tr>
@@ -615,7 +615,7 @@
                     <li>
                         <span>@req.Name</span>
                         <span class="u-muted">@req.Publisher</span>
-                        <span class="u-num env-detail__mono">@req.Version</span>
+                        <span class="u-num env-detail__mono">@(string.IsNullOrWhiteSpace(req.Version) ? "" : $"to {req.Version} or newer")</span>
                     </li>
                 }
             </ul>
@@ -626,51 +626,17 @@
         <label class="env-detail__when-opt">
             <input type="radio" name="env-update-when" checked="@_updateInWindow"
                    @onchange="() => _updateInWindow = true" />
-            <span>In the environment's next update window</span>
+            <span>In the BC update window@(BcWindowSuffix())</span>
         </label>
         <label class="env-detail__when-opt">
             <input type="radio" name="env-update-when" checked="@(!_updateInWindow)"
                    @onchange="() => _updateInWindow = false" />
-            <span>Now - people working in the app may be interrupted</span>
+            <span>Now - anyone working in Business Central may be interrupted</span>
         </label>
     </fieldset>
 </ConfirmDialog>
 
-@* For an app somebody else built and sent over: no pipeline of ours can release it. *@
-<ConfirmDialog @ref="_uploadConfirm" ConfirmDisabled="@(_uploadBytes is null)">
-    <div class="env-detail__upload">
-        <label class="btn btn--sm btn--file" for="env-upload-file">
-            <Icon Name="upload" Width="14" Height="14" />
-            <span>@(_uploadBytes is null ? "Choose the .app file..." : "Choose a different file...")</span>
-            <InputFile id="env-upload-file" OnChange="OnUploadChosenAsync" accept=".app" />
-        </label>
-        @if (_uploadReading)
-        {
-            <span class="u-muted" role="status">Reading the file...</span>
-        }
-        else if (_uploadError is { } uploadError)
-        {
-            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@uploadError</span>
-        }
-        else if (_uploadBytes is not null)
-        {
-            <span class="env-detail__mono">@_uploadFileName</span>
-        }
-    </div>
-    <fieldset class="env-detail__when">
-        <legend class="env-detail__when-legend">When should it install?</legend>
-        <label class="env-detail__when-opt">
-            <input type="radio" name="env-upload-when" checked="@_uploadInWindow"
-                   @onchange="() => _uploadInWindow = true" />
-            <span>In the environment's next update window</span>
-        </label>
-        <label class="env-detail__when-opt">
-            <input type="radio" name="env-upload-when" checked="@(!_uploadInWindow)"
-                   @onchange="() => _uploadInWindow = false" />
-            <span>Now - people working in Business Central may be interrupted</span>
-        </label>
-    </fieldset>
-</ConfirmDialog>
+<UploadAppDialog @ref="_uploadDialog" />
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -709,12 +675,7 @@
     /// <summary>The update dialog's answer to "when". Reset to the gentle one each time it opens.</summary>
     private bool _updateInWindow = true;
 
-    private ConfirmDialog? _uploadConfirm;
-    private byte[]? _uploadBytes;
-    private string _uploadFileName = string.Empty;
-    private string? _uploadError;
-    private bool _uploadReading;
-    private bool _uploadInWindow = true;
+    private UploadAppDialog? _uploadDialog;
 
     /// <summary>What the app in the update dialog waits for, and so what moves with it. Empty for a ready app.</summary>
     private IReadOnlyList<BcAppUpdateRequirement> _updateAlongside = Array.Empty<BcAppUpdateRequirement>();
@@ -1017,10 +978,17 @@
         var alongside = update.Requirements.Where(r => r.AppId is not null).Select(r => r.AppId!.Value).ToList();
         await RunSettingWriteAsync(UpdateBusyKey(update),
             () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow, alongside),
-            $"Couldn't update {update.Name}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't update {update.Name}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => inWindow
-                ? $"Business Central will update {what} in {Row.EnvironmentName}'s next update window."
+                ? $"Business Central will update {what} in {Row.EnvironmentName}'s BC update window."
                 : $"Business Central has started updating {what}. Use Refresh in a few minutes to see it finish.");
+    }
+
+    /// <summary>The window's hours when Business Central reported them, so "when" is a time and not just a name.</summary>
+    private string BcWindowSuffix()
+    {
+        var text = BcWindowText();
+        return string.IsNullOrWhiteSpace(text) || !text.Any(char.IsDigit) ? string.Empty : $", {text}";
     }
 
     private static string AppCount(int count) => count == 1 ? "1 other app" : $"{count} other apps";
@@ -1029,68 +997,14 @@
 
     private async Task UploadAppAsync()
     {
-        if (_uploadConfirm is null) return;
-        _uploadBytes = null;
-        _uploadFileName = string.Empty;
-        _uploadError = null;
-        _uploadInWindow = true;
+        if (_uploadDialog is null) return;
+        var upload = await _uploadDialog.OpenAsync(Row.ProjectName, Row.EnvironmentName, Row.IsProduction, BcWindowSuffix());
+        if (upload is null) return;
 
-        var confirmed = await _uploadConfirm.OpenAsync(
-            Row.IsProduction
-                ? $"Upload an app to {Row.EnvironmentName}, a production environment?"
-                : $"Upload an app to {Row.EnvironmentName}?",
-            $"For an app another company built and sent you as a .app file. It installs into {Row.ProjectName}'s "
-            + "Business Central as it is; nothing here checks what it does. Apps you build yourself go through Releases instead.",
-            "Upload and install", "btn--danger");
-        var bytes = _uploadBytes;
-        var fileName = _uploadFileName;
-        _uploadBytes = null;
-        if (!confirmed || bytes is null) return;
-
-        var inWindow = _uploadInWindow;
         await RunSettingWriteAsync("upload",
-            () => Connection.InstallUploadedAppAsync(Row.ProjectId, Id, bytes, fileName, inWindow),
-            $"Couldn't upload {fileName}. Check the app still has admin access in the Business Central admin centre, then try again.",
-            () => inWindow
-                ? $"Business Central will install {fileName} in {Row.EnvironmentName}'s next update window. It is listed under Scheduled installs until then."
-                : $"Business Central has started installing {fileName}. Use Refresh in a few minutes to see it under Installed apps.");
-    }
-
-    private async Task OnUploadChosenAsync(InputFileChangeEventArgs e)
-    {
-        _uploadBytes = null;
-        _uploadError = null;
-        var file = e.File;
-        if (!file.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
-        {
-            _uploadError = "Choose an extension package - a file ending in .app.";
-            return;
-        }
-        if (file.Size > BcAppManagementClient.MaxAppBytes)
-        {
-            _uploadError = $"{file.Name} is over 50 MB, which is the largest app Business Central accepts.";
-            return;
-        }
-
-        _uploadReading = true;
-        StateHasChanged();
-        try
-        {
-            await using var stream = file.OpenReadStream(BcAppManagementClient.MaxAppBytes);
-            using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer);
-            _uploadBytes = buffer.ToArray();
-            _uploadFileName = file.Name;
-        }
-        catch (IOException ex)
-        {
-            Log.LogWarning(ex, "Reading an uploaded app failed for environment {EnvId}.", Id);
-            _uploadError = $"Couldn't read {file.Name}. Choose it again.";
-        }
-        finally
-        {
-            _uploadReading = false;
-        }
+            () => Connection.InstallUploadedAppAsync(Row.ProjectId, Id, upload.Bytes, upload.FileName, upload.InUpdateWindow),
+            $"Couldn't upload {upload.FileName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            () => UploadAppDialog.DoneMessage(upload, Row.EnvironmentName));
     }
 
     // ── Settings ────────────────────────────────────────────────────────
@@ -1118,7 +1032,7 @@
 
         var saved = await RunSettingWriteAsync("cadence",
             () => Connection.SetAppUpdateCadenceAsync(Row.ProjectId, Id, chosen),
-            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central now updates AppSource apps on {Row.EnvironmentName}: {BcAppUpdateCadence.Display(chosen)}.");
         if (!saved) _cadence = previous;
     }
@@ -1143,7 +1057,7 @@
 
         await RunSettingWriteAsync("m365",
             () => Connection.SetM365AccessAsync(Row.ProjectId, Id, enable),
-            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => enable
                 ? $"Business Central now allows Microsoft 365 licence sign-in on {Row.EnvironmentName}."
                 : $"Business Central no longer allows Microsoft 365 licence sign-in on {Row.EnvironmentName}.");
@@ -1180,7 +1094,7 @@
 
         await RunSettingWriteAsync("version",
             () => Connection.SelectTargetVersionAsync(Row.ProjectId, Id, version),
-            $"Couldn't schedule the update on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't schedule the update on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central now shows {version} as the next update for {Row.EnvironmentName}.");
     }
 
