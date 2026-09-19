@@ -136,4 +136,34 @@ public sealed class ListPageTests : IDisposable
         cut.FindAll(".loading-block").Should().BeEmpty();
         cut.FindAll(".filter-bar").Should().ContainSingle();
     }
+    /// <summary>
+    /// The power list's <c>.cmdbar</c> is not a FilterBar, but it answers to the same
+    /// rule: nothing to command on a first-run page, or before the rows are known.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void A_toolbar_shows_exactly_when_a_filter_row_would(bool loading, bool empty, bool shown)
+    {
+        var cut = _ctx.Render<ListPage>(p => p
+            .Add(c => c.Title, "Upgrades")
+            .Add(c => c.IsLoading, loading)
+            .Add(c => c.IsEmpty, empty)
+            .Add(c => c.Toolbar, Html("<div class=\"cmdbar\"></div>"))
+            .Add(c => c.ChildContent, Html("<table id=\"rows\"></table>")));
+
+        cut.FindAll(".cmdbar").Should().HaveCount(shown ? 1 : 0);
+        cut.FindAll(".filter-bar").Should().BeEmpty(
+            because: "a page with a bar of its own and no filters must not get an empty filter row too");
+    }
+
+    [Fact]
+    public void Sticky_is_passed_to_the_head()
+    {
+        var cut = _ctx.Render<ListPage>(p => p.Add(c => c.Title, "Environments").Add(c => c.Sticky, true));
+
+        cut.Find(".page-head").ClassList.Should().Contain("page-head--sticky");
+    }
+
 }

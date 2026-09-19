@@ -30,68 +30,73 @@
 
 <PageTitle>Environments · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <PageHead Title="Environments" Sticky="true"
-              Subtitle="Every Business Central environment across the solutions you can reach.">
-        <Crumbs>
-            <a href="/">Home</a>
-            <Icon Name="chevron-right" Width="14" Height="14" />
-            <a href="/solutions">Solutions</a>
-            <Icon Name="chevron-right" Width="14" Height="14" />
-            <span>Environments</span>
-        </Crumbs>
-    </PageHead>
+@{
+    // Worked out once: the no-matches state, the table and the count all read it.
+    var shown = _rows is null ? [] : Filtered().ToList();
+}
 
-    @* Only a refresh failure belongs here: the table is still on screen and the
-       alert annotates it. A failure to load at all gets its own state below,
-       because the empty state underneath would otherwise claim the viewer has no
-       Business Central connections. *@
-    @if (_error is { } error)
-    {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@error</span>
-        </p>
-    }
+<ListPage Title="Environments" Sticky="true"
+          Subtitle="Every Business Central environment across the solutions you can reach."
+          IsLoading="@(_rows is null)"
+          IsEmpty="@(_loadFailed || _rows is { Count: 0 })"
+          HasNoMatches="@(shown.Count == 0)">
+    <Crumbs>
+        <a href="/">Home</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <a href="/solutions">Solutions</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>Environments</span>
+    </Crumbs>
+    <Notices>
+        @* Only a refresh failure belongs here: the table is still on screen and the
+           alert annotates it. A failure to load at all gets its own state below,
+           because the empty state underneath would otherwise claim the viewer has no
+           Business Central connections. *@
+        @if (_error is { } error)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@error</span>
+            </p>
+        }
 
-    @* One freshness strip for the page, never one per section. The rows are a
-       cached copy and the age is the honest thing to lead with; Refresh is the
-       only way to make it newer, so it lives here beside the age it fixes. *@
-    @if (_rows is { Count: > 0 })
-    {
-        <div class="freshness @FreshnessClass()">
-            <Icon Name="cloud-download" Width="15" Height="15" Css="freshness__icon" />
-            @* The number is the OLDEST row, not the page. Labelling it "read from
-               Business Central 3 days ago" over a table where most rows say 4 minutes
-               reads as a contradiction, and the note that used to patch that over was
-               explaining our scheduler rather than telling anyone anything they can
-               act on. Naming it "oldest" makes the differing rows the obvious
-               consequence instead. *@
-            <span class="freshness__text">
-                @if (OldestAge() is { } age)
-                {
-                    <text>Oldest reading <span class="freshness__age">@age</span>. Each row shows its own.</text>
-                }
-                else
-                {
-                    <text>Not read from Business Central yet.</text>
-                }
-            </span>
-            <span class="freshness__spacer"></span>
-            <button type="button" class="btn btn--sm @(_refreshing ? "btn--loading" : "")"
-                    @onclick="RefreshAsync" disabled="@_refreshing">
-                <Icon Name="refresh-cw" Width="14" Height="14" />
-                <span class="btn__label">@(_refreshing ? "Refreshing" : "Refresh")</span>
-            </button>
-        </div>
-    }
+        @* One freshness strip for the page, never one per section. The rows are a
+           cached copy and the age is the honest thing to lead with; Refresh is the
+           only way to make it newer, so it lives here beside the age it fixes. *@
+        @if (_rows is { Count: > 0 })
+        {
+            <div class="freshness @FreshnessClass()">
+                <Icon Name="cloud-download" Width="15" Height="15" Css="freshness__icon" />
+                @* The number is the OLDEST row, not the page. Labelling it "read from
+                   Business Central 3 days ago" over a table where most rows say 4 minutes
+                   reads as a contradiction, and the note that used to patch that over was
+                   explaining our scheduler rather than telling anyone anything they can
+                   act on. Naming it "oldest" makes the differing rows the obvious
+                   consequence instead. *@
+                <span class="freshness__text">
+                    @if (OldestAge() is { } age)
+                    {
+                        <text>Oldest reading <span class="freshness__age">@age</span>. Each row shows its own.</text>
+                    }
+                    else
+                    {
+                        <text>Not read from Business Central yet.</text>
+                    }
+                </span>
+                <span class="freshness__spacer"></span>
+                <button type="button" class="btn btn--sm @(_refreshing ? "btn--loading" : "")"
+                        @onclick="RefreshAsync" disabled="@_refreshing">
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span class="btn__label">@(_refreshing ? "Refreshing" : "Refresh")</span>
+                </button>
+            </div>
+        }
 
-    @if (_refreshNote is { } note)
-    {
-        <p class="note note--info"><span class="note__body">@note</span></p>
-    }
-
-    @if (_rows is null)
-    {
+        @if (_refreshNote is { } note)
+        {
+            <p class="note note--info"><span class="note__body">@note</span></p>
+        }
+    </Notices>
+    <Loading>
         @* Skeleton rows under the real header, as the design has it, so the column
            widths are settled before the data lands and nothing jumps. *@
         <table class="data-table data-table--edge">
@@ -104,193 +109,187 @@
             <tbody><TableSkeletonRows Columns="6" StateColumn="true" /></tbody>
         </table>
         <LoadingBlock Text="Loading environments..." UnderTable="true" />
-    }
-    else if (_loadFailed)
-    {
-        <div class="card">
-            <EmptyState Icon="circle-alert" Title="Couldn't load your environments">
-                <Text>
-                    Something went wrong at our end - this doesn't mean anything is wrong
-                    with your Business Central connections.
-                </Text>
-                <Action>
-                    <button type="button" class="btn btn--primary" @onclick="RetryAsync" disabled="@_loading">
-                        @(_loading ? "Trying..." : "Try again")
-                    </button>
-                </Action>
-            </EmptyState>
-        </div>
-    }
-    else if (_rows.Count == 0)
-    {
-        <div class="card">
-            <EmptyState Icon="server" Title="No environments to show yet">
-                <Text>
-                    Environments appear here once a solution has a Business Central connection.
-                    Open a solution, add its Entra tenant and app registration, and its
-                    environments are read in automatically.
-                </Text>
-                <Action>
-                    <a class="btn btn--primary" href="/solutions">Go to solutions</a>
-                </Action>
-            </EmptyState>
-        </div>
-    }
-    else
-    {
-        <FilterBar>
-            <Search>
-                <input class="input" type="search" placeholder="Solution or environment"
-                       aria-label="Search solution or environment"
-                       value="@_search" @oninput="OnSearchInput" />
-            </Search>
-            <ChildContent>
-                <span class="select-wrap" style="width: 200px">
-                    <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
-                        <option value="">All solutions</option>
-                        @foreach (var name in _rows.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
-                        {
-                            <option value="@name">@name</option>
-                        }
-                    </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
-                <span class="select-wrap" style="width: 170px">
-                    <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
-                        <option value="">All types</option>
-                        <option value="Production">Production only</option>
-                        <option value="Sandbox">Sandbox only</option>
-                    </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
-            </ChildContent>
-            <Trailing>
-                <div class="pill-tabs">
-                    @foreach (var tab in AllTabs)
-                    {
-                        <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
-                                title="@TabHint(tab)" @onclick="() => _tab = tab">
-                            @TabLabel(tab)<span class="pill-tab__count">@CountFor(tab)</span>
-                        </button>
-                    }
-                </div>
-            </Trailing>
-        </FilterBar>
-
-        var shown = Filtered().ToList();
-
-        @if (shown.Count == 0)
+    </Loading>
+    <Empty>
+        @if (_loadFailed)
         {
-            @* An empty "Needs attention" is good news and must not be dressed as a
-               failed search telling the reader to widen their filters. *@
             <div class="card">
-                @if (_tab == Tab.NeedsAttention && NoOtherFilters())
-                {
-                    <EmptyState Icon="circle-check" Title="Nothing needs attention">
-                        <Text>
-                            Every environment reported a healthy state, and none of them are
-                            waiting on you.
-                        </Text>
-                    </EmptyState>
-                }
-                else if (_tab == Tab.UpdatingSoon && NoOtherFilters())
-                {
-                    <EmptyState Title="No updates scheduled">
-                        <Text>
-                            Business Central hasn't announced an update for any of these
-                            environments yet.
-                        </Text>
-                    </EmptyState>
-                }
-                else
-                {
-                    <EmptyState Title="No environments match those filters">
-                        <Text>Try a different search, or choose All.</Text>
-                        <Action>
-                            <button type="button" class="btn" @onclick="ClearFilters">Clear filters</button>
-                        </Action>
-                    </EmptyState>
-                }
+                <EmptyState Icon="circle-alert" Title="Couldn't load your environments">
+                    <Text>
+                        Something went wrong at our end - this doesn't mean anything is wrong
+                        with your Business Central connections.
+                    </Text>
+                    <Action>
+                        <button type="button" class="btn btn--primary" @onclick="RetryAsync" disabled="@_loading">
+                            @(_loading ? "Trying..." : "Try again")
+                        </button>
+                    </Action>
+                </EmptyState>
             </div>
         }
         else
         {
-            <table class="data-table data-table--edge">
-                <thead>
-                    <tr>
-                        <th class="data-table__col-state" scope="col"><span class="u-sr">State</span></th>
-                        <th scope="col">Solution</th>
-                        <th scope="col">Environment</th>
-                        <th scope="col">Now on</th>
-                        <th scope="col">Next update</th>
-                        <th scope="col">Last checked</th>
-                        <th scope="col" class="data-table__actions">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in shown)
-                    {
-                        <tr class="@RowState(row)">
-                            <td class="data-table__col-state">
-                                @* Glyph only, as the design has it: the row says its state
-                                   with the edge bar and this icon, and no column is spent on
-                                   a word. Four states share two glyphs (suspended and deleted,
-                                   updating and preparing), and a title does not exist on
-                                   touch - so for every state but Running the word is also
-                                   written out under Next update, where the design puts it. *@
-                                <span class="data-table__state data-table__state--icon" role="img"
-                                      aria-label="@StatusWord(row)" title="@StatusWord(row)">
-                                    <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
-                                </span>
-                            </td>
-                            <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
-                            <td>
-                                @* The name is not a link yet: an environment has no page of
-                                   its own until the environment detail screen lands, and a
-                                   link that goes back to the solution the row already links
-                                   to is worse than plain text. *@
-                                <span class="cell-stack">
-                                    <span class="cell-stack__main">@row.EnvironmentName</span>
-                                    <span class="cell-stack__sub">@row.EnvironmentType</span>
-                                </span>
-                            </td>
-                            <td class="u-num">@(row.Version ?? "—")</td>
-                            <td>
-                                <span class="cell-stack">
-                                    <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@NextVersion(row)</span>
-                                    <span class="cell-stack__sub">@NextWhen(row)</span>
-                                </span>
-                            </td>
-                            <td class="u-muted">@Checked(row)</td>
-                            <td class="data-table__actions">
-                                @* The sheet's other two entries are not here yet: the
-                                   environment's own page is #809, and a refresh is per
-                                   solution, not per environment. *@
-                                @if (row.BusinessCentralUrl is { } bcUrl)
-                                {
-                                    <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
-                                        <a class="menu__item" role="menuitem" href="@bcUrl"
-                                           target="_blank" rel="noopener">Open in Business Central</a>
-                                    </RowActions>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-            @* The whole result set is rendered, so the pager carries the count and
-               no buttons: Previous and Next over a list that is never paged would be
-               two controls that can never be enabled. *@
-            <div class="pager">
-                <span class="pager__count">
-                    @(shown.Count == _rows.Count
-                        ? $"{shown.Count} {(shown.Count == 1 ? "environment" : "environments")}"
-                        : $"Showing {shown.Count} of {_rows.Count} environments")
-                </span>
+            <div class="card">
+                <EmptyState Icon="server" Title="No environments to show yet">
+                    <Text>
+                        Environments appear here once a solution has a Business Central connection.
+                        Open a solution, add its Entra tenant and app registration, and its
+                        environments are read in automatically.
+                    </Text>
+                    <Action>
+                        <a class="btn btn--primary" href="/solutions">Go to solutions</a>
+                    </Action>
+                </EmptyState>
             </div>
         }
-    }
-</div>
+    </Empty>
+    <Search>
+        <input class="input" type="search" placeholder="Solution or environment"
+               aria-label="Search solution or environment"
+               value="@_search" @oninput="OnSearchInput" />
+    </Search>
+    <Filters>
+        <span class="select-wrap" style="width: 200px">
+            <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
+                <option value="">All solutions</option>
+                @foreach (var name in _rows!.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
+                {
+                    <option value="@name">@name</option>
+                }
+            </select>
+            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+        </span>
+        <span class="select-wrap" style="width: 170px">
+            <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
+                <option value="">All types</option>
+                <option value="Production">Production only</option>
+                <option value="Sandbox">Sandbox only</option>
+            </select>
+            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+        </span>
+    </Filters>
+    <Trailing>
+        <div class="pill-tabs">
+            @foreach (var tab in AllTabs)
+            {
+                <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
+                        title="@TabHint(tab)" @onclick="() => _tab = tab">
+                    @TabLabel(tab)<span class="pill-tab__count">@CountFor(tab)</span>
+                </button>
+            }
+        </div>
+    </Trailing>
+    <NoMatches>
+        @* An empty "Needs attention" is good news and must not be dressed as a
+           failed search telling the reader to widen their filters. *@
+        <div class="card">
+            @if (_tab == Tab.NeedsAttention && NoOtherFilters())
+            {
+                <EmptyState Icon="circle-check" Title="Nothing needs attention">
+                    <Text>
+                        Every environment reported a healthy state, and none of them are
+                        waiting on you.
+                    </Text>
+                </EmptyState>
+            }
+            else if (_tab == Tab.UpdatingSoon && NoOtherFilters())
+            {
+                <EmptyState Title="No updates scheduled">
+                    <Text>
+                        Business Central hasn't announced an update for any of these
+                        environments yet.
+                    </Text>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Title="No environments match those filters">
+                    <Text>Try a different search, or choose All.</Text>
+                    <Action>
+                        <button type="button" class="btn" @onclick="ClearFilters">Clear filters</button>
+                    </Action>
+                </EmptyState>
+            }
+        </div>
+    </NoMatches>
+    <ChildContent>
+        <table class="data-table data-table--edge">
+            <thead>
+                <tr>
+                    <th class="data-table__col-state" scope="col"><span class="u-sr">State</span></th>
+                    <th scope="col">Solution</th>
+                    <th scope="col">Environment</th>
+                    <th scope="col">Now on</th>
+                    <th scope="col">Next update</th>
+                    <th scope="col">Last checked</th>
+                    <th scope="col" class="data-table__actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in shown)
+                {
+                    <tr class="@RowState(row)">
+                        <td class="data-table__col-state">
+                            @* Glyph only, as the design has it: the row says its state
+                               with the edge bar and this icon, and no column is spent on
+                               a word. Four states share two glyphs (suspended and deleted,
+                               updating and preparing), and a title does not exist on
+                               touch - so for every state but Running the word is also
+                               written out under Next update, where the design puts it. *@
+                            <span class="data-table__state data-table__state--icon" role="img"
+                                  aria-label="@StatusWord(row)" title="@StatusWord(row)">
+                                <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
+                            </span>
+                        </td>
+                        <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
+                        <td>
+                            @* The name is not a link yet: an environment has no page of
+                               its own until the environment detail screen lands, and a
+                               link that goes back to the solution the row already links
+                               to is worse than plain text. *@
+                            <span class="cell-stack">
+                                <span class="cell-stack__main">@row.EnvironmentName</span>
+                                <span class="cell-stack__sub">@row.EnvironmentType</span>
+                            </span>
+                        </td>
+                        <td class="u-num">@(row.Version ?? "—")</td>
+                        <td>
+                            <span class="cell-stack">
+                                <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@NextVersion(row)</span>
+                                <span class="cell-stack__sub">@NextWhen(row)</span>
+                            </span>
+                        </td>
+                        <td class="u-muted">@Checked(row)</td>
+                        <td class="data-table__actions">
+                            @* The sheet's other two entries are not here yet: the
+                               environment's own page is #809, and a refresh is per
+                               solution, not per environment. *@
+                            @if (row.BusinessCentralUrl is { } bcUrl)
+                            {
+                                <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
+                                    <a class="menu__item" role="menuitem" href="@bcUrl"
+                                       target="_blank" rel="noopener">Open in Business Central</a>
+                                </RowActions>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </ChildContent>
+    <Footer>
+        @* The whole result set is rendered, so the pager carries the count and
+           no buttons: Previous and Next over a list that is never paged would be
+           two controls that can never be enabled. *@
+        <div class="pager">
+            <span class="pager__count">
+                @(shown.Count == _rows!.Count
+                    ? $"{shown.Count} {(shown.Count == 1 ? "environment" : "environments")}"
+                    : $"Showing {shown.Count} of {_rows.Count} environments")
+            </span>
+        </div>
+    </Footer>
+</ListPage>
 
 @code {
     /// <summary>The fleet, newest read wins. Null while loading; empty means nothing connected.</summary>
