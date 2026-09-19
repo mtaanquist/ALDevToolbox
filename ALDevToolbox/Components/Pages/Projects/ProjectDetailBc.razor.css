@@ -46,8 +46,9 @@
 /* Production is the row to be careful with, not a row with a problem. It takes
    the neutral pill and earns its weight from the type instead of from red -
    red in this table now means the environment itself is in a bad state. */
-.pd-env-prod { font-weight: var(--fw-semibold); border-color: var(--ink-4); }
-.pd-env-prod .status-pill__dot { background: var(--ink-2); }
+/* ::deep: the pill is rendered by StatusPill, outside this file's scope. */
+::deep .pd-env-prod { font-weight: var(--fw-semibold); border-color: var(--ink-4); }
+::deep .pd-env-prod .status-pill__dot { background: var(--ink-2); }
 
 /* The environments table scrolls inside its own box rather than widening the
    card. Without this the table's min-content width (status column, and buttons
