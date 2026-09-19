@@ -46,10 +46,9 @@
         <span>@_rp!.Name</span>
     </Crumbs>
     <TitleRow>
-        <span class="status-pill status-pill--@(_isProduction ? "danger" : "muted")">
-            <span class="status-pill__dot"></span>
+        <StatusPill Tone="@(_isProduction ? "danger" : "muted")">
             <span>@_rp!.ProjectEnvironment!.Type</span>
-        </span>
+        </StatusPill>
     </TitleRow>
     <SubtitleContent>
         @if (_fromReleases)

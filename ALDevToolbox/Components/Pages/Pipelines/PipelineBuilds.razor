@@ -51,10 +51,9 @@
     <TitleRow>
         @if (_latest is not null)
         {
-            <span class="status-pill status-pill--@RowStateIcon.PillTone(_latest.Status)">
-                <span class="status-pill__dot"></span>
+            <StatusPill Tone="@RowStateIcon.PillTone(_latest.Status)">
                 <span>@RowStateIcon.StateLabel(_latest.Status)</span>
-            </span>
+            </StatusPill>
         }
     </TitleRow>
     <SubtitleContent>

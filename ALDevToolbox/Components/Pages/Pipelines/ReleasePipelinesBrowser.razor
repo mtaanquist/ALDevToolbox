@@ -138,7 +138,7 @@
                         <td><a href="@($"/solutions/{r.ProjectId}")">@r.ProjectName</a></td>
                         <td>
                             <span class="rp-env">
-                                <span class="status-pill @(IsProduction(r) ? "status-pill--danger" : "status-pill--muted")">@r.EnvironmentType</span>
+                                <StatusPill Tone="@(IsProduction(r) ? "danger" : "muted")">@r.EnvironmentType</StatusPill>
                                 <span>@r.EnvironmentName</span>
                                 @if (r.EnvironmentMissing)
                                 {

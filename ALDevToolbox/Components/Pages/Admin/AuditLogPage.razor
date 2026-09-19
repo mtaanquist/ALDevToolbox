@@ -125,7 +125,7 @@
                                 <span class="audit__who">@e.ChangedBy</span>
                                 @AuditVerb(e.Action) <AuditSubjectText EntityType="e.EntityType" EntityId="e.EntityId" EntityName="@e.EntityName" SnapshotJson="@e.SnapshotJson" />
                             </span>
-                            <span class="status-pill @AuditActionPill(e.Action)">@e.Action</span>
+                            <StatusPill Tone="@AuditActionPill(e.Action)">@e.Action</StatusPill>
                             <Icon Name="chevron-right" Width="15" Height="15" Css="audit__caret" />
                         </a>
                     </div>

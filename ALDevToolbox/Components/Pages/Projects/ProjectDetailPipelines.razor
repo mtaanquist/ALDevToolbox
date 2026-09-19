@@ -17,7 +17,7 @@
 <div class="form-sec__head">
     <h2 class="card__title">
         Pipelines
-        <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span><span>@Pipelines.Count pipeline@(Pipelines.Count == 1 ? "" : "s")</span></span>
+        <StatusPill Tone="muted"><span>@Pipelines.Count pipeline@(Pipelines.Count == 1 ? "" : "s")</span></StatusPill>
     </h2>
 </div>
 <p class="form-sec__cap">Build automation for this solution. Each pipeline chooses which extensions to compile; open one to start builds and download its <code>.app</code> files.</p>

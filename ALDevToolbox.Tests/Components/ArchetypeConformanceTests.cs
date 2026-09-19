@@ -192,6 +192,22 @@ public sealed class ArchetypeConformanceTests
             + "pages used to pick by hand and picked differently (ten errors carried the warning triangle)");
     }
 
+    [Fact]
+    public void No_component_hand_writes_a_status_pill()
+    {
+        var root = RepoRoot();
+        var pill = new Regex(@"class=""status-pill[\s""]", RegexOptions.Compiled);
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(Path.Combine("Shared", "StatusPill.razor"), StringComparison.Ordinal))
+            .Where(p => pill.IsMatch(Markup(File.ReadAllText(p))))
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "a status pill is <StatusPill Tone=\"success\">...</StatusPill>, which always carries the dot the live and running tones pulse");
+    }
+
     private static bool IsRoutable(string markup) => Regex.IsMatch(markup, @"^@page\s", RegexOptions.Multiline);
 
     private static bool Composes(string markup, IEnumerable<string> names) =>

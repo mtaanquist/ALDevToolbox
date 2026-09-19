@@ -66,7 +66,7 @@
         <span>@Row.EnvironmentName</span>
     </Crumbs>
     <TitleRow>
-        <span class="status-pill status-pill--@StatusTone()"><span class="status-pill__dot"></span>@StatusWord(Row)</span>
+        <StatusPill Tone="@StatusTone()">@StatusWord(Row)</StatusPill>
         <span class="tag">@Row.EnvironmentType</span>
     </TitleRow>
     <SubtitleContent>@SubtitleText()</SubtitleContent>
@@ -420,11 +420,11 @@
                                         <td class="data-table__col-state">
                                             @if (ready)
                                             {
-                                                <span class="status-pill status-pill--success">Ready</span>
+                                                <StatusPill Tone="success">Ready</StatusPill>
                                             }
                                             else
                                             {
-                                                <span class="status-pill status-pill--queued">Waits for @up.Requirements.Count</span>
+                                                <StatusPill Tone="queued">Waits for @up.Requirements.Count</StatusPill>
                                             }
                                         </td>
                                         <td>@up.Name</td>

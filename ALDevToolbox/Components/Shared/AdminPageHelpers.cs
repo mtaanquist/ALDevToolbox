@@ -77,9 +77,9 @@ public static class AdminPageHelpers
     /// </summary>
     public static string AuditActionPill(AuditAction action) => action switch
     {
-        AuditAction.Created => "status-pill--success",
-        AuditAction.Deleted => "status-pill--danger",
-        _ => "status-pill--warn",
+        AuditAction.Created => "success",
+        AuditAction.Deleted => "danger",
+        _ => "warn",
     };
 
     /// <summary>
