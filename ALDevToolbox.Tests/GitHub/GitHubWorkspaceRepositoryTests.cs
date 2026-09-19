@@ -211,6 +211,57 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         api.Calls.Should().Contain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
     }
 
+    private const string ValidationFailedJson =
+        """{"message":"Validation Failed","errors":[{"resource":"Repository","field":"default_branch","code":"invalid"}]}""";
+
+    [Fact]
+    public async Task A_default_branch_switch_github_is_not_ready_for_is_asked_again()
+    {
+        await ReadyAsync();
+        // Seen against a real organisation: the branch was created, and the
+        // settings write two milliseconds later came back 422 Validation Failed.
+        var api = WritableApi()
+            .OnSequence(HttpMethod.Patch, $"/repos/{Repo}",
+                (HttpStatusCode.UnprocessableEntity, ValidationFailedJson),
+                (HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(Repo)));
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        created.DefaultBranchWarning.Should().BeNull();
+        api.Calls.Count(c => c.StartsWith("PATCH") && c.EndsWith($"/repos/{Repo}")).Should().Be(2);
+        api.Calls.Should().Contain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
+    }
+
+    [Fact]
+    public async Task A_default_branch_github_will_not_switch_is_a_warning_on_a_repository_that_is_full()
+    {
+        await ReadyAsync();
+        var api = WritableApi()
+            .On(HttpMethod.Patch, $"/repos/{Repo}", HttpStatusCode.UnprocessableEntity, ValidationFailedJson)
+            .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK,
+                FakeGitHubApi.RepositoryJson(Repo, defaultBranch: "aldt/seed"));
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // The workspace is whole on main by now, so this is a success with one
+        // thing left to do by hand - not "GitHub refused to create the
+        // repository", and not a repository missing its solution and audit entry.
+        created.Delivery.Should().Be(GitHubWorkspaceDelivery.DefaultBranch);
+        created.DefaultBranchWarning.Should().Contain("Default branch").And.Contain("main");
+        created.DefaultBranchWarning.Should().NotContain("Validation Failed").And.NotContain("aldt/");
+        created.SolutionWarning.Should().BeNull();
+        // The throwaway branch is the default, and GitHub does not delete one.
+        api.Calls.Should().NotContain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.AsNoTracking()
+            .CountAsync(e => e.EntityType == AuditEntityType.GitHubRepository)).Should().Be(1);
+    }
+
     [Fact]
     public async Task The_organisations_standards_ride_in_the_initial_commit_and_win_on_a_shared_path()
     {

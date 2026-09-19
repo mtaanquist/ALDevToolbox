@@ -360,6 +360,16 @@ for the standards) put one file in and lost the rest.
    repository, not to a ref.
 5. **Delete `aldt/seed`**, which by then is not the default branch.
 
+Step 4 has been seen to answer `422 Validation Failed` against a real
+organisation, two milliseconds after step 3 returned. A 422 that is not a rule
+violation is therefore asked again (three attempts, a second and then two
+apart), with GitHub's `errors[]` logged each time. If it still refuses and the
+repository's default really is something else, the flow **succeeds with a
+warning** rather than failing: the workspace is whole on its branch by then, so
+the success state tells the person where on GitHub to switch the default branch,
+`aldt/seed` is left alone (GitHub does not delete a default branch), and the
+solution and audit entry are still written.
+
 The result is a repository whose history is a single "Initial commit", which
 also reads better than the seed-plus-workspace-plus-standards trio it replaced.
 

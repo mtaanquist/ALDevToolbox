@@ -767,6 +767,8 @@ public sealed partial class GitHubAppClient
         return false;
     }
 
+    private const int DefaultBranchAttempts = 3;
+
     /// <summary>
     /// Points the repository's default branch at <paramref name="branch"/>,
     /// which has to exist already.
@@ -776,23 +778,47 @@ public sealed partial class GitHubAppClient
     /// ruleset (issue #811). It needs the installation's
     /// <c>administration: write</c> grant - the same one the ruleset step
     /// already needs.</para>
+    ///
+    /// <para>A 422 that is not a rule violation is asked again a couple of
+    /// times: the write checks the branch name against a listing that can trail
+    /// a ref created a moment earlier, which is exactly when the new-workspace
+    /// flow calls this. GitHub's own reason is logged each time, because
+    /// <c>Validation Failed</c> alone says nothing.</para>
     /// </summary>
     /// <exception cref="GitHubApiException">GitHub refused the change.</exception>
     public async Task SetDefaultBranchAsync(
         string installationToken, string owner, string repo, string branch, CancellationToken ct = default)
     {
-        using var request = NewJsonRequest(
-            HttpMethod.Patch, RepoPath(owner, repo), installationToken, new { default_branch = branch });
-        using var response = await SendRawAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 1; ; attempt++)
         {
-            var (message, url) = ReadError(await response.Content.ReadAsStringAsync(ct));
+            using var request = NewJsonRequest(
+                HttpMethod.Patch, RepoPath(owner, repo), installationToken, new { default_branch = branch });
+            using var response = await SendRawAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "{Branch} is now the default branch of {Owner}/{Repo}.", branch, owner, repo);
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var (message, url) = ReadError(body);
+            var details = ReadErrorDetails(body);
             _logger.LogWarning(
-                "GitHub refused to make {Branch} the default branch of {Owner}/{Repo} with {Status}: {Message}",
-                branch, owner, repo, (int)response.StatusCode, message);
-            throw new GitHubApiException(response.StatusCode, message, url);
+                "GitHub refused to make {Branch} the default branch of {Owner}/{Repo} with {Status} "
+                + "(attempt {Attempt} of {Attempts}): {Message} {Details}",
+                branch, owner, repo, (int)response.StatusCode, attempt, DefaultBranchAttempts, message,
+                details.Count == 0 ? "(no detail given)" : string.Join("; ", details));
+
+            // A rule violation is an answer, and asking again will not change it.
+            var worthRetrying = response.StatusCode == HttpStatusCode.UnprocessableEntity
+                && !message.Contains("rule violation", StringComparison.OrdinalIgnoreCase);
+            if (!worthRetrying || attempt == DefaultBranchAttempts)
+            {
+                throw new GitHubApiException(response.StatusCode, message, url);
+            }
+            await Task.Delay(TimeSpan.FromSeconds(attempt), _clock, ct);
         }
-        _logger.LogInformation("{Branch} is now the default branch of {Owner}/{Repo}.", branch, owner, repo);
     }
 
     /// <summary>
