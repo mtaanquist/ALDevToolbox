@@ -17,20 +17,20 @@
 <PageTitle>@(IsEdit ? "Edit recipe" : "New recipe") · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">@(IsEdit ? "Edit recipe" : "New recipe")</h1>
-            <p class="page-head__sub">
-                @(IsEdit
-                    ? "Update the published recipe. Changes apply on next reload of the user-facing cookbook."
-                    : "Add a new recipe to the published cookbook for this organisation.")
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin/cookbook">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to cookbook</span>
-            </a>
+    <PageHead Title="@(IsEdit ? "Edit recipe" : "New recipe")" Sticky="true">
+        <Crumbs>
+            <a href="/admin">Admin</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <a href="/admin/cookbook">Cookbook</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@(IsEdit ? "Edit recipe" : "New recipe")</span>
+        </Crumbs>
+        <SubtitleContent>
+            @(IsEdit
+                ? "Update the published recipe. Changes apply on next reload of the user-facing cookbook."
+                : "Add a new recipe to the published cookbook for this organisation.")
+        </SubtitleContent>
+        <Actions>
             @if (!IsEdit || !_loadFailed)
             {
                 <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_busy">
@@ -38,8 +38,8 @@
                     <span>@(_busy ? "Saving..." : IsEdit ? "Save changes" : "Create recipe")</span>
                 </button>
             }
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @if (IsEdit && _loadFailed)
     {

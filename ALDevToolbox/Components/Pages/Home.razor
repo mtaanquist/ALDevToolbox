@@ -40,331 +40,19 @@
     comes back for, where the text tools are reached once and rarely again.
 *@
 
+@* Tiles follow the same site + per-org tool toggles as the sidebar (see
+   Domain/Tools/ToolCatalog.cs); a switched-off tool's tiles disappear here too,
+   and a group whose tools are all off goes with them. Signed-out visitors have
+   no org context, so their tiles follow the site-wide toggle only, link to the
+   login page, and carry no counts - what a tool holds is the organisation's
+   business, not a signed-out visitor's. *@
 <AuthorizeView>
     <Authorized>
-        <div class="page">
-            <div class="page__hero">
-                <h1 class="page__hero-title">AL Dev Toolbox</h1>
-                <p class="page__hero-sub">Pick a tool to get started.</p>
-            </div>
-
-            @* Tiles follow the same site + per-org tool toggles as the sidebar
-               (see Domain/Tools/ToolCatalog.cs); a switched-off tool's tiles
-               disappear here too, and a group whose tools are all off goes with
-               them rather than leaving a heading over nothing. The three
-               template tiles share the Templates toggle. *@
-            @if (ToolVisible(ToolKey.Templates) || ToolVisible(ToolKey.Cookbook) || ToolVisible(ToolKey.ObjectExplorer))
-            {
-                <p class="section-label">Build</p>
-                <div class="tool-grid">
-                    @if (ToolVisible(ToolKey.Templates))
-                    {
-                        <a class="tool-tile" href="/templates/workspace">
-                            <span class="tool-tile__icon"><Icon Name="folder-plus" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Workspace</div>
-                                <div class="tool-tile__text">Generate a multi-extension AL workspace from a runtime template.</div>
-                            </div>
-                        </a>
-                        <a class="tool-tile" href="/templates/extension">
-                            <span class="tool-tile__icon"><Icon Name="package" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Extension</div>
-                                <div class="tool-tile__text">Generate a single standalone AL extension.</div>
-                            </div>
-                        </a>
-                        <a class="tool-tile" href="/templates">
-                            <span class="tool-tile__icon"><Icon Name="layers" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Templates</div>
-                                <div class="tool-tile__text">Browse the runtime templates available for your organisation.</div>
-                                <div class="tool-tile__meta">@TemplatesMeta()</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolVisible(ToolKey.Cookbook))
-                    {
-                        <a class="tool-tile" href="/cookbook">
-                            <span class="tool-tile__icon"><Icon Name="square-code" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Cookbook</div>
-                                <div class="tool-tile__text">Search the AL recipe library and suggest new ones.</div>
-                                <div class="tool-tile__meta">@CookbookMeta()</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolVisible(ToolKey.ObjectExplorer))
-                    {
-                        <a class="tool-tile" href="/object-explorer">
-                            <span class="tool-tile__icon"><Icon Name="search" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Object Explorer</div>
-                                <div class="tool-tile__text">Browse BC releases, modules, objects, and source files.</div>
-                                <div class="tool-tile__meta">@ObjectExplorerMeta()</div>
-                            </div>
-                        </a>
-                    }
-                </div>
-            }
-
-            @if (ToolVisible(ToolKey.Projects) || ToolVisible(ToolKey.Pipelines) || ToolVisible(ToolKey.Releases))
-            {
-                <p class="section-label">Deliver</p>
-                <div class="tool-grid">
-                    @if (ToolVisible(ToolKey.Projects))
-                    {
-                        <a class="tool-tile" href="/solutions">
-                            <span class="tool-tile__icon"><Icon Name="folder-git-2" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Solutions</div>
-                                <div class="tool-tile__text">Point a customer's Git repositories at AL Dev Toolbox and build them into .app files.</div>
-                                <div class="tool-tile__meta">@ProjectsMeta()</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolVisible(ToolKey.Pipelines))
-                    {
-                        <a class="tool-tile" href="/pipelines">
-                            <span class="tool-tile__icon"><Icon Name="rocket" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Pipelines</div>
-                                <div class="tool-tile__text">Compile some or all of a solution's extensions, and watch the build as it happens.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolVisible(ToolKey.Releases))
-                    {
-                        <a class="tool-tile" href="/releases">
-                            <span class="tool-tile__icon"><Icon Name="send" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Releases</div>
-                                <div class="tool-tile__text">Publish a build to a customer's Business Central environment.</div>
-                            </div>
-                        </a>
-                    }
-                </div>
-            }
-
-            @if (ToolVisible(ToolKey.Translator) || ToolVisible(ToolKey.Compare) || ToolVisible(ToolKey.Piper))
-            {
-                <p class="section-label">Work with text</p>
-                <div class="tool-grid">
-                    @if (ToolVisible(ToolKey.Translator))
-                    {
-                        <a class="tool-tile" href="/translator">
-                            <span class="tool-tile__icon"><Icon Name="languages" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Translator</div>
-                                <div class="tool-tile__text">Edit an XLIFF file's translation units, filter by state, and fill the gaps.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolVisible(ToolKey.Compare))
-                    {
-                        <a class="tool-tile" href="/diff">
-                            <span class="tool-tile__icon"><Icon Name="git-compare" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Diff</div>
-                                <div class="tool-tile__text">Paste two texts side by side and see what changed.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolVisible(ToolKey.Piper))
-                    {
-                        <a class="tool-tile" href="/piper">
-                            <span class="tool-tile__icon"><Icon Name="git-merge" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Piper</div>
-                                <div class="tool-tile__text">Turn a list of values into a pipe-separated filter, an SQL IN list, or another format.</div>
-                            </div>
-                        </a>
-                    }
-                </div>
-            }
-
-            @if (ToolVisible(ToolKey.Mcp))
-            {
-                <p class="section-label">Connect an assistant</p>
-                <div class="tool-grid">
-                    <a class="tool-tile" href="/tools/mcp">
-                        <span class="tool-tile__icon"><Icon Name="bot" Width="19" Height="19" /></span>
-                        <div class="tool-tile__body">
-                            <div class="tool-tile__title">MCP</div>
-                            <div class="tool-tile__text">Let Claude, Cursor, or another AI assistant read your templates, recipes and BC objects.</div>
-                        </div>
-                    </a>
-                </div>
-            }
-        </div>
+        <LauncherPage Title="AL Dev Toolbox" Subtitle="Pick a tool to get started." Groups="@Groups(signedIn: true)" />
     </Authorized>
     <NotAuthorized>
-        <div class="page">
-            <div class="page__hero">
-                <h1 class="page__hero-title">AL Dev Toolbox</h1>
-                <p class="page__hero-sub">Sign in to open these tools. Compare works without an account.</p>
-            </div>
-
-            @* Anonymous visitors have no org context, so tiles follow the
-               site-wide toggle only; the per-org opt-out applies once signed in.
-               No counts here either - what a tool holds is the organisation's
-               business, not a signed-out visitor's. *@
-            @if (ToolAvailability.IsSiteEnabled(ToolKey.Templates)
-                 || ToolAvailability.IsSiteEnabled(ToolKey.Cookbook)
-                 || ToolAvailability.IsSiteEnabled(ToolKey.ObjectExplorer))
-            {
-                <p class="section-label">Build</p>
-                <div class="tool-grid">
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Templates))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Ftemplates%2Fworkspace">
-                            <span class="tool-tile__icon"><Icon Name="folder-plus" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Workspace</div>
-                                <div class="tool-tile__text">Generate a multi-extension AL workspace from a runtime template.</div>
-                            </div>
-                        </a>
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Ftemplates%2Fextension">
-                            <span class="tool-tile__icon"><Icon Name="package" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Extension</div>
-                                <div class="tool-tile__text">Generate a single standalone AL extension.</div>
-                            </div>
-                        </a>
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Ftemplates">
-                            <span class="tool-tile__icon"><Icon Name="layers" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Templates</div>
-                                <div class="tool-tile__text">Browse the runtime templates available for your organisation.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Cookbook))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Fcookbook">
-                            <span class="tool-tile__icon"><Icon Name="square-code" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Cookbook</div>
-                                <div class="tool-tile__text">Search the AL recipe library and suggest new ones.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.ObjectExplorer))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Fobject-explorer">
-                            <span class="tool-tile__icon"><Icon Name="search" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Object Explorer</div>
-                                <div class="tool-tile__text">Browse BC releases, modules, objects, and source files.</div>
-                            </div>
-                        </a>
-                    }
-                </div>
-            }
-
-            @if (ToolAvailability.IsSiteEnabled(ToolKey.Projects)
-                 || ToolAvailability.IsSiteEnabled(ToolKey.Pipelines)
-                 || ToolAvailability.IsSiteEnabled(ToolKey.Releases))
-            {
-                <p class="section-label">Deliver</p>
-                <div class="tool-grid">
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Projects))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Fprojects">
-                            <span class="tool-tile__icon"><Icon Name="folder-git-2" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Solutions</div>
-                                <div class="tool-tile__text">Point a customer's Git repositories at AL Dev Toolbox and build them into .app files.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Pipelines))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Fpipelines">
-                            <span class="tool-tile__icon"><Icon Name="rocket" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Pipelines</div>
-                                <div class="tool-tile__text">Compile some or all of a solution's extensions, and watch the build as it happens.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Releases))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Freleases">
-                            <span class="tool-tile__icon"><Icon Name="send" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Releases</div>
-                                <div class="tool-tile__text">Publish a build to a customer's Business Central environment.</div>
-                            </div>
-                        </a>
-                    }
-                </div>
-            }
-
-            @if (ToolAvailability.IsSiteEnabled(ToolKey.Translator)
-                 || ToolAvailability.IsSiteEnabled(ToolKey.Compare)
-                 || ToolAvailability.IsSiteEnabled(ToolKey.Piper))
-            {
-                <p class="section-label">Work with text</p>
-                <div class="tool-grid">
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Translator))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Ftranslator">
-                            <span class="tool-tile__icon"><Icon Name="languages" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Translator</div>
-                                <div class="tool-tile__text">Edit an XLIFF file's translation units, filter by state, and fill the gaps.</div>
-                            </div>
-                        </a>
-                    }
-                    @* Diff works without an account - link it directly, no lock. *@
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Compare))
-                    {
-                        <a class="tool-tile" href="/diff">
-                            <span class="tool-tile__icon"><Icon Name="git-compare" Width="19" Height="19" /></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Diff</div>
-                                <div class="tool-tile__text">Paste two texts side by side and see what changed.</div>
-                            </div>
-                        </a>
-                    }
-                    @if (ToolAvailability.IsSiteEnabled(ToolKey.Piper))
-                    {
-                        <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Fpiper">
-                            <span class="tool-tile__icon"><Icon Name="git-merge" Width="19" Height="19" /></span>
-                            <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                            <div class="tool-tile__body">
-                                <div class="tool-tile__title">Piper</div>
-                                <div class="tool-tile__text">Turn a list of values into a pipe-separated filter, an SQL IN list, or another format.</div>
-                            </div>
-                        </a>
-                    }
-                </div>
-            }
-
-            @if (ToolAvailability.IsSiteEnabled(ToolKey.Mcp))
-            {
-                <p class="section-label">Connect an assistant</p>
-                <div class="tool-grid">
-                    <a class="tool-tile tool-tile--locked" href="/login?returnUrl=%2Ftools%2Fmcp">
-                        <span class="tool-tile__icon"><Icon Name="bot" Width="19" Height="19" /></span>
-                        <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
-                        <div class="tool-tile__body">
-                            <div class="tool-tile__title">MCP</div>
-                            <div class="tool-tile__text">Let Claude, Cursor, or another AI assistant read your templates, recipes and BC objects.</div>
-                        </div>
-                    </a>
-                </div>
-            }
-        </div>
+        <LauncherPage Title="AL Dev Toolbox" Subtitle="Sign in to open these tools. Diff works without an account."
+                      Groups="@Groups(signedIn: false)" />
     </NotAuthorized>
 </AuthorizeView>
 
@@ -397,6 +85,48 @@
     // Site-enabled and not switched off for this org — mirrors the sidebar.
     private bool ToolVisible(ToolKey key) =>
         ToolAvailability.IsSiteEnabled(key) && !_orgDisabled.Contains(key);
+
+    /// <summary>
+    /// The launcher's one list of tiles, rendered for both audiences. The names and
+    /// order of the groups match the sidebar's (NavMenu.razor); keep the two in step.
+    /// The three template tiles share the Templates toggle.
+    /// </summary>
+    private IReadOnlyList<LauncherGroup> Groups(bool signedIn)
+    {
+        LauncherTile? Tile(ToolKey key, string title, string text, string icon, string href,
+            Func<string>? meta = null, bool needsAccount = true)
+        {
+            var visible = signedIn ? ToolVisible(key) : ToolAvailability.IsSiteEnabled(key);
+            if (!visible) return null;
+            return new LauncherTile(title, text, icon, href,
+                Meta: signedIn ? meta?.Invoke() : null,
+                Locked: !signedIn && needsAccount);
+        }
+
+        static LauncherGroup Group(string label, params LauncherTile?[] tiles) =>
+            new(label, tiles.OfType<LauncherTile>().ToList());
+
+        return new[]
+        {
+            Group("Build",
+                Tile(ToolKey.Templates, "Workspace", "Generate a multi-extension AL workspace from a runtime template.", "folder-plus", "/templates/workspace"),
+                Tile(ToolKey.Templates, "Extension", "Generate a single standalone AL extension.", "package", "/templates/extension"),
+                Tile(ToolKey.Templates, "Templates", "Browse the runtime templates available for your organisation.", "layers", "/templates", TemplatesMeta),
+                Tile(ToolKey.Cookbook, "Cookbook", "Search the AL recipe library and suggest new ones.", "square-code", "/cookbook", CookbookMeta),
+                Tile(ToolKey.ObjectExplorer, "Object Explorer", "Browse BC releases, modules, objects, and source files.", "search", "/object-explorer", ObjectExplorerMeta)),
+            Group("Deliver",
+                Tile(ToolKey.Projects, "Solutions", "Point a customer's Git repositories at AL Dev Toolbox and build them into .app files.", "folder-git-2", "/solutions", ProjectsMeta),
+                Tile(ToolKey.Pipelines, "Pipelines", "Compile some or all of a solution's extensions, and watch the build as it happens.", "rocket", "/pipelines"),
+                Tile(ToolKey.Releases, "Releases", "Publish a build to a customer's Business Central environment.", "send", "/releases")),
+            Group("Work with text",
+                Tile(ToolKey.Translator, "Translator", "Edit an XLIFF file's translation units, filter by state, and fill the gaps.", "languages", "/translator"),
+                // Diff works without an account - link it directly, no lock.
+                Tile(ToolKey.Compare, "Diff", "Paste two texts side by side and see what changed.", "git-compare", "/diff", needsAccount: false),
+                Tile(ToolKey.Piper, "Piper", "Turn a list of values into a pipe-separated filter, an SQL IN list, or another format.", "git-merge", "/piper")),
+            Group("Connect an assistant",
+                Tile(ToolKey.Mcp, "MCP", "Let Claude, Cursor, or another AI assistant read your templates, recipes and BC objects.", "bot", "/tools/mcp")),
+        };
+    }
 
     private string TemplatesMeta() => _counts.Templates == 0
         ? "None yet - ask an admin to import some"

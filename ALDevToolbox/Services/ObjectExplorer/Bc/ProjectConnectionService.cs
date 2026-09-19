@@ -937,6 +937,66 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// Updates one AppSource app on the environment to the version Business Central has
+    /// waiting for it. Manage-gated, like the other writes that are not about the platform
+    /// update.
+    /// <para>
+    /// The version is not taken on trust. The waiting updates are read again first, and
+    /// the write goes ahead only for an app that is on that list, at exactly that version,
+    /// with nothing it has to wait for - so a stale page, or a caller that is not the
+    /// page, cannot move an app to a version Business Central never offered, or start an
+    /// update whose prerequisites have not been met.
+    /// </para>
+    /// <para>
+    /// Changes the customer's tenant and touches no row of ours, so like Microsoft 365
+    /// access it is recorded in the log rather than the audit trail - see
+    /// <c>.design/saas-delivery.md</c>.
+    /// </para>
+    /// </summary>
+    /// <param name="useUpdateWindow">True to let it run in the environment's next update window; false starts it now.</param>
+    /// <returns>The operation Business Central started or scheduled.</returns>
+    public async Task<BcAppOperation> UpdateAppAsync(
+        int projectId, int environmentId, Guid appId, string targetVersion, bool useUpdateWindow, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetVersion))
+        {
+            throw Validation("App", "Choose the version to update to.");
+        }
+
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+
+        BcAppOperation operation;
+        try
+        {
+            var waiting = await _apps.ListAvailableUpdatesAsync(env.Token, env.Family, env.Name, ct);
+            var offered = waiting.FirstOrDefault(u => u.AppId == appId)
+                ?? throw Validation("App", "Business Central no longer has an update waiting for that app. Refresh and look again.");
+            if (!string.Equals(offered.Version, targetVersion.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                throw Validation("App", $"Business Central now offers {offered.Name} {offered.Version}, not {targetVersion}. Refresh and try again.");
+            }
+            if (offered.Requirements.Count > 0)
+            {
+                throw Validation("App",
+                    $"{offered.Name} has to wait for {string.Join(", ", offered.Requirements.Select(r => r.Name))} to be updated first.");
+            }
+
+            operation = await _apps.UpdateAppAsync(env.Token, env.Family, env.Name, appId, offered.Version, useUpdateWindow, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("App", "Business Central didn't start the update. " + ex.Message);
+        }
+
+        _panelCache.Invalidate(projectId, environmentId);
+
+        _logger.LogInformation(
+            "User {UserId} asked for app {AppId} to be updated to {Version} on {Environment} (project {ProjectId}, in the update window: {InWindow}); operation {OperationId}.",
+            _orgContext.CurrentUserId, appId, targetVersion, env.Name, projectId, useUpdateWindow, operation.Id);
+        return operation;
+    }
+
+    /// <summary>
     /// Sets or clears an environment's recurring update window. Pass both
     /// <paramref name="start"/> and <paramref name="end"/> to set it, or both null to
     /// clear it ("any time"); passing only one is a validation error. Interpreted in the

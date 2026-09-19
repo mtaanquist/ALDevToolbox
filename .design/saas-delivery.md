@@ -406,7 +406,8 @@ because the second step happens outside Entra and is invisible from the app.
 
 ## The environment panel (read on demand, cached for fifteen minutes)
 
-A per-environment panel on the project's Business Central tab answers the question a
+The environment's own page (`/environments/{id}`, see `.design/environment-updates.md`) - until
+#809 an inline panel on the solution's Business Central tab - answers the question a
 consultant otherwise opens the admin center for: *what is on this customer's environment,
 and what is about to change?* It shows four things, read from Business Central when the
 panel opens and reused for a short window after that:
@@ -424,6 +425,11 @@ panel opens and reused for a short window after that:
   because "my extension isn't listed" would otherwise read as a bug.
 - **Business Central updates** — the platform versions coming to the environment, released
   or merely expected, and which one is scheduled next.
+
+One write hangs off the third list: a ready AppSource update can be started from its row
+(`ProjectConnectionService.UpdateAppAsync`, `POST .../apps/{appId}/update`). It never pulls
+dependencies along and never takes a preview version, so Business Central refuses rather than
+updating apps nobody picked. The rules and the confirm are in `.design/environment-updates.md`.
 
 **The four reads go out together, and the answer is held for fifteen minutes.** They do
 not depend on each other, so issuing them in parallel costs one round trip's wait rather

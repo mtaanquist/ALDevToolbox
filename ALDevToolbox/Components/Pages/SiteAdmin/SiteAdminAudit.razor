@@ -17,91 +17,83 @@
     See .design/design-migration.md.
 *@
 
-<div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Audit log</h1>
-            <p class="page-head__sub">
-                Changes across every organisation on this deployment, newest
-                first. Filters are optional; without any, this is the most recent
-                activity everywhere. Open an entry to see which fields changed.
-            </p>
-        </div>
-    </div>
-
-    @*
-        Filters apply on change rather than waiting for a submit button:
-        selects and date pickers fire change events synchronously, and the
-        Actor text input submits on Enter or when it loses focus. Keeping
-        the form GET-based preserves bookmarkable URLs and uses the same
-        SupplyParameterFromQuery wiring as before.
-    *@
-    <form method="get" action="/site-admin/audit" class="card filter-grid" onchange="this.submit()">
-        <label class="field">
-            <span class="field__label">Entity type</span>
-            <span class="select-wrap">
-                <select class="select" name="entityType">
-                    <option value="">Any</option>
-                    @foreach (var type in Enum.GetValues<AuditEntityType>())
-                    {
-                        <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
-                    }
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-        </label>
-        <label class="field">
-            <span class="field__label">Organisation</span>
-            <span class="select-wrap">
-                <select class="select" name="organizationId">
-                    <option value="">Any</option>
-                    @if (_orgs is not null)
-                    {
-                        @foreach (var o in _orgs)
+<ListPage Title="Audit log" ShowActions="true" FiltersWhenEmpty="true"
+          IsLoading="@(_rows is null)"
+          IsEmpty="@(_rows is not null && _rows.Count == 0)">
+    <SubtitleContent>
+        Changes across every organisation on this deployment, newest
+        first. Filters are optional; without any, this is the most recent
+        activity everywhere. Open an entry to see which fields changed.
+    </SubtitleContent>
+    <Notices>
+        @*
+            Filters apply on change rather than waiting for a submit button:
+            selects and date pickers fire change events synchronously, and the
+            Actor text input submits on Enter or when it loses focus. Keeping
+            the form GET-based preserves bookmarkable URLs and uses the same
+            SupplyParameterFromQuery wiring as before.
+        *@
+        <form method="get" action="/site-admin/audit" class="card filter-grid" onchange="this.submit()">
+            <label class="field">
+                <span class="field__label">Entity type</span>
+                <span class="select-wrap">
+                    <select class="select" name="entityType">
+                        <option value="">Any</option>
+                        @foreach (var type in Enum.GetValues<AuditEntityType>())
                         {
-                            <option value="@o.Id" selected="@(OrganizationId == o.Id)">@o.Name</option>
+                            <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
                         }
-                    }
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-        </label>
-        <label class="field">
-            <span class="field__label">Changed by</span>
-            <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
-        </label>
-        <label class="field">
-            <span class="field__label">From (UTC)</span>
-            <input class="input" type="datetime-local" name="from" value="@FromUtc" />
-        </label>
-        <label class="field">
-            <span class="field__label">To (UTC)</span>
-            <input class="input" type="datetime-local" name="to" value="@ToUtc" />
-        </label>
-    </form>
-
-    @if (_rows is null)
-    {
-        <div class="loading-block">
-            <span class="spinner"></span><span>Loading changes...</span>
-        </div>
-    }
-    else if (_rows.Count == 0)
-    {
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+            </label>
+            <label class="field">
+                <span class="field__label">Organisation</span>
+                <span class="select-wrap">
+                    <select class="select" name="organizationId">
+                        <option value="">Any</option>
+                        @if (_orgs is not null)
+                        {
+                            @foreach (var o in _orgs)
+                            {
+                                <option value="@o.Id" selected="@(OrganizationId == o.Id)">@o.Name</option>
+                            }
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+            </label>
+            <label class="field">
+                <span class="field__label">Changed by</span>
+                <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
+            </label>
+            <label class="field">
+                <span class="field__label">From (UTC)</span>
+                <input class="input" type="datetime-local" name="from" value="@FromUtc" />
+            </label>
+            <label class="field">
+                <span class="field__label">To (UTC)</span>
+                <input class="input" type="datetime-local" name="to" value="@ToUtc" />
+            </label>
+        </form>
+    </Notices>
+    <Loading>
+        <LoadingBlock Text="Loading changes..." />
+    </Loading>
+    <Empty>
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No changes match these filters</span>
-                <span class="empty-state__text">Try widening the date range, or clear the filters to see everything.</span>
-                <a class="btn empty-state__action" href="/site-admin/audit">Clear filters</a>
-            </div>
+            <EmptyState Icon="funnel-x" Title="No changes match these filters">
+                <Text>Try widening the date range, or clear the filters to see everything.</Text>
+                <Action>
+                    <a class="btn" href="/site-admin/audit">Clear filters</a>
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else
-    {
+    </Empty>
+    <ChildContent>
         <div class="card">
             <div class="audit">
-                @foreach (var e in _rows)
+                @foreach (var e in _rows ?? new())
                 {
                     <div class="audit__entry">
                         <a class="audit__sum" href="@($"/site-admin/audit/{e.Id}/diff")">
@@ -165,8 +157,8 @@
                 </span>
             </nav>
         }
-    }
-</div>
+    </ChildContent>
+</ListPage>
 
 @code {
     private const int PageSize = 100;

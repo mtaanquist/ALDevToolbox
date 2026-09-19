@@ -302,6 +302,79 @@ public sealed class UpgradeFleetServiceTests : IDisposable
         rows.Single(r => r.EnvironmentName == "JLE-260911110359").Status.Should().Be("SoftDeleted");
     }
 
+    // ── One environment, for its own page ───────────────────────────────
+
+    [Fact]
+    public async Task One_environment_comes_back_with_its_row_and_what_only_its_page_shows()
+    {
+        var project = await SeedProjectAsync("CRONUS Denmark");
+        var id = await SeedEnvironmentAsync(project);
+        await using (var seed = _db.NewContext())
+        {
+            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == id);
+            env.CountryCode = "DK";
+            env.LocationName = "West Europe";
+            env.UpdateWindowStart = new TimeOnly(22, 0);
+            env.UpdateWindowEnd = new TimeOnly(4, 0);
+            env.AppSourceAppsUpdateCadence = "DuringMajorUpgrade";
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var found = await Svc(ctx).GetEnvironmentAsync(id);
+
+        found.Should().NotBeNull();
+        found!.Fleet.ProjectName.Should().Be("CRONUS Denmark");
+        found.Fleet.EnvironmentName.Should().Be("Production");
+        found.Fleet.NextUpdateVersion.Should().Be("27.6");
+        found.CreatedByUserId.Should().Be(OwnerUserId);
+        found.CountryCode.Should().Be("DK");
+        found.LocationName.Should().Be("West Europe");
+        found.DeliveryWindowStart.Should().Be(new TimeOnly(22, 0));
+        found.AppSourceAppsUpdateCadence.Should().Be("DuringMajorUpgrade");
+    }
+
+    [Fact]
+    public async Task An_environment_of_a_solution_the_person_cannot_see_answers_like_one_that_does_not_exist()
+    {
+        var closed = await SeedProjectAsync("CRONUS Norway", ProjectVisibility.Private);
+        await SeedTeamAsync(closed, flagHolders: new[] { FlagUserId }, plainMembers: Array.Empty<int>());
+        var id = await SeedEnvironmentAsync(closed);
+
+        ActAs(OutsiderUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            (await Svc(ctx).GetEnvironmentAsync(id)).Should().BeNull(
+                "an id is guessable, so the single read goes through the same visible-projects join as the list");
+            (await Svc(ctx).GetEnvironmentAsync(id + 1000)).Should().BeNull();
+        }
+
+        ActAs(FlagUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            var found = await Svc(ctx).GetEnvironmentAsync(id);
+            found.Should().NotBeNull();
+            found!.Fleet.CanAct.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task One_environment_keeps_a_soft_deleted_one_and_drops_one_business_central_stopped_reporting()
+    {
+        var project = await SeedProjectWithASoftDeletedEnvironmentAsync();
+        var gone = await SeedEnvironmentAsync(project, "OldSandbox", "Sandbox", missingSince: DateTime.UtcNow);
+        int deleted;
+        await using (var look = _db.NewContext())
+        {
+            deleted = await look.OeProjectEnvironments.Where(e => e.SoftDeletedOn != null).Select(e => e.Id).SingleAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        (await Svc(ctx).GetEnvironmentAsync(deleted)).Should().NotBeNull(
+            "deleted-but-restorable is a state worth a page, and the Environments list links to it");
+        (await Svc(ctx).GetEnvironmentAsync(gone)).Should().BeNull();
+    }
+
     [Fact]
     public async Task Rows_come_back_by_customer_with_production_first()
     {

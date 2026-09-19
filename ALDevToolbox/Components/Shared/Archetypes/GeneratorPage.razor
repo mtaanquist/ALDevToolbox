@@ -1,0 +1,143 @@
+@*
+    The handoff's archetype 5, Generator + live preview
+    (.design/handoff/PageGenerator.dc.html): a page head, then a form column of
+    .form-sec sections beside a sticky aside holding the preview, two counts and
+    the Generate button.
+
+    The head is always drawn; the body is one of three:
+
+      loading     a LoadingBlock
+      empty       Empty: there is nothing to generate from yet. It must say who can
+                  fix that and link to where.
+      ready       the form
+
+    Two things are structural here rather than left to each page.
+
+    The primary button. CLAUDE.md allows one primary action on a page, and on a
+    generator it is this one. The component renders it - with the
+    data-loading-button contract generate.js looks for - and takes only its label,
+    so a page cannot forget the spinner or grow a second primary by copying the
+    first. Everything a page puts in the aside's slots is an outline button.
+
+    The form. It wraps the aside as well as the form column, which the sheet's
+    markup does not: the submit button and the example-files value both live in the
+    aside and have to post with the rest. The POST is native because the response
+    is a ZIP stream, but OnSubmit always runs first and the browser's own submit is
+    always cancelled - the page validates, then posts through generate.js. That is
+    also why data-loading-form is absent: its listener would start the spinner on a
+    submit that is about to be cancelled. See #546.
+
+    Composition only. See PROJECT.md, "Page archetypes".
+*@
+
+<div class="page@(string.IsNullOrEmpty(PageClass) ? "" : " " + PageClass)">
+    <PageHead Title="@Title" Subtitle="@Subtitle" SubtitleContent="SubtitleContent"
+              Crumbs="Crumbs" Actions="Actions" ShowActions="@(!IsLoading && !IsEmpty)" />
+
+    @if (IsLoading)
+    {
+        <LoadingBlock Text="@LoadingText" />
+    }
+    else if (IsEmpty)
+    {
+        @Empty
+    }
+    else
+    {
+        <form id="@FormId" method="post" action="@FormAction"
+              @onsubmit="OnSubmit" @onsubmit:preventDefault="true">
+            <AntiforgeryToken />
+            @* generate.js stamps this per submission; the server echoes it in a
+               cookie, which is how the page learns the download finished. *@
+            <input type="hidden" name="GenToken" value="" />
+
+            @Notices
+
+            <div class="gen">
+                <div class="gen__form">
+                    @Form
+                </div>
+
+                <aside class="gen__aside">
+                    @Preview
+
+                    @if (Stats is not null)
+                    {
+                        <div class="gen__stats">
+                            @Stats
+                        </div>
+                    }
+
+                    <button type="submit" class="btn btn--primary btn--lg gen__go" data-loading-button>
+                        <span class="btn__spinner" aria-hidden="true"></span>
+                        <span class="btn__label">@PrimaryLabel</span>
+                        <span class="btn__label-busy">@PrimaryBusyText</span>
+                    </button>
+                    @if (!string.IsNullOrEmpty(PrimaryNote))
+                    {
+                        <span class="form-actions__note gen__note">@PrimaryNote</span>
+                    }
+
+                    @AsideCards
+                </aside>
+            </div>
+        </form>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Subtitle { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    [Parameter] public RenderFragment? Crumbs { get; set; }
+
+    /// <summary>Head actions, shown once the form is. Outline buttons only.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>Extra class on the <c>.page</c> wrapper, for a page-scoped stylesheet to hang on.</summary>
+    [Parameter] public string? PageClass { get; set; }
+
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string LoadingText { get; set; } = "Loading...";
+
+    /// <summary>Nothing to generate from yet.</summary>
+    [Parameter] public bool IsEmpty { get; set; }
+
+    /// <summary>The empty state, card included: it must name the next step and offer it.</summary>
+    [Parameter] public RenderFragment? Empty { get; set; }
+
+    /// <summary>The form's id, which the page hands to generate.js once its own validation passes.</summary>
+    [Parameter, EditorRequired] public string FormId { get; set; } = string.Empty;
+
+    /// <summary>The download endpoint the form posts to.</summary>
+    [Parameter, EditorRequired] public string FormAction { get; set; } = string.Empty;
+
+    /// <summary>Runs on every submit; the browser's own submit is always cancelled.</summary>
+    [Parameter] public EventCallback OnSubmit { get; set; }
+
+    /// <summary>The "n things need fixing" alert, inside the form and above both columns.</summary>
+    [Parameter] public RenderFragment? Notices { get; set; }
+
+    /// <summary>The <c>.form-sec</c> sections.</summary>
+    [Parameter] public RenderFragment? Form { get; set; }
+
+    /// <summary>The live preview card.</summary>
+    [Parameter] public RenderFragment? Preview { get; set; }
+
+    /// <summary>Two <c>.stat-card</c>s; the component supplies the <c>.gen__stats</c> row.</summary>
+    [Parameter] public RenderFragment? Stats { get; set; }
+
+    /// <summary>The primary button's label, icon included.</summary>
+    [Parameter, EditorRequired] public RenderFragment? PrimaryLabel { get; set; }
+    [Parameter] public string PrimaryBusyText { get; set; } = "Generating...";
+
+    /// <summary>One line under the button saying what it is about to produce.</summary>
+    [Parameter] public string? PrimaryNote { get; set; }
+
+    /// <summary>
+    /// Cards under the button: other ways to start or take delivery, and what to do next.
+    /// Everything optional goes here rather than above the preview, so Generate stays in
+    /// view at laptop height.
+    /// </summary>
+    [Parameter] public RenderFragment? AsideCards { get; set; }
+}

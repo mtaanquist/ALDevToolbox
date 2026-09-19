@@ -27,84 +27,81 @@
 
 <PageTitle>Releases · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Releases</h1>
-            <p class="page-head__sub">
-                A release pipeline publishes a build pipeline's compiled
-                <span class="u-nowrap"><code>.app</code> files</span> to a Business Central
-                environment — one target per customer environment (Production, Sandbox, ...).
-            </p>
-        </div>
-        @if (_rows is not null && _rows.Count > 0)
+<ListPage Title="Releases" IsLoading="@(_rows is null)" IsEmpty="@(_rows is { Count: 0 })">
+    <Crumbs>
+        <a href="/">Home</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>Releases</span>
+    </Crumbs>
+    <SubtitleContent>
+        A release pipeline publishes a build pipeline's compiled
+        <span class="u-nowrap"><code>.app</code> files</span> to a Business Central
+        environment — one target per customer environment (Production, Sandbox, ...).
+    </SubtitleContent>
+    <Actions>
+        <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+            <Icon Name="plus" Width="16" Height="16" />
+            <span>New release pipeline</span>
+        </button>
+    </Actions>
+
+    <Notices>
+        @if (_error is { } error)
         {
-            <div class="page-head__actions">
-                <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
-                    <Icon Name="plus" Width="16" Height="16" />
-                    <span>New release pipeline</span>
-                </button>
-            </div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" /><span>@error</span>
+            </p>
         }
-    </div>
-
-    @if (_error is { } error)
-    {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="triangle-alert" Width="16" Height="16" /><span>@error</span>
-        </p>
-    }
-
-    @if (_rows is null)
-    {
+    </Notices>
+    <Loading>
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Target health</span></th>
                 <th>Release pipeline</th><th>Solution</th><th>Target environment</th>
                 <th>Releases from</th><th>When installs run</th>
-                <th class="data-table__actions"></th>
+                <th class="data-table__actions">Actions</th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
         </table>
-        <div class="loading-block loading-block--under-table">
-            <span class="spinner"></span><span>Loading release pipelines...</span>
-        </div>
-    }
-    else if (_rows.Count == 0)
-    {
+        <LoadingBlock Text="Loading release pipelines..." UnderTable="true" />
+    </Loading>
+    <Empty>
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No release pipelines yet</span>
-                @if (_projectOptions.Count > 0)
-                {
-                    <span class="empty-state__text">
+            @if (_projectOptions.Count > 0)
+            {
+                <EmptyState Icon="send" Title="No release pipelines yet">
+                    <Text>
                         A release pipeline points a build pipeline's apps at a Business Central
                         environment. You'll pick the solution, its build pipeline, and the target
                         environment.
-                    </span>
-                    <button type="button" class="btn btn--primary empty-state__action" @onclick="NewReleaseAsync">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>New release pipeline</span>
-                    </button>
-                }
-                else
-                {
-                    <span class="empty-state__text">
+                    </Text>
+                    <Action>
+                        <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>New release pipeline</span>
+                        </button>
+                    </Action>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Icon="send" Title="No release pipelines yet">
+                    <Text>
                         Releases publish a solution's compiled apps to its Business Central
                         environment, so the first step is creating a solution, connecting Business
                         Central, and adding a build pipeline. Then you can set up a release.
-                    </span>
-                    <a class="btn btn--primary empty-state__action" href="/solutions/new">
-                        <Icon Name="plus" Width="15" Height="15" />
-                        <span>Create a solution</span>
-                    </a>
-                }
-            </div>
+                    </Text>
+                    <Action>
+                        <a class="btn btn--primary" href="/solutions/new">
+                            <Icon Name="plus" Width="15" Height="15" />
+                            <span>Create a solution</span>
+                        </a>
+                    </Action>
+                </EmptyState>
+            }
         </div>
-    }
-    else
-    {
+    </Empty>
+    <ChildContent>
         <table class="data-table data-table--edge">
             <thead>
                 <tr>
@@ -114,11 +111,11 @@
                     <th scope="col">Target environment</th>
                     <th scope="col">Releases from</th>
                     <th scope="col">When installs run</th>
-                    <th scope="col" class="data-table__actions"></th>
+                    <th scope="col" class="data-table__actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var r in _rows)
+                @foreach (var r in _rows ?? new())
                 {
                     <tr class="@(r.EnvironmentMissing ? "is-failed" : null)">
                         <td class="data-table__col-state">
@@ -183,8 +180,8 @@
                 }
             </tbody>
         </table>
-    }
-</div>
+    </ChildContent>
+</ListPage>
 
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnSavedAsync" />
 <ConfirmDialog @ref="_deleteConfirm" Title="Delete release pipeline?"

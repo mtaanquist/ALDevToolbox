@@ -22,24 +22,23 @@
 *@
 
 <div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Object Explorer</h1>
-            <p class="page-head__sub">
-                Browse the AL source of every Business Central release imported here.
-                Open a release to search its objects, fields and procedures — or
-                compare an object across versions.
-            </p>
-        </div>
-        <AuthorizeView Roles="Admin,Editor">
-            <div class="page-head__actions">
+    <PageHead Title="Object Explorer">
+        <SubtitleContent>
+            Browse the AL source of every Business Central release imported here.
+            Open a release to search its objects, fields and procedures — or
+            compare an object across versions.
+        </SubtitleContent>
+        <Actions>
+            @* The role check sits inside the slot, so a plain user gets an empty
+               actions box rather than none. It has no size and draws nothing. *@
+            <AuthorizeView Roles="Admin,Editor">
                 <a class="btn" href="/admin/object-explorer/new">
                     <Icon Name="package-plus" Width="16" Height="16" />
                     <span>Import a release</span>
                 </a>
-            </div>
-        </AuthorizeView>
-    </div>
+            </AuthorizeView>
+        </Actions>
+    </PageHead>
 
     @if (_releases is null)
     {

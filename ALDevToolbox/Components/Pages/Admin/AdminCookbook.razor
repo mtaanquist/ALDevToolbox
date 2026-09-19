@@ -15,72 +15,66 @@
 
 <PageTitle>Cookbook · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Cookbook</h1>
-            <p class="page-head__sub">
-                Curate the recipe library for this organisation. Your team browses
-                the published list under Cookbook; anything they submit lands in
-                the suggestions queue below.
+<ListPage Title="Cookbook" ShowActions="true" FiltersWhenEmpty="true"
+          IsLoading="@(_rows is null)"
+          IsEmpty="@(_rows is not null && _rows.Count == 0)" Sticky="true">
+    <Crumbs>
+        <a href="/admin">Admin</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Cookbook</span>
+    </Crumbs>
+    <SubtitleContent>
+        Curate the recipe library for this organisation. Your team browses
+        the published list under Cookbook; anything they submit lands in
+        the suggestions queue below.
+    </SubtitleContent>
+    <Actions>
+        <a class="btn btn--sm btn--primary" href="/admin/cookbook/new">
+            <Icon Name="plus" Width="14" Height="14" />
+            <span>New recipe</span>
+        </a>
+    </Actions>
+    <Notices>
+        @if (!string.IsNullOrEmpty(_lastError))
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
             </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-            <a class="btn btn--sm btn--primary" href="/admin/cookbook/new">
-                <Icon Name="plus" Width="14" Height="14" />
-                <span>New recipe</span>
-            </a>
-        </div>
-    </header>
-
-    <div class="filter-bar">
+        }
+        @if (!string.IsNullOrEmpty(_lastSuccess))
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
+            </p>
+        }
+    </Notices>
+    <Filters>
         <label class="check @(_showDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
             <span>Show deleted</span>
         </label>
-    </div>
-
-    @if (!string.IsNullOrEmpty(_lastError))
-    {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-        </p>
-    }
-    @if (!string.IsNullOrEmpty(_lastSuccess))
-    {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
-        </p>
-    }
-
-    @if (_rows is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else if (_rows.Count == 0)
-    {
+    </Filters>
+    <Loading>
+        <LoadingBlock Text="Loading..." />
+    </Loading>
+    <Empty>
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="square-code" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No recipes yet</span>
-                <span class="empty-state__text">
+            <EmptyState Icon="square-code" Title="No recipes yet">
+                <Text>
                     A recipe is a worked AL example your team can copy from. Write the
                     first one, or wait for someone to suggest one.
-                </span>
-                <a class="btn empty-state__action" href="/admin/cookbook/new">
-                    <Icon Name="plus" Width="14" Height="14" />
-                    <span>New recipe</span>
-                </a>
-            </div>
+                </Text>
+                <Action>
+                    <a class="btn" href="/admin/cookbook/new">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>New recipe</span>
+                    </a>
+                </Action>
+            </EmptyState>
         </div>
-    }
-    else
-    {
+    </Empty>
+    <ChildContent>
         <table class="data-table">
             <thead>
                 <tr>
@@ -90,11 +84,11 @@
                     <th>Keywords</th>
                     <th>Status</th>
                     <th>Last updated (UTC)</th>
-                    <th class="data-table__actions"></th>
+                    <th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var s in _rows)
+                @foreach (var s in _rows ?? new())
                 {
                     <tr class="@(s.DeletedAt is not null ? "u-muted" : null)">
                         @* The row's way in - the actions column is a kebab since
@@ -147,96 +141,97 @@
                 }
             </tbody>
         </table>
-    }
+    </ChildContent>
+    <After>
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">House rules for recipes</h2>
+                    <p class="card__sub">Shown to AI assistants before they draft a recipe for review.</p>
+                </div>
+            </div>
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    Write down the conventions you want submitted recipes to follow -
+                    naming, prefixes, your preferred event-subscriber style, anything
+                    specific to your organisation. Markdown. A description of each
+                    recipe type is added for you.
+                </p>
+                <div class="field">
+                    <label class="u-sr" for="cookbook-guidance">House rules</label>
+                    <textarea class="textarea" id="cookbook-guidance" rows="10"
+                              maxlength="@OrganizationConfigService.MaxCookbookGuidanceLength"
+                              @bind="_guidance" @bind:event="oninput"
+                              placeholder="Recipes in this organisation use the 'CRONUS' prefix on every object name. Pattern recipes should include a setup permission set. ..."></textarea>
+                    <FieldError Field="CookbookGuidance" Errors="_guidanceErrors" />
+                </div>
+            </div>
+            <div class="card__foot">
+                <button type="button" class="btn btn--primary"
+                        @onclick="SaveGuidanceAsync"
+                        disabled="@(_savingGuidance || _guidance == _guidanceBaseline)">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_savingGuidance ? "Saving..." : "Save guidance")</span>
+                </button>
+            </div>
+        </section>
 
-    <section class="card">
-        <div class="card__head">
-            <div>
-                <h2 class="card__title">House rules for recipes</h2>
-                <p class="card__sub">Shown to AI assistants before they draft a recipe for review.</p>
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Suggestions</h2>
+                    <p class="card__sub">Drafts waiting for review. Open one to approve or reject it.</p>
+                </div>
             </div>
-        </div>
-        <div class="card__body form-sec">
-            <p class="form-sec__cap">
-                Write down the conventions you want submitted recipes to follow -
-                naming, prefixes, your preferred event-subscriber style, anything
-                specific to your organisation. Markdown. A description of each
-                recipe type is added for you.
-            </p>
-            <div class="field">
-                <label class="u-sr" for="cookbook-guidance">House rules</label>
-                <textarea class="textarea" id="cookbook-guidance" rows="10"
-                          maxlength="@OrganizationConfigService.MaxCookbookGuidanceLength"
-                          @bind="_guidance" @bind:event="oninput"
-                          placeholder="Recipes in this organisation use the 'CRONUS' prefix on every object name. Pattern recipes should include a setup permission set. ..."></textarea>
-                <FieldError Field="CookbookGuidance" Errors="_guidanceErrors" />
-            </div>
-        </div>
-        <div class="card__foot">
-            <button type="button" class="btn btn--primary"
-                    @onclick="SaveGuidanceAsync"
-                    disabled="@(_savingGuidance || _guidance == _guidanceBaseline)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>@(_savingGuidance ? "Saving..." : "Save guidance")</span>
-            </button>
-        </div>
-    </section>
-
-    <section class="card">
-        <div class="card__head">
-            <div>
-                <h2 class="card__title">Suggestions</h2>
-                <p class="card__sub">Drafts waiting for review. Open one to approve or reject it.</p>
-            </div>
-        </div>
-        @if (_suggestions is null)
-        {
-            <div class="loading-block loading-block--under-table">
-                <span class="spinner"></span><span>Loading...</span>
-            </div>
-        }
-        else if (_suggestions.Count == 0)
-        {
-            <div class="empty-state empty-state--quiet">
-                <span class="empty-state__title">Nothing waiting</span>
-                <span class="empty-state__text">Recipes your team submits appear here for review.</span>
-            </div>
-        }
-        else
-        {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Title</th>
-                        <th>Type</th>
-                        <th>Submitted by</th>
-                        <th>Files</th>
-                        <th>Submitted (UTC)</th>
-                        <th class="data-table__actions"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var s in _suggestions)
-                    {
+            @if (_suggestions is null)
+            {
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading...</span>
+                </div>
+            }
+            else if (_suggestions.Count == 0)
+            {
+                <div class="empty-state empty-state--quiet">
+                    <span class="empty-state__title">Nothing waiting</span>
+                    <span class="empty-state__text">Recipes your team submits appear here for review.</span>
+                </div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>@s.Title</td>
-                            <td>@s.Type</td>
-                            <td class="u-muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
-                            <td>@s.Files.Count</td>
-                            <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
-                            <td class="data-table__actions">
-                                <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions/{s.Id}")">
-                                    <Icon Name="inbox" Width="14" Height="14" />
-                                    <span>Review</span>
-                                </a>
-                            </td>
+                            <th>Title</th>
+                            <th>Type</th>
+                            <th>Submitted by</th>
+                            <th>Files</th>
+                            <th>Submitted (UTC)</th>
+                            <th class="data-table__actions">Actions</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </section>
-</div>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _suggestions)
+                        {
+                            <tr>
+                                <td>@s.Title</td>
+                                <td>@s.Type</td>
+                                <td class="u-muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
+                                <td>@s.Files.Count</td>
+                                <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                                <td class="data-table__actions">
+                                    <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions/{s.Id}")">
+                                        <Icon Name="inbox" Width="14" Height="14" />
+                                        <span>Review</span>
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </After>
+</ListPage>
 
 @code {
     private bool _showDeleted;

@@ -94,29 +94,46 @@ public sealed class DetailHeadTests
         }
     }
 
+    private const string DetailPageComponent = "ALDevToolbox/Components/Shared/Archetypes/DetailPage.razor";
+
+    /// <summary>
+    /// The head these three shared is one component now, so the page-level rule is
+    /// that they use it and hand it crumbs; its shape is pinned once, below and in
+    /// <c>DetailPageTests</c>.
+    /// </summary>
     [Theory]
     [MemberData(nameof(DetailPages))]
-    public void Each_detail_page_heads_with_crumbs_and_a_title(string page)
+    public void Each_detail_page_composes_the_detail_frame_and_gives_it_crumbs(string page)
     {
         var markup = StripComments(Read(page));
-        var classes = RenderedClasses(markup).ToHashSet();
 
-        classes.Should().Contain("page", because: $"{page} is a page archetype body");
-        classes.Should().Contain("detail-head",
-            because: "PageDetail.dc.html is the archetype for these three, and it is not "
-                   + ".page-head - the detail head carries a title ROW so a state pill can sit "
-                   + "beside the title, which .page-head has nowhere to put");
-        classes.Should().Contain("detail-head__title-row");
-        classes.Should().Contain("detail-head__title");
-        classes.Should().Contain("page-head__crumbs",
+        markup.Should().Contain("<DetailPage",
+            because: "PageDetail.dc.html is the archetype for these three, and DetailPage is "
+                   + "its one implementation - a hand-written head is how the three drifted apart");
+        markup.Should().Contain("<Crumbs>",
             because: "a detail page is reached from a list, and the crumb row is the way back");
+        RenderedClasses(markup).Should().NotContain("detail-head",
+            because: "a page that also writes its own head has two");
     }
 
-    [Theory]
-    [MemberData(nameof(DetailPages))]
-    public void The_crumb_row_sits_outside_the_detail_head(string page)
+    [Fact]
+    public void The_detail_frame_heads_with_a_title_row_and_not_the_list_head()
     {
-        var markup = StripComments(Read(page));
+        var classes = RenderedClasses(StripComments(Read(DetailPageComponent))).ToHashSet();
+
+        classes.Should().Contain("page");
+        classes.Should().Contain("detail-head",
+            because: "the detail head carries a title ROW so a state pill can sit beside the "
+                   + "title, which .page-head has nowhere to put");
+        classes.Should().Contain("detail-head__title-row");
+        classes.Should().Contain("detail-head__title");
+        classes.Should().Contain("page-head__crumbs");
+    }
+
+    [Fact]
+    public void The_crumb_row_sits_outside_the_detail_head()
+    {
+        var markup = StripComments(Read(DetailPageComponent));
 
         var crumbs = markup.IndexOf("page-head__crumbs", StringComparison.Ordinal);
         var head = markup.IndexOf("class=\"detail-head\"", StringComparison.Ordinal);

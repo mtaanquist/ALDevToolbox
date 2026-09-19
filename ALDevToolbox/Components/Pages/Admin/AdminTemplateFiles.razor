@@ -15,32 +15,23 @@
 
 <PageTitle>Files · Configuration · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Always-included files</h1>
-            <p class="page-head__sub">
-                Text files written into every workspace you generate. Turn on
-                variable substitution per file to have names and IDs filled in.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-            @* Save lives in the sticky .form-actions bar at the foot of the form.
-               This page runs to roughly two and a half viewports; a save that only
-               exists above the fold is a save you cannot reach when you finish. *@
-        </div>
-    </header>
-
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else
-    {
+<EditPage Title="Always-included files"
+          IsLoading="@(_loading)" Sticky="true">
+    <Crumbs>
+        <a href="/admin">Admin</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Always-included files</span>
+    </Crumbs>
+    <SubtitleContent>
+        Text files written into every workspace you generate. Turn on
+        variable substitution per file to have names and IDs filled in.
+    </SubtitleContent>
+    <Actions>
+        @* Save lives in the sticky .form-actions bar at the foot of the form.
+           This page runs to roughly two and a half viewports; a save that only
+           exists above the fold is a save you cannot reach when you finish. *@
+    </Actions>
+    <ChildContent>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
             <p class="alert alert--success" role="status">
@@ -64,14 +55,13 @@
                     <div class="card__body form-sec">
                         @if (_files.Count == 0)
                         {
-                            <div class="empty-state empty-state--quiet">
-                                <span class="empty-state__title">No files yet</span>
-                                <span class="empty-state__text">
+                            <EmptyState Title="No files yet" Quiet="true">
+                                <Text>
                                     Add a <code class="code">.editorconfig</code>, a house
                                     <code class="code">README.md</code>, or anything else that should
                                     ship with every workspace. Use the form below.
-                                </span>
-                            </div>
+                                </Text>
+                            </EmptyState>
                         }
                         else
                         {
@@ -204,8 +194,8 @@
                 <span>@(_saving ? "Saving..." : "Save changes")</span>
             </button>
         </div>
-    }
-</div>
+    </ChildContent>
+</EditPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }

@@ -28,26 +28,18 @@
     See .design/design-migration.md.
 *@
 
-<div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">New extension</h1>
-            <p class="page-head__sub">
-                Scaffold a standalone extension that drops into an existing AL
-                workspace. Pick the workspace template it should sit alongside
-                and the modules it depends on.
-            </p>
-        </div>
-    </div>
-
-    @if (_templates is null || _catalog is null || _modules is null || _applicationVersions is null)
-    {
-        <div class="loading-block">
-            <span class="spinner"></span><span>Loading templates...</span>
-        </div>
-    }
-    else if (_templates.Count == 0)
-    {
+<GeneratorPage Title="New extension"
+               IsLoading="@(_templates is null || _catalog is null || _modules is null || _applicationVersions is null)"
+               LoadingText="Loading templates..."
+               IsEmpty="@(_templates is { Count: 0 })"
+               FormId="gen-extension-form" FormAction="/generate/extension" OnSubmit="SubmitAsync"
+               PrimaryNote="@GenerateNote">
+    <SubtitleContent>
+        Scaffold a standalone extension that drops into an existing AL
+        workspace. Pick the workspace template it should sit alongside
+        and the modules it depends on.
+    </SubtitleContent>
+    <Empty>
         <div class="card">
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
@@ -59,459 +51,438 @@
                 <a class="btn btn--primary empty-state__action" href="/admin/templates">Import a template</a>
             </div>
         </div>
-    }
-    else
-    {
-        @* Validated in the component before the native POST is allowed
-           through - see NewWorkspace.razor for the full reasoning and #546. *@
-        <form id="gen-extension-form" method="post" action="/generate/extension"
-              @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
-
-            @if (_errors.Count > 0)
+    </Empty>
+    <Notices>
+        @if (_errors.Count > 0)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>
+                    @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
+                    before this extension can be @_errorAction. Nothing you typed has been lost.
+                    @if (_unfieldedErrors.Count > 0)
+                    {
+                        <text> @string.Join(" ", _unfieldedErrors)</text>
+                    }
+                </span>
+            </p>
+        }
+    </Notices>
+    <Form>
+        @* Sibling-extension flow: when a workspace config is loaded, ship
+           the workspace's identity through to the generation endpoint so
+           the ZIP can include an updated <Workspace>.code-workspace file
+           listing Core + every imported module + the new extension. The
+           folder names come from the persisted identities so renames in
+           the DB since the workspace was generated don't bleed into the
+           regenerated workspace file. *@
+        @if (_workspaceContext is not null)
+        {
+            <input type="hidden" name="WorkspaceName" value="@_workspaceContext.WorkspaceName" />
+            <input type="hidden" name="WorkspaceShortName" value="@_workspaceContext.ShortName" />
+            @foreach (var key in _workspaceContext.ModuleKeys)
             {
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
-                    <span>
-                        @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
-                        before this extension can be @_errorAction. Nothing you typed has been lost.
-                        @if (_unfieldedErrors.Count > 0)
-                        {
-                            <text> @string.Join(" ", _unfieldedErrors)</text>
-                        }
-                    </span>
-                </p>
+                <input type="hidden" name="WorkspaceModuleKeys" value="@key" />
             }
-            <AntiforgeryToken />
-            <input type="hidden" name="GenToken" value="" />
+            @foreach (var ext in _workspaceContext.Extensions)
+            {
+                <input type="hidden" name="WorkspaceFolders" value="@ext.Folder" />
+            }
+        }
 
-            <div class="gen">
-                <div class="gen__form">
-
-                @* Sibling-extension flow: when a workspace config is loaded, ship
-                   the workspace's identity through to the generation endpoint so
-                   the ZIP can include an updated <Workspace>.code-workspace file
-                   listing Core + every imported module + the new extension. The
-                   folder names come from the persisted identities so renames in
-                   the DB since the workspace was generated don't bleed into the
-                   regenerated workspace file. *@
+        <section class="form-sec">
+            <div class="form-sec__head">
+                <span class="section-label">Workspace template</span>
                 @if (_workspaceContext is not null)
                 {
-                    <input type="hidden" name="WorkspaceName" value="@_workspaceContext.WorkspaceName" />
-                    <input type="hidden" name="WorkspaceShortName" value="@_workspaceContext.ShortName" />
-                    @foreach (var key in _workspaceContext.ModuleKeys)
-                    {
-                        <input type="hidden" name="WorkspaceModuleKeys" value="@key" />
-                    }
-                    @foreach (var ext in _workspaceContext.Extensions)
-                    {
-                        <input type="hidden" name="WorkspaceFolders" value="@ext.Folder" />
-                    }
+                    <span class="form-sec__note">Locked by @HydrationSourceLabel</span>
                 }
-
-                <section class="form-sec">
-                    <div class="form-sec__head">
-                        <span class="section-label">Workspace template</span>
-                        @if (_workspaceContext is not null)
-                        {
-                            <span class="form-sec__note">Locked by @HydrationSourceLabel</span>
-                        }
-                    </div>
-                    <div class="field">
-                        <label class="field__label" for="ext-template">Template</label>
-                        <span class="select-wrap">
-                            <select class="select" id="ext-template" name="TemplateKey" required
-                                    disabled="@(_workspaceContext is not null)"
-                                    @bind="_templateKey" @bind:after="OnTemplateChanged">
-                                @foreach (var t in _templates)
-                                {
-                                    <option value="@t.Key">@t.Name</option>
-                                }
-                            </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
-                        <FieldError Field="TemplateKey" Errors="_errors" />
-                        @* When the field is disabled the browser drops it from the
-                           form post, so mirror the value into a hidden input - the
-                           generation endpoint expects TemplateKey on every submit. *@
-                        @* _selected is non-null in both branches below because
-                           OnInitializedAsync picks a template whenever the list is
-                           non-empty and publishes both in the same synchronous
-                           block, so no render can see one without the other. *@
-                        @if (_workspaceContext is not null)
-                        {
-                            <input type="hidden" name="TemplateKey" value="@_templateKey" />
-                            <p class="form-sec__cap">
-                                Locked to <strong>@_selected!.Name</strong>, the template
-                                @HydrationSourceLabel was built from. @UnlockHint
-                            </p>
-                        }
-                        else
-                        {
-                            <p class="form-sec__cap">
-                                @_selected!.Description
-                                @if (!string.IsNullOrWhiteSpace(_selected.Defaults.Application))
-                                {
-                                    <span> · Default application: <code class="code">@_selected.Defaults.Application</code></span>
-                                }
-                            </p>
-                        }
-                    </div>
-                </section>
-
-                <section class="form-sec">
-                    <div class="form-sec__head"><span class="section-label">Extension</span></div>
-                    <div class="form-grid">
-                        <div class="field field--full">
-                            <label class="field__label" for="ext-name">Extension name <span class="req">*</span></label>
-                            <input class="input" id="ext-name" type="text" name="ExtensionName" placeholder="@ExtensionNamePlaceholder"
-                                   pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
-                                   title="Letters, digits and spaces only; must start with a letter."
-                                   @bind="_extensionName" @bind:event="oninput" />
-                            <span class="field__hint">
-                                Kept as you type it inside the extension. Spaces come out of the
-                                folder name. Letters, digits and spaces only; must start with a letter.
-                            </span>
-                            <FieldError Field="ExtensionName" Errors="_errors" />
-                        </div>
-                        <div class="field field--full">
-                            <label class="field__label" for="ext-brief">Short description</label>
-                            <input class="input" id="ext-brief" type="text" name="Brief" placeholder="One line, shown in app.json"
-                                   @bind="_brief" @bind:event="oninput" />
-                        </div>
-                        <div class="field field--full">
-                            <label class="field__label" for="ext-desc">Long description</label>
-                            <textarea class="textarea" id="ext-desc" name="Description" rows="3"
-                                      placeholder="Optional. Anything a colleague opening this extension should know."
-                                      @bind="_description" @bind:event="oninput"></textarea>
-                        </div>
-                    </div>
-                    @* Publisher comes from /admin/configuration/defaults at
-                       generation time. No form input - a standalone extension
-                       inherits whatever the org has configured, same as the
-                       workspace flow. *@
-                </section>
-
-                <section class="form-sec">
-                    <div class="form-sec__head">
-                        <span class="section-label">ID range</span>
-                        <span class="form-sec__note">Yours to keep clear of the rest of the workspace</span>
-                    </div>
-                    <IdRangeEditor IdPrefix="ext-id"
-                                   FromName="IdRangeFrom" ToName="IdRangeTo"
-                                   Label="Object IDs (first / last)"
-                                   FromLabel="First object ID" ToLabel="Last object ID"
-                                   Hint="Nothing checks this against your other extensions, so pick a range you know is free."
-                                   From="_idRangeFrom" FromChanged="v => _idRangeFrom = v"
-                                   To="_idRangeTo" ToChanged="v => _idRangeTo = v" />
-                    <FieldError Field="IdRangeFrom" Errors="_errors" />
-                    <FieldError Field="IdRangeTo" Errors="_errors" />
-                </section>
-
-                <section class="form-sec">
-                    <div class="form-sec__head"><span class="section-label">Application version</span></div>
-                    @if (_applicationVersions is null || _applicationVersions.Count == 0)
-                    {
-                        <div class="field">
-                            <label class="field__label" for="ext-app-version">Version</label>
-                            <input class="input" id="ext-app-version" type="text" name="ApplicationVersion" required
-                                   @bind="_applicationVersion" @bind:event="oninput" />
-                            <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
-                            <span class="field__hint">
-                                No application versions have been added for your organisation yet.
-                                An admin can curate them under
-                                <a href="/admin/application-versions">Application versions</a>.
-                            </span>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="field">
-                            <label class="field__label" for="ext-app-version">Version</label>
-                            <span class="select-wrap">
-                                <select class="select" id="ext-app-version" name="ApplicationVersion"
-                                        @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
-                                    @* "Latest" sentinel - resolves to the highest
-                                       active catalogue row at submit time. *@
-                                    <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
-                                    @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
-                                        && !_applicationVersions.Any(v => v.Application == _applicationVersion))
-                                    {
-                                        <option value="@_applicationVersion">@_applicationVersion (template default - not in catalogue)</option>
-                                    }
-                                    @foreach (var v in _applicationVersions)
-                                    {
-                                        <option value="@v.Application">@v.Name</option>
-                                    }
-                                </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
-                            <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
-                            <FieldError Field="ApplicationVersion" Errors="_errors" />
-                            <FieldError Field="RuntimeVersion" Errors="_errors" />
-                            <span class="field__hint">
-                                application <code class="code">@_applicationVersion</code> ·
-                                runtime <code class="code">@_runtimeVersion</code>
-                            </span>
-                        </div>
-                    }
-                </section>
-
-                <section class="form-sec">
-                    <div class="form-sec__head">
-                        <span class="section-label">Dependencies</span>
-                        <span class="form-sec__note">@_dependencies.Count selected</span>
-                    </div>
-                    <DependencyPicker Catalog="_catalog!" Value="_dependencies" ValueChanged="OnDependenciesChanged" />
-                    @* Hidden inputs serialise the picker's state into the form post.
-                       The endpoint reads them as four parallel string arrays. *@
-                    @foreach (var d in _dependencies)
-                    {
-                        <input type="hidden" name="DependencyIds" value="@d.DepId" />
-                        <input type="hidden" name="DependencyNames" value="@d.DepName" />
-                        <input type="hidden" name="DependencyPublishers" value="@d.DepPublisher" />
-                        <input type="hidden" name="DependencyVersions" value="@d.DepVersion" />
-                    }
-                </section>
-
-                </div>
-
-                <aside class="gen__aside">
-                    @* The GitHub half of this page (issue #623). One picked
-                       repository does two things - fills this form in from the
-                       solution's saved settings, and becomes the place the new
-                       extension can be added - so it is one control, not two. *@
-                    <div class="card">
-                        <div class="card__head">
-                            <div>
-                                <h4 class="card__title">Start from your solution on GitHub</h4>
-                                <p class="card__sub">Optional</p>
-                            </div>
-                        </div>
-                        <div class="card__body ext-repo">
-                            <RepositoryPicker Label="Solution repository"
-                                              InputId="ext-repo"
-                                              Selected="_repository"
-                                              SelectedChanged="OnRepositoryChangedAsync"
-                                              Disabled="_repoBusy || _hydrating"
-                                              Hint="Picking one fills this form in from the solution's saved settings, replacing anything already typed here." />
-                            @if (_hydrating)
-                            {
-                                <div class="loading-block">
-                                    <span class="spinner"></span><span>Reading the solution's settings...</span>
-                                </div>
-                            }
-                            @* The one line that reports what just happened, told
-                               apart from the static caption above it - otherwise
-                               the only news on the card reads as more boilerplate. *@
-                            @if (!string.IsNullOrEmpty(_repoMessage))
-                            {
-                                <p class="ext-repo__outcome" role="status">
-                                    <Icon Name="info" Width="14" Height="14" />
-                                    <span>@_repoMessage</span>
-                                </p>
-                            }
-                            @if (_repoErrors.Count > 0)
-                            {
-                                <ul class="ext-import__errors" role="alert">
-                                    @foreach (var err in _repoErrors)
-                                    {
-                                        <li class="field-error">
-                                            <Icon Name="circle-alert" Width="13" Height="13" />
-                                            @err.Value
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-
-                        @* The action sits with the control that enables it. It is
-                           deliberately not a second primary - the ZIP is still the
-                           default - and it says what it will do before it is
-                           pressed: a branch and a pull request in the user's own
-                           name, and nothing moved on the customer's own branch. *@
-                        @if (_repository is not null)
-                        {
-                            <div class="card__foot ext-deliver">
-                                @if (_delivery is not null)
-                                {
-                                    <p class="alert alert--success" role="status">
-                                        <Icon Name="circle-check" Width="16" Height="16" />
-                                        <span class="u-stack">
-                                            <span>
-                                                Pull request #@_delivery.PullRequest.Number was opened on
-                                                <strong>@_delivery.Repository.FullName</strong>, adding
-                                                <code class="code">@_delivery.FolderName/</code>. Review and
-                                                merge it there to bring the extension in. Anything you change
-                                                on this page now is not in it.
-                                            </span>
-                                            <span>
-                                                <a class="btn" href="@_delivery.PullRequest.HtmlUrl"
-                                                   target="_blank" rel="noopener">
-                                                    <Icon Name="external-link" Width="15" Height="15" />
-                                                    <span>Open pull request #@_delivery.PullRequest.Number</span>
-                                                </a>
-                                            </span>
-                                        </span>
-                                    </p>
-                                }
-                                <p>
-                                    @(_delivery is null ? "Adds" : "Adding again puts")
-                                    <code class="code">@FolderName/</code>
-                                    @(_delivery is null ? "to" : "in")
-                                    <strong>@_repository.FullName</strong> on a new branch and opens a pull
-                                    request for it, in your name and with your name on the commit. Nothing on
-                                    <code class="code">@_repository.DefaultBranch</code> changes until
-                                    someone merges it.
-                                </p>
-                                @* Spinner and busy label, as on Download ZIP:
-                                   opening the pull request takes seconds and a
-                                   merely disabled button reads as broken. *@
-                                @* Disabled while the picked repository's settings
-                                   are still being read - the plan would be built
-                                   from half-filled fields - but only _repoBusy
-                                   gets the spinner and the label, because only
-                                   _repoBusy is a pull request being opened. *@
-                                <button type="button" class="btn ext-repo__go @(_repoBusy ? "btn--loading" : null)"
-                                        disabled="@(_repoBusy || _hydrating)"
-                                        aria-busy="@(_repoBusy ? "true" : null)"
-                                        @onclick="AddToRepositoryAsync">
-                                    <span class="btn__spinner" aria-hidden="true"></span>
-                                    <span class="btn__label">
-                                        <Icon Name="git-branch" Width="15" Height="15" />
-                                        @(_delivery is null ? "Add to repository" : "Open another pull request")
-                                    </span>
-                                    <span class="btn__label-busy">Opening pull request...</span>
-                                </button>
-                            </div>
-                        }
-                    </div>
-
-                    <div class="card">
-                        <div class="card__head">
-                            <div>
-                                <h4 class="card__title">Start from a saved config</h4>
-                                <p class="card__sub">Optional</p>
-                            </div>
-                        </div>
-                        <div class="card__body ext-import">
-                            <div class="ext-import__row">
-                                <label class="btn btn--sm ext-import__button">
-                                    <Icon Name="upload" Width="14" Height="14" />
-                                    <span>Choose file...</span>
-                                    <InputFile OnChange="OnImportFileChosen" accept=".toml" class="ext-import__input" />
-                                </label>
-                                @if (!string.IsNullOrEmpty(_importFileName))
-                                {
-                                    <span class="ext-import__filename" title="@_importFileName">@_importFileName</span>
-                                }
-                                @if (_workspaceContext is not null)
-                                {
-                                    <button type="button" class="btn btn--sm" @onclick="ClearImportedWorkspace">Clear</button>
-                                }
-                            </div>
-                            <p class="field__hint">
-                                Refills this form from a <code class="code">@WorkspaceConfigService.FileName</code>
-                                you saved earlier. A workspace config locks the template and scaffolds a
-                                sibling extension; an extension config restores every field.
-                            </p>
-                            @if (!string.IsNullOrEmpty(_importMessage))
-                            {
-                                <p class="field__hint">@_importMessage</p>
-                            }
-                            @if (_importErrors.Count > 0)
-                            {
-                                <ul class="ext-import__errors" role="alert">
-                                    @foreach (var err in _importErrors)
-                                    {
-                                        <li class="field-error">
-                                            <Icon Name="circle-alert" Width="13" Height="13" />
-                                            @err.Key: @err.Value
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="card__head">
-                            <div>
-                                <h4 class="card__title">Preview</h4>
-                                <p class="card__sub">@FolderName</p>
-                            </div>
-                            @* The example-files switch lives here, not in the form
-                               below: flipping it strikes the affected rows out of
-                               the tree beside it, which is the whole explanation
-                               the option needs. *@
-                            <div class="preview__head-tools">
-                                <Switch Name="IncludeExamples" Label="Include example files"
-                                        @bind-Checked="_includeExamples" />
-                                <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
-                            </div>
-                        </div>
-                        @* Switch drives component state, so it posts nothing of its
-                           own - this carries the value into the form post. *@
-                        <input type="hidden" name="IncludeExamples" value="@(_includeExamples ? "true" : "false")" />
-                        <FolderTreePreview Root="BuildPreview()" />
-                    </div>
-
-                    <div class="gen__stats">
-                        <div class="stat-card stat-card--accent">
-                            <span class="stat-card__label">Extensions</span>
-                            <span class="stat-card__value">1</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-card__label">Dependencies</span>
-                            <span class="stat-card__value">@_dependencies.Count</span>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn--primary btn--lg gen__go" data-loading-button>
-                        <span class="btn__spinner" aria-hidden="true"></span>
-                        <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
-                        <span class="btn__label-busy">Generating...</span>
-                    </button>
-                    @* Written as one expression rather than text + @if: Razor
-                       reads "extension@if" as an email address and emits it
-                       verbatim. *@
-                    <span class="form-actions__note gen__note">@GenerateNote</span>
-
-                    <div class="card">
-                        <div class="card__head">
-                            <div><h4 class="card__title">After downloading</h4></div>
-                        </div>
-                        <div class="card__body ext-after">
-                            @if (_workspaceContext is not null)
-                            {
-                                <p>
-                                    Drop the <code class="code">@FolderName/</code> folder and the regenerated
-                                    @* Spaces come out of the file name, exactly as the generator
-                                       emits it - naming a file that is not in the ZIP sends the
-                                       user hunting. *@
-                                    <code class="code">@($"{CustomerNaming.Apply(_workspaceContext.WorkspaceName, FolderStyle)}.code-workspace")</code>
-                                    file into your existing workspace, replacing the old workspace
-                                    file. The new <code class="code">folders</code> array already lists every
-                                    extension plus the new one.
-                                </p>
-                            }
-                            else
-                            {
-                                <p>
-                                    Drop <code class="code">@FolderName/</code> into your existing workspace folder, then add
-                                    this line to the <code class="code">folders</code> array in your
-                                    <code class="code">.code-workspace</code>:
-                                </p>
-                                <div class="code-block">
-                                    <pre><code>@WorkspaceFoldersSnippet</code></pre>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </aside>
             </div>
-        </form>
-    }
-</div>
+            <div class="field">
+                <label class="field__label" for="ext-template">Template</label>
+                <span class="select-wrap">
+                    <select class="select" id="ext-template" name="TemplateKey" required
+                            disabled="@(_workspaceContext is not null)"
+                            @bind="_templateKey" @bind:after="OnTemplateChanged">
+                        @foreach (var t in _templates!)
+                        {
+                            <option value="@t.Key">@t.Name</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+                <FieldError Field="TemplateKey" Errors="_errors" />
+                @* When the field is disabled the browser drops it from the
+                   form post, so mirror the value into a hidden input - the
+                   generation endpoint expects TemplateKey on every submit. *@
+                @* _selected is non-null in both branches below because
+                   OnInitializedAsync picks a template whenever the list is
+                   non-empty and publishes both in the same synchronous
+                   block, so no render can see one without the other. *@
+                @if (_workspaceContext is not null)
+                {
+                    <input type="hidden" name="TemplateKey" value="@_templateKey" />
+                    <p class="form-sec__cap">
+                        Locked to <strong>@_selected!.Name</strong>, the template
+                        @HydrationSourceLabel was built from. @UnlockHint
+                    </p>
+                }
+                else
+                {
+                    <p class="form-sec__cap">
+                        @_selected!.Description
+                        @if (!string.IsNullOrWhiteSpace(_selected.Defaults.Application))
+                        {
+                            <span> · Default application: <code class="code">@_selected.Defaults.Application</code></span>
+                        }
+                    </p>
+                }
+            </div>
+        </section>
+
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Extension</span></div>
+            <div class="form-grid">
+                <div class="field field--full">
+                    <label class="field__label" for="ext-name">Extension name <span class="req">*</span></label>
+                    <input class="input" id="ext-name" type="text" name="ExtensionName" placeholder="@ExtensionNamePlaceholder"
+                           pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                           title="Letters, digits and spaces only; must start with a letter."
+                           @bind="_extensionName" @bind:event="oninput" />
+                    <span class="field__hint">
+                        Kept as you type it inside the extension. Spaces come out of the
+                        folder name. Letters, digits and spaces only; must start with a letter.
+                    </span>
+                    <FieldError Field="ExtensionName" Errors="_errors" />
+                </div>
+                <div class="field field--full">
+                    <label class="field__label" for="ext-brief">Short description</label>
+                    <input class="input" id="ext-brief" type="text" name="Brief" placeholder="One line, shown in app.json"
+                           @bind="_brief" @bind:event="oninput" />
+                </div>
+                <div class="field field--full">
+                    <label class="field__label" for="ext-desc">Long description</label>
+                    <textarea class="textarea" id="ext-desc" name="Description" rows="3"
+                              placeholder="Optional. Anything a colleague opening this extension should know."
+                              @bind="_description" @bind:event="oninput"></textarea>
+                </div>
+            </div>
+            @* Publisher comes from /admin/configuration/defaults at
+               generation time. No form input - a standalone extension
+               inherits whatever the org has configured, same as the
+               workspace flow. *@
+        </section>
+
+        <section class="form-sec">
+            <div class="form-sec__head">
+                <span class="section-label">ID range</span>
+                <span class="form-sec__note">Yours to keep clear of the rest of the workspace</span>
+            </div>
+            <IdRangeEditor IdPrefix="ext-id"
+                           FromName="IdRangeFrom" ToName="IdRangeTo"
+                           Label="Object IDs (first / last)"
+                           FromLabel="First object ID" ToLabel="Last object ID"
+                           Hint="Nothing checks this against your other extensions, so pick a range you know is free."
+                           From="_idRangeFrom" FromChanged="v => _idRangeFrom = v"
+                           To="_idRangeTo" ToChanged="v => _idRangeTo = v" />
+            <FieldError Field="IdRangeFrom" Errors="_errors" />
+            <FieldError Field="IdRangeTo" Errors="_errors" />
+        </section>
+
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Application version</span></div>
+            @if (_applicationVersions is null || _applicationVersions.Count == 0)
+            {
+                <div class="field">
+                    <label class="field__label" for="ext-app-version">Version</label>
+                    <input class="input" id="ext-app-version" type="text" name="ApplicationVersion" required
+                           @bind="_applicationVersion" @bind:event="oninput" />
+                    <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                    <span class="field__hint">
+                        No application versions have been added for your organisation yet.
+                        An admin can curate them under
+                        <a href="/admin/application-versions">Application versions</a>.
+                    </span>
+                </div>
+            }
+            else
+            {
+                <div class="field">
+                    <label class="field__label" for="ext-app-version">Version</label>
+                    <span class="select-wrap">
+                        <select class="select" id="ext-app-version" name="ApplicationVersion"
+                                @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
+                            @* "Latest" sentinel - resolves to the highest
+                               active catalogue row at submit time. *@
+                            <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
+                            @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+                                && !_applicationVersions.Any(v => v.Application == _applicationVersion))
+                            {
+                                <option value="@_applicationVersion">@_applicationVersion (template default - not in catalogue)</option>
+                            }
+                            @foreach (var v in _applicationVersions)
+                            {
+                                <option value="@v.Application">@v.Name</option>
+                            }
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
+                    <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                    <FieldError Field="ApplicationVersion" Errors="_errors" />
+                    <FieldError Field="RuntimeVersion" Errors="_errors" />
+                    <span class="field__hint">
+                        application <code class="code">@_applicationVersion</code> ·
+                        runtime <code class="code">@_runtimeVersion</code>
+                    </span>
+                </div>
+            }
+        </section>
+
+        <section class="form-sec">
+            <div class="form-sec__head">
+                <span class="section-label">Dependencies</span>
+                <span class="form-sec__note">@_dependencies.Count selected</span>
+            </div>
+            <DependencyPicker Catalog="_catalog!" Value="_dependencies" ValueChanged="OnDependenciesChanged" />
+            @* Hidden inputs serialise the picker's state into the form post.
+               The endpoint reads them as four parallel string arrays. *@
+            @foreach (var d in _dependencies)
+            {
+                <input type="hidden" name="DependencyIds" value="@d.DepId" />
+                <input type="hidden" name="DependencyNames" value="@d.DepName" />
+                <input type="hidden" name="DependencyPublishers" value="@d.DepPublisher" />
+                <input type="hidden" name="DependencyVersions" value="@d.DepVersion" />
+            }
+        </section>
+    </Form>
+    <Preview>
+        <div class="card">
+            <div class="card__head">
+                <div>
+                    <h4 class="card__title">Preview</h4>
+                    <p class="card__sub">@FolderName</p>
+                </div>
+                @* The example-files switch lives here, not in the form
+                   below: flipping it strikes the affected rows out of
+                   the tree beside it, which is the whole explanation
+                   the option needs. *@
+                <div class="preview__head-tools">
+                    <Switch Name="IncludeExamples" Label="Include example files"
+                            @bind-Checked="_includeExamples" />
+                    <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                </div>
+            </div>
+            @* Switch drives component state, so it posts nothing of its
+               own - this carries the value into the form post. *@
+            <input type="hidden" name="IncludeExamples" value="@(_includeExamples ? "true" : "false")" />
+            <FolderTreePreview Root="BuildPreview()" />
+        </div>
+    </Preview>
+    <Stats>
+        <div class="stat-card">
+            <span class="stat-card__label">Extensions</span>
+            <span class="stat-card__value">1</span>
+        </div>
+        <div class="stat-card stat-card--accent">
+            <span class="stat-card__label">Dependencies</span>
+            <span class="stat-card__value">@_dependencies.Count</span>
+        </div>
+    </Stats>
+    <PrimaryLabel><Icon Name="download" Width="15" Height="15" /> Download ZIP</PrimaryLabel>
+    <AsideCards>
+        @* Under Generate, not over it: both are optional, and above the preview they
+           pushed the page's one primary action below the fold at laptop height. The
+           sheet has the preview first. *@
+        @* The GitHub half of this page (issue #623). One picked
+           repository does two things - fills this form in from the
+           solution's saved settings, and becomes the place the new
+           extension can be added - so it is one control, not two. *@
+        <div class="card">
+            <div class="card__head">
+                <div>
+                    <h4 class="card__title">Start from your solution on GitHub</h4>
+                    <p class="card__sub">Optional</p>
+                </div>
+            </div>
+            <div class="card__body ext-repo">
+                <RepositoryPicker Label="Solution repository"
+                                  InputId="ext-repo"
+                                  Selected="_repository"
+                                  SelectedChanged="OnRepositoryChangedAsync"
+                                  Disabled="_repoBusy || _hydrating"
+                                  Hint="Picking one fills this form in from the solution's saved settings, replacing anything already typed here." />
+                @if (_hydrating)
+                {
+                    <div class="loading-block">
+                        <span class="spinner"></span><span>Reading the solution's settings...</span>
+                    </div>
+                }
+                @* The one line that reports what just happened, told
+                   apart from the static caption above it - otherwise
+                   the only news on the card reads as more boilerplate. *@
+                @if (!string.IsNullOrEmpty(_repoMessage))
+                {
+                    <p class="ext-repo__outcome" role="status">
+                        <Icon Name="info" Width="14" Height="14" />
+                        <span>@_repoMessage</span>
+                    </p>
+                }
+                @if (_repoErrors.Count > 0)
+                {
+                    <ul class="ext-import__errors" role="alert">
+                        @foreach (var err in _repoErrors)
+                        {
+                            <li class="field-error">
+                                <Icon Name="circle-alert" Width="13" Height="13" />
+                                @err.Value
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+
+            @* The action sits with the control that enables it. It is
+               deliberately not a second primary - the ZIP is still the
+               default - and it says what it will do before it is
+               pressed: a branch and a pull request in the user's own
+               name, and nothing moved on the customer's own branch. *@
+            @if (_repository is not null)
+            {
+                <div class="card__foot ext-deliver">
+                    @if (_delivery is not null)
+                    {
+                        <p class="alert alert--success" role="status">
+                            <Icon Name="circle-check" Width="16" Height="16" />
+                            <span class="u-stack">
+                                <span>
+                                    Pull request #@_delivery.PullRequest.Number was opened on
+                                    <strong>@_delivery.Repository.FullName</strong>, adding
+                                    <code class="code">@_delivery.FolderName/</code>. Review and
+                                    merge it there to bring the extension in. Anything you change
+                                    on this page now is not in it.
+                                </span>
+                                <span>
+                                    <a class="btn" href="@_delivery.PullRequest.HtmlUrl"
+                                       target="_blank" rel="noopener">
+                                        <Icon Name="external-link" Width="15" Height="15" />
+                                        <span>Open pull request #@_delivery.PullRequest.Number</span>
+                                    </a>
+                                </span>
+                            </span>
+                        </p>
+                    }
+                    <p>
+                        @(_delivery is null ? "Adds" : "Adding again puts")
+                        <code class="code">@FolderName/</code>
+                        @(_delivery is null ? "to" : "in")
+                        <strong>@_repository.FullName</strong> on a new branch and opens a pull
+                        request for it, in your name and with your name on the commit. Nothing on
+                        <code class="code">@_repository.DefaultBranch</code> changes until
+                        someone merges it.
+                    </p>
+                    @* Spinner and busy label, as on Download ZIP:
+                       opening the pull request takes seconds and a
+                       merely disabled button reads as broken. *@
+                    @* Disabled while the picked repository's settings
+                       are still being read - the plan would be built
+                       from half-filled fields - but only _repoBusy
+                       gets the spinner and the label, because only
+                       _repoBusy is a pull request being opened. *@
+                    <button type="button" class="btn ext-repo__go @(_repoBusy ? "btn--loading" : null)"
+                            disabled="@(_repoBusy || _hydrating)"
+                            aria-busy="@(_repoBusy ? "true" : null)"
+                            @onclick="AddToRepositoryAsync">
+                        <span class="btn__spinner" aria-hidden="true"></span>
+                        <span class="btn__label">
+                            <Icon Name="git-branch" Width="15" Height="15" />
+                            @(_delivery is null ? "Add to repository" : "Open another pull request")
+                        </span>
+                        <span class="btn__label-busy">Opening pull request...</span>
+                    </button>
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card__head">
+                <div>
+                    <h4 class="card__title">Start from a saved config</h4>
+                    <p class="card__sub">Optional</p>
+                </div>
+            </div>
+            <div class="card__body ext-import">
+                <div class="ext-import__row">
+                    <label class="btn btn--sm ext-import__button">
+                        <Icon Name="upload" Width="14" Height="14" />
+                        <span>Choose file...</span>
+                        <InputFile OnChange="OnImportFileChosen" accept=".toml" class="ext-import__input" />
+                    </label>
+                    @if (!string.IsNullOrEmpty(_importFileName))
+                    {
+                        <span class="ext-import__filename" title="@_importFileName">@_importFileName</span>
+                    }
+                    @if (_workspaceContext is not null)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="ClearImportedWorkspace">Clear</button>
+                    }
+                </div>
+                <p class="field__hint">
+                    Refills this form from a <code class="code">@WorkspaceConfigService.FileName</code>
+                    you saved earlier. A workspace config locks the template and scaffolds a
+                    sibling extension; an extension config restores every field.
+                </p>
+                @if (!string.IsNullOrEmpty(_importMessage))
+                {
+                    <p class="field__hint">@_importMessage</p>
+                }
+                @if (_importErrors.Count > 0)
+                {
+                    <ul class="ext-import__errors" role="alert">
+                        @foreach (var err in _importErrors)
+                        {
+                            <li class="field-error">
+                                <Icon Name="circle-alert" Width="13" Height="13" />
+                                @err.Key: @err.Value
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card__head">
+                <div><h4 class="card__title">After downloading</h4></div>
+            </div>
+            <div class="card__body ext-after">
+                @if (_workspaceContext is not null)
+                {
+                    <p>
+                        Drop the <code class="code">@FolderName/</code> folder and the regenerated
+                        @* Spaces come out of the file name, exactly as the generator
+                           emits it - naming a file that is not in the ZIP sends the
+                           user hunting. *@
+                        <code class="code">@($"{CustomerNaming.Apply(_workspaceContext.WorkspaceName, FolderStyle)}.code-workspace")</code>
+                        file into your existing workspace, replacing the old workspace
+                        file. The new <code class="code">folders</code> array already lists every
+                        extension plus the new one.
+                    </p>
+                }
+                else
+                {
+                    <p>
+                        Drop <code class="code">@FolderName/</code> into your existing workspace folder, then add
+                        this line to the <code class="code">folders</code> array in your
+                        <code class="code">.code-workspace</code>:
+                    </p>
+                    <div class="code-block">
+                        <pre><code>@WorkspaceFoldersSnippet</code></pre>
+                    </div>
+                }
+            </div>
+        </div>
+    </AsideCards>
+</GeneratorPage>
 
 @code {
     /// <summary>The line under the Generate button: what this run will produce.</summary>

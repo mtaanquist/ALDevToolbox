@@ -15,79 +15,62 @@
     system's .diff block from 8a. See .design/design-migration.md.
 *@
 
-<div class="page">
-    @* No wrapper class: .page is a grid with its own gap, and .rd-back's extra
-       margin is scoped to the recipe page anyway. *@
-    <div>
-        <a class="btn" href="/admin/audit">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to audit log</span>
-        </a>
-    </div>
-
-    @if (_entry is null)
-    {
-        <div class="loading-block">
-            <span class="spinner"></span><span>Loading change...</span>
-        </div>
-    }
-    else if (_notFound)
-    {
+@* Crumbs where this page used to have a "Back to audit log" button: the detail
+   sheet has no back button, and the crumb is the same link in the place every
+   other detail page keeps it. *@
+<DetailPage IsLoading="@(_entry is null)" LoadingText="Loading change..." IsNotFound="@_notFound"
+            Title="@TitleText" TitleTooltip="@(_entry is null ? null : $"{_entry.EntityType} #{_entry.EntityId}")">
+    <NotFound>
         <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="circle-alert" Width="21" Height="21" /></span>
-                <span class="empty-state__title">That change is not here</span>
-                <span class="empty-state__text">
-                    Entry <code>#@Id</code> does not exist in your organisation. It may
-                    belong to another one, or have been removed with the record it
-                    described.
-                </span>
-                <a class="btn empty-state__action" href="/admin/audit">Back to audit log</a>
-            </div>
+            <EmptyState Icon="circle-alert" Title="That change is not here" Heading="true">
+                <Text>
+                Entry <code>#@Id</code> does not exist in your organisation. It may
+                belong to another one, or have been removed with the record it
+                described.
+                </Text>
+                <Action><a class="btn" href="/admin/audit">Back to audit log</a></Action>
+            </EmptyState>
         </div>
-    }
-    else
-    {
-        <div class="detail-head">
-            <div>
-                <div class="detail-head__title-row">
-                    @* The row id moves to the title attribute: it is what the
-                       audit page's entity-id filter takes, and nothing a reader
-                       wants on screen. See issue #554. *@
-                    <h1 class="detail-head__title" title="@($"{_entry.EntityType} #{_entry.EntityId}")">
-                        @FriendlyAuditType(_entry.EntityType)@if (AuditSubjectOf(_entry).Name is { } subject)
-                        {<text>: </text>@subject}
-                    </h1>
-                    <span class="status-pill @AuditActionPill(_entry.Action)">@_entry.Action</span>
-                </div>
-                <p class="page-head__sub">
-                    What changed when @_entry.ChangedBy @AuditVerb(_entry.Action) this record.
-                    The "after" side is taken from the next change to the same record, so the
-                    most recent change has nothing to compare against yet.
-                </p>
-            </div>
+    </NotFound>
+    <Crumbs>
+        <a href="/admin/audit">Audit log</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Change #@Id</span>
+    </Crumbs>
+    <TitleRow>
+        <span class="status-pill @AuditActionPill(_entry!.Action)">@_entry.Action</span>
+    </TitleRow>
+    <SubtitleContent>
+        What changed when @_entry!.ChangedBy @AuditVerb(_entry.Action) this record.
+        The "after" side is taken from the next change to the same record, so the
+        most recent change has nothing to compare against yet.
+    </SubtitleContent>
+    <Meta>
+        <div class="meta-item">
+            <span class="meta-item__label">When (UTC)</span>
+            <span class="meta-item__value">@_entry!.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</span>
         </div>
-
-        <div class="meta-row">
-            <div class="meta-item">
-                <span class="meta-item__label">When (UTC)</span>
-                <span class="meta-item__value">@_entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-item__label">Changed by</span>
-                <span class="meta-item__value">@_entry.ChangedBy</span>
-            </div>
+        <div class="meta-item">
+            <span class="meta-item__label">Changed by</span>
+            <span class="meta-item__value">@_entry!.ChangedBy</span>
         </div>
-
+    </Meta>
+    <ChildContent>
         <AuditDiffViewer
             BeforeJson="@_beforeJson"
             AfterJson="@_afterJson"
             BeforeLabel="@_beforeLabel"
             AfterLabel="@_afterLabel" />
-    }
-</div>
+    </ChildContent>
+</DetailPage>
 
 @code {
+    /// <summary>The kind of record, and its name when the snapshot carries one.</summary>
+    private string TitleText => _entry is null ? string.Empty
+        : AuditSubjectOf(_entry).Name is { } subject
+            ? $"{FriendlyAuditType(_entry.EntityType)}: {subject}"
+            : FriendlyAuditType(_entry.EntityType);
+
     [Parameter] public int Id { get; set; }
 
     private AuditLogEntry? _entry;

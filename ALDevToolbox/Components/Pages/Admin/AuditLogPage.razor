@@ -25,106 +25,95 @@
     See .design/design-migration.md.
 *@
 
-<div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Audit log</h1>
-            <p class="page-head__sub">
-                Every change to templates, modules, the dependency catalogue,
-                recipes and other tracked records - newest first. Open an entry
-                to see exactly which fields changed.
-            </p>
-        </div>
-    </div>
-
-    @*
-        Filters apply on change rather than waiting for a submit button: selects
-        fire change events synchronously, and the text inputs submit on Enter or
-        when they lose focus. Keeping the form GET-based preserves bookmarkable
-        URLs and uses the same SupplyParameterFromQuery wiring as the rest of the
-        audit family.
-    *@
-    <form method="get" action="/admin/audit" class="card filter-grid" onchange="this.submit()">
-        <label class="field">
-            <span class="field__label">Entity type</span>
-            <span class="select-wrap">
-                <select class="select" name="entityType">
-                    <option value="">Any</option>
-                    @foreach (var type in Enum.GetValues<AuditEntityType>())
-                    {
-                        <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
-                    }
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-        </label>
-        <label class="field">
-            <span class="field__label">Action</span>
-            <span class="select-wrap">
-                <select class="select" name="action">
-                    <option value="">Any</option>
-                    @foreach (var act in Enum.GetValues<AuditAction>())
-                    {
-                        <option value="@act" selected="@(Action == act.ToString())">@act</option>
-                    }
-                </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
-        </label>
-        <label class="field">
-            <span class="field__label">Record id</span>
-            <input class="input" type="text" name="entityId" value="@EntityId" placeholder="exact match" />
-        </label>
-        <label class="field">
-            <span class="field__label">Changed by</span>
-            <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
-        </label>
-        <label class="field">
-            <span class="field__label">From (UTC)</span>
-            <input class="input" type="datetime-local" name="from" value="@FromUtc" />
-        </label>
-        <label class="field">
-            <span class="field__label">To (UTC)</span>
-            <input class="input" type="datetime-local" name="to" value="@ToUtc" />
-        </label>
-    </form>
-
-    @if (_entries is null)
-    {
-        <div class="loading-block">
-            <span class="spinner"></span><span>Loading changes...</span>
-        </div>
-    }
-    else if (_entries.Count == 0)
-    {
+<ListPage Title="Audit log" ShowActions="true" FiltersWhenEmpty="true"
+          IsLoading="@(_entries is null)"
+          IsEmpty="@(_entries is not null && _entries.Count == 0 && _total == 0 && !HasAnyFilter())"
+          HasNoMatches="@(_entries is not null && _entries.Count == 0)">
+    <SubtitleContent>
+        Every change to templates, modules, the dependency catalogue,
+        recipes and other tracked records - newest first. Open an entry
+        to see exactly which fields changed.
+    </SubtitleContent>
+    <Notices>
+        @*
+            Filters apply on change rather than waiting for a submit button: selects
+            fire change events synchronously, and the text inputs submit on Enter or
+            when they lose focus. Keeping the form GET-based preserves bookmarkable
+            URLs and uses the same SupplyParameterFromQuery wiring as the rest of the
+            audit family.
+        *@
+        <form method="get" action="/admin/audit" class="card filter-grid" onchange="this.submit()">
+            <label class="field">
+                <span class="field__label">Entity type</span>
+                <span class="select-wrap">
+                    <select class="select" name="entityType">
+                        <option value="">Any</option>
+                        @foreach (var type in Enum.GetValues<AuditEntityType>())
+                        {
+                            <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+            </label>
+            <label class="field">
+                <span class="field__label">Action</span>
+                <span class="select-wrap">
+                    <select class="select" name="action">
+                        <option value="">Any</option>
+                        @foreach (var act in Enum.GetValues<AuditAction>())
+                        {
+                            <option value="@act" selected="@(Action == act.ToString())">@act</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+            </label>
+            <label class="field">
+                <span class="field__label">Record id</span>
+                <input class="input" type="text" name="entityId" value="@EntityId" placeholder="exact match" />
+            </label>
+            <label class="field">
+                <span class="field__label">Changed by</span>
+                <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
+            </label>
+            <label class="field">
+                <span class="field__label">From (UTC)</span>
+                <input class="input" type="datetime-local" name="from" value="@FromUtc" />
+            </label>
+            <label class="field">
+                <span class="field__label">To (UTC)</span>
+                <input class="input" type="datetime-local" name="to" value="@ToUtc" />
+            </label>
+        </form>
+    </Notices>
+    <Loading>
+        <LoadingBlock Text="Loading changes..." />
+    </Loading>
+    <Empty>
         <div class="card">
-            @if (_total == 0 && !HasAnyFilter())
-            {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="history" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No changes recorded yet</span>
-                    <span class="empty-state__text">
-                        As soon as someone edits a template, module, catalogue entry
-                        or recipe, the change shows up here with who made it.
-                    </span>
-                </div>
-            }
-            else
-            {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No changes match these filters</span>
-                    <span class="empty-state__text">Try widening the date range, or clear the filters to see everything.</span>
-                    <a class="btn empty-state__action" href="/admin/audit">Clear filters</a>
-                </div>
-            }
+            <EmptyState Icon="history" Title="No changes recorded yet">
+                <Text>
+                    As soon as someone edits a template, module, catalogue entry
+                    or recipe, the change shows up here with who made it.
+                </Text>
+            </EmptyState>
         </div>
-    }
-    else
-    {
+    </Empty>
+    <NoMatches>
+        <div class="card">
+            <EmptyState Icon="funnel-x" Title="No changes match these filters">
+                <Text>Try widening the date range, or clear the filters to see everything.</Text>
+                <Action>
+                    <a class="btn" href="/admin/audit">Clear filters</a>
+                </Action>
+            </EmptyState>
+        </div>
+    </NoMatches>
+    <ChildContent>
         <div class="card">
             <div class="audit">
-                @foreach (var e in _entries)
+                @foreach (var e in _entries ?? new())
                 {
                     <div class="audit__entry">
                         <a class="audit__sum" href="@($"/admin/audit/{e.Id}/diff")">
@@ -190,8 +179,8 @@
                 }
             </span>
         </nav>
-    }
-</div>
+    </ChildContent>
+</ListPage>
 
 @code {
     private const int PageSize = 50;

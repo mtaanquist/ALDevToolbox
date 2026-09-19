@@ -167,6 +167,18 @@ public sealed class ProjectConnectionServiceTests : IDisposable
                 false, "app", DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow));
         }
 
+        /// <summary>What an update was asked to do, so a test can pin the version and the timing.</summary>
+        public (Guid AppId, string Version, bool InWindow)? Updated;
+
+        public Task<BcAppOperation> UpdateAppAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, CancellationToken ct = default)
+        {
+            Updated = (appId, targetVersion, useEnvironmentUpdateWindow);
+            return Task.FromResult(new BcAppOperation(
+                Guid.NewGuid(), appId, "update", BcAppOperationStatus.Scheduled, "scheduled",
+                string.Empty, targetVersion, null, string.Empty, string.Empty, string.Empty,
+                true, "app", DateTimeOffset.UtcNow, null, null));
+        }
+
         public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
@@ -1047,6 +1059,87 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Environment"];
         error.Should().Contain("didn't cancel");
+    }
+
+    // ── Updating an AppSource app ─────────────────────────────────────────
+
+    private static readonly Guid WaitingAppId = Guid.NewGuid();
+
+    private static FakeAppManagementClient AppsWithWaiting(params BcAppUpdateRequirement[] requirements) => new()
+    {
+        OnAvailable = () => new[]
+        {
+            new BcAvailableAppUpdate(WaitingAppId, "Continia Core", "Continia Software", "28.5.0.1", requirements),
+        },
+    };
+
+    [Fact]
+    public async Task A_ready_app_update_is_sent_at_the_offered_version_and_clears_the_cached_panel()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = AppsWithWaiting();
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+
+        var operation = await svc.UpdateAppAsync(projectId, envId, WaitingAppId, "28.5.0.1", useUpdateWindow: true);
+
+        operation.Status.Should().Be(BcAppOperationStatus.Scheduled);
+        apps.Updated.Should().Be((WaitingAppId, "28.5.0.1", true));
+        _panelCache.Get(projectId, envId).Should().BeNull("the page must re-read after our own write, not show the old list");
+    }
+
+    [Fact]
+    public async Task An_app_update_is_refused_for_a_version_business_central_is_not_offering()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = AppsWithWaiting();
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+
+        var stale = () => svc.UpdateAppAsync(projectId, envId, WaitingAppId, "28.4.0.0", useUpdateWindow: false);
+        (await stale.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"].Should().Contain("28.5.0.1");
+
+        var unknown = () => svc.UpdateAppAsync(projectId, envId, Guid.NewGuid(), "28.5.0.1", useUpdateWindow: false);
+        (await unknown.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"].Should().Contain("no longer has an update waiting");
+
+        var blank = () => svc.UpdateAppAsync(projectId, envId, WaitingAppId, " ", useUpdateWindow: false);
+        (await blank.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("App");
+
+        apps.Updated.Should().BeNull("nothing may reach the customer's tenant on a refusal");
+    }
+
+    [Fact]
+    public async Task An_app_that_waits_for_another_is_not_updated()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = AppsWithWaiting(new BcAppUpdateRequirement(Guid.NewGuid(), "Continia System Application", "Continia Software", "28.5.0.0", "update"));
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .UpdateAppAsync(projectId, envId, WaitingAppId, "28.5.0.1", useUpdateWindow: true);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"]
+            .Should().Contain("Continia System Application");
+        apps.Updated.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Someone_who_does_not_manage_the_solution_cannot_update_its_apps()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9777, "stranger@example.com", UserRole.User);
+        _db.OrgContext.CurrentUserId = 9777;
+        var apps = AppsWithWaiting();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .UpdateAppAsync(projectId, envId, WaitingAppId, "28.5.0.1", useUpdateWindow: true);
+
+        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        apps.Updated.Should().BeNull();
     }
 
     [Fact]

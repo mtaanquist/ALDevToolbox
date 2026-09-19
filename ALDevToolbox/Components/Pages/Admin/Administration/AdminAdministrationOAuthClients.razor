@@ -46,21 +46,17 @@
 
             @if (_rows is null)
             {
-                <div class="loading-block loading-block--under-table">
-                    <span class="spinner"></span><span>Loading...</span>
-                </div>
+                <LoadingBlock Text="Loading..." UnderTable="true" />
             }
             else if (_rows.Count == 0)
             {
-                <div class="empty-state">
-                    <span class="empty-state__icon"><Icon Name="plug" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No assistants connected yet</span>
-                    <span class="empty-state__text">
+                <EmptyState Icon="plug" Title="No assistants connected yet">
+                    <Text>
                         When someone adds AL Dev Toolbox as a connector in Claude (or another
                         supported assistant) and clicks <strong>Allow</strong>, their connection
                         appears here.
-                    </span>
-                </div>
+                    </Text>
+                </EmptyState>
             }
             else
             {
@@ -72,7 +68,7 @@
                             <th>User</th>
                             <th>Permissions</th>
                             <th>Granted</th>
-                            <th class="data-table__actions"></th>
+                            <th class="data-table__actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody>

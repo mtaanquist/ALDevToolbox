@@ -20,34 +20,36 @@
     See .design/design-migration.md.
 *@
 
-<div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Cookbook</h1>
-            <p class="page-head__sub">
-                Reusable AL recipes - from one-file snippets to almost-complete
-                modules. Search by title, description, or keywords; open one to
-                view its files and copy them into your project.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn" href="/cookbook/suggest">
-                <Icon Name="lightbulb" Width="16" Height="16" />
-                <span>Suggest a recipe</span>
-            </a>
-        </div>
-    </div>
-
-    <div class="filter-bar">
-        <span class="search filter-bar__search">
-            <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-            <input type="search"
-                   class="input"
-                   placeholder="Search the cookbook..."
-                   value="@_query"
-                   @oninput="OnQueryChanged"
-                   aria-label="Search the cookbook" />
-        </span>
+<ListPage Title="Cookbook" FiltersWhileLoading="true" FiltersWhenEmpty="true" LoadingText="Loading recipes..."
+          Subtitle="Reusable AL recipes - from one-file snippets to almost-complete modules. Search by title, description, or keywords; open one to view its files and copy them into your project."
+          IsLoading="@(_results is null)" IsEmpty="@(IsFirstRun && Rows.Count == 0)" HasNoMatches="@(Rows.Count == 0)">
+    <Crumbs>
+        <a href="/">Home</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>Cookbook</span>
+    </Crumbs>
+    <Actions>
+        <a class="btn" href="/cookbook/suggest">
+            <Icon Name="lightbulb" Width="16" Height="16" />
+            <span>Suggest a recipe</span>
+        </a>
+    </Actions>
+    <Search>
+        <input type="search"
+               class="input"
+               placeholder="Search the cookbook..."
+               value="@_query"
+               @oninput="OnQueryChanged"
+               aria-label="Search the cookbook" />
+    </Search>
+    <Filters>
+        <label class="check @(_includeDeprecated ? "is-checked" : "")">
+            <input type="checkbox" @bind="_includeDeprecated" @bind:after="ReloadAsync" />
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+            Include deprecated
+        </label>
+    </Filters>
+    <Trailing>
         <div class="pill-tabs" role="group" aria-label="Filter by type">
             @foreach (var option in _typeOptions)
             {
@@ -64,117 +66,86 @@
                 </button>
             }
         </div>
-        <span class="filter-bar__spacer"></span>
-        <label class="check @(_includeDeprecated ? "is-checked" : "")">
-            <input type="checkbox" @bind="_includeDeprecated" @bind:after="ReloadAsync" />
-            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-            Include deprecated
-        </label>
-    </div>
-
-    @if (_results is null)
-    {
-        <div class="loading-block">
-            <span class="spinner"></span><span>Loading recipes...</span>
-        </div>
-    }
-    else
-    {
-        var rows = ApplyTypeFilter(_results);
-        if (rows.Count == 0)
-        {
-            <div class="card">
-                @if (IsFirstRun)
-                {
-                    <div class="empty-state">
-                        <span class="empty-state__icon"><Icon Name="lightbulb" Width="21" Height="21" /></span>
-                        <span class="empty-state__title">No recipes yet</span>
-                        <span class="empty-state__text">
-                            No recipes in this organisation yet. If you have an AL pattern worth
-                            reusing, suggest it and an admin will review and publish it.
-                        </span>
-                        <a class="btn btn--primary empty-state__action" href="/cookbook/suggest">
-                            <Icon Name="lightbulb" Width="15" Height="15" />
-                            <span>Suggest a recipe</span>
-                        </a>
-                    </div>
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                        <span class="empty-state__title">
-                            @if (string.IsNullOrWhiteSpace(_query))
-                            {
-                                <text>No recipes match these filters</text>
-                            }
-                            else
-                            {
-                                <text>No recipes match "@_query"</text>
-                            }
-                        </span>
-                        <span class="empty-state__text">Try a shorter search term, or clear the type filter.</span>
-                        <button class="btn empty-state__action" type="button" @onclick="ClearFiltersAsync">Clear filters</button>
-                    </div>
-                }
-            </div>
-        }
-        else
-        {
-            <div class="card-grid">
-                @foreach (var s in rows)
-                {
-                    var tags = SplitKeywords(s.Keywords);
-                    var fileCount = _fileCounts.GetValueOrDefault(s.Id);
-                    <a class="browse-card cb-card" href="@($"/cookbook/{s.Id}")">
-                        <div class="browse-card__top">
-                            <span class="browse-card__title">@s.Title</span>
-                            <span class="cb-card__badges">
-                                <RecipeTypeBadge Type="s.Type" />
-                                @if (s.Deprecated)
-                                {
-                                    <span class="status-pill status-pill--warn">
-                                        <Icon Name="archive" Width="12" Height="12" />
-                                        Deprecated
-                                    </span>
-                                }
-                            </span>
-                        </div>
-                        @* The minimum version is a subtitle, not a keyword. It
-                           used to be a mono chip in the row below, where it was
-                           miscategorised (it is metadata, not a tag), styled as
-                           an identifier though it reads as a sentence, and wide
-                           enough to escape the card. It was also hidden outright
-                           on a deprecated recipe, which is where knowing the
-                           version matters most. *@
-                        @if (s.MinimumApplicationVersion is { } minV)
-                        {
-                            <span class="cb-card__req">@minV.Name or later</span>
-                        }
-                        <span class="browse-card__text">@s.Description</span>
-                        <div class="browse-card__tags">
-                            @foreach (var tag in tags.Take(6))
-                            {
-                                <span class="tag">@tag</span>
-                            }
-                            @if (tags.Count > 6)
-                            {
-                                <span class="tag cb-card__more">+@(tags.Count - 6)</span>
-                            }
-                        </div>
-                        <div class="browse-card__foot">
-                            <span class="cb-card__files">
-                                <Icon Name="file-code" Width="13" Height="13" />
-                                <span>@fileCount file@(fileCount == 1 ? "" : "s")</span>
-                            </span>
-                            <span class="cb-card__go">View recipe<Icon Name="arrow-right" Width="13" Height="13" /></span>
-                        </div>
+    </Trailing>
+    <Empty>
+        <div class="card">
+            <EmptyState Icon="lightbulb" Title="No recipes yet">
+                <Text>
+                    No recipes in this organisation yet. If you have an AL pattern worth
+                    reusing, suggest it and an admin will review and publish it.
+                </Text>
+                <Action>
+                    <a class="btn btn--primary" href="/cookbook/suggest">
+                        <Icon Name="lightbulb" Width="15" Height="15" />
+                        <span>Suggest a recipe</span>
                     </a>
-                }
-            </div>
-        }
-    }
-</div>
+                </Action>
+            </EmptyState>
+        </div>
+    </Empty>
+    <NoMatches>
+        <div class="card">
+            <EmptyState Icon="funnel-x"
+                        Title="@(string.IsNullOrWhiteSpace(_query) ? "No recipes match these filters" : $"No recipes match \"{_query}\"")">
+                <Text>Try a shorter search term, or clear the type filter.</Text>
+                <Action><button class="btn" type="button" @onclick="ClearFiltersAsync">Clear filters</button></Action>
+            </EmptyState>
+        </div>
+    </NoMatches>
+    <ChildContent>
+        <div class="card-grid">
+            @foreach (var s in Rows)
+            {
+                var tags = SplitKeywords(s.Keywords);
+                var fileCount = _fileCounts.GetValueOrDefault(s.Id);
+                <a class="browse-card cb-card" href="@($"/cookbook/{s.Id}")">
+                    <div class="browse-card__top">
+                        <span class="browse-card__title">@s.Title</span>
+                        <span class="cb-card__badges">
+                            <RecipeTypeBadge Type="s.Type" />
+                            @if (s.Deprecated)
+                            {
+                                <span class="status-pill status-pill--warn">
+                                    <Icon Name="archive" Width="12" Height="12" />
+                                    Deprecated
+                                </span>
+                            }
+                        </span>
+                    </div>
+                    @* The minimum version is a subtitle, not a keyword. It
+                       used to be a mono chip in the row below, where it was
+                       miscategorised (it is metadata, not a tag), styled as
+                       an identifier though it reads as a sentence, and wide
+                       enough to escape the card. It was also hidden outright
+                       on a deprecated recipe, which is where knowing the
+                       version matters most. *@
+                    @if (s.MinimumApplicationVersion is { } minV)
+                    {
+                        <span class="cb-card__req">@minV.Name or later</span>
+                    }
+                    <span class="browse-card__text">@s.Description</span>
+                    <div class="browse-card__tags">
+                        @foreach (var tag in tags.Take(6))
+                        {
+                            <span class="tag">@tag</span>
+                        }
+                        @if (tags.Count > 6)
+                        {
+                            <span class="tag cb-card__more">+@(tags.Count - 6)</span>
+                        }
+                    </div>
+                    <div class="browse-card__foot">
+                        <span class="cb-card__files">
+                            <Icon Name="file-code" Width="13" Height="13" />
+                            <span>@fileCount file@(fileCount == 1 ? "" : "s")</span>
+                        </span>
+                        <span class="cb-card__go">View recipe<Icon Name="arrow-right" Width="13" Height="13" /></span>
+                    </div>
+                </a>
+            }
+        </div>
+    </ChildContent>
+</ListPage>
 
 @code {
     /// <summary>
@@ -288,6 +259,9 @@
     /// True only when the organisation genuinely has no recipes — not when a
     /// filter simply matched none. The two empty states offer different actions.
     /// </summary>
+    /// <summary>What the type tabs leave of the loaded results.</summary>
+    private List<Recipe> Rows => _results is null ? new() : ApplyTypeFilter(_results);
+
     private bool IsFirstRun =>
         _results is { Count: 0 } && string.IsNullOrWhiteSpace(_query) && _typeFilter is null && !_includeDeprecated;
 

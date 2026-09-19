@@ -20,17 +20,17 @@ namespace ALDevToolbox.Tests.Components;
 /// schedules platform updates for around a hundred solutions and reads this table
 /// across, row by row.
 ///
-/// <para>Both rules pinned here are layout ones that only a render can show, and both
-/// were shipped wrong once (#805, #807): the row's way into its history belongs in a
-/// column of its own rather than inside the Environment cell, and the search box and
-/// the button that submits it have to be one row - a `form` is a block, so the button
-/// drops underneath the box unless something makes the form lay out across.</para>
+/// <para>The page follows the design's actionable-list sheet (PageUpgrades.dc.html):
+/// one command bar whose selection commands are disabled until a row is ticked, a
+/// glyph for state, and the row's commands - history first - in one trailing menu
+/// rather than as buttons inside data cells, which is what #805 got wrong.</para>
 /// </summary>
 public sealed class UpgradesPageTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
     private const int AdminUserId = 9850;
+    private static readonly Guid TenantId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
     public UpgradesPageTests()
     {
@@ -90,6 +90,7 @@ public sealed class UpgradesPageTests : IDisposable
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS Denmark",
+            BcTenantId = TenantId,
             CreatedByUserId = AdminUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -133,93 +134,102 @@ public sealed class UpgradesPageTests : IDisposable
     }
 
     [Fact]
-    public async Task The_history_toggle_is_a_column_of_its_own_not_part_of_the_environment_cell()
+    public async Task History_opens_from_the_row_menu_and_no_data_cell_holds_a_button()
     {
         await SeedOneEnvironmentAsync();
 
         var cut = RenderWithOneRow();
 
         var headers = cut.FindAll(".data-table thead th").Select(h => h.TextContent.Trim()).ToList();
-        headers.Last().Should().Be("History");
+        headers.Last().Should().Be("Actions");
 
-        // An action in a data cell made every row three lines tall (#805): the toggle
-        // lives in the trailing cell now, and the Environment cell is back to a name
-        // and its type.
+        // An action in a data cell made every row three lines tall (#805). The sheet
+        // puts the row's commands in one kebab in the trailing cell, history first
+        // because it is the entry every row has and the only one that changes nothing.
         var cells = cut.FindAll(".data-table tbody tr td");
-        var history = cells.Last();
-        var toggle = history.QuerySelector("button");
-        toggle.Should().NotBeNull();
-        // A verb, like every other button here, and it says which way it goes.
-        toggle!.TextContent.Trim().Should().Be("Show history");
-        // The button still announces whether the panel under the row is open.
-        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        var items = cells.Last().QuerySelectorAll(".ra__menu .menu__item")
+            .Select(i => i.TextContent.Trim()).ToList();
+        items.Should().Equal(
+            "Update history", "Move this date to the latest", "Start this update...",
+            "Open environment", "Open in Business Central");
+        // The tenant comes from the solution's own connection; the name is a path segment.
+        cells.Last().QuerySelector("a.menu__item[target=_blank]")!.GetAttribute("href").Should().Be(
+            "https://businesscentral.dynamics.com/11111111-2222-3333-4444-555555555555/Production");
+        cells.Take(cells.Count - 1).SelectMany(c => c.QuerySelectorAll("button")).Should().BeEmpty();
 
-        // The toggle is all the cell holds: a booking reads beside the date it
-        // competes with, in the next-update cell.
-        history.QuerySelectorAll("button").Should().HaveCount(1);
-        cut.Find(".upg-env").TextContent.Should().NotContain("history");
+        cells.Last().QuerySelector(".menu__item")!.Click();
+        cut.WaitForAssertion(() => cut.Find("tr.is-subrow .upg-feed__title").TextContent
+            .Should().Be("Update history - CRONUS Denmark, Production"));
     }
 
     [Fact]
-    public async Task The_search_box_and_its_button_are_in_one_form_that_lays_them_out_across()
+    public async Task Commands_that_need_a_selection_are_disabled_until_a_row_is_ticked()
     {
         await SeedOneEnvironmentAsync();
 
         var cut = RenderWithOneRow();
 
-        // The sizing class belongs on the box; the form is the row holding the box and
-        // the button that submits it. With the class on the form itself, the button
-        // dropped underneath the box and the filters beside it read as a jumble (#805).
-        var form = cut.Find(".filter-bar form.upg-search");
-        form.QuerySelector("span.search.filter-bar__search input[type=search]").Should().NotBeNull();
-        form.QuerySelector("button[type=submit]")!.TextContent.Trim().Should().Be("Search");
-        form.ClassList.Should().NotContain("filter-bar__search");
+        // One bar, not a filter row over a selection row: view, search, commands.
+        cut.Find(".cmdbar .cmdbar__row > .search.cmdbar__search input[type=search]").Should().NotBeNull();
+        cut.FindAll(".filter-bar").Should().BeEmpty();
+
+        var commands = cut.FindAll(".cmdbar .cmdbar__group:last-child button");
+        commands.Select(c => c.TextContent.Trim()).Should().Equal("Move dates", "Start update...", "Refresh");
+        commands[0].HasAttribute("disabled").Should().BeTrue();
+        commands[1].HasAttribute("disabled").Should().BeTrue();
+        commands[2].HasAttribute("disabled").Should().BeFalse();
+        // The page's one primary.
+        cut.FindAll(".btn--primary").Should().ContainSingle().Which.TextContent.Trim().Should().Be("Move dates");
+
+        cut.Find("tbody .data-table__col-check input").Change(true);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tbody tr").ClassList.Should().Contain("is-selected");
+            cut.FindAll(".cmdbar .cmdbar__group:last-child button")[0].HasAttribute("disabled").Should().BeFalse();
+        });
     }
 
-    // ── Business Central is never reached by a render ───────────────────
-
-    private sealed class UnreachableHttpClientFactory : IHttpClientFactory
+    [Fact]
+    public async Task State_is_a_named_glyph_and_the_type_sits_under_the_environment()
     {
-        public HttpClient CreateClient(string name) => throw new NotSupportedException();
+        await SeedOneEnvironmentAsync();
+
+        var cut = RenderWithOneRow();
+
+        cut.Find("tbody tr").ClassList.Should().Contain("is-published");
+        cut.Find("tbody .data-table__col-state [role=img]").GetAttribute("aria-label").Should().Be("Running");
+        cut.FindAll("tbody .status-pill").Should().BeEmpty();
+        cut.Find("tbody .cell-stack__main").TextContent.Should().Be("Production");
+        cut.Find("tbody .cell-stack__sub").TextContent.Should().Be("Production");
+        cut.Find(".pager__count").TextContent.Should().Be("Showing 1 of 1 environment");
     }
 
-    private sealed class UnreachableAdminClient : IBcAdminClient
+    [Fact]
+    public async Task Typing_in_the_search_box_filters_the_rows_already_loaded()
     {
-        public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetAppUpdateCadenceAsync(string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<bool?> GetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
-            => throw new NotSupportedException();
+        await SeedOneEnvironmentAsync();
+
+        var cut = RenderWithOneRow();
+
+        cut.Find(".cmdbar__search input").Input("nothing like it");
+
+        // Waited for, not read straight off: the table is drawn by the list frame, and
+        // under a loaded test run the redraw has been seen to land a beat later.
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().BeEmpty();
+            cut.Find(".empty-state__title").TextContent.Should().Be("No environments match these filters");
+        });
     }
 
-    private sealed class UnreachableAppManagementClient : IBcAppManagementClient
+    [Fact]
+    public void A_row_without_a_tenant_has_no_Business_Central_address_and_a_name_is_escaped()
     {
-        public Task<IReadOnlyList<BcInstalledApp>> ListInstalledAppsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcAppOperation> RemoveScheduledPteVersionAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
-            => throw new NotSupportedException();
+        var row = new UpgradeFleetRow(1, "CRONUS Denmark", null, 2, "UAT 2", "Sandbox", "Active", null,
+            null, null, null, null, null, null, null, CanAct: true);
+
+        row.BusinessCentralUrl.Should().BeNull();
+        (row with { TenantId = TenantId }).BusinessCentralUrl.Should().EndWith("/UAT%202");
     }
 }

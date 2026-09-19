@@ -28,33 +28,30 @@
 <PageTitle>Email delivery · Site administration · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <p class="page-head__crumbs">
-                <a href="/site-admin">Site administration</a>
-                <Icon Name="chevron-right" Width="12" Height="12" />
-                <span>Email delivery</span>
-            </p>
-            <h1 class="page-head__title">Email delivery</h1>
-            <p class="page-head__sub">
-                @if (_snapshot is null)
-                {
-                    <span>Reset links, invites and sign-in links are sent in the background.</span>
-                }
-                else if (_snapshot.SentLastDay > 0)
-                {
-                    <span>
-                        <strong>@_snapshot.SentLastDay email@(_snapshot.SentLastDay == 1 ? "" : "s")</strong>
-                        went out in the last 24 hours. Anything that never got through is listed below.
-                    </span>
-                }
-                else
-                {
-                    <span>No email has gone out in the last 24 hours.</span>
-                }
-            </p>
-        </div>
-        <div class="page-head__actions">
+    <PageHead Title="Email delivery">
+        <Crumbs>
+            <a href="/site-admin">Site administration</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>Email delivery</span>
+        </Crumbs>
+        <SubtitleContent>
+            @if (_snapshot is null)
+            {
+                <span>Reset links, invites and sign-in links are sent in the background.</span>
+            }
+            else if (_snapshot.SentLastDay > 0)
+            {
+                <span>
+                    <strong>@_snapshot.SentLastDay email@(_snapshot.SentLastDay == 1 ? "" : "s")</strong>
+                    went out in the last 24 hours. Anything that never got through is listed below.
+                </span>
+            }
+            else
+            {
+                <span>No email has gone out in the last 24 hours.</span>
+            }
+        </SubtitleContent>
+        <Actions>
             <a class="btn btn--sm" href="/site-admin/email">
                 <Icon Name="refresh-cw" Width="14" Height="14" />
                 <span>Refresh</span>
@@ -63,8 +60,8 @@
                 <Icon Name="server-cog" Width="14" Height="14" />
                 <span>Email settings</span>
             </a>
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @if (_loadError is not null)
     {

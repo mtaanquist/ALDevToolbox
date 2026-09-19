@@ -20,32 +20,23 @@
 
 <PageTitle>Defaults · Configuration · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Defaults</h1>
-            <p class="page-head__sub">
-                Pre-filled into the New Workspace and New Extension forms. Users
-                can still edit on the form - these are defaults, not locks.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-            @* Save lives in the sticky .form-actions bar at the foot of the form,
-               not up here — this page is longer than a viewport and the archetype
-               ends a long form with its action bar. *@
-        </div>
-    </header>
-
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else
-    {
+<EditPage Title="Defaults"
+          IsLoading="@(_loading)" Sticky="true">
+    <Crumbs>
+        <a href="/admin">Admin</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>Defaults</span>
+    </Crumbs>
+    <SubtitleContent>
+        Pre-filled into the New Workspace and New Extension forms. Users
+        can still edit on the form - these are defaults, not locks.
+    </SubtitleContent>
+    <Actions>
+        @* Save lives in the sticky .form-actions bar at the foot of the form,
+           not up here — this page is longer than a viewport and the archetype
+           ends a long form with its action bar. *@
+    </Actions>
+    <ChildContent>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
             <p class="alert alert--success" role="status">
@@ -256,10 +247,9 @@
                 }
                 else
                 {
-                    <div class="empty-state empty-state--quiet">
-                        <span class="empty-state__title">No logo yet</span>
-                        <span class="empty-state__text">Generated workspaces will ship without one.</span>
-                    </div>
+                    <EmptyState Title="No logo yet" Quiet="true">
+                        <Text>Generated workspaces will ship without one.</Text>
+                    </EmptyState>
                 }
             </div>
             @if (_logo is not null || _pendingLogoBytes is not null)
@@ -293,8 +283,8 @@
                 <span>@(_saving ? "Saving..." : "Save changes")</span>
             </button>
         </div>
-    }
-</div>
+    </ChildContent>
+</EditPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }

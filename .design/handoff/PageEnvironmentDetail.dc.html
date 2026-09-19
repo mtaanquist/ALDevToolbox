@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head__crumbs"><a href="#">Solutions</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">CRONUS International</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">Environments</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Production</span></div>
+
+  <div class="detail-head">
+    <div>
+      <div class="detail-head__title-row">
+        <h2 class="detail-head__title">Production</h2>
+        <span class="status-pill status-pill--success"><span class="status-pill__dot"></span>Active</span>
+        <span class="tag">Production</span>
+      </div>
+      <p class="page-head__sub">Business Central environment in CRONUS International - BC version 28.2 - Europe (Paris)</p>
+    </div>
+    <div class="page-head__actions">
+      <a class="btn" href="#" target="_blank" rel="noreferrer"><svg class="btn__icon" data-lucide="external-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.4 2.6H13V6.2"></path><path d="M13 2.6L7.6 8"></path><path d="M12.4 9.4v3a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1V4.6a1 1 0 0 1 1-1h3"></path></svg>Open in Business Central</a>
+      <span class="ra">
+        <button class="btn btn--icon" type="button" aria-label="Environment actions" onClick="{{ toggleMenu }}"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button>
+        <div class="ra__menu menu" role="menu">
+          <button class="menu__item" type="button">Copy environment ID</button>
+          <button class="menu__item" type="button">Open the admin centre</button>
+          <button class="menu__item" type="button">Export the app list</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" type="button">Remove from this solution</button>
+        </div>
+      </span>
+    </div>
+  </div>
+
+  <div class="freshness {{ fresh.cls }}">
+    <svg class="freshness__icon" data-lucide="cloud-download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 11.4A3 3 0 0 1 5 5.5a3.8 3.8 0 0 1 7.3 1 2.6 2.6 0 0 1-.5 5"></path><path d="M8 8.4v5M5.8 11.2L8 13.4l2.2-2.2"></path></svg>
+    <span class="freshness__text">Read from Business Central <span class="freshness__age">{{ fresh.age }}</span>. Nothing on this page is stored by the toolbox.</span>
+    <span class="freshness__spacer"></span>
+    <button class="btn btn--sm {{ fresh.btnCls }}" type="button" onClick="{{ refresh }}"><svg class="btn__icon" data-lucide="refresh-cw" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8"></path><path d="M13.6 2.4v3.2h-3.2"></path></svg><span class="btn__label">{{ fresh.btnLabel }}</span></button>
+  </div>
+
+  <div class="meta-row">
+    <span class="meta-item"><span class="meta-item__label">Type</span><span class="meta-item__value">Production</span></span>
+    <span class="meta-item"><span class="meta-item__label">BC version</span><span class="meta-item__value meta-item__value--mono">28.2.41125.0</span></span>
+    <span class="meta-item"><span class="meta-item__label">Country</span><span class="meta-item__value">Denmark (DK)</span></span>
+    <span class="meta-item"><span class="meta-item__label">Delivery window</span><span class="meta-item__value">22:00-04:00 (Paris)</span></span>
+    <span class="meta-item"><span class="meta-item__label">Next update</span><span class="meta-item__value">12 Oct 2026</span></span>
+    <span class="meta-item"><span class="meta-item__label">Apps installed</span><span class="meta-item__value">24</span></span>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div><h3 class="card__title">Updates</h3><p class="card__sub">When Microsoft moves this environment to the next Business Central version, and when we are allowed to touch it.</p></div>
+      <button class="btn btn--sm" type="button">Reschedule the update</button>
+    </div>
+    <div class="card__body">
+      <div class="kv-grid">
+        <span class="meta-item"><span class="meta-item__label">Current version</span><span class="meta-item__value">28.2 <span class="u-muted">(28.2.41125.0)</span></span></span>
+        <span class="meta-item"><span class="meta-item__label">Next update version</span><span class="meta-item__value">28.3</span></span>
+        <span class="meta-item"><span class="meta-item__label">Scheduled for</span><span class="meta-item__value">12 Oct 2026, 02:00</span></span>
+        <span class="meta-item"><span class="meta-item__label">Latest possible date</span><span class="meta-item__value">26 Oct 2026</span></span>
+        <span class="meta-item"><span class="meta-item__label">Our delivery window</span><span class="meta-item__value">22:00-04:00 (Paris)</span></span>
+        <span class="meta-item"><span class="meta-item__label">BC update window</span><span class="meta-item__value">01:00-05:00 (Paris)</span></span>
+      </div>
+      <div class="alert alert--info" style="margin-top: var(--space-4)">
+        <svg data-lucide="info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 7.4v3.4M8 5.2v.2"></path></svg>
+        <span>The two windows overlap between 01:00 and 04:00, so a scheduled install can collide with Microsoft's own update. Move the delivery window if 12 October matters to the customer.</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="section-label">Apps</p>
+
+  <div class="card">
+    <div class="card__head"><div><h3 class="card__title">Scheduled installs</h3><p class="card__sub">Installs this toolbox has queued against the environment.</p></div></div>
+    <div class="empty-state empty-state--quiet">
+      <span class="empty-state__icon"><svg data-lucide="calendar-clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 7.4V4.2a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v8.2a1 1 0 0 0 1 1h4"></path><path d="M5.2 1.8v2.6M10.8 1.8v2.6M2.6 6.4h10.8"></path><circle cx="11.6" cy="11.6" r="2.8"></circle><path d="M11.6 10.4v1.2l.8.6"></path></svg></span>
+      <span class="empty-state__title">Nothing waiting to install</span>
+      <span class="empty-state__text">Installs started from Business Central's own Extension Management page do not appear here until they finish, and installs scheduled here do not appear there. Use one or the other for a customer, not both.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div><h3 class="card__title" style="display: flex; align-items: center; gap: var(--space-2)">Installed apps<span class="badge">24</span></h3><p class="card__sub">Reported by the environment, including Microsoft's own apps.</p></div>
+      <span class="search" style="width: 220px"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Filter installed apps..." /></span>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>App</th><th>Publisher</th><th>Version</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>CRONUS Sales Extension</td><td>CRONUS International</td><td class="u-num" style="font-family: var(--font-mono)">1.4.0.882</td><td>Per-tenant</td></tr>
+        <tr><td>Continia Core</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.4.1.359421</td><td>AppSource</td></tr>
+        <tr><td>Continia Document Capture</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.4.1.352886</td><td>AppSource</td></tr>
+        <tr><td>Continia System Application</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.4.0.359012</td><td>AppSource</td></tr>
+        <tr><td>Payables Agent</td><td>Microsoft</td><td class="u-num" style="font-family: var(--font-mono)">28.2.50931.53916</td><td>Microsoft</td></tr>
+        <tr><td>Library Assert</td><td>Microsoft</td><td class="u-num" style="font-family: var(--font-mono)">28.4.53241.53312</td><td>Microsoft</td></tr>
+      </tbody>
+    </table>
+    <div class="card__foot"><span class="u-muted" style="margin-right: auto">Showing 6 of 24</span><button class="btn btn--sm" type="button">Show all 24</button></div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div><h3 class="card__title" style="display: flex; align-items: center; gap: var(--space-2)">AppSource updates waiting<span class="badge">25</span></h3><p class="card__sub">9 of these need another app updated first. Apps you build and release yourself are never listed here.</p></div>
+      <span class="u-row">
+        <span class="search" style="width: 220px"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Filter updates..." /></span>
+        <span class="select-wrap" style="width: 150px"><select class="select"><option>All updates</option><option>Ready now</option><option>Blocked</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+      </span>
+    </div>
+    <table class="data-table data-table--edge u-compact">
+      <thead><tr>
+        <th class="data-table__col-state"><span class="u-sr">State</span></th>
+        <th><button class="data-table__sort is-sorted" type="button">App<svg data-lucide="arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg></button></th>
+        <th>Publisher</th>
+        <th>Target version</th>
+        <th>Prerequisites</th>
+      </tr></thead>
+      <tbody>
+        <tr class="is-published"><td class="data-table__col-state"><span class="status-pill status-pill--success">Ready</span></td><td>Continia Core</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.5.0.363410</td><td class="u-muted">None</td></tr>
+        <tr class="is-published"><td class="data-table__col-state"><span class="status-pill status-pill--success">Ready</span></td><td>Continia System Application</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.5.0.360827</td><td class="u-muted">None</td></tr>
+        <tr class="is-published"><td class="data-table__col-state"><span class="status-pill status-pill--success">Ready</span></td><td>Payables Agent</td><td>Microsoft</td><td class="u-num" style="font-family: var(--font-mono)">28.2.50931.53916</td><td class="u-muted">None</td></tr>
+        <tr class="is-published"><td class="data-table__col-state"><span class="status-pill status-pill--success">Ready</span></td><td>Library Assert</td><td>Microsoft</td><td class="u-num" style="font-family: var(--font-mono)">28.4.53241.53312</td><td class="u-muted">None</td></tr>
+        <tr class="is-published"><td class="data-table__col-state"><span class="status-pill status-pill--success">Ready</span></td><td>Test Runner</td><td>Microsoft</td><td class="u-num" style="font-family: var(--font-mono)">28.4.53241.53312</td><td class="u-muted">None</td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 1</span></td><td>Library Variable Storage</td><td>Microsoft</td><td class="u-num" style="font-family: var(--font-mono)">28.4.53241.53312</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Library Assert</span></span></td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 2</span></td><td>Continia Connector App</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.5.0.360827</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Continia Core</span><span class="tag">Continia System Application</span></span></td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 3</span></td><td>Continia Delivery Network</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.5.0.364418</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Continia System Application</span><span class="tag">Continia Core</span><span class="tag">Continia KYC</span></span></td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 1</span></td><td>Continia Approval</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.4.1.359439</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Continia Banking - Permission Sets</span></span></td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 2</span></td><td>Continia Banking</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.4.1.359439</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Continia Approval</span><span class="tag">Continia Banking - Permission Sets</span></span></td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 2</span></td><td>Continia Banking - Export</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.4.1.359439</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Continia Banking</span><span class="tag">Continia Banking - Permission Sets</span></span></td></tr>
+        <tr class="is-queued"><td class="data-table__col-state"><span class="status-pill status-pill--queued">Waits for 4</span></td><td>Continia Document Output</td><td>Continia Software</td><td class="u-num" style="font-family: var(--font-mono)">28.5.0.363522</td><td><span class="u-row" style="flex-wrap: wrap; gap: var(--space-1)"><span class="tag">Continia Core</span><span class="tag">Continia System Application</span><span class="tag">Continia Delivery Network</span><span class="tag">Continia Connector App</span></span></td></tr>
+      </tbody>
+    </table>
+    <div class="card__foot"><span class="u-muted" style="margin-right: auto">Showing 12 of 25 - sorted so the ready ones come first</span><button class="btn btn--sm" type="button">Show all 25</button></div>
+  </div>
+
+  <p class="section-label">Environment settings</p>
+
+  <div class="card">
+    <div class="alert alert--warn" style="margin: var(--space-4) var(--space-4) 0">
+      <svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg>
+      <span><b>These change Production in the customer's tenant.</b> Saving here writes straight to CRONUS International's Business Central environment, not just to the toolbox. Agree the change with the customer first.</span>
+    </div>
+    <div class="setting-list">
+      <div class="setting">
+        <span class="setting__label"><span class="setting__name">AppSource apps update cadence</span><span class="setting__hint">How often apps the customer installed are updated. Does not affect extensions you release yourself.</span></span>
+        <span class="setting__ctl"><span class="select-wrap" style="width: 240px"><select class="select" defaultValue="With major and minor updates"><option>With major and minor updates</option><option>With major updates only</option><option>Never - update by hand</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span></span>
+      </div>
+      <div class="setting">
+        <span class="setting__label"><span class="setting__name">Access with Microsoft 365 licences</span><span class="setting__hint">Lets people who hold only a Microsoft 365 licence sign in and read data in this environment.</span></span>
+        <span class="setting__ctl"><label class="switch {{ m365.cls }}" onClick="{{ toggleM365 }}"><span class="switch__track"><span class="switch__knob"></span></span>{{ m365.label }}</label></span>
+      </div>
+      <div class="setting setting--danger">
+        <span class="setting__label"><span class="setting__name">Next Business Central update</span><span class="setting__hint">Picking a version reschedules the update in the customer's tenant. The date must stay on or before 26 Oct 2026.</span></span>
+        <span class="setting__ctl">
+          <span class="u-row"><span class="select-wrap" style="width: 180px"><select class="select"><option>28.3 - 12 Oct 2026</option><option>28.3 - 19 Oct 2026</option><option>28.3 - 26 Oct 2026</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span><button class="btn btn--sm" type="button">Reschedule</button></span>
+          <span class="setting__lock"><svg data-lucide="shield-alert" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l4.8 1.8v4c0 3-2 5.2-4.8 6.6C5.2 12.8 3.2 10.6 3.2 7.6v-4z"></path><path d="M8 5.8v3M8 10.6v.4"></path></svg>Writes to the customer's tenant</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;staleness&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;stale&quot;,&quot;fresh&quot;],&quot;default&quot;:&quot;stale&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { refreshing: false, m365: false };
+
+  renderVals() {
+    const staleness = this.props.staleness ?? 'stale';
+    const refreshing = this.state.refreshing;
+    return {
+      fresh: {
+        // One freshness strip per page. --stale is the escalation, not a
+        // different component, so the copy below it never has to change.
+        cls: [staleness === 'stale' ? 'freshness--stale' : '', refreshing ? 'is-refreshing' : ''].filter(Boolean).join(' '),
+        age: refreshing ? 'just now' : (staleness === 'stale' ? '10 hours ago' : '2 minutes ago'),
+        btnCls: refreshing ? 'btn--loading' : '',
+        btnLabel: refreshing ? 'Refreshing' : 'Refresh'
+      },
+      m365: { cls: this.state.m365 ? 'is-on' : '', label: this.state.m365 ? 'Allowed' : 'Not allowed' },
+      refresh: () => {
+        if (this.state.refreshing) return;
+        this.setState({ refreshing: true });
+        setTimeout(() => this.setState({ refreshing: false }), 1400);
+      },
+      toggleM365: () => this.setState(s => ({ m365: !s.m365 })),
+      toggleMenu: e => {
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const open = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => x.classList.remove('is-open'));
+        if (!open) w.classList.add('is-open');
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

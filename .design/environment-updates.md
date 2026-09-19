@@ -73,7 +73,7 @@ Three things fill it. A consultant's Refresh on the project's Business Central t
 nightly sweep (`EnvironmentRefreshScheduler`, a fixed quiet UTC hour, `DeliveryScheduler`'s
 shape) that offers every BC-connected project to the in-process
 `EnvironmentRefreshQueue`/`Worker` pair so the fleet is fresh each morning without anyone
-opening a project; and the page's own **Refresh from Business Central** action, which feeds
+opening a project; and the page's own **Refresh** command, which feeds
 the same queue so a sweep and a hand-triggered refresh coalesce. Rather than telling the
 reader to reload after that, the page polls itself every 20 seconds for up to three
 minutes, on the renderer's synchronisation context so a tick cannot collide with a click on
@@ -210,10 +210,14 @@ yet.
 ## The page
 
 One table, one row per non-missing environment of every project the viewer can see: the
-customer, the environment and its type, its status, the version it is on, the mirrored next
-update (version, when, and a marker when it ignores Microsoft's window), the latest date that
-update can still be pushed to, and how old the mirror is. Filters are text search,
-environment type, and "update available"; loading, empty and populated states as usual.
+customer, its state as a glyph, the environment over its type, the version it is on, the
+mirrored next update (version, when, and a marker when it ignores Microsoft's window), the
+latest date that update can still be pushed to, how old the mirror is, and a row menu. Above
+it sits one sticky command bar: a view select (all, update waiting, and each environment type
+with and without an update waiting), a search that filters as you type, and the commands. The
+filters live in the address (`q`, `type`, `waiting`); loading, empty and populated states as
+usual. The layout is the design's archetype 15 - see "The Upgrades page, against its designed
+sheet" below.
 
 **The join is the guard.** `OeProjectEnvironment` has no visibility rule of its own — it
 inherits its project's. `UpgradeFleetService.ListFleetAsync` therefore reaches the
@@ -223,14 +227,18 @@ in the same query from `UpdateOpsProjectPredicate`, so a fleet of a hundred cost
 trip; a row the viewer may see but not act on shows a lock instead of a checkbox. The org
 fence sits underneath both.
 
-**Two actions, two voices.** Each runs over the checkbox selection behind a confirm that
+**Two actions, two voices.** Each runs over the checkbox selection - or, from a row's own
+menu, over that one row, leaving the ticked rows as they were - behind a confirm that
 lists every selected environment with what will happen to it and — grouped at the bottom
 under its own heading — the ones that will be passed over and why.
 
-- **Move dates to the latest** previews each date and the date it moves to.
-- **Start the update now** is the sterner one. It carries the danger button variant in the
-  toolbar (the one control here that acts at once and cannot be taken back — a variant, not a
-  second primary button), says plainly that Microsoft will start the updates whatever the
+- **Move dates** previews each date and the date it moves to. It is the page's one primary
+  button: it is what the team comes here to do, a hundred at a time.
+- **Start update...** is the sterner one, and its dialog is where that is said; in the bar it
+  is a plain button, as the sheet has it. The sheet calls it "Update now", but the dialog also
+  books an update for a later slot, and nobody wanting tonight at 20:00 presses a button called
+  "now"; the dots say a dialog follows. The dialog says plainly that Microsoft will start the
+  updates whatever the
   environment's update window says, counts the production environments in the selection just
   above the gate, and holds its confirm button disabled until the person types "update".
 
@@ -269,8 +277,8 @@ log.
 **A booking is visible on the fleet row itself**, not only in the batch result that made it
 (which a reload discards). One booking shows the whole fact — when, in whose time, who booked
 it — with a Cancel beside it; several show the nearest and a count. Either way that marker *is*
-the disclosure that opens the history, so "Update history" is a second door and never the only
-one. Confirming an update-now over an environment that already has a booking waiting groups it
+the disclosure that opens the history, so "Update history" in the row menu is a second door
+and never the only one. Confirming an update-now over an environment that already has a booking waiting groups it
 under "Already booked" in the preview, with what it is booked for: the run still acts on it, and
 adding a second booking is a thing to notice before the click.
 
@@ -287,6 +295,101 @@ because a Blazor circuit has no `HttpContext` for the interceptor's own lookup t
 row writes nothing: nothing changed. For a booked action the audit row is written at send time,
 by the worker, so the log records what actually reached Microsoft while the activity feed records
 the whole request-and-cancel story.
+
+## The Environments list, against its designed sheet
+
+`/environments` is the read-only view of the same fleet rows, designed as archetype 2a in
+`.design/handoff/PageEnvironmentsList.dc.html`. It follows the sheet: a glyph-only state cell
+with the word on `aria-label` / `title`, no status column, "Now on", a semibold next version
+over its date, skeleton rows under the real header while loading, and the count in `.pager`.
+With nothing scheduled, the line under Next update names any state that is not plainly
+running, as the sheet does - that keeps the word on screen, since four states share two
+glyphs and a title does not exist on touch.
+
+Where it still differs, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
+| A row menu: Open environment, Open in Business Central, Refresh this environment | The first two | A refresh is per solution, not per environment, and the freshness strip already does it. |
+| Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
+| Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
+
+## The Upgrades page, against its designed sheet
+
+`/upgrades` is archetype 15, the actionable list, in `.design/handoff/PageUpgrades.dc.html`. It
+follows the sheet: crumbs, the time-zone rule as a clause of the subtitle, one `.cmdbar` whose
+selection commands are plainly disabled until rows are ticked (no counter and no instruction,
+as in Business Central's own lists), `.check` boxes in a `data-table__col-check` column with
+`is-indeterminate` on the header and `is-selected` on the row, the same glyph-only state cell
+and state wording as the Environments list (`FleetRowState` serves both), `.cell-stack` cells,
+"Now on" and "Latest possible date", bare dates, and the row's commands in one `.ra` menu with
+Update history first.
+
+Where it still differs, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Customer" | "Solution" | The house name for the record; see CLAUDE.md. |
+| "Update now" | "Start update..." (and "Start this update..." in the row menu) | The dialog behind it also books a later slot, which "now" hides. Maintainer's decision, 2026-09-19; to be recorded upstream in `briefs/2026-09-port-corrections.md`. |
+| A fixed view list: Production / Sandbox, each with "update waiting" | The same list built from the environment types actually present | Business Central reports the type as text, and a fleet with no sandboxes should not offer one. |
+| An overflow menu: delivery window, two exports, fleet-wide history, cancel the scheduled update | No overflow menu | None of the five exists yet. A booking is cancelled from its own marker or from the history. An empty kebab is worse than none; add it with the first entry. |
+| Every row has a checkbox | A padlock instead, on rows of a team the viewer is not on, with a legend under the table | The sheet has no notion of a row you may see but not change. Their row menu holds history only. |
+| Nothing under the next update's date | The out-of-window warning, a booking marker with its Cancel, and the live per-row result of a run | Behaviour the sheet does not draw. They sit under the date because a booked slot and Business Central's date are two answers to one question. |
+| Sortable Customer and Next update headers; Previous / Next | Fixed order; count only | As on the Environments list. |
+| The table directly in the page | The table in a box that scrolls sideways, with the checkbox, state and Solution columns pinned | The page container clips rather than scrolls (#574), and nine columns do not fit a narrow window. |
+
+Row menus anywhere in the app now open upwards when there is no room under them
+(`row-actions-menu.js` sets the sheet's `.ra--up`), which this table needed for its last rows.
+
+## The environment's own page, against its designed sheet
+
+`/environments/{id}` is `.design/handoff/PageEnvironmentDetail.dc.html` on the `DetailPage`
+frame (#809). Named user: an ops engineer with a fleet of customer environments, who would
+otherwise open each customer's admin centre. It follows the sheet top to bottom: crumbs
+through the solution, a `detail-head` with the state pill and the type as a `.tag`, the
+freshness strip, the six-item `.meta-row`, the Updates card's `.kv-grid` with the info alert
+when the two windows overlap, then Apps (Scheduled installs, Installed apps, AppSource
+updates waiting - ready ones first, "Waits for N" with the prerequisites as `.tag`s) and
+Environment settings as a `.setting-list` ending in the `setting--danger` row.
+
+**Two readings share the page.** The head, the meta row and the Updates card come from our
+own mirror, reached through `UpgradeFleetService.GetEnvironmentAsync` - the same
+visible-projects join as the fleet, so an id from a solution the viewer cannot see answers
+exactly like an id that does not exist. Apps and Environment settings are the existing
+cached panel read (`ProjectConnectionService.GetEnvironmentPanelAsync`; no second fetch
+path) and keep the gate they had on the solution's Business Central tab: people who manage
+the solution - its owner, an org admin, or anyone on a team assigned to it. That already
+covers the ops team: the environment-updates grant is only ever held through an assigned
+team, so whoever holds it manages the solution too. Everyone else gets the mirror and a
+quiet card saying who can open the rest.
+Update history sits outside both, because it is our record and must survive a tenant that
+will not answer.
+
+The inline "Environment details" panel on the solution's Business Central tab is retired;
+its button goes here. The tab keeps the connection and the delivery window, and
+`/solutions/{id}?tab=bc` opens on it so this page can send people there.
+
+Where it differs from the sheet, and why:
+
+| The sheet has | We have | Why |
+| --- | --- | --- |
+| "Nothing on this page is stored by the toolbox." | "Apps and settings read from Business Central {age}. Version and update dates last checked {age}." | The sheet's sentence is not true for us: the environment row and its next update are mirrored, and the app lists are cached for fifteen minutes. The strip says which half is which. |
+| An overflow menu: Copy environment ID, Open the admin centre, Export the app list, Remove from this solution | "Open the admin centre" as a second button; no menu | We mirror no Business Central environment id, there is no export, and environments are mirrored from Business Central rather than attached by hand, so nothing can be removed. One entry is not a menu. |
+| Refresh for everyone | Refresh for people who manage the solution | It reads the customer's tenant with their credentials. |
+| A region in the subtitle and a country in the meta row | Both, when Business Central reported them | `location_name` and `country_code` are mirrored; an environment read before they were captured shows a dash. |
+| Overlap alert naming the overlapping hours | The alert without the hours, linking to where the delivery window is set | The two windows can be in different time zones and the overlap moves with daylight saving; `BcUpdateWindow.Overlaps` answers yes or no. |
+| "Reschedule the update" as a button in the Updates card | "Change the next version", with a down arrow, linking to the "Next Business Central update" setting further down | One control writes the version, and it carries the warning and the lock line; a second one in the card would skip both. The label says it goes down the page, because a button that scrolls reads as a button that did nothing. |
+| "Blocked" in the filter, "Waits for N" on the pill | "Waiting" and "Waits for N" | One word for one state on one card. |
+| "Scheduled for" in UTC | The customer's local time first, UTC second | The two windows beside it are local, and whether they collide is what the card is for. |
+| An empty Scheduled installs card that only warns about Extension Management | It says what puts a row there and links to Releases; the warning moves under the populated table | The first-run state has to name the next step. |
+| Next-update options as version and date pairs | Versions, with the one already queued marked | Business Central offers versions; the date comes from the customer's update window once a version is chosen. Moving the date is what Upgrades is for. |
+| A sortable App header on the waiting updates | Fixed order, ready first | The order is the point of the table. |
+| Cadence saves from the select; Microsoft 365 is a switch | The same, each behind a confirm | They write to the customer's tenant. Declining puts the control back. |
+| Nothing after Environment settings | Update history | Who moved this environment's dates and what is still booked; the same feed the Upgrades page shows. |
+| A read-only list of waiting AppSource updates | An **Update** button on the rows that are ready | What #809's report asked for, and the maintainer's decision on #841 to build it without a sheet. Ready rows only: a waiting row names its prerequisites instead, which is the next step. The confirm names the app, both versions, the environment and whether it is production, and asks when - the environment's next update window by default, or now. `ProjectConnectionService.UpdateAppAsync` re-reads the waiting list before it writes and refuses an app that is not on it, a version Business Central is not offering, or an app that still waits for another; dependencies are never pulled along. Manage-gated; logged, not audited, as it touches no row of ours. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../apps/{appId}/update`. Needs a design pass upstream. |
+| The result of a write beside its control | One result line under the head | The writes are spread down a long page and each re-reads everything; the top is where the eye is afterwards. |
+| Scheduled installs drawn only as an empty state | A table with a Cancel install action when there are any | The write exists and a booked install has to be reachable from somewhere. |
 
 ## Deliberately out of scope
 

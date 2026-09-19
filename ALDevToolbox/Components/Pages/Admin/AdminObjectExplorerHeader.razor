@@ -8,18 +8,10 @@
 
 @using ALDevToolbox.Components.Shared
 
-<header class="page-head">
-    <div>
-        <h1 class="page-head__title">Object Explorer</h1>
-        <p class="page-head__sub">@Subtitle</p>
-    </div>
-    @if (HeaderActions is not null)
-    {
-        <div class="page-head__actions">
-            @HeaderActions
-        </div>
-    }
-</header>
+@* Passed as attributes, not slots: a slot is never null, so an <Actions> wrapper
+   round a null HeaderActions would draw an empty actions box on the tabs that
+   have none. *@
+<PageHead Title="Object Explorer" Subtitle="@Subtitle" Actions="HeaderActions" />
 
 <PillTabs Items="@_tabs" AriaLabel="Object Explorer section" />
 

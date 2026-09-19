@@ -19,26 +19,20 @@
 <PageTitle>Your teams · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <div class="page-head">
-        <div>
-            <h1 class="page-head__title">Your teams</h1>
-            @* Says what a team is today. What it will *gate* belongs in the
-               future tense until the visibility slice ships — see the design doc. *@
-            <p class="page-head__sub">
-                The teams you're on. A team groups the colleagues who work on the same customer.
-                Open one to see who else is on it.
-            </p>
-        </div>
-        @if (_canAdminister)
-        {
-            <div class="page-head__actions">
-                <a class="btn" href="/admin/administration/teams">
-                    <Icon Name="settings" Width="15" Height="15" />
-                    <span>Manage all teams</span>
-                </a>
-            </div>
-        }
-    </div>
+    @* The subtitle says what a team is today. What it will *gate* belongs in the
+       future tense until the visibility slice ships — see the design doc. *@
+    <PageHead Title="Your teams" ShowActions="_canAdminister">
+        <SubtitleContent>
+            The teams you're on. A team groups the colleagues who work on the same customer.
+            Open one to see who else is on it.
+        </SubtitleContent>
+        <Actions>
+            <a class="btn" href="/admin/administration/teams">
+                <Icon Name="settings" Width="15" Height="15" />
+                <span>Manage all teams</span>
+            </a>
+        </Actions>
+    </PageHead>
 
     @if (_teams is null)
     {

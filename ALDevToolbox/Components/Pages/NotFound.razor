@@ -20,15 +20,12 @@
     whether they mistyped or followed a stale link.
 *@
 
-<div class="errpage">
-    <div class="errpage__inner">
-        <span class="errpage__glyph"><Icon Name="file-question-mark" Width="26" Height="26" /></span>
-        <span class="errpage__code">Error 404 - not found</span>
-        <h1 class="errpage__title">We can't find that page</h1>
-        <p class="errpage__text">
-            The link may be out of date, or whatever it pointed at was renamed or
-            deleted. Nothing is broken on our side.
-        </p>
+<ErrorPage Icon="file-question-mark" Code="Error 404 - not found" Title="We can't find that page">
+    <Text>
+        The link may be out of date, or whatever it pointed at was renamed or
+        deleted. Nothing is broken on our side.
+    </Text>
+    <Detail>
         @if (_path is not null)
         {
             @* Labelled, because an unlabelled mono chip could be the address you
@@ -40,14 +37,14 @@
                 <span class="errpage__path">@_path</span>
             </span>
         }
-        <span class="errpage__acts">
-            <a class="btn btn--primary" href="/">
-                <Icon Name="house" Width="16" Height="16" />
-                <span>Go to Home</span>
-            </a>
-        </span>
-    </div>
-</div>
+    </Detail>
+    <Actions>
+        <a class="btn btn--primary" href="/">
+            <Icon Name="house" Width="16" Height="16" />
+            <span>Go to Home</span>
+        </a>
+    </Actions>
+</ErrorPage>
 
 @code {
     private string? _path;

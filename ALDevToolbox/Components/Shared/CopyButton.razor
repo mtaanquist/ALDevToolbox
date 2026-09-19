@@ -1,0 +1,26 @@
+@*
+    The copy-to-clipboard button on the design system's .copy-btn. The shell-level
+    copy-to-clipboard.js does the work: it copies the text of the element Target
+    selects and flips the label to "Copied" for a moment. No interactivity needed,
+    so it works on static SSR pages, which is where most code blocks live.
+
+    Pages that copy a value that is not in the DOM (a token held in component state)
+    keep their own @onclick button; this is for the element-on-the-page case.
+*@
+
+<button type="button" class="btn@(Small ? " btn--sm" : "") copy-btn" data-copy-target="@Target">
+    <Icon Name="copy" Width="@IconSize" Height="@IconSize" />
+    <span data-copy-label>@Label</span>
+</button>
+
+@code {
+    /// <summary>CSS selector of the element whose text is copied, e.g. <c>#mcp-url</c>.</summary>
+    [Parameter, EditorRequired] public string Target { get; set; } = string.Empty;
+
+    [Parameter] public string Label { get; set; } = "Copy";
+
+    /// <summary>The compact size used in code-block bars. Off for a button that sits among page actions.</summary>
+    [Parameter] public bool Small { get; set; } = true;
+
+    private int IconSize => Small ? 14 : 16;
+}

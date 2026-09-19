@@ -24,30 +24,28 @@
 <PageTitle>Application versions · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Application versions</h1>
-            <p class="page-head__sub">
-                These rows back the Application Version select on the New
-                Workspace and New Extension forms. Picking an entry there fills
-                both the <code class="code">application</code> and
-                <code class="code">runtime</code> fields on the generated
-                <code class="code">app.json</code>.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
+    <PageHead Title="Application versions" Sticky="true">
+        <Crumbs>
+            <a href="/admin">Admin</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>Application versions</span>
+        </Crumbs>
+        <SubtitleContent>
+            These rows back the Application Version select on the New
+            Workspace and New Extension forms. Picking an entry there fills
+            both the <code class="code">application</code> and
+            <code class="code">runtime</code> fields on the generated
+            <code class="code">app.json</code>.
+        </SubtitleContent>
+        <Actions>
             <button type="button" class="btn btn--sm btn--primary"
                     @onclick="SaveAsync"
                     disabled="@(_saving || _form is null)">
                 <Icon Name="save" Width="14" Height="14" />
                 <span>@(_saving ? "Saving..." : "Save catalogue")</span>
             </button>
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @if (_form is null)
     {

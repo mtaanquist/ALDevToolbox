@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <div class="page-head__crumbs"><a href="#">Home</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">Solutions</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Upgrades</span></div>
+      <h2 class="page-head__title">Upgrades</h2>
+      <p class="page-head__sub">When each customer's environment moves to its next Business Central version, and how much longer you can put that off. Dates are UTC; times you book land in the customer's local time.</p>
+    </div>
+  </div>
+
+  <div class="cmdbar">
+    <div class="cmdbar__row">
+      <div class="cmdbar__group">
+        <span class="select-wrap" style="width: 230px"><select class="select" aria-label="Filter environments"><option>All environments</option><option>With an update waiting</option><option disabled="disabled">--</option><option>Production only</option><option>Sandbox only</option><option>Production, update waiting</option><option>Sandbox, update waiting</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+      </div>
+      <span class="search cmdbar__search"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search customer or environment..." /></span>
+      <div class="cmdbar__group">
+        <button class="btn btn--primary" type="button" disabled="{{ sel.none }}" title="Move the selected environments to their latest possible update date"><svg class="btn__icon" data-lucide="calendar-arrow-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 7.6V4.2a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v8.2a1 1 0 0 0 1 1h4.2"></path><path d="M5.2 1.8v2.6M10.8 1.8v2.6M2.6 6.4h10.8"></path><path d="M11.8 9.4v4.4M10 12l1.8 1.8L13.6 12"></path></svg>Move dates</button>
+        <button class="btn" type="button" disabled="{{ sel.none }}" title="Start the Business Central update on the selected environments now"><svg class="btn__icon" data-lucide="zap" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.8 1.6L3.4 9.2h4L7.2 14.4l5.4-7.6h-4z"></path></svg>Update now</button>
+        <button class="btn {{ refresh.cls }}" type="button" title="Read every environment again from Business Central" onClick="{{ doRefresh }}"><svg class="btn__icon" data-lucide="refresh-cw" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8"></path><path d="M13.6 2.4v3.2h-3.2"></path></svg><span class="btn__label">{{ refresh.label }}</span></button>
+        <span class="ra">
+          <button class="btn btn--icon" type="button" aria-haspopup="menu" aria-label="More options" title="More options" onClick="{{ toggleMenu }}"><svg data-lucide="more-horizontal" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="3.2" cy="8" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="12.8" cy="8" r="1.3"></circle></svg></button>
+          <div class="ra__menu menu" role="menu">
+            <button class="menu__item" type="button" disabled="{{ sel.none }}"><svg class="menu__icon" data-lucide="clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 4.8V8l2.2 1.4"></path></svg>Set a delivery window...</button>
+            <button class="menu__item" type="button" disabled="{{ sel.none }}"><svg class="menu__icon" data-lucide="download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6v7.6M5.2 7.6L8 10.4l2.8-2.8"></path><path d="M2.8 12.4h10.4"></path></svg>Export the selection</button>
+            <button class="menu__item" type="button"><svg class="menu__icon" data-lucide="table" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1"></rect><path d="M2 6.2h12M6.4 6.2v7.2"></path></svg>Export every row</button>
+            <button class="menu__item" type="button"><svg class="menu__icon" data-lucide="history" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 8a5.4 5.4 0 1 0 1.6-3.8"></path><path d="M2.4 2.6v3.2h3.2"></path><path d="M8 5.2V8l2 1.2"></path></svg>Update history, all environments</button>
+            <div class="menu__sep"></div>
+            <button class="menu__item menu__item--danger" type="button" disabled="{{ sel.none }}"><svg class="menu__icon" data-lucide="calendar-x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8.2V4.2a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v8.2a1 1 0 0 0 1 1h4.6"></path><path d="M5.2 1.8v2.6M10.8 1.8v2.6M2.6 6.4h10.8"></path><path d="M10.6 10.6l3.2 3.2M13.8 10.6l-3.2 3.2"></path></svg>Cancel the scheduled update</button>
+          </div>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <table class="data-table data-table--edge">
+    <thead><tr>
+      <th class="data-table__col-check"><label class="check {{ all.cls }}" onClick="{{ toggleAll }}" aria-label="Select every row"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span></label></th>
+      <th class="data-table__col-state"><span class="u-sr">State</span></th>
+      <th><button class="data-table__sort is-sorted" type="button">Customer<svg data-lucide="arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg></button></th>
+      <th>Environment</th>
+      <th>Now on</th>
+      <th><button class="data-table__sort" type="button">Next update<svg data-lucide="chevrons-up-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6.5L8 3.5l3 3M5 9.5l3 3 3-3"></path></svg></button></th>
+      <th>Latest possible date</th>
+      <th>Last checked</th>
+      <th class="data-table__actions">Actions</th>
+    </tr></thead>
+    <tbody>
+      <sc-for list="{{ rows }}" as="row" hint-placeholder-count="4">
+        <tr class="{{ row.trCls }}">
+          <td class="data-table__col-check"><label class="check {{ row.checkCls }}" onClick="{{ row.toggle }}" aria-label="{{ row.checkLabel }}"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span></label></td>
+          <td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="{{ row.status }}" title="{{ row.status }}"><svg data-lucide="circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="{{ row.glyph }}"></path></svg></span></td>
+          <td><a href="#">{{ row.customer }}</a></td>
+          <td><span class="cell-stack"><span class="cell-stack__main"><a href="#">{{ row.env }}</a></span><span class="cell-stack__sub">{{ row.type }}</span></span></td>
+          <td class="u-num">{{ row.now }}</td>
+          <td><span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-semibold)">{{ row.next }}</span><span class="cell-stack__sub">{{ row.nextWhen }}</span></span></td>
+          <td>{{ row.latest }}</td>
+          <td class="u-muted">{{ row.checked }}</td>
+          <td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions" onClick="{{ toggleMenu }}"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Update history</button><button class="menu__item" type="button">Move this date to the latest</button><button class="menu__item" type="button">Start this update now</button><div class="menu__sep"></div><button class="menu__item" type="button">Open in Business Central</button></div></span></td>
+        </tr>
+      </sc-for>
+    </tbody>
+  </table>
+
+  <div class="pager">
+    <span class="pager__count">{{ sel.pagerCount }}</span>
+    <span class="pager__buttons"><button class="btn btn--sm" type="button" disabled="disabled">Previous</button><button class="btn btn--sm" type="button">Next</button></span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;selected&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:8,&quot;tsType&quot;:&quot;number&quot;}}">
+const DATA = [
+  { id: 'con-prod', customer: 'Consortio IT', env: 'Production', type: 'Production', status: 'Active', now: '28.2', next: '28.4', nextWhen: '28 Feb 2027, 21:00', latest: '01 Mar 2027', checked: '10 hours ago' },
+  { id: 'con-cr', customer: 'Consortio IT', env: 'CR', type: 'Sandbox', status: 'Active', now: '28.4', next: '28.5', nextWhen: 'no date set yet', latest: '-', checked: '10 hours ago' },
+  { id: 'con-jle', customer: 'Consortio IT', env: 'JLE', type: 'Sandbox', status: 'Active', now: '28.4', next: '28.5', nextWhen: 'no date set yet', latest: '-', checked: '10 hours ago' },
+  { id: 'con-test', customer: 'Consortio IT', env: 'Test', type: 'Sandbox', status: 'Active', now: '28.2', next: '28.4', nextWhen: '28 Feb 2027, 21:00', latest: '01 Mar 2027', checked: '10 hours ago' },
+  { id: 'cro-prod', customer: 'CRONUS International', env: 'Production', type: 'Production', status: 'Active', now: '28.2', next: '28.3', nextWhen: '12 Oct 2026, 02:00', latest: '26 Oct 2026', checked: '10 hours ago' },
+  { id: 'cro-test', customer: 'CRONUS International', env: 'Test', type: 'Sandbox', status: 'Active', now: '28.2', next: '28.3', nextWhen: '05 Oct 2026, 02:00', latest: '26 Oct 2026', checked: '10 hours ago' },
+  { id: 'nor-prod', customer: 'Nordwind Trading', env: 'Production', type: 'Production', status: 'Updating', now: '28.3', next: '-', nextWhen: 'in progress', latest: '-', checked: '4 minutes ago' },
+  { id: 'nor-uat', customer: 'Nordwind Trading', env: 'UAT', type: 'Sandbox', status: 'Unreachable', now: '-', next: '-', nextWhen: 'cannot read', latest: '-', checked: '2 days ago' },
+  { id: 'ost-prod', customer: 'Ostergaard Maskiner', env: 'Production', type: 'Production', status: 'Active', now: '28.3', next: '28.4', nextWhen: '19 Nov 2026, 23:00', latest: '03 Dec 2026', checked: '6 hours ago' },
+  { id: 'ost-sand', customer: 'Ostergaard Maskiner', env: 'Sandbox', type: 'Sandbox', status: 'Active', now: '28.4', next: '28.5', nextWhen: 'no date set yet', latest: '-', checked: '6 hours ago' },
+  { id: 'vej-prod', customer: 'Vejle Logistik', env: 'Production', type: 'Production', status: 'Active', now: '28.2', next: '28.3', nextWhen: '02 Nov 2026, 22:00', latest: '16 Nov 2026', checked: '1 day ago' },
+  { id: 'vej-test', customer: 'Vejle Logistik', env: 'Test', type: 'Sandbox', status: 'Active', now: '28.3', next: '28.4', nextWhen: '26 Oct 2026, 22:00', latest: '09 Nov 2026', checked: '1 day ago' },
+  { id: 'aar-prod', customer: 'Aarhus Byg', env: 'Production', type: 'Production', status: 'Active', now: '28.2', next: '28.3', nextWhen: '09 Nov 2026, 21:00', latest: '23 Nov 2026', checked: '3 hours ago' },
+  { id: 'aar-cr', customer: 'Aarhus Byg', env: 'CR', type: 'Sandbox', status: 'Active', now: '28.4', next: '28.5', nextWhen: 'no date set yet', latest: '-', checked: '3 hours ago' },
+  { id: 'aar-uat', customer: 'Aarhus Byg', env: 'UAT', type: 'Sandbox', status: 'Suspended', now: '27.5', next: '-', nextWhen: 'suspended', latest: '-', checked: '3 hours ago' },
+  { id: 'fyn-prod', customer: 'Fyn Engros', env: 'Production', type: 'Production', status: 'Active', now: '28.3', next: '28.4', nextWhen: '16 Nov 2026, 22:00', latest: '30 Nov 2026', checked: '9 hours ago' },
+  { id: 'fyn-test', customer: 'Fyn Engros', env: 'Test', type: 'Sandbox', status: 'Updating', now: '28.4', next: '-', nextWhen: 'in progress', latest: '-', checked: '9 hours ago' },
+  { id: 'sko-prod', customer: 'Skovby Moebler', env: 'Production', type: 'Production', status: 'Active', now: '28.2', next: '28.3', nextWhen: '23 Nov 2026, 21:00', latest: '07 Dec 2026', checked: '11 hours ago' }
+];
+
+const STATUS = {
+  Active: { tr: 'is-published', glyph: 'M5.5 8.2l1.8 1.8L10.8 6' },
+  Updating: { tr: 'is-running', glyph: 'M8 4.8V8l2.2 1.4' },
+  Unreachable: { tr: 'is-failed', glyph: 'M6 6l4 4M10 6l-4 4' },
+  Suspended: { tr: 'is-queued', glyph: 'M6.6 5.8v4.4M9.4 5.8v4.4' }
+};
+
+class Component extends DCLogic {
+  state = { picked: [], refreshing: false };
+
+  componentDidMount() {
+    const seed = this.props.selected;
+    if (seed && seed > 0) this.setState({ picked: DATA.slice(0, seed).map(r => r.id) });
+  }
+
+  toggle(id) {
+    this.setState(s => ({ picked: s.picked.includes(id) ? s.picked.filter(x => x !== id) : s.picked.concat(id) }));
+  }
+
+  renderVals() {
+    const picked = this.state.picked;
+    const n = picked.length;
+    const any = n > 0;
+    const refreshing = this.state.refreshing;
+
+    return {
+      rows: DATA.map(r => {
+        const st = STATUS[r.status];
+        const on = picked.includes(r.id);
+        return {
+          ...r,
+          glyph: st.glyph,
+          trCls: [st.tr, on ? 'is-selected' : ''].filter(Boolean).join(' '),
+          checkCls: on ? 'is-checked' : '',
+          checkLabel: 'Select ' + r.customer + ' ' + r.env,
+          toggle: () => this.toggle(r.id)
+        };
+      }),
+      all: { cls: n === DATA.length ? 'is-checked' : (any ? 'is-indeterminate' : '') },
+      sel: {
+        any,
+        // Selection-dependent commands are plainly disabled until rows are
+        // ticked - BC's own behaviour. No counter, no instruction: the
+        // checkboxes and the disabled buttons already say it.
+        none: !any,
+        pagerCount: 'Showing ' + DATA.length + ' of 26 environments'
+      },
+
+      refresh: { cls: refreshing ? 'btn--loading' : '', label: refreshing ? 'Refreshing' : 'Refresh' },
+      clearSel: () => this.setState({ picked: [] }),
+      toggleAll: () => this.setState(s => ({ picked: s.picked.length === DATA.length ? [] : DATA.map(r => r.id) })),
+      doRefresh: () => {
+        if (this.state.refreshing) return;
+        this.setState({ refreshing: true });
+        setTimeout(() => this.setState({ refreshing: false }), 1600);
+      },
+      toggleMenu: e => {
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const open = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => { x.classList.remove('is-open'); x.classList.remove('ra--up'); });
+        if (open) return;
+        // Show first, then measure: a display:none menu reports height 0, so
+        // deciding the direction before opening always chose "down".
+        w.classList.add('is-open');
+        const menu = w.querySelector('.ra__menu');
+        const box = w.closest('.app__content');
+        if (menu && box) {
+          // Both measurements come from getBoundingClientRect: these sheets show
+          // the shell under a CSS transform, and mixing a scaled rect with an
+          // unscaled offsetHeight makes the threshold meaningless.
+          const room = box.getBoundingClientRect().bottom - w.getBoundingClientRect().bottom;
+          w.classList.toggle('ra--up', room < menu.getBoundingClientRect().height + 12);
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

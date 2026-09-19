@@ -1,0 +1,18 @@
+@*
+    The loading state of any archetype: spinner and caption. Mirrors .loading-block in
+    .design/handoff/ComponentsPanel.dc.html (rules in components.css).
+*@
+
+<div class="loading-block@(UnderTable ? " loading-block--under-table" : "")">
+    <span class="spinner"></span><span>@Text</span>
+</div>
+
+@code {
+    [Parameter] public string Text { get; set; } = "Loading...";
+
+    /// <summary>
+    /// The caption under a skeleton table (see <c>TableSkeletonRows</c>), which drops the
+    /// block's own padding so it reads as the table's footnote.
+    /// </summary>
+    [Parameter] public bool UnderTable { get; set; }
+}

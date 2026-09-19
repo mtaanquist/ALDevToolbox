@@ -27,19 +27,9 @@
 
 <PageTitle>What's next · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">You're all set - here's what's next</h1>
-            <p class="page-head__sub">
-                Opening what you just downloaded, and putting it somewhere safe.
-            </p>
-        </div>
-    </header>
-
-    <div class="docs">
-        <div class="docs__main">
-            <article class="prose">
+<DocsPage Title="You're all set - here's what's next"
+          Subtitle="Opening what you just downloaded, and putting it somewhere safe."
+          Toc="@Toc">
                 <p class="prose__lead">
                     Your workspace or extension is in your Downloads folder. The rest of
                     this page walks through opening it, putting it under source control,
@@ -101,10 +91,7 @@
                     <div class="code-block__bar">
                         <span class="code-block__lang">shell</span>
                         <span class="code-block__spacer"></span>
-                        <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-init">
-                            <Icon Name="copy" Width="14" Height="14" />
-                            <span data-copy-label>Copy</span>
-                        </button>
+                        <CopyButton Target="#wn-git-init" />
                     </div>
                     <pre id="wn-git-init">git init
 git add .
@@ -119,10 +106,7 @@ git commit -m "Initial workspace from AL Dev Toolbox"</pre>
                     <div class="code-block__bar">
                         <span class="code-block__lang">shell</span>
                         <span class="code-block__spacer"></span>
-                        <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-config">
-                            <Icon Name="copy" Width="14" Height="14" />
-                            <span data-copy-label>Copy</span>
-                        </button>
+                        <CopyButton Target="#wn-git-config" />
                     </div>
                     <pre id="wn-git-config">git config --global user.name "Kirsten Jensen"
 git config --global user.email "kirsten.jensen@cronus.example"</pre>
@@ -172,10 +156,7 @@ https://gitlab.com/your-org/customer-cronus.git</pre>
                     <div class="code-block__bar">
                         <span class="code-block__lang">shell</span>
                         <span class="code-block__spacer"></span>
-                        <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-push">
-                            <Icon Name="copy" Width="14" Height="14" />
-                            <span data-copy-label>Copy</span>
-                        </button>
+                        <CopyButton Target="#wn-git-push" />
                     </div>
                     <pre id="wn-git-push">git remote add origin &lt;paste the URL here&gt;
 git branch -M main
@@ -248,18 +229,15 @@ git push -u origin main</pre>
                         <span>Create another extension</span>
                     </a>
                 </p>
-            </article>
-        </div>
+</DocsPage>
 
-        <nav class="docs__toc" aria-label="On this page">
-            <span class="docs__toc-h">On this page</span>
-            <div class="docs__toc-list">
-                <a class="toc-link" href="#wn-open">1. Open the folder</a>
-                <a class="toc-link" href="#wn-git">2. Save it with git</a>
-                <a class="toc-link" href="#wn-push">3. Put it on your git server</a>
-                <a class="toc-link" href="#wn-daily">From here on</a>
-                <a class="toc-link" href="#wn-stuck">Stuck?</a>
-            </div>
-        </nav>
-    </div>
-</div>
+@code {
+    private static readonly DocsTocEntry[] Toc =
+    {
+        new("1. Open the folder", "wn-open"),
+        new("2. Save it with git", "wn-git"),
+        new("3. Put it on your git server", "wn-push"),
+        new("From here on", "wn-daily"),
+        new("Stuck?", "wn-stuck"),
+    };
+}

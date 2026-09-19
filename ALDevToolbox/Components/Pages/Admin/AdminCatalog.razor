@@ -23,24 +23,22 @@
 <PageTitle>Catalogue · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1 class="page-head__title">Well-known dependencies</h1>
-            <p class="page-head__sub">
-                These rows populate the dependency picker on the New Extension
-                form. Group items into categories (Continia, ForNAV, Other...)
-                so they bucket sensibly there.
-            </p>
-        </div>
-        <div class="page-head__actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
+    <PageHead Title="Well-known dependencies" Sticky="true">
+        <Crumbs>
+            <a href="/admin">Admin</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>Well-known dependencies</span>
+        </Crumbs>
+        <SubtitleContent>
+            These rows populate the dependency picker on the New Extension
+            form. Group items into categories (Continia, ForNAV, Other...)
+            so they bucket sensibly there.
+        </SubtitleContent>
+        <Actions>
             @* Save lives in the sticky .form-actions bar at the foot of the form,
                where a long row list ends. *@
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @if (_form is null)
     {

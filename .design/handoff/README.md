@@ -44,7 +44,18 @@ Object Explorer's file diff and the standalone Diff tool (at `/diff`; called
 Compare until #578) both translate from it. The handoff file keeps its
 `PageCompare.dc.html` name because it mirrors the Claude Design project.
 
+`PageEnvironmentsList.dc.html`, `PageUpgrades.dc.html` and
+`PageEnvironmentDetail.dc.html` were pulled for the page-archetype milestone
+([#818]) together with a refresh of `PagesStandard.dc.html`, `ShellFrame.dc.html`,
+`ShellPageBody.dc.html`, `PageList.dc.html`, `DESIGN-SYSTEM.md` and
+`foundations.css`. These are byte-exact, not transcribed: the `get_file` results
+were extracted from the session transcript by script rather than retyped, and
+the seven byte-locked sheets were compared the same way and found identical. The
+app deliberately diverges from the Environments sheet's copy in a few places;
+the design project's `briefs/2026-09-port-corrections.md` records which.
+
 [#570]: https://github.com/mtaanquist/ALDevToolbox/issues/570
+[#818]: https://github.com/mtaanquist/ALDevToolbox/issues/818
 
 PR 12 is the exception: it ported archetypes 12-14, and their three sheets
 (`PageDocs.dc.html`, `PageMcpSetup.dc.html`, `PageErrorStates.dc.html`) were

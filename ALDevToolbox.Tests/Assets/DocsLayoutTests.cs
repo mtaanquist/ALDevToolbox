@@ -97,7 +97,9 @@ public sealed class DocsLayoutTests
             "the measure has to land on the step's prose, or opting out of it loses "
             + "readability along with the cap");
 
-        Read("ALDevToolbox/Components/Pages/Mcp.razor").Should().Contain("steps steps--wide",
+        // The class itself is rendered by SetupSteps (pinned in ContentArchetypeTests);
+        // what the page owns is the decision to ask for it.
+        Read("ALDevToolbox/Components/Pages/Mcp.razor").Should().Contain("<SetupSteps Wide=\"true\">",
             "the MCP page is the case that raised it - two-up cards crushed to 265px "
             + "each and a server address wrapped mid-token");
     }

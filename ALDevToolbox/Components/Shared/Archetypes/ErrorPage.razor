@@ -1,0 +1,46 @@
+@*
+    Archetype 14, the full-page error state. Mirrors .errpage in
+    .design/handoff/PageErrorStates.dc.html (rules in pages-content.css), in the
+    handoff's slot order: glyph, code, title, text, detail, actions, then whatever
+    follows (the 500's reference block).
+
+    Injects nothing and awaits nothing, and must stay that way: /Error renders after
+    something has already failed, possibly the database (issue #559).
+*@
+
+<div class="errpage">
+    <div class="errpage__inner">
+        <span class="errpage__glyph@(Danger ? " errpage__glyph--danger" : "")">
+            <Icon Name="@Icon" Width="26" Height="26" />
+        </span>
+        <span class="errpage__code">@Code</span>
+        <h1 class="errpage__title">@Title</h1>
+        <p class="errpage__text">@Text</p>
+        @Detail
+        <span class="errpage__acts">@Actions</span>
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Icon { get; set; } = string.Empty;
+
+    /// <summary>Red glyph, for "we broke" as opposed to "that isn't here".</summary>
+    [Parameter] public bool Danger { get; set; }
+
+    /// <summary>The small line above the title, e.g. "Error 404 - not found".</summary>
+    [Parameter, EditorRequired] public string Code { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public RenderFragment? Text { get; set; }
+
+    /// <summary>Between the text and the actions: the address that failed.</summary>
+    [Parameter] public RenderFragment? Detail { get; set; }
+
+    /// <summary>The way out. One primary button first.</summary>
+    [Parameter, EditorRequired] public RenderFragment? Actions { get; set; }
+
+    /// <summary>After the actions: the reference block and its note.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

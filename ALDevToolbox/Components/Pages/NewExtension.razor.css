@@ -3,15 +3,6 @@
    the legacy sheets it was undoing were deleted. There is nothing to patch any
    more: .field and .form-grid mean one thing now, and it is the component's. */
 
-.gen__go {
-    width: 100%;
-    height: var(--control-h-lg);
-}
-
-.gen__note {
-    text-align: center;
-}
-
 /* The GitHub cards (#623). A stack with one rhythm - the picker or the
    sentence, then whatever the last action had to say. Deliberately margins
    rather than a grid: a grid would stretch the "Add to repository" button to

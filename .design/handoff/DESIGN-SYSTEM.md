@@ -11,7 +11,7 @@ Everything is authored for hand-translation to Blazor: semantic tokens, BEM-ish 
 | --- | --- |
 | `tokens.css` | The whole token contract. Light under `:root`, dark under `:root[data-theme="dark"]` and `@media (prefers-color-scheme: dark)` on `:root:not([data-theme="light"])`. |
 | `components.css` | Every reusable component. References tokens only. |
-| `shell.css` | App shell: sidebar, top bar, content column, sticky page head, responsive steps. |
+| `shell.css` | App shell: sidebar (collapsible nav groups), top bar, content column, sticky page head, responsive steps. |
 | `pages.css` | Standard page archetypes 1-4, 8 (launcher, list, detail, dashboard, run monitor). |
 | `pages-forms.css` | Archetypes 5-8: generator, admin edit + audit, settings, auth. Owns `.diff`. |
 | `pages-power.css` | Archetypes 9-11 at compact density: translation grid, object viewer, compare. |
@@ -43,16 +43,16 @@ WCAG AA in both themes: >= 4.5:1 body text, >= 3:1 large text and UI boundaries.
 
 ## Component inventory
 
-**Actions** `.btn` + `--primary --danger --ghost --icon --sm --loading`, `.copy-btn.is-copied`, `.kbd` / `.kbd-hint`
+**Actions** `.btn` + `--primary --danger --ghost --icon --sm --loading`, `.cmdbar` + `__row __group __search __note`, `.copy-btn.is-copied`, `.kbd` / `.kbd-hint`
 **Forms** `.field` + `__label __hint --invalid --full`, `.field-error`, `.req`, `.input` + `--num --ro --invalid`, `.input-group` + `__btn`, `.textarea`, `.select` / `.select-wrap` + `__caret`, `.check` + `__box`, `.switch` + `__track __knob`, `.search` + `__icon`, `.form-grid`, `.form-sec` + `__head __note __cap`, `.form-actions` + `__spacer __note --sticky`, `.id-range` + `__sep __count`, `.module-card` + `__title __text __deps __check __row __id`, `.check-list`, `.setting` + `__label __name __hint __ctl --danger`, `.setting__lock`
 **Status** `.status-pill` + `--succeeded --running --failed --queued --warn --untrans --fuzzy --trans --final`, `.badge` + `--solid --danger`, `.state-label`, `.commit-chip`, `.refchip` + `--base --target`
-**Feedback** `.alert` + `--info --success --warn --danger`, `.note` + `--info --warn --tip --danger` + `__icon __title __body`, `.toast` + `--success` + `__icon __body __title __text`, `.toast-stack`, `.confirm-dialog` + `--danger` + `__head __icon __title __body __actions`, `.modal-backdrop`, `.empty-state`, `.skeleton`
-**Containers** `.card` + `__head __title __sub __body __foot`, `.stat-card` + `--accent __label __value`, `.panel`, `.meta-row` / `.meta-item`, `.pane` + `__head __title __count __body __sec __sec-h`
-**Navigation** `.header-tabs` / `.header-tab`, `.pill-tabs` / `.pill-tab` + `__count`, `.view-switch`, `.page-head` + `__crumbs __title __sub __actions --sticky`, `.ra` / `.menu` + `__item --danger __sep __icon`, `.toc-link` + `--sub`, `.ftabs` / `.ftab` + `--dirty __ico __x`
-**Data** `.data-table` + `__state __num` + row `.is-*`, `.sub-rows` + `__head __foot __empty` / `.sub-row` + `__grip __name __val __acts --drop .is-dragging`, `.run-list` / `.run-row`, `.audit` + `__entry __sum __time __avatar __what __who __caret __body __foot`, `.diff` + `__bar __keys __key __chip __body __ln __gut __code` + `--add --del --chg --void --split`, `.tgrid` / `.trow` (+ `--editing __edge __key __src __tgt __st __acts __ta`), `.tprog`, `.crail` / `.crow`
+**Feedback** `.alert` + `--info --success --warn --danger`, `.note` + `--info --warn --tip --danger` + `__icon __title __body`, `.freshness` + `__icon __text __age __sep __note __spacer` + `--stale` / `.is-refreshing`, `.toast` + `--success` + `__icon __body __title __text`, `.toast-stack`, `.confirm-dialog` + `--danger` + `__head __icon __title __body __actions`, `.modal-backdrop`, `.empty-state`, `.skeleton`
+**Containers** `.card` + `__head __title __sub __body __foot`, `.stat-card` + `--accent __label __value`, `.panel`, `.meta-row` / `.meta-item`, `.kv-grid`, `.pane` + `__head __title __count __body __sec __sec-h`
+**Navigation** `.header-tabs` / `.header-tab`, `.pill-tabs` / `.pill-tab` + `__count`, `.view-switch`, `.page-head` + `__crumbs __title __sub __actions --sticky`, `.ra` + `--up` / `.menu` + `__item --danger __sep __icon`, `.toc-link` + `--sub`, `.ftabs` / `.ftab` + `--dirty __ico __x`
+**Data** `.data-table` + `__state __num` + row `.is-*`, `.cell-stack` + `__main __sub`, `.sub-rows` + `__head __foot __empty` / `.sub-row` + `__grip __name __val __acts --drop .is-dragging`, `.run-list` / `.run-row`, `.audit` + `__entry __sum __time __avatar __what __who __caret __body __foot`, `.diff` + `__bar __keys __key __chip __body __ln __gut __code` + `--add --del --chg --void --split`, `.tgrid` / `.trow` (+ `--editing __edge __key __src __tgt __st __acts __ta`), `.tprog`, `.crail` / `.crow`
 **Code** `.code-block` + `__bar __lang __name __spacer --inlinebar` + `pre` + `.k .t .n .s .c .o` (components.css), `.codev` + `__ln __n __c __fold` + `.k .t .n .s .c .o`, `.sym` / `.symcard`, `.hunk`, `.prose` (element-scoped)
 **Trees and symbols** `.tree` + `__row --gen --group --file __ico __name __meta __legend __key`, `.otree` + `__row __caret __ico __name __id`, `.okind` + `--tab --pag --cod --rep`, `.olist` / `.orow` + `__glyph __name __type`, `.refs` / `.refgrp` / `.refhit`
-**Shell** `.app` + `__nav __top __content __content-inner`, `.nav-item`, `.nav-group`, `.quota`, `.user-btn`, `.pw` + `__head __bar __body __foot __title __name __file __spacer __sep`, `.pw-split`
+**Shell** `.app` + `__nav __top __content __content-inner`, `.nav-item`, `.nav-group` + `__head __caret __label __dot __items` + `--plain --fenced` + `.is-collapsed` / `.has-active-page`, `.nav-parent` / `.nav-sub`, `.quota`, `.user-btn`, `.pw` + `__head __bar __body __foot __title __name __file __spacer __sep`, `.pw-split`
 **Auth and errors** `.auth` + `__card __brand __mark __product __head __title __sub __fields __foot __legal __or __ok __ok-icon __mail __link`, `.errpage` + `__inner __glyph __code __title __text __path __acts __links __ref`, `.errlink`
 **Steps** `.steps` / `.step` + `__n __head __title __text __body --current .is-done`
 
@@ -61,8 +61,10 @@ WCAG AA in both themes: >= 4.5:1 body text, >= 3:1 large text and UI boundaries.
 | # | Archetype | Surfaces | Density | Layer |
 | --- | --- | --- | --- | --- |
 | 1 | Tool launcher | Home | balanced | pages |
-| 2 | List / index | Projects, Templates, Cookbook, Releases | balanced | pages |
+| 2 | List / index | Solutions, Templates, Cookbook, Releases | balanced | pages |
+| 2a | Cross-solution list, live data | Environments | balanced | pages |
 | 3 | Entity detail | Workspace, release, recipe | balanced | pages |
+| 3a | Environment detail | One BC environment: updates, apps, tenant settings | balanced | pages |
 | 4 | Dashboard | Admin home, site admin | balanced | pages |
 | 5 | Generator + live preview | New workspace, new extension | balanced | forms |
 | 6 | Admin edit + audit history | Every admin CRUD edit page | balanced | forms |
@@ -75,6 +77,7 @@ WCAG AA in both themes: >= 4.5:1 body text, >= 3:1 large text and UI boundaries.
 | 13 | Setup steps | Connect an agent, onboarding | balanced | content |
 | 14 | Not found / server error | 404, 500 | balanced | content |
 | - | Auth card | Login, signup, reset, invite | balanced | forms (no shell) |
+| 15 | Actionable list | Upgrades; any list with bulk actions | balanced | components + pages |
 
 ## Review sheets
 
@@ -90,3 +93,20 @@ WCAG AA in both themes: >= 4.5:1 body text, >= 3:1 large text and UI boundaries.
 4. Status is always keyline + pill + word. Colour alone never carries meaning.
 5. Both themes are first-class. A token declared in one theme only is a bug.
 6. Sample copy uses CRONUS and ASCII punctuation.
+
+## Naming
+
+The tool formerly called **Projects** is **Solutions** (one per customer). Microsoft
+renamed Jobs to "Projects" inside Business Central, so the old name now collides with
+a BC application area. Nothing in these files should say "project" for a customer
+solution. **Compare** is **Diff** in the nav, matching the app.
+
+## Sidebar structure
+
+One list, four named groups: Home (ungrouped) - **Build** (Templates with Workspace /
+Extension, Cookbook, Object Explorer) - **Work with text** (Translator, Diff, Piper) -
+**Deliver** (Solutions with Environments / Upgrades, Teams, Pipelines, Releases) -
+**Connect an assistant** (MCP) - **Admin** - **Site administration**. Every named group
+has a collapsible `.nav-group__head`; a collapsed group that holds the current route
+keeps an active indicator on its header. `.nav-group--fenced` puts the one rule that
+marks the turn from tools to role-gated administration.

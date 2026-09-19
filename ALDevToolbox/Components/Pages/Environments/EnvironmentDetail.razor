@@ -1,0 +1,1119 @@
+@page "/environments/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
+@inject ILogger<EnvironmentDetail> Log
+@using System.Globalization
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+@using static ALDevToolbox.Components.Shared.FleetRowState
+
+@*
+    One Business Central environment: what it is on, when Microsoft moves it, what is
+    installed, what is waiting, and the three settings we can change in the customer's
+    tenant. Built to .design/handoff/PageEnvironmentDetail.dc.html; every departure is
+    tabled in .design/environment-updates.md.
+
+    Named user: an ops engineer responsible for a fleet of customer environments, who
+    today opens each customer's admin centre in turn. Knows Business Central; knows
+    nothing about this codebase.
+
+    Two kinds of reading share the page, and the freshness strip says which is which.
+    The head, the meta row and the Updates card come from our own mirror of the
+    environment, so anyone who can see the solution gets them and they cost Business
+    Central nothing. Apps and Environment settings are read live, with the customer's
+    credentials, and are for people who manage the solution - its owner, an org admin,
+    or anyone on a team assigned to it, which covers every holder of the
+    environment-updates grant. The same gate the solution's Business Central tab has
+    always had. No second fetch path: it is the
+    same cached panel read (ProjectConnectionService.GetEnvironmentPanelAsync).
+*@
+
+<PageTitle>@(_env?.Fleet.EnvironmentName ?? "Environment") · AL Dev Toolbox</PageTitle>
+
+<DetailPage IsLoading="@(!_loaded)"
+            LoadingText="Loading environment..."
+            IsNotFound="@(_loaded && _env is null)"
+            Title="@_env?.Fleet.EnvironmentName"
+            PageClass="env-detail">
+    <NotFound>
+        <div class="card">
+            <EmptyState Icon="server" Title="We couldn't find that environment" Heading="true">
+                <Text>
+                    Business Central may no longer report it, or it belongs to a solution
+                    you can't see.
+                </Text>
+                <Action>
+                    <a class="btn" href="/environments">Back to Environments</a>
+                </Action>
+            </EmptyState>
+        </div>
+    </NotFound>
+    <Crumbs>
+        <a href="/solutions">Solutions</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <a href="@($"/solutions/{Row.ProjectId}")">@Row.ProjectName</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <a href="/environments">Environments</a>
+        <Icon Name="chevron-right" Width="14" Height="14" />
+        <span>@Row.EnvironmentName</span>
+    </Crumbs>
+    <TitleRow>
+        <span class="status-pill status-pill--@StatusTone()"><span class="status-pill__dot"></span>@StatusWord(Row)</span>
+        <span class="tag">@Row.EnvironmentType</span>
+    </TitleRow>
+    <SubtitleContent>@SubtitleText()</SubtitleContent>
+    <Actions>
+        @if (Row.BusinessCentralUrl is { } bcUrl)
+        {
+            <a class="btn" href="@bcUrl" target="_blank" rel="noopener">
+                <Icon Name="external-link" Width="15" Height="15" />
+                <span>Open in Business Central</span>
+            </a>
+        }
+        @if (AdminCentreUrl is { } adminUrl)
+        {
+            <a class="btn" href="@adminUrl" target="_blank" rel="noopener">
+                <Icon Name="external-link" Width="15" Height="15" />
+                <span>Open the admin centre</span>
+            </a>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="freshness @FreshnessClass()">
+            <Icon Name="cloud-download" Width="15" Height="15" Css="freshness__icon" />
+            <span class="freshness__text">
+                @if (_panel is { } fresh)
+                {
+                    <text>Apps and settings read from Business Central <span class="freshness__age">@RelativeTime.Ago(fresh.FetchedAtUtc)</span>. </text>
+                }
+                @if (Row.EnvironmentFetchedAt is { } mirrored)
+                {
+                    <text>Version and update dates last checked <span class="freshness__age">@RelativeTime.Ago(mirrored)</span>.</text>
+                }
+                else
+                {
+                    <text>Version and update dates haven't been read from Business Central yet.</text>
+                }
+            </span>
+            <span class="freshness__spacer"></span>
+            @if (_canManage)
+            {
+                <button type="button" class="btn btn--sm @(_panelLoading ? "btn--loading" : "")"
+                        @onclick="() => LoadPanelAsync(forceRefresh: true)" disabled="@_panelLoading">
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span class="btn__label">@(_panelLoading ? "Refreshing" : "Refresh")</span>
+                </button>
+            }
+        </div>
+
+        @* What the last write did. Up here, not beside the control that did it: the
+           writes are spread over a long page (an app, a scheduled install, three
+           settings, a booked update) and each re-reads everything, so the one place
+           that is always where the eye lands afterwards is the top. *@
+        @if (_settingError is { } settingError)
+        {
+            <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@settingError</span></p>
+        }
+        else if (_settingDone is { } settingDone)
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@settingDone</span></p>
+        }
+
+        @* Under the freshness strip, as the sheet has it, so the strip qualifies the
+           numbers below it - which is why this is not the frame's Meta slot. *@
+        <div class="meta-row">
+            <span class="meta-item"><span class="meta-item__label">Type</span><span class="meta-item__value">@Row.EnvironmentType</span></span>
+            <span class="meta-item"><span class="meta-item__label">BC version</span><span class="meta-item__value meta-item__value--mono">@(Row.Version ?? "—")</span></span>
+            <span class="meta-item"><span class="meta-item__label">Country</span><span class="meta-item__value">@CountryText()</span></span>
+            <span class="meta-item"><span class="meta-item__label">Delivery window</span><span class="meta-item__value">@DeliveryWindowText()</span></span>
+            <span class="meta-item"><span class="meta-item__label">Next update</span><span class="meta-item__value">@(Row.NextUpdateDate is { } next ? next.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) : "—")</span></span>
+            <span class="meta-item"><span class="meta-item__label">Apps installed</span><span class="meta-item__value">@(_panel is { InstalledAppsError: null } p ? p.InstalledApps.Count.ToString() : "Not read")</span></span>
+        </div>
+
+        <div class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Updates</h2>
+                    <p class="card__sub">When Microsoft moves this environment to the next Business Central version, and the hours agreed with the customer for our own installs.</p>
+                </div>
+                @if (_panel is not null && Choosable().Count > 0)
+                {
+                    <a class="btn btn--sm" href="@($"/environments/{Id}#env-next-update")">
+                        <Icon Name="arrow-down" Width="14" Height="14" />
+                        <span>Change the next version</span>
+                    </a>
+                }
+            </div>
+            <div class="card__body">
+                <div class="kv-grid">
+                    <span class="meta-item"><span class="meta-item__label">Current version</span><span class="meta-item__value">@CurrentVersionShort()@if (Row.Version is { } full && full != CurrentVersionShort()) {<span class="u-muted"> (@full)</span>}</span></span>
+                    <span class="meta-item"><span class="meta-item__label">Next update version</span><span class="meta-item__value">@(Row.NextUpdateVersion ?? "None announced")</span></span>
+                    <span class="meta-item"><span class="meta-item__label">Scheduled for</span><span class="meta-item__value">@ScheduledForText()@if (ScheduledUtcText() is { } utcText) {<span class="u-muted env-detail__utc">@utcText</span>}</span></span>
+                    <span class="meta-item"><span class="meta-item__label">Latest possible date</span><span class="meta-item__value">@(Row.EffectiveLatestDate is { } latest ? latest.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) : "—")</span></span>
+                    <span class="meta-item"><span class="meta-item__label">Our delivery window</span><span class="meta-item__value">@DeliveryWindowText()</span></span>
+                    <span class="meta-item"><span class="meta-item__label">BC update window</span><span class="meta-item__value">@BcWindowText()</span></span>
+                </div>
+                @if (LaterVersions() is { Length: > 0 } later)
+                {
+                    <p class="u-muted env-detail__later">Also announced: @later</p>
+                }
+                @if (WindowsOverlap())
+                {
+                    <div class="alert alert--info env-detail__overlap">
+                        <Icon Name="info" Width="16" Height="16" />
+                        <span>
+                            The two windows overlap. Business Central refuses an install while it
+                            is updating the environment, so a release that lands during Microsoft's
+                            update would fail. Move the delivery window from the
+                            <a href="@($"/solutions/{Row.ProjectId}?tab=bc")">solution's Business Central tab</a>
+                            if the update date matters to the customer.
+                        </span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (!_canManage)
+        {
+            <div class="card">
+                <EmptyState Icon="lock" Title="Apps and settings are for people who manage this solution" Quiet="true">
+                    <Text>
+                        Reading what is installed uses the customer's own connection, and the
+                        settings here change their Business Central. Ask the solution's owner
+                        or an administrator to add you to one of its teams.
+                    </Text>
+                </EmptyState>
+            </div>
+        }
+        else if (_panelLoading && _panel is null)
+        {
+            <LoadingBlock Text="@($"Asking Business Central what's on {Row.EnvironmentName}...")" />
+        }
+        else if (_panelError is { } panelError)
+        {
+            <div class="card">
+                <EmptyState Icon="plug" Title="Couldn't read apps and settings from Business Central">
+                    <Text>@panelError</Text>
+                    <Action>
+                        <a class="btn" href="@($"/solutions/{Row.ProjectId}?tab=bc")">Check the solution's connection</a>
+                    </Action>
+                </EmptyState>
+            </div>
+        }
+        else if (_panel is { } panel)
+        {
+            <p class="section-label">Apps</p>
+
+            <div class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Scheduled installs</h2>
+                        <p class="card__sub">Installs this toolbox has queued against the environment.</p>
+                    </div>
+                </div>
+                @if (panel.ScheduledInstallsError is { } scheduledErr)
+                {
+                    <div class="card__body"><span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@scheduledErr</span></div>
+                }
+                else if (panel.ScheduledInstalls.Count == 0)
+                {
+                    <EmptyState Icon="calendar" Title="Nothing waiting to install" Quiet="true">
+                        <Text>A release you schedule for this environment waits here until Business Central installs it.</Text>
+                        <Action>
+                            <a class="btn btn--sm" href="/releases">Open Releases</a>
+                        </Action>
+                    </EmptyState>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">App</th>
+                                <th scope="col">Version</th>
+                                <th scope="col">Installs</th>
+                                <th scope="col" class="data-table__actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var op in panel.ScheduledInstalls)
+                            {
+                                <tr>
+                                    <td>
+                                        @(string.IsNullOrWhiteSpace(op.Name) ? "An extension" : op.Name)
+                                        @if (op.AppId is { } ourApp && panel.ReleasedAppIds.Contains(ourApp))
+                                        {
+                                            <span class="tag">Released from this toolbox</span>
+                                        }
+                                    </td>
+                                    <td class="u-num env-detail__mono">@op.TargetAppVersion</td>
+                                    <td>@ScheduleWhen(op.ScheduleKind)</td>
+                                    <td class="data-table__actions">
+                                        @if (op.AppId is { } appId)
+                                        {
+                                            <button type="button" class="btn btn--sm btn--danger"
+                                                    @onclick="() => CancelScheduledAsync(appId, op)">Cancel install</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div class="card__foot">
+                        <span class="u-muted env-detail__count">Installs started from Business Central's own Extension Management page aren't shown here. Pick one place per customer.</span>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title env-detail__counted">Installed apps<span class="badge">@panel.InstalledApps.Count</span></h2>
+                        <p class="card__sub">Reported by the environment, including Microsoft's own apps.</p>
+                    </div>
+                    @if (panel.InstalledApps.Count > 0)
+                    {
+                        <span class="search env-detail__filter">
+                            <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                            <input class="input" type="search" placeholder="Filter installed apps..."
+                                   aria-label="Filter installed apps" @bind="_installedFilter" @bind:event="oninput" />
+                        </span>
+                    }
+                </div>
+                @if (panel.InstalledAppsError is { } installedErr)
+                {
+                    <div class="card__body"><span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@installedErr</span></div>
+                }
+                else if (panel.InstalledApps.Count == 0)
+                {
+                    <EmptyState Title="No apps reported" Quiet="true">
+                        <Text>Business Central answered, but listed nothing installed on this environment.</Text>
+                    </EmptyState>
+                }
+                else
+                {
+                    var installed = FilteredInstalled(panel);
+                    var installedShown = _showAllInstalled || _installedFilter.Length > 0 ? installed : installed.Take(InstalledPreview).ToList();
+                    @if (installed.Count == 0)
+                    {
+                        <EmptyState Title="No installed app matches that" Quiet="true">
+                            <Text>Try part of the app's name or its publisher.</Text>
+                        </EmptyState>
+                    }
+                    else
+                    {
+                        <table class="data-table">
+                            <thead>
+                                <tr><th scope="col">App</th><th scope="col">Publisher</th><th scope="col">Version</th><th scope="col">Source</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var app in installedShown)
+                                {
+                                    <tr>
+                                        <td>
+                                            @app.Name
+                                            @if (panel.ReleasedAppIds.Contains(app.AppId))
+                                            {
+                                                <span class="tag">Released from this toolbox</span>
+                                            }
+                                        </td>
+                                        <td>@app.Publisher</td>
+                                        <td class="u-num env-detail__mono">@app.Version</td>
+                                        <td>@SourceText(app)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <div class="card__foot">
+                            <span class="u-muted env-detail__count">
+                                @if (installedShown.Count < panel.InstalledApps.Count)
+                                {
+                                    <text>Showing @installedShown.Count of @panel.InstalledApps.Count. </text>
+                                }
+                                Extensions you build are updated from <a href="/releases">Releases</a>, not here.
+                            </span>
+                            @if (installedShown.Count < installed.Count)
+                            {
+                                <button type="button" class="btn btn--sm" @onclick="() => _showAllInstalled = true">Show all @installed.Count</button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title env-detail__counted">AppSource updates waiting<span class="badge">@panel.AvailableUpdates.Count</span></h2>
+                        <p class="card__sub">
+                            @if (BlockedCount(panel) > 0)
+                            {
+                                <text>@BlockedCount(panel) of these @(BlockedCount(panel) == 1 ? "waits" : "wait") for another app to be updated first. </text>
+                            }
+                            Apps you build and release yourself are never listed here.
+                        </p>
+                    </div>
+                    @if (panel.AvailableUpdates.Count > 0)
+                    {
+                        <span class="u-row">
+                            <span class="search env-detail__filter">
+                                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                                <input class="input" type="search" placeholder="Filter updates..."
+                                       aria-label="Filter AppSource updates" @bind="_updatesFilter" @bind:event="oninput" />
+                            </span>
+                            <span class="select-wrap" style="width: 150px">
+                                <select class="select" aria-label="Show ready or waiting updates" @bind="_updatesShow">
+                                    <option value="">All updates</option>
+                                    <option value="ready">Ready now</option>
+                                    <option value="blocked">Waiting</option>
+                                </select>
+                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                            </span>
+                        </span>
+                    }
+                </div>
+                @if (panel.AvailableUpdatesError is { } updatesErr)
+                {
+                    <div class="card__body"><span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@updatesErr</span></div>
+                }
+                else if (panel.AvailableUpdates.Count == 0)
+                {
+                    <EmptyState Icon="circle-check" Title="No AppSource app has a newer version waiting" Quiet="true" />
+                }
+                else
+                {
+                    var updates = FilteredUpdates(panel);
+                    var narrowed = _updatesFilter.Length > 0 || _updatesShow.Length > 0;
+                    var updatesShown = _showAllUpdates || narrowed ? updates : updates.Take(UpdatesPreview).ToList();
+                    @if (updates.Count == 0)
+                    {
+                        <EmptyState Title="No waiting update matches that" Quiet="true">
+                            <Text>Try part of the app's name, or choose All updates.</Text>
+                        </EmptyState>
+                    }
+                    else
+                    {
+                        <table class="data-table data-table--edge u-compact">
+                            <thead>
+                                <tr>
+                                    <th class="data-table__col-state" scope="col"><span class="u-sr">State</span></th>
+                                    <th scope="col">App</th>
+                                    <th scope="col">Publisher</th>
+                                    <th scope="col">Target version</th>
+                                    <th scope="col">Prerequisites</th>
+                                    <th scope="col" class="data-table__actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var up in updatesShown)
+                                {
+                                    var ready = up.Requirements.Count == 0;
+                                    var rowState = UpdateRowClass(up);
+                                    <tr class="@rowState">
+                                        <td class="data-table__col-state">
+                                            @if (ready)
+                                            {
+                                                <span class="status-pill status-pill--success">Ready</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="status-pill status-pill--queued">Waits for @up.Requirements.Count</span>
+                                            }
+                                        </td>
+                                        <td>@up.Name</td>
+                                        <td>@up.Publisher</td>
+                                        <td class="u-num env-detail__mono">@up.Version</td>
+                                        <td>
+                                            @if (ready)
+                                            {
+                                                <span class="u-muted">None</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="u-row env-detail__tags">
+                                                    @foreach (var req in up.Requirements)
+                                                    {
+                                                        <span class="tag">@req.Name</span>
+                                                    }
+                                                </span>
+                                            }
+                                        </td>
+                                        <td class="data-table__actions">
+                                            @* Ready rows only. A waiting one names what it waits
+                                               for instead: updating those is the next step, and a
+                                               dead button would not say so. *@
+                                            @if (ready)
+                                            {
+                                                <button type="button" class="btn btn--sm"
+                                                        disabled="@_settingSaving" @onclick="() => UpdateAppAsync(up)"
+                                                        aria-label="@($"Update {up.Name} to {up.Version}")">
+                                                    <span class="btn__label">Update</span>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <div class="card__foot">
+                            <span class="u-muted env-detail__count">
+                                @if (updatesShown.Count < panel.AvailableUpdates.Count)
+                                {
+                                    <text>Showing @updatesShown.Count of @panel.AvailableUpdates.Count, ready ones first. </text>
+                                }
+                                Left alone, Business Central installs these on the cadence set below.
+                            </span>
+                            @if (updatesShown.Count < updates.Count)
+                            {
+                                <button type="button" class="btn btn--sm" @onclick="() => _showAllUpdates = true">Show all @updates.Count</button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <p class="section-label">Environment settings</p>
+            <div class="card">
+                <div class="alert alert--warn env-detail__warn">
+                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                    <span>
+                        <b>These change @Row.EnvironmentName in the customer's tenant.</b>
+                        Saving here writes straight to @Row.ProjectName's Business Central
+                        environment, not just to the toolbox. Agree the change with the customer first.
+                    </span>
+                </div>
+                <div class="setting-list">
+                    <div class="setting">
+                        <span class="setting__label">
+                            <label class="setting__name" for="env-cadence">AppSource apps update cadence</label>
+                            <span class="setting__hint">How often apps the customer installed are updated. Does not affect extensions you release yourself.</span>
+                        </span>
+                        <span class="setting__ctl">
+                            <span class="select-wrap" style="width: 240px">
+                                <select id="env-cadence" class="select" value="@_cadence" disabled="@_settingSaving"
+                                        @onchange="OnCadenceChangedAsync">
+                                    @foreach (var option in BcAppUpdateCadence.All)
+                                    {
+                                        <option value="@option">@BcAppUpdateCadence.Display(option)</option>
+                                    }
+                                </select>
+                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                            </span>
+                        </span>
+                    </div>
+                    <div class="setting">
+                        <span class="setting__label">
+                            <span class="setting__name" id="env-m365-label">Access with Microsoft 365 licences</span>
+                            <span class="setting__hint">
+                                Lets people who hold only a Microsoft 365 licence sign in and read data in this environment.
+                                @if (_m365 is null)
+                                {
+                                    <text>
+                                        Couldn't read this setting right now - try Refresh above, or check the
+                                        connection on the <a href="@($"/solutions/{Row.ProjectId}?tab=bc")">solution's Business Central tab</a>.
+                                    </text>
+                                }
+                            </span>
+                        </span>
+                        <span class="setting__ctl">
+                            @if (_m365 is { } m365)
+                            {
+                                <Switch Name="M365Access" Label="@(m365 ? "Allowed" : "Not allowed")" Checked="m365"
+                                        Disabled="_settingSaving" AriaDescribedBy="env-m365-label"
+                                        CheckedChanged="SaveM365Async" />
+                            }
+                            else
+                            {
+                                <span class="u-muted">Unknown</span>
+                            }
+                        </span>
+                    </div>
+                    <div class="setting setting--danger" id="env-next-update">
+                        <span class="setting__label">
+                            <label class="setting__name" for="env-version">Next Business Central update</label>
+                            <span class="setting__hint">
+                                @if (panel.EnvironmentUpdatesError is { } platformErr)
+                                {
+                                    <text>@platformErr</text>
+                                }
+                                else if (Choosable().Count == 0)
+                                {
+                                    <text>No other version is available to choose right now.</text>
+                                }
+                                else
+                                {
+                                    <text>
+                                        Picking a version reschedules the update in the customer's tenant.
+                                        The upgrade itself runs in Microsoft's update window, not yours.
+                                    </text>
+                                }
+                            </span>
+                        </span>
+                        <span class="setting__ctl">
+                            <span class="u-row">
+                                <span class="select-wrap" style="width: 180px">
+                                    <select id="env-version" class="select" @bind="_targetVersion"
+                                            disabled="@(_settingSaving || Choosable().Count == 0)">
+                                        <option value="">Choose a version...</option>
+                                        @foreach (var option in panel.EnvironmentUpdates.Where(u => u.Available))
+                                        {
+                                            @* The version already queued is shown so the list matches the
+                                               admin centre, but picking it would ask for no change. *@
+                                            <option value="@option.TargetVersion" disabled="@option.Selected">@option.TargetVersion@(option.Selected ? " (already next)" : "")</option>
+                                        }
+                                    </select>
+                                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                </span>
+                                <button type="button" class="btn btn--sm @(_settingBusy == "version" ? "btn--loading" : "")"
+                                        disabled="@(_settingSaving || string.IsNullOrEmpty(_targetVersion))"
+                                        @onclick="SaveTargetVersionAsync">
+                                    <span class="btn__label">Reschedule</span>
+                                </button>
+                            </span>
+                            <span class="setting__lock"><Icon Name="lock" Width="12" Height="12" />Writes to the customer's tenant</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* Our own record, not Business Central's, so it is outside every branch above: a
+           customer whose tenant won't answer today must not lose the history of what was
+           done to it. Anyone who can see the solution reads it; only the
+           environment-updates grant gets a Cancel. *@
+        <p class="section-label">Update history</p>
+        <div class="card">
+            <div class="card__body">
+                <EnvironmentActivityFeed Entries="_activity"
+                                         CanAct="Row.CanAct"
+                                         TimeZone="UpdateWindow.ResolveTimeZone(Row.TimeZone)"
+                                         TimeZoneLabel="@(string.IsNullOrWhiteSpace(Row.TimeZone) ? "UTC" : Row.TimeZone!)"
+                                         OnCancel="CancelUpgradeActionAsync" />
+            </div>
+        </div>
+    </ChildContent>
+</DetailPage>
+
+<ConfirmDialog @ref="_confirm" />
+
+@* Its own dialog because it asks a question the others do not: when. The gentle
+   answer is the default - an app update can interrupt whoever is working in it. *@
+<ConfirmDialog @ref="_updateConfirm">
+    <fieldset class="env-detail__when">
+        <legend class="env-detail__when-legend">When should it install?</legend>
+        <label class="env-detail__when-opt">
+            <input type="radio" name="env-update-when" checked="@_updateInWindow"
+                   @onchange="() => _updateInWindow = true" />
+            <span>In the environment's next update window</span>
+        </label>
+        <label class="env-detail__when-opt">
+            <input type="radio" name="env-update-when" checked="@(!_updateInWindow)"
+                   @onchange="() => _updateInWindow = false" />
+            <span>Now - people working in the app may be interrupted</span>
+        </label>
+    </fieldset>
+</ConfirmDialog>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    /// <summary>Rows shown before "Show all", as on the sheet.</summary>
+    private const int InstalledPreview = 6;
+    private const int UpdatesPreview = 12;
+
+    /// <summary>A mirror reading older than this gets the stale strip, as on the Environments list.</summary>
+    private static readonly TimeSpan StaleAfter = TimeSpan.FromHours(24);
+
+    private bool _loaded;
+    private EnvironmentDetailRow? _env;
+
+    /// <summary>Only read inside fragments the frame draws once the environment is found.</summary>
+    private UpgradeFleetRow Row => _env!.Fleet;
+
+    /// <summary>Owner, org admin or a member of an assigned team: who may read the live panel and change the settings.</summary>
+    private bool _canManage;
+
+    private BcEnvironmentPanel? _panel;
+    private bool _panelLoading;
+    private string? _panelError;
+    private bool? _m365;
+    private List<UpgradeActionRow>? _activity;
+
+    private string _installedFilter = string.Empty;
+    private bool _showAllInstalled;
+    private string _updatesFilter = string.Empty;
+    private string _updatesShow = string.Empty;
+    private bool _showAllUpdates;
+
+    private ConfirmDialog? _confirm;
+    private ConfirmDialog? _updateConfirm;
+
+    /// <summary>The update dialog's answer to "when". Reset to the gentle one each time it opens.</summary>
+    private bool _updateInWindow = true;
+    private string _cadence = BcAppUpdateCadence.Default;
+    private string _targetVersion = string.Empty;
+    private bool _settingSaving;
+    private string? _settingBusy;
+    private string? _settingError;
+    private string? _settingDone;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _panel = null;
+        _panelError = null;
+        await LoadEnvironmentAsync();
+        _loaded = true;
+        if (_env is null) return;
+
+        _canManage = await Access.CanManageAsync(Row.ProjectId, _env.CreatedByUserId);
+        _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+        if (_canManage)
+        {
+            // Drawn first, then read: the head and the Updates card are ours and ready,
+            // and the live half can take Business Central several seconds. LoadPanelAsync
+            // raises the flag and redraws before it awaits anything.
+            await LoadPanelAsync();
+        }
+    }
+
+    private async Task LoadEnvironmentAsync()
+    {
+        _env = await Fleet.GetEnvironmentAsync(Id);
+        _cadence = BcAppUpdateCadence.Normalize(_env?.AppSourceAppsUpdateCadence) ?? BcAppUpdateCadence.Default;
+    }
+
+    private async Task LoadPanelAsync(bool forceRefresh = false)
+    {
+        _panelLoading = true;
+        _panelError = null;
+        StateHasChanged();
+        try
+        {
+            _panel = await Connection.GetEnvironmentPanelAsync(Row.ProjectId, Id, forceRefresh);
+            _targetVersion = string.Empty;
+            _m365 = await ReadM365Async();
+        }
+        catch (PlanValidationException ex)
+        {
+            _panel = null;
+            _panelError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't read this environment.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            // Lost between the check and the read; the quiet card says the rest.
+            _canManage = false;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to read the environment panel for {EnvId}.", Id);
+            _panel = null;
+            _panelError = "Something went wrong at our end while asking Business Central. Try Refresh in a moment.";
+        }
+        finally
+        {
+            _panelLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// One setting failing to read must not cost the page its three app lists, so this
+    /// answers "unknown" - which the setting row already knows how to say.
+    /// </summary>
+    private async Task<bool?> ReadM365Async()
+    {
+        try
+        {
+            return await Connection.GetM365AccessAsync(Row.ProjectId, Id);
+        }
+        catch (PlanValidationException)
+        {
+            return null;
+        }
+    }
+
+    // ── Head ────────────────────────────────────────────────────────────
+
+    private string StatusTone() => BcEnvironmentStatus.Classify(Row.Status) switch
+    {
+        BcEnvironmentReadiness.Ready => "success",
+        BcEnvironmentReadiness.Busy => "warn",
+        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "danger",
+        _ => "muted",
+    };
+
+    private string SubtitleText()
+    {
+        var parts = new List<string> { $"Business Central environment in {Row.ProjectName}" };
+        if (CurrentVersionShort() is { Length: > 0 } version && version != "—") parts.Add($"BC version {version}");
+        if (!string.IsNullOrWhiteSpace(_env!.LocationName)) parts.Add(_env.LocationName!);
+        return string.Join(" - ", parts);
+    }
+
+    /// <summary>The admin centre for the customer's tenant. Microsoft has no deep link to one environment.</summary>
+    private string? AdminCentreUrl => Row.TenantId is { } tenant
+        ? $"https://businesscentral.dynamics.com/{tenant:D}/admin"
+        : null;
+
+    /// <summary>"28.2" from "28.2.41125.0": the part people say out loud.</summary>
+    private string CurrentVersionShort()
+    {
+        if (string.IsNullOrWhiteSpace(Row.Version)) return "—";
+        var parts = Row.Version.Split('.');
+        return parts.Length >= 2 ? $"{parts[0]}.{parts[1]}" : Row.Version;
+    }
+
+    private string CountryText()
+    {
+        var code = _env!.CountryCode;
+        if (string.IsNullOrWhiteSpace(code)) return "—";
+        try
+        {
+            return $"{new RegionInfo(code).EnglishName} ({code.ToUpperInvariant()})";
+        }
+        catch (ArgumentException)
+        {
+            // Business Central has localisations that are not ISO regions ("W1").
+            return code.ToUpperInvariant();
+        }
+    }
+
+    private string FreshnessClass()
+    {
+        var classes = string.Empty;
+        if (Row.EnvironmentFetchedAt is { } at && DateTime.UtcNow - at > StaleAfter) classes += "freshness--stale";
+        if (_panelLoading) classes += " is-refreshing";
+        return classes.Trim();
+    }
+
+    // ── Updates ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// In the customer's zone first, because the two windows beside it are, and whether
+    /// they collide is the question the card answers. UTC stays as the second half.
+    /// </summary>
+    private string ScheduledForText()
+    {
+        if (Row.NextUpdateDate is not { } at) return "—";
+        var utc = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        if (ZoneCity(Row.TimeZone) is null) return utc.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture) + " UTC";
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, UpdateWindow.ResolveTimeZone(Row.TimeZone));
+        return local.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>The UTC half, on its own line - only when the first line is in another zone.</summary>
+    private string? ScheduledUtcText() =>
+        Row.NextUpdateDate is { } at && ZoneCity(Row.TimeZone) is { } city
+            ? $"{city} time · {DateTime.SpecifyKind(at, DateTimeKind.Utc).ToString("HH:mm", CultureInfo.InvariantCulture)} UTC"
+            : null;
+
+    private string DeliveryWindowText() =>
+        _env!.DeliveryWindowStart is { } s && _env.DeliveryWindowEnd is { } e
+            ? $"{s:HH\\:mm}-{e:HH\\:mm} ({ZoneCity(Row.TimeZone) ?? "UTC"})"
+            : "Any time";
+
+    /// <summary>Microsoft's own window, in its own zone - not ours to set, so never worded like ours.</summary>
+    private string BcWindowText()
+    {
+        if (_env!.BcUpdateWindowFetchedAt is null) return "Not read yet";
+        if (_env.BcUpdateWindowStart is not { } s || _env.BcUpdateWindowEnd is not { } e) return "No window set";
+        var label = ZoneCity(_env.BcUpdateWindowTimeZoneIana)
+            ?? (string.IsNullOrWhiteSpace(Row.TimeZone) ? "UTC" : "this solution's time zone");
+        return $"{s:HH\\:mm}-{e:HH\\:mm} ({label})";
+    }
+
+    /// <summary>The city half of an IANA id, which is what a consultant recognises.</summary>
+    private static string? ZoneCity(string? iana)
+    {
+        if (string.IsNullOrWhiteSpace(iana)) return null;
+        // A connection may hold the Windows name the admin centre shows ("Romance
+        // Standard Time"), which has no city in it and does not fit the cell.
+        if (!iana.Contains('/') && TimeZoneInfo.TryConvertWindowsIdToIanaId(iana, out var converted)) iana = converted;
+        var city = iana.Contains('/') ? iana[(iana.LastIndexOf('/') + 1)..] : iana;
+        return city.Replace('_', ' ');
+    }
+
+    private bool WindowsOverlap()
+    {
+        var env = _env!;
+        if (env.BcUpdateWindowStart is null || env.BcUpdateWindowEnd is null) return false;
+        if (env.DeliveryWindowStart is null || env.DeliveryWindowEnd is null) return false;
+
+        return BcUpdateWindow.Overlaps(
+            env.DeliveryWindowStart, env.DeliveryWindowEnd, UpdateWindow.ResolveTimeZone(Row.TimeZone),
+            env.BcUpdateWindowStart, env.BcUpdateWindowEnd,
+            BcUpdateWindow.ResolveDisplayZone(env.BcUpdateWindowTimeZoneIana, Row.TimeZone),
+            DateTime.UtcNow);
+    }
+
+    /// <summary>Versions Microsoft has announced but not released, which the picker cannot offer.</summary>
+    private string LaterVersions() => _panel is null
+        ? string.Empty
+        : string.Join(", ", _panel.EnvironmentUpdates
+            .Where(u => !u.Available)
+            .Select(u => u.ExpectedAvailability is { } when ? $"{u.TargetVersion}, expected {when}" : $"{u.TargetVersion}, not released yet"));
+
+    private List<BcEnvironmentUpdate> Choosable() =>
+        _panel?.EnvironmentUpdates.Where(u => u.Available && !u.Selected).ToList() ?? new();
+
+    // ── Apps ────────────────────────────────────────────────────────────
+
+    private List<BcInstalledApp> FilteredInstalled(BcEnvironmentPanel panel) => panel.InstalledApps
+        .Where(a => Matches(_installedFilter, a.Name, a.Publisher))
+        .OrderByDescending(a => a.IsPerTenant)
+        .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    private List<BcAvailableAppUpdate> FilteredUpdates(BcEnvironmentPanel panel) => panel.AvailableUpdates
+        .Where(u => Matches(_updatesFilter, u.Name, u.Publisher))
+        .Where(u => _updatesShow switch
+        {
+            "ready" => u.Requirements.Count == 0,
+            "blocked" => u.Requirements.Count > 0,
+            _ => true,
+        })
+        .OrderBy(u => u.Requirements.Count > 0)
+        .ThenBy(u => u.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>The edge bar: green for an update that can go now, grey for one that waits on another.</summary>
+    private static string UpdateRowClass(BcAvailableAppUpdate update) =>
+        update.Requirements.Count == 0 ? "is-published" : "is-queued";
+
+    private static int BlockedCount(BcEnvironmentPanel panel) => panel.AvailableUpdates.Count(u => u.Requirements.Count > 0);
+
+    private static bool Matches(string filter, params string[] fields) =>
+        string.IsNullOrWhiteSpace(filter)
+        || fields.Any(f => f.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private static string SourceText(BcInstalledApp app) =>
+        app.IsPerTenant ? "Per-tenant"
+        : string.Equals(app.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase) ? "Microsoft"
+        : "AppSource";
+
+    /// <summary>When a scheduled install will actually run, in the words the release picker uses.</summary>
+    private static string ScheduleWhen(string? scheduleKind) =>
+        BcDeploymentSchedule.Normalize(scheduleKind) is { } known
+            ? DeliveryModeDisplay.Schedule(known)
+            : "Waiting";
+
+    /// <summary>
+    /// Cancels one scheduled install, behind a confirm - Business Central drops the
+    /// uploaded package, so the version has to be released again afterwards.
+    /// </summary>
+    private async Task CancelScheduledAsync(Guid appId, BcScheduledPteOperation op)
+    {
+        if (_confirm is null) return;
+        var name = string.IsNullOrWhiteSpace(op.Name) ? "this extension" : op.Name;
+        var confirmed = await _confirm.OpenAsync(
+            "Cancel this scheduled install?",
+            $"Business Central will drop the copy of {name} {op.TargetAppVersion} it is holding for {Row.EnvironmentName}. "
+            + "To install it later you'll have to release it again.",
+            "Cancel the install");
+        if (!confirmed) return;
+
+        await RunSettingWriteAsync("cancel-install",
+            () => Connection.CancelScheduledInstallAsync(Row.ProjectId, Id, appId, op.TargetAppVersion, op.ScheduleKind ?? string.Empty),
+            "Couldn't cancel the scheduled install.",
+            () => $"The install of {name} {op.TargetAppVersion} was cancelled.");
+    }
+
+    private static string UpdateBusyKey(BcAvailableAppUpdate update) => $"app-{update.AppId}";
+
+    /// <summary>
+    /// Updates one AppSource app to the version Business Central has waiting. The
+    /// service re-reads the waiting list before it writes, so a row that went stale
+    /// while the page sat open is refused with a sentence rather than acted on.
+    /// </summary>
+    private async Task UpdateAppAsync(BcAvailableAppUpdate update)
+    {
+        if (_updateConfirm is null) return;
+        _updateInWindow = true;
+        var installed = _panel?.InstalledApps.FirstOrDefault(a => a.AppId == update.AppId)?.Version;
+        var from = string.IsNullOrWhiteSpace(installed) ? "" : $" from {installed}";
+
+        var confirmed = await _updateConfirm.OpenAsync(
+            Row.IsProduction
+                ? $"Update {update.Name} on {Row.EnvironmentName}, a production environment?"
+                : $"Update {update.Name} on {Row.EnvironmentName}?",
+            $"{update.Name} by {update.Publisher} will go{from} to {update.Version} in {Row.ProjectName}'s "
+            + "Business Central. Once it has installed it can't be rolled back from here.",
+            "Update the app", "btn--danger");
+        if (!confirmed) return;
+
+        var inWindow = _updateInWindow;
+        await RunSettingWriteAsync(UpdateBusyKey(update),
+            () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow),
+            $"Couldn't update {update.Name}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            () => inWindow
+                ? $"Business Central will update {update.Name} to {update.Version} in {Row.EnvironmentName}'s next update window."
+                : $"Business Central has started updating {update.Name} to {update.Version}. Use Refresh in a few minutes to see it finish.");
+    }
+
+    // ── Settings ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The select saves on change, behind a confirm, as the sheet has it. Declining puts
+    /// the select back: the control must never show a cadence the tenant does not have.
+    /// </summary>
+    private async Task OnCadenceChangedAsync(ChangeEventArgs args)
+    {
+        var previous = _cadence;
+        var chosen = args.Value?.ToString() ?? previous;
+        if (_confirm is null || chosen == previous) return;
+
+        _cadence = chosen;
+        var confirmed = await _confirm.OpenAsync(
+            "Change the AppSource update cadence?",
+            BcAppUpdateCadence.ConfirmSentence(chosen, Row.EnvironmentName),
+            "Change cadence", "btn--primary");
+        if (!confirmed)
+        {
+            _cadence = previous;
+            return;
+        }
+
+        var saved = await RunSettingWriteAsync("cadence",
+            () => Connection.SetAppUpdateCadenceAsync(Row.ProjectId, Id, chosen),
+            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            () => $"Business Central now updates AppSource apps on {Row.EnvironmentName}: {BcAppUpdateCadence.Display(chosen)}.");
+        if (!saved) _cadence = previous;
+    }
+
+    /// <summary>Turns Microsoft 365 licence sign-in on or off - it changes who can get in.</summary>
+    private async Task SaveM365Async(bool enable)
+    {
+        if (_confirm is null) return;
+        var confirmed = await _confirm.OpenAsync(
+            enable ? "Allow Microsoft 365 sign-in?" : "Stop allowing Microsoft 365 sign-in?",
+            enable
+                ? $"Anyone in the customer's organisation with a Microsoft 365 licence will be able to sign in to {Row.EnvironmentName} and read data there."
+                : $"People who hold only a Microsoft 365 licence will lose access to {Row.EnvironmentName}. Anyone with a Business Central licence keeps theirs.",
+            enable ? "Allow it" : "Stop allowing it",
+            enable ? "btn--primary" : "btn--danger");
+        if (!confirmed)
+        {
+            // Redraw, so the switch goes back to what the tenant actually has.
+            StateHasChanged();
+            return;
+        }
+
+        await RunSettingWriteAsync("m365",
+            () => Connection.SetM365AccessAsync(Row.ProjectId, Id, enable),
+            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            () => enable
+                ? $"Business Central now allows Microsoft 365 licence sign-in on {Row.EnvironmentName}."
+                : $"Business Central no longer allows Microsoft 365 licence sign-in on {Row.EnvironmentName}.");
+    }
+
+    /// <summary>
+    /// Reschedules the customer's platform upgrade. The most consequential control on
+    /// the page, so the confirm names the environment, says out loud when it is a
+    /// production one, and states which version it is moving from and to.
+    /// </summary>
+    private async Task SaveTargetVersionAsync()
+    {
+        if (_confirm is null || _panel is null || string.IsNullOrEmpty(_targetVersion)) return;
+
+        var version = _targetVersion;
+        var current = _panel.EnvironmentUpdates.FirstOrDefault(u => u.Selected)?.TargetVersion;
+        var from = current is null || string.Equals(current, version, StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : $" instead of {current}";
+        var chosenRow = _panel.EnvironmentUpdates.FirstOrDefault(u =>
+            string.Equals(u.TargetVersion, version, StringComparison.OrdinalIgnoreCase));
+        var when = chosenRow?.SelectedDateTime is { } at
+            ? $"Microsoft runs the upgrade on {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC"
+            : "Microsoft runs the upgrade in this environment's update window";
+
+        var confirmed = await _confirm.OpenAsync(
+            Row.IsProduction
+                ? $"Reschedule the update on {Row.EnvironmentName}, a production environment?"
+                : $"Reschedule the update on {Row.EnvironmentName}?",
+            $"{Row.EnvironmentName} ({Row.EnvironmentType}) will update to Business Central {version}{from}. "
+            + $"{when}, and the environment is unavailable while it does.",
+            $"Schedule {version}");
+        if (!confirmed) return;
+
+        await RunSettingWriteAsync("version",
+            () => Connection.SelectTargetVersionAsync(Row.ProjectId, Id, version),
+            $"Couldn't schedule the update on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            () => $"Business Central now shows {version} as the next update for {Row.EnvironmentName}.");
+    }
+
+    /// <summary>
+    /// Runs one write with a loading state, then re-reads everything so the page shows
+    /// what the tenant now says rather than what we asked for. True when it went through.
+    /// </summary>
+    private async Task<bool> RunSettingWriteAsync(
+        string busyKey, Func<Task> write, string failureMessage, Func<string> successMessage)
+    {
+        _settingSaving = true;
+        _settingBusy = busyKey;
+        _settingError = null;
+        _settingDone = null;
+        StateHasChanged();
+        try
+        {
+            await write();
+            await LoadEnvironmentAsync();
+            await LoadPanelAsync();
+            _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+            _settingDone = successMessage();
+            return true;
+        }
+        catch (PlanValidationException ex)
+        {
+            // The service's own message is more specific when it has one (an unavailable
+            // version, a rejected value); the generic line names the setting and the fix.
+            _settingError = ex.Errors.Values.FirstOrDefault() ?? failureMessage;
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _settingError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "An environment settings write failed for {EnvId}.", Id);
+            _settingError = failureMessage;
+        }
+        finally
+        {
+            _settingSaving = false;
+            _settingBusy = null;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Cancels an update booked for a later slot. A cancel that loses the race with the
+    /// update starting comes back as a plain refusal; either way the history is re-read.
+    /// </summary>
+    private async Task CancelUpgradeActionAsync(int actionId)
+    {
+        try
+        {
+            await UpgradeActions.CancelUpgradeActionAsync(actionId);
+            _settingError = null;
+            _settingDone = "The booked update was cancelled.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _settingError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't cancel that.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _settingError = ex.Message;
+        }
+
+        _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+    }
+}

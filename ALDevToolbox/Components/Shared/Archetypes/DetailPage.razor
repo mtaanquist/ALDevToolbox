@@ -1,0 +1,109 @@
+@*
+    The handoff's archetype 3, Entity detail (.design/handoff/PageDetail.dc.html):
+    crumbs as a sibling ABOVE the head, a .detail-head whose title row carries the
+    state pill and tags beside the name, the facts in a full-width .meta-row, then
+    the page's own sections. No rail and no tool glyph - see entry 62 in
+    .design/design-migration.md, which is where that was settled.
+
+    Like ListPage, the states are structural. A detail page is loading, or the
+    thing is not there, or it is - and the head only exists in the third, because
+    until then there is no name to put in it:
+
+      loading     a LoadingBlock
+      not found   NotFound: say what is missing and offer the way back. It holds
+                  the page's <h1>, since the head is not rendered.
+      found       crumbs, head, meta row, ChildContent
+
+    The run monitors (PipelineBuilds, ReleasePipelineDetail) are this same frame:
+    their live status is a pill in TitleRow and their runs are ChildContent, so
+    there is no second component for them.
+
+    Tabs are not a feature of this component. A page with tabs composes TabbedPage
+    or renders .pill-tabs at the top of ChildContent, as the sheet does.
+*@
+
+<div class="page@(string.IsNullOrEmpty(PageClass) ? "" : " " + PageClass)">
+    @if (IsLoading)
+    {
+        <LoadingBlock Text="@LoadingText" />
+    }
+    else if (IsNotFound)
+    {
+        @NotFound
+    }
+    else
+    {
+        @if (Crumbs is not null)
+        {
+            <nav class="page-head__crumbs" aria-label="Breadcrumb">@Crumbs</nav>
+        }
+        <header class="detail-head">
+            <div>
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title" title="@TitleTooltip">@Title</h1>
+                    @TitleRow
+                </div>
+                @if (SubtitleContent is not null)
+                {
+                    <p class="page-head__sub">@SubtitleContent</p>
+                }
+                else if (!string.IsNullOrEmpty(Subtitle))
+                {
+                    <p class="page-head__sub">@Subtitle</p>
+                }
+            </div>
+            @if (Actions is not null && ShowActions)
+            {
+                <div class="page-head__actions">@Actions</div>
+            }
+        </header>
+        @if (Meta is not null && ShowMeta)
+        {
+            <div class="meta-row">@Meta</div>
+        }
+        @ChildContent
+    }
+</div>
+
+@code {
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string LoadingText { get; set; } = "Loading...";
+
+    [Parameter] public bool IsNotFound { get; set; }
+
+    /// <summary>The missing-entity state, its own <c>&lt;h1&gt;</c> included.</summary>
+    [Parameter] public RenderFragment? NotFound { get; set; }
+
+    /// <summary>Links and chevrons only; the component supplies the <c>nav</c>.</summary>
+    [Parameter] public RenderFragment? Crumbs { get; set; }
+
+    /// <summary>The entity's name. Empty while loading or not found, when no head is drawn.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    /// <summary>
+    /// Hover text on the name, for an identifier worth having but not worth reading -
+    /// the audit diff keeps the record's type and id there (#554).
+    /// </summary>
+    [Parameter] public string? TitleTooltip { get; set; }
+
+    /// <summary>What sits beside the name: a status pill, tags.</summary>
+    [Parameter] public RenderFragment? TitleRow { get; set; }
+
+    [Parameter] public string Subtitle { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>Hide the actions for a state that has none, without leaving an empty box.</summary>
+    [Parameter] public bool ShowActions { get; set; } = true;
+
+    /// <summary>The <c>.meta-item</c>s; the component supplies the <c>.meta-row</c>.</summary>
+    [Parameter] public RenderFragment? Meta { get; set; }
+
+    /// <summary>Hide the facts row when every fact in it is conditional and none applies.</summary>
+    [Parameter] public bool ShowMeta { get; set; } = true;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Extra class on the <c>.page</c> wrapper, for a page-scoped stylesheet to hang on.</summary>
+    [Parameter] public string? PageClass { get; set; }
+}

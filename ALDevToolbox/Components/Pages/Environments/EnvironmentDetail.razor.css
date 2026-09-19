@@ -1,0 +1,72 @@
+/* What PageEnvironmentDetail.dc.html sets inline, named so the page does not. */
+
+/* A count badge beside a card title. */
+.env-detail__counted {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.env-detail__filter {
+    width: 220px;
+}
+
+.env-detail__mono {
+    font-family: var(--font-mono);
+}
+
+.env-detail__tags {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+/* The foot is a right-aligned row; the count keeps to the left of its button. */
+.env-detail__count {
+    margin-right: auto;
+}
+
+.env-detail__overlap {
+    margin-top: var(--space-4);
+}
+
+.env-detail__later {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-sm);
+}
+
+/* Alerts inside the settings card sit inside its padding, above the setting list. */
+.env-detail__warn {
+    margin: var(--space-4) var(--space-4) 0;
+}
+
+/* The UTC equivalent of a local scheduled time, as a second line under it. */
+.env-detail__utc {
+    display: block;
+    font-size: var(--text-sm);
+}
+
+/* The update dialog's one question. Same shape as the Upgrades page's "when". */
+.env-detail__when {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface-2);
+    display: grid;
+    gap: var(--space-2);
+}
+
+.env-detail__when-legend {
+    padding: 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.env-detail__when-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
