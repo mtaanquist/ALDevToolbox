@@ -1,0 +1,134 @@
+@*
+    Upload one extension package to a Business Central environment: an app another
+    company built and sent over, which no pipeline here can release. Shared by the
+    environment page and the Environments list's row menu.
+
+    The dialog only collects the answer - which file, and when. The caller sends it
+    (ProjectConnectionService.InstallUploadedAppAsync) and reports the outcome where its
+    own page reports outcomes. See .design/saas-delivery.md, "Uploading an app".
+*@
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+@inject ILogger<UploadAppDialog> Log
+
+<ConfirmDialog @ref="_confirm" ConfirmDisabled="@(_bytes is null)">
+    <div class="upload-app__file">
+        <label class="btn btn--sm btn--file" for="upload-app-file">
+            <Icon Name="upload" Width="14" Height="14" />
+            <span>@(_bytes is null ? "Choose the .app file..." : "Choose a different file...")</span>
+            <InputFile id="upload-app-file" OnChange="OnChosenAsync" accept=".app" />
+        </label>
+        @if (_reading)
+        {
+            <span class="u-muted" role="status">Reading the file...</span>
+        }
+        else if (_error is { } error)
+        {
+            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@error</span>
+        }
+        else if (_bytes is not null)
+        {
+            <span class="upload-app__name">@_fileName - @FileSize(_bytes.Length)</span>
+        }
+        else
+        {
+            <span class="u-muted">Choose a .app file to continue.</span>
+        }
+    </div>
+    <fieldset class="upload-app__when">
+        <legend class="upload-app__when-legend">When should it install?</legend>
+        <label class="upload-app__when-opt">
+            <input type="radio" name="upload-app-when" checked="@_inWindow" @onchange="() => _inWindow = true" />
+            <span>In the BC update window@(_windowSuffix)</span>
+        </label>
+        <label class="upload-app__when-opt">
+            <input type="radio" name="upload-app-when" checked="@(!_inWindow)" @onchange="() => _inWindow = false" />
+            <span>Now - anyone working in Business Central may be interrupted</span>
+        </label>
+    </fieldset>
+</ConfirmDialog>
+
+@code {
+    /// <summary>What the person chose: the package, its name, and whether it waits for the update window.</summary>
+    public sealed record Upload(byte[] Bytes, string FileName, bool InUpdateWindow);
+
+    private ConfirmDialog? _confirm;
+    private byte[]? _bytes;
+    private string _fileName = string.Empty;
+    private string? _error;
+    private bool _reading;
+    private bool _inWindow = true;
+    private string _windowSuffix = string.Empty;
+
+    /// <summary>
+    /// Asks for the file and the timing. Null when the person backed out. The gentle
+    /// timing is the default each time, as on the app-update dialog.
+    /// </summary>
+    /// <param name="windowSuffix">", 22:00-04:00 (Copenhagen)" when the caller knows the window's hours; empty otherwise.</param>
+    public async Task<Upload?> OpenAsync(string projectName, string environmentName, bool isProduction, string? windowSuffix = null)
+    {
+        if (_confirm is null) return null;
+        _bytes = null;
+        _fileName = string.Empty;
+        _error = null;
+        _inWindow = true;
+        _windowSuffix = windowSuffix ?? string.Empty;
+        StateHasChanged();
+
+        var confirmed = await _confirm.OpenAsync(
+            isProduction
+                ? $"Upload an app to {environmentName}, a production environment?"
+                : $"Upload an app to {environmentName}?",
+            $"For an app another company built and sent you as a .app file. It installs into {projectName}'s "
+            + "Business Central as it is; nothing here checks what it does. Apps you build yourself go through Releases instead.",
+            "Upload and install", "btn--danger");
+        var bytes = _bytes;
+        _bytes = null;
+        return confirmed && bytes is not null ? new Upload(bytes, _fileName, _inWindow) : null;
+    }
+
+    /// <summary>The sentence for a page's success notice, so both callers say the same thing.</summary>
+    public static string DoneMessage(Upload upload, string environmentName) => upload.InUpdateWindow
+        ? $"Business Central will install {upload.FileName} in {environmentName}'s BC update window. It is listed under Scheduled installs on the environment until then."
+        : $"Business Central has started installing {upload.FileName} on {environmentName}. Give it a few minutes, then refresh to see it under Installed apps.";
+
+    private async Task OnChosenAsync(InputFileChangeEventArgs e)
+    {
+        _bytes = null;
+        _error = null;
+        var file = e.File;
+        if (!file.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+        {
+            _error = "Choose an extension package - a file ending in .app.";
+            return;
+        }
+        if (file.Size > BcAppManagementClient.MaxAppBytes)
+        {
+            _error = $"{file.Name} is over 50 MB, which is the largest app Business Central accepts.";
+            return;
+        }
+
+        _reading = true;
+        StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(BcAppManagementClient.MaxAppBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            _bytes = buffer.ToArray();
+            _fileName = file.Name;
+        }
+        catch (IOException ex)
+        {
+            Log.LogWarning(ex, "Reading an uploaded app failed.");
+            _error = $"Couldn't read {file.Name}. Choose it again.";
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    private static string FileSize(int bytes) => bytes < 1024 * 1024
+        ? $"{Math.Max(1, bytes / 1024)} KB"
+        : $"{bytes / (1024d * 1024d):0.0} MB";
+}

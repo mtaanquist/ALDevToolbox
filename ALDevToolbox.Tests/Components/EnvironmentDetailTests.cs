@@ -213,11 +213,44 @@ public sealed class EnvironmentDetailTests : IDisposable
         rows[1].QuerySelector(".status-pill")!.TextContent.Should().Be("Waits for 1");
         rows[1].QuerySelectorAll(".tag").Select(t => t.TextContent).Should().Equal("Continia Core");
 
-        // The action is offered where it can work, and nowhere else: a waiting row
-        // names what it waits for, which is the next step, instead of a dead button.
+        // Both rows can be updated; the waiting one says up front that it moves others.
         rows[0].QuerySelector(".data-table__actions button")!.GetAttribute("aria-label")
             .Should().Be("Update Continia Core to 28.5.0.363410");
-        rows[1].QuerySelectorAll(".data-table__actions button").Should().BeEmpty();
+        rows[1].QuerySelector(".data-table__actions button")!.GetAttribute("aria-label")
+            .Should().EndWith("along with the 1 it waits for");
+    }
+
+    [Fact]
+    public async Task Updating_a_waiting_app_lists_what_moves_with_it_before_anything_is_sent()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        var cut = Render(envId);
+
+        // The page is still settling its own reads when it first renders, and a click
+        // on an element found before a re-render lands on a handler that is gone.
+        cut.WaitForAssertion(() =>
+            cut.FindAll("table.u-compact tbody tr")[1].QuerySelector(".data-table__actions button")!.Click());
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".env-detail__alongside-list li").Select(li => li.Children[0].TextContent)
+                .Should().Equal("Continia Core"));
+        cut.Markup.Should().Contain("and 1 other app it waits for");
+    }
+
+    [Fact]
+    public async Task An_app_from_another_company_can_be_uploaded_but_not_before_a_file_is_chosen()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        var cut = Render(envId);
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload an app").Click());
+
+        cut.WaitForAssertion(() => cut.Find("#upload-app-file").GetAttribute("accept").Should().Be(".app"));
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload and install")
+            .HasAttribute("disabled").Should().BeTrue();
     }
 
     [Fact]

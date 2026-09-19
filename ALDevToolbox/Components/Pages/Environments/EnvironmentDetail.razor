@@ -217,6 +217,10 @@
                         <h2 class="card__title">Scheduled installs</h2>
                         <p class="card__sub">Installs this toolbox has queued against the environment.</p>
                     </div>
+                    <button type="button" class="btn btn--sm" disabled="@_settingSaving" @onclick="UploadAppAsync">
+                        <Icon Name="upload" Width="14" Height="14" />
+                        <span>Upload an app</span>
+                    </button>
                 </div>
                 @if (panel.ScheduledInstallsError is { } scheduledErr)
                 {
@@ -445,17 +449,16 @@
                                             }
                                         </td>
                                         <td class="data-table__actions">
-                                            @* Ready rows only. A waiting one names what it waits
-                                               for instead: updating those is the next step, and a
-                                               dead button would not say so. *@
-                                            @if (ready)
-                                            {
-                                                <button type="button" class="btn btn--sm"
-                                                        disabled="@_settingSaving" @onclick="() => UpdateAppAsync(up)"
-                                                        aria-label="@($"Update {up.Name} to {up.Version}")">
-                                                    <span class="btn__label">Update</span>
-                                                </button>
-                                            }
+                                            @* A waiting row updates too: Business Central brings
+                                               the apps it waits for along, and the dialog lists
+                                               them first so nothing moves that nobody agreed to. *@
+                                            <button type="button" class="btn btn--sm"
+                                                    disabled="@_settingSaving" @onclick="() => UpdateAppAsync(up)"
+                                                    aria-label="@(ready
+                                                        ? $"Update {up.Name} to {up.Version}"
+                                                        : $"Update {up.Name} to {up.Version}, along with the {up.Requirements.Count} it waits for")">
+                                                <span class="btn__label">@(ready ? "Update" : $"Update + {up.Requirements.Count}")</span>
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -602,20 +605,38 @@
 @* Its own dialog because it asks a question the others do not: when. The gentle
    answer is the default - an app update can interrupt whoever is working in it. *@
 <ConfirmDialog @ref="_updateConfirm">
+    @if (_updateAlongside.Count > 0)
+    {
+        <div class="env-detail__alongside">
+            <p class="env-detail__when-legend">These will be installed or updated too</p>
+            <ul class="env-detail__alongside-list">
+                @foreach (var req in _updateAlongside)
+                {
+                    <li>
+                        <span>@req.Name</span>
+                        <span class="u-muted">@req.Publisher</span>
+                        <span class="u-num env-detail__mono">@(string.IsNullOrWhiteSpace(req.Version) ? "" : $"to {req.Version} or newer")</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
     <fieldset class="env-detail__when">
         <legend class="env-detail__when-legend">When should it install?</legend>
         <label class="env-detail__when-opt">
             <input type="radio" name="env-update-when" checked="@_updateInWindow"
                    @onchange="() => _updateInWindow = true" />
-            <span>In the environment's next update window</span>
+            <span>In the BC update window@(BcWindowSuffix())</span>
         </label>
         <label class="env-detail__when-opt">
             <input type="radio" name="env-update-when" checked="@(!_updateInWindow)"
                    @onchange="() => _updateInWindow = false" />
-            <span>Now - people working in the app may be interrupted</span>
+            <span>Now - anyone working in Business Central may be interrupted</span>
         </label>
     </fieldset>
 </ConfirmDialog>
+
+<UploadAppDialog @ref="_uploadDialog" />
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -653,6 +674,11 @@
 
     /// <summary>The update dialog's answer to "when". Reset to the gentle one each time it opens.</summary>
     private bool _updateInWindow = true;
+
+    private UploadAppDialog? _uploadDialog;
+
+    /// <summary>What the app in the update dialog waits for, and so what moves with it. Empty for a ready app.</summary>
+    private IReadOnlyList<BcAppUpdateRequirement> _updateAlongside = Array.Empty<BcAppUpdateRequirement>();
     private string _cadence = BcAppUpdateCadence.Default;
     private string _targetVersion = string.Empty;
     private bool _settingSaving;
@@ -932,25 +958,53 @@
     {
         if (_updateConfirm is null) return;
         _updateInWindow = true;
+        _updateAlongside = update.Requirements;
+        var others = update.Requirements.Count;
         var installed = _panel?.InstalledApps.FirstOrDefault(a => a.AppId == update.AppId)?.Version;
         var from = string.IsNullOrWhiteSpace(installed) ? "" : $" from {installed}";
+        var what = others == 0 ? update.Name : $"{update.Name} and {AppCount(others)} it waits for";
 
         var confirmed = await _updateConfirm.OpenAsync(
             Row.IsProduction
-                ? $"Update {update.Name} on {Row.EnvironmentName}, a production environment?"
-                : $"Update {update.Name} on {Row.EnvironmentName}?",
-            $"{update.Name} by {update.Publisher} will go{from} to {update.Version} in {Row.ProjectName}'s "
-            + "Business Central. Once it has installed it can't be rolled back from here.",
-            "Update the app", "btn--danger");
+                ? $"Update {what} on {Row.EnvironmentName}, a production environment?"
+                : $"Update {what} on {Row.EnvironmentName}?",
+            $"{update.Name} by {update.Publisher} will go{from} to {update.Version} in {Row.ProjectName}'s Business Central."
+            + (others == 0 ? " " : $" It waits for {AppCount(others)}, so Business Central will install or update those as well, each to the newest version this environment supports. ")
+            + "Once installed, none of it can be rolled back from here.",
+            others == 0 ? "Update the app" : $"Update all {others + 1} apps", "btn--danger");
         if (!confirmed) return;
 
         var inWindow = _updateInWindow;
+        var alongside = update.Requirements.Where(r => r.AppId is not null).Select(r => r.AppId!.Value).ToList();
         await RunSettingWriteAsync(UpdateBusyKey(update),
-            () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow),
-            $"Couldn't update {update.Name}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow, alongside),
+            $"Couldn't update {update.Name}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => inWindow
-                ? $"Business Central will update {update.Name} to {update.Version} in {Row.EnvironmentName}'s next update window."
-                : $"Business Central has started updating {update.Name} to {update.Version}. Use Refresh in a few minutes to see it finish.");
+                ? $"Business Central will update {what} in {Row.EnvironmentName}'s BC update window."
+                : $"Business Central has started updating {what}. Use Refresh in a few minutes to see it finish.");
+    }
+
+    /// <summary>The window's hours when Business Central reported them, so "when" is a time and not just a name.</summary>
+    private string BcWindowSuffix()
+    {
+        var text = BcWindowText();
+        return string.IsNullOrWhiteSpace(text) || !text.Any(char.IsDigit) ? string.Empty : $", {text}";
+    }
+
+    private static string AppCount(int count) => count == 1 ? "1 other app" : $"{count} other apps";
+
+    // ── Uploading an app ────────────────────────────────────────────────
+
+    private async Task UploadAppAsync()
+    {
+        if (_uploadDialog is null) return;
+        var upload = await _uploadDialog.OpenAsync(Row.ProjectName, Row.EnvironmentName, Row.IsProduction, BcWindowSuffix());
+        if (upload is null) return;
+
+        await RunSettingWriteAsync("upload",
+            () => Connection.InstallUploadedAppAsync(Row.ProjectId, Id, upload.Bytes, upload.FileName, upload.InUpdateWindow),
+            $"Couldn't upload {upload.FileName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            () => UploadAppDialog.DoneMessage(upload, Row.EnvironmentName));
     }
 
     // ── Settings ────────────────────────────────────────────────────────
@@ -978,7 +1032,7 @@
 
         var saved = await RunSettingWriteAsync("cadence",
             () => Connection.SetAppUpdateCadenceAsync(Row.ProjectId, Id, chosen),
-            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central now updates AppSource apps on {Row.EnvironmentName}: {BcAppUpdateCadence.Display(chosen)}.");
         if (!saved) _cadence = previous;
     }
@@ -1003,7 +1057,7 @@
 
         await RunSettingWriteAsync("m365",
             () => Connection.SetM365AccessAsync(Row.ProjectId, Id, enable),
-            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => enable
                 ? $"Business Central now allows Microsoft 365 licence sign-in on {Row.EnvironmentName}."
                 : $"Business Central no longer allows Microsoft 365 licence sign-in on {Row.EnvironmentName}.");
@@ -1040,7 +1094,7 @@
 
         await RunSettingWriteAsync("version",
             () => Connection.SelectTargetVersionAsync(Row.ProjectId, Id, version),
-            $"Couldn't schedule the update on {Row.EnvironmentName}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            $"Couldn't schedule the update on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central now shows {version} as the next update for {Row.EnvironmentName}.");
     }
 

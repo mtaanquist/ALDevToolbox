@@ -825,7 +825,7 @@ public sealed class DeliveryServiceTests : IDisposable
             CreatedOn: DateTimeOffset.UtcNow,
             StartedOn: null,
             CompletedOn: null);
-        public Task<BcAppOperation> UpdateAppAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, CancellationToken ct = default)
+        public Task<BcAppOperation> UpdateAppAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
             => throw new NotSupportedException();
     }
 }

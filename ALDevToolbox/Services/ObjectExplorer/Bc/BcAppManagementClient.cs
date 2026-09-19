@@ -9,7 +9,8 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 public sealed class BcAppManagementClient : IBcAppManagementClient
 {
     /// <summary>The API's own cap on an uploaded package. Checked locally so an oversized build fails fast instead of after a long upload.</summary>
-    private const int MaxAppBytes = 50 * 1024 * 1024;
+    /// <summary>The largest extension package Business Central accepts.</summary>
+    public const int MaxAppBytes = 50 * 1024 * 1024;
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<BcAppManagementClient> _logger;
@@ -170,7 +171,8 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
 
     public async Task<BcAppOperation> UpdateAppAsync(
         string accessToken, string applicationFamily, string environmentName,
-        Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, CancellationToken ct = default)
+        Guid appId, string targetVersion, bool useEnvironmentUpdateWindow,
+        bool installOrUpdateNeededDependencies, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(targetVersion))
         {
@@ -182,7 +184,7 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
             ["useEnvironmentUpdateWindow"] = useEnvironmentUpdateWindow,
             ["targetVersion"] = targetVersion,
             ["allowPreviewVersion"] = false,
-            ["installOrUpdateNeededDependencies"] = false,
+            ["installOrUpdateNeededDependencies"] = installOrUpdateNeededDependencies,
         });
         var url = $"{AppsBase(applicationFamily, environmentName)}/{appId}/update";
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -196,8 +198,8 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
             ?? throw new BcApiException(null, "Business Central accepted the app update but didn't return the operation.");
 
         _logger.LogInformation(
-            "Asked for app {AppId} to be updated to {Version} on BC environment {Environment} (in the update window: {InWindow}); operation {OperationId} is {Status}.",
-            appId, targetVersion, environmentName, useEnvironmentUpdateWindow, operation.Id, operation.RawStatus);
+            "Asked for app {AppId} to be updated to {Version} on BC environment {Environment} (in the update window: {InWindow}, with its prerequisites: {WithDependencies}); operation {OperationId} is {Status}.",
+            appId, targetVersion, environmentName, useEnvironmentUpdateWindow, installOrUpdateNeededDependencies, operation.Id, operation.RawStatus);
         return operation;
     }
 
