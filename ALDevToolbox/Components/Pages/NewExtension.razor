@@ -255,7 +255,44 @@
             }
         </section>
     </Form>
-    <AsideLead>
+    <Preview>
+        <div class="card">
+            <div class="card__head">
+                <div>
+                    <h4 class="card__title">Preview</h4>
+                    <p class="card__sub">@FolderName</p>
+                </div>
+                @* The example-files switch lives here, not in the form
+                   below: flipping it strikes the affected rows out of
+                   the tree beside it, which is the whole explanation
+                   the option needs. *@
+                <div class="preview__head-tools">
+                    <Switch Name="IncludeExamples" Label="Include example files"
+                            @bind-Checked="_includeExamples" />
+                    <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                </div>
+            </div>
+            @* Switch drives component state, so it posts nothing of its
+               own - this carries the value into the form post. *@
+            <input type="hidden" name="IncludeExamples" value="@(_includeExamples ? "true" : "false")" />
+            <FolderTreePreview Root="BuildPreview()" />
+        </div>
+    </Preview>
+    <Stats>
+        <div class="stat-card">
+            <span class="stat-card__label">Extensions</span>
+            <span class="stat-card__value">1</span>
+        </div>
+        <div class="stat-card stat-card--accent">
+            <span class="stat-card__label">Dependencies</span>
+            <span class="stat-card__value">@_dependencies.Count</span>
+        </div>
+    </Stats>
+    <PrimaryLabel><Icon Name="download" Width="15" Height="15" /> Download ZIP</PrimaryLabel>
+    <AsideCards>
+        @* Under Generate, not over it: both are optional, and above the preview they
+           pushed the page's one primary action below the fold at laptop height. The
+           sheet has the preview first. *@
         @* The GitHub half of this page (issue #623). One picked
            repository does two things - fills this form in from the
            solution's saved settings, and becomes the place the new
@@ -412,42 +449,7 @@
                 }
             </div>
         </div>
-    </AsideLead>
-    <Preview>
-        <div class="card">
-            <div class="card__head">
-                <div>
-                    <h4 class="card__title">Preview</h4>
-                    <p class="card__sub">@FolderName</p>
-                </div>
-                @* The example-files switch lives here, not in the form
-                   below: flipping it strikes the affected rows out of
-                   the tree beside it, which is the whole explanation
-                   the option needs. *@
-                <div class="preview__head-tools">
-                    <Switch Name="IncludeExamples" Label="Include example files"
-                            @bind-Checked="_includeExamples" />
-                    <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
-                </div>
-            </div>
-            @* Switch drives component state, so it posts nothing of its
-               own - this carries the value into the form post. *@
-            <input type="hidden" name="IncludeExamples" value="@(_includeExamples ? "true" : "false")" />
-            <FolderTreePreview Root="BuildPreview()" />
-        </div>
-    </Preview>
-    <Stats>
-        <div class="stat-card">
-            <span class="stat-card__label">Extensions</span>
-            <span class="stat-card__value">1</span>
-        </div>
-        <div class="stat-card stat-card--accent">
-            <span class="stat-card__label">Dependencies</span>
-            <span class="stat-card__value">@_dependencies.Count</span>
-        </div>
-    </Stats>
-    <PrimaryLabel><Icon Name="download" Width="15" Height="15" /> Download ZIP</PrimaryLabel>
-    <AsideCards>
+
         <div class="card">
             <div class="card__head">
                 <div><h4 class="card__title">After downloading</h4></div>

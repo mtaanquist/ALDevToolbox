@@ -234,8 +234,10 @@ under its own heading — the ones that will be passed over and why.
 
 - **Move dates** previews each date and the date it moves to. It is the page's one primary
   button: it is what the team comes here to do, a hundred at a time.
-- **Update now** is the sterner one, and its dialog is where that is said; in the bar it is a
-  plain button, as the sheet has it. The dialog says plainly that Microsoft will start the
+- **Start update...** is the sterner one, and its dialog is where that is said; in the bar it
+  is a plain button, as the sheet has it. The sheet calls it "Update now", but the dialog also
+  books an update for a later slot, and nobody wanting tonight at 20:00 presses a button called
+  "now"; the dots say a dialog follows. The dialog says plainly that Microsoft will start the
   updates whatever the
   environment's update window says, counts the production environments in the selection just
   above the gate, and holds its confirm button disabled until the person types "update".
@@ -329,6 +331,7 @@ Where it still differs, and why:
 | The sheet has | We have | Why |
 | --- | --- | --- |
 | "Customer" | "Solution" | The house name for the record; see CLAUDE.md. |
+| "Update now" | "Start update..." (and "Start this update..." in the row menu) | The dialog behind it also books a later slot, which "now" hides. Maintainer's decision, 2026-09-19; to be recorded upstream in `briefs/2026-09-port-corrections.md`. |
 | A fixed view list: Production / Sandbox, each with "update waiting" | The same list built from the environment types actually present | Business Central reports the type as text, and a fleet with no sandboxes should not offer one. |
 | An overflow menu: delivery window, two exports, fleet-wide history, cancel the scheduled update | No overflow menu | None of the five exists yet. A booking is cancelled from its own marker or from the history. An empty kebab is worse than none; add it with the first entry. |
 | Every row has a checkbox | A padlock instead, on rows of a team the viewer is not on, with a legend under the table | The sheet has no notion of a row you may see but not change. Their row menu holds history only. |
@@ -356,7 +359,10 @@ visible-projects join as the fleet, so an id from a solution the viewer cannot s
 exactly like an id that does not exist. Apps and Environment settings are the existing
 cached panel read (`ProjectConnectionService.GetEnvironmentPanelAsync`; no second fetch
 path) and keep the gate they had on the solution's Business Central tab: people who manage
-the solution. Everyone else gets the mirror and a quiet card saying who can open the rest.
+the solution - its owner, an org admin, or anyone on a team assigned to it. That already
+covers the ops team: the environment-updates grant is only ever held through an assigned
+team, so whoever holds it manages the solution too. Everyone else gets the mirror and a
+quiet card saying who can open the rest.
 Update history sits outside both, because it is our record and must survive a tenant that
 will not answer.
 

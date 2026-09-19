@@ -150,7 +150,7 @@ public sealed class UpgradesPageTests : IDisposable
         var items = cells.Last().QuerySelectorAll(".ra__menu .menu__item")
             .Select(i => i.TextContent.Trim()).ToList();
         items.Should().Equal(
-            "Update history", "Move this date to the latest", "Start this update now",
+            "Update history", "Move this date to the latest", "Start this update...",
             "Open environment", "Open in Business Central");
         // The tenant comes from the solution's own connection; the name is a path segment.
         cells.Last().QuerySelector("a.menu__item[target=_blank]")!.GetAttribute("href").Should().Be(
@@ -174,7 +174,7 @@ public sealed class UpgradesPageTests : IDisposable
         cut.FindAll(".filter-bar").Should().BeEmpty();
 
         var commands = cut.FindAll(".cmdbar .cmdbar__group:last-child button");
-        commands.Select(c => c.TextContent.Trim()).Should().Equal("Move dates", "Update now", "Refresh");
+        commands.Select(c => c.TextContent.Trim()).Should().Equal("Move dates", "Start update...", "Refresh");
         commands[0].HasAttribute("disabled").Should().BeTrue();
         commands[1].HasAttribute("disabled").Should().BeTrue();
         commands[2].HasAttribute("disabled").Should().BeFalse();

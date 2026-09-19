@@ -33,7 +33,7 @@
     live in the address, so a filtered fleet is something you can send a colleague.
 
     "Move dates" is this page's one primary: it is what the team comes here to do,
-    a hundred at a time. "Update now" is irreversible, and its dialog is where that
+    a hundred at a time. "Start update..." is irreversible, and its dialog is where that
     is said - a typed word and a danger button - rather than in the bar.
 
     Where this page departs from the sheet, and why, is in
@@ -157,7 +157,7 @@
                             title="Start the Business Central update on the selected environments, now or at a time you book"
                             @onclick="() => ConfirmUpdateNowAsync()">
                         <Icon Name="zap" Width="15" Height="15" />
-                        <span>Update now</span>
+                        <span>Start update...</span>
                     </button>
                     <button type="button" class="btn" disabled="@_running"
                             title="Read the environments again from Business Central"
@@ -334,7 +334,7 @@
                                     <button type="button" class="menu__item" role="menuitem" disabled="@_running"
                                             @onclick="() => ConfirmPushAsync(row)">Move this date to the latest</button>
                                     <button type="button" class="menu__item" role="menuitem" disabled="@_running"
-                                            @onclick="() => ConfirmUpdateNowAsync(row)">Start this update now</button>
+                                            @onclick="() => ConfirmUpdateNowAsync(row)">Start this update...</button>
                                 }
                                 @* The two ways out of this page, after the things done on it. *@
                                 <div class="menu__sep"></div>

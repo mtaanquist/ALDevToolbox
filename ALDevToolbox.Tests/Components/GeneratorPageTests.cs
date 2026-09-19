@@ -41,7 +41,6 @@ public sealed class GeneratorPageTests : IDisposable
             .Add(c => c.OnSubmit, () => onSubmit?.Invoke())
             .Add(c => c.Notices, Html("<p id=\"notice\"></p>"))
             .Add(c => c.Form, Html("<section id=\"sec\" class=\"form-sec\"></section>"))
-            .Add(c => c.AsideLead, Html("<div id=\"lead\"></div>"))
             .Add(c => c.Preview, Html("<div id=\"preview\"></div>"))
             .Add(c => c.Stats, Html("<div class=\"stat-card\"></div><div class=\"stat-card\"></div>"))
             .Add(c => c.PrimaryLabel, Html("Download ZIP"))
@@ -49,12 +48,12 @@ public sealed class GeneratorPageTests : IDisposable
             .Add(c => c.AsideCards, Html("<div id=\"after\"><button class=\"btn\">Create repository</button></div>")));
 
     [Fact]
-    public void The_aside_runs_lead_preview_counts_button_note_then_cards()
+    public void The_aside_runs_preview_counts_button_note_then_cards()
     {
         var cut = Render();
 
         cut.Find("aside.gen__aside").Children.Select(Name).Should().Equal(
-            "lead", "preview", "gen__stats", "btn btn--primary btn--lg gen__go",
+            "preview", "gen__stats", "btn btn--primary btn--lg gen__go",
             "form-actions__note gen__note", "after");
         cut.Find(".gen__form").Children.Select(Name).Should().Equal("sec");
         cut.FindAll(".gen__stats > .stat-card").Should().HaveCount(2);

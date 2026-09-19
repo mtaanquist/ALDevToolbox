@@ -59,7 +59,6 @@
                 </div>
 
                 <aside class="gen__aside">
-                    @AsideLead
                     @Preview
 
                     @if (Stats is not null)
@@ -122,12 +121,6 @@
     /// <summary>The <c>.form-sec</c> sections.</summary>
     [Parameter] public RenderFragment? Form { get; set; }
 
-    /// <summary>
-    /// Cards above the preview. Only for something that decides what the form holds -
-    /// New Extension's repository picker fills the form in, so it comes first.
-    /// </summary>
-    [Parameter] public RenderFragment? AsideLead { get; set; }
-
     /// <summary>The live preview card.</summary>
     [Parameter] public RenderFragment? Preview { get; set; }
 
@@ -141,6 +134,10 @@
     /// <summary>One line under the button saying what it is about to produce.</summary>
     [Parameter] public string? PrimaryNote { get; set; }
 
-    /// <summary>Cards under the button: other ways to take delivery, and what to do next.</summary>
+    /// <summary>
+    /// Cards under the button: other ways to start or take delivery, and what to do next.
+    /// Everything optional goes here rather than above the preview, so Generate stays in
+    /// view at laptop height.
+    /// </summary>
     [Parameter] public RenderFragment? AsideCards { get; set; }
 }

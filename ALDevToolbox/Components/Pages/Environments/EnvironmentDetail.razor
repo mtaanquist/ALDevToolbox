@@ -29,8 +29,10 @@
     The head, the meta row and the Updates card come from our own mirror of the
     environment, so anyone who can see the solution gets them and they cost Business
     Central nothing. Apps and Environment settings are read live, with the customer's
-    credentials, and are for people who manage the solution - the same gate the
-    solution's Business Central tab has always had. No second fetch path: it is the
+    credentials, and are for people who manage the solution - its owner, an org admin,
+    or anyone on a team assigned to it, which covers every holder of the
+    environment-updates grant. The same gate the solution's Business Central tab has
+    always had. No second fetch path: it is the
     same cached panel read (ProjectConnectionService.GetEnvironmentPanelAsync).
 *@
 
@@ -173,7 +175,7 @@
                     <Text>
                         Reading what is installed uses the customer's own connection, and the
                         settings here change their Business Central. Ask the solution's owner
-                        or an administrator to make you a manager of its team.
+                        or an administrator to add you to one of its teams.
                     </Text>
                 </EmptyState>
             </div>
@@ -606,7 +608,7 @@
     /// <summary>Only read inside fragments the frame draws once the environment is found.</summary>
     private UpgradeFleetRow Row => _env!.Fleet;
 
-    /// <summary>Owner, team manager or admin: who may read the live panel and change the settings.</summary>
+    /// <summary>Owner, org admin or a member of an assigned team: who may read the live panel and change the settings.</summary>
     private bool _canManage;
 
     private BcEnvironmentPanel? _panel;
