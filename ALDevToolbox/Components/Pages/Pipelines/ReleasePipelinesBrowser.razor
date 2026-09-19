@@ -27,12 +27,8 @@
 
 <PageTitle>Releases · AL Dev Toolbox</PageTitle>
 
-<ListPage Title="Releases" IsLoading="@(_rows is null)" IsEmpty="@(_rows is { Count: 0 })">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Releases</span>
-    </Crumbs>
+<ListPage Title="Releases" IsLoading="@(_rows is null)" IsEmpty="@(_rows is { Count: 0 })"
+          Trail='@([new("Home", "/"), new("Releases")])'>
     <SubtitleContent>
         A release pipeline publishes a build pipeline's compiled
         <span class="u-nowrap"><code>.app</code> files</span> to a Business Central

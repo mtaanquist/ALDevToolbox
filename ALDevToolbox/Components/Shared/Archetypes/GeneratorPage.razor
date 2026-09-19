@@ -32,7 +32,7 @@
 
 <div class="page@(string.IsNullOrEmpty(PageClass) ? "" : " " + PageClass)">
     <PageHead Title="@Title" Subtitle="@Subtitle" SubtitleContent="SubtitleContent"
-              Crumbs="Crumbs" Actions="Actions" ShowActions="@(!IsLoading && !IsEmpty)" />
+              Trail="Trail" Crumbs="Crumbs" Actions="Actions" ShowActions="@(!IsLoading && !IsEmpty)" />
 
     @if (IsLoading)
     {
@@ -89,6 +89,9 @@
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
     [Parameter] public string Subtitle { get; set; } = string.Empty;
     [Parameter] public RenderFragment? SubtitleContent { get; set; }
+    /// <summary>The breadcrumb steps, the page itself last and unlinked.</summary>
+    [Parameter] public IReadOnlyList<Crumb>? Trail { get; set; }
+
     [Parameter] public RenderFragment? Crumbs { get; set; }
 
     /// <summary>Head actions, shown once the form is. Outline buttons only.</summary>

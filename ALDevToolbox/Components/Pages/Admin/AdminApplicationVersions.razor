@@ -24,12 +24,8 @@
 <PageTitle>Application versions · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <PageHead Title="Application versions" Sticky="true">
-        <Crumbs>
-            <a href="/admin">Admin</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>Application versions</span>
-        </Crumbs>
+    <PageHead Title="Application versions" Sticky="true"
+              Trail='@([new("Admin", "/admin"), new("Application versions")])'>
         <SubtitleContent>
             These rows back the Application Version select on the New
             Workspace and New Extension forms. Picking an entry there fills
