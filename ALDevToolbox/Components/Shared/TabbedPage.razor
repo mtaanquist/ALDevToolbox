@@ -11,27 +11,10 @@
 @using ALDevToolbox.Components.Shared
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            @if (!string.IsNullOrEmpty(CrumbHref))
-            {
-                <p class="page-head__crumbs">
-                    <a href="@CrumbHref">@CrumbLabel</a>
-                    <Icon Name="chevron-right" Width="12" Height="12" />
-                    <span>@Title</span>
-                </p>
-            }
-            <h1 class="page-head__title">@Title</h1>
-            @if (Sub is not null)
-            {
-                <p class="page-head__sub">@Sub</p>
-            }
-        </div>
-        @if (Actions is not null)
-        {
-            <div class="page-head__actions">@Actions</div>
-        }
-    </header>
+    @* Attributes, not slots: a slot is never null, so wrapping a null fragment in
+       one would draw an empty crumb row or actions box. *@
+    <PageHead Title="@Title" SubtitleContent="Sub" Actions="Actions"
+              Crumbs="@(string.IsNullOrEmpty(CrumbHref) ? null : CrumbTrail)" />
 
     <HeaderTabs Items="@Tabs" AriaLabel="@TabsLabel" />
 
@@ -50,4 +33,10 @@
 
     [Parameter] public RenderFragment? Actions { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>One step back to the page this one hangs off, then where we are.</summary>
+    private RenderFragment CrumbTrail => @<text>
+        <a href="@CrumbHref">@CrumbLabel</a>
+        <Icon Name="chevron-right" Width="12" Height="12" />
+        <span>@Title</span>
+    </text>;
 }

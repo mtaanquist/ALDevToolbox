@@ -13,11 +13,20 @@ namespace ALDevToolbox.Tests.Components;
 /// <c>Components/Shared/Archetypes/</c> own that markup now; see "Page archetypes"
 /// in PROJECT.md.</para>
 ///
-/// <para>Same shape as <c>IgnoreQueryFiltersBaselineTests</c>: a baseline of the
-/// files that have not been migrated yet. A file off the list that writes its own
-/// <c>page-head</c> fails, so new pages compose <c>PageHead</c>; a file on the list
-/// that no longer writes one fails too, so each migration shrinks the list and it
-/// stays an honest count of what is left.</para>
+/// <para>Two fences, and the milestone that built them is finished, so both lists
+/// are exceptions now rather than a backlog.</para>
+///
+/// <para><b>Nobody copies the head.</b> A file that writes its own <c>page-head</c>
+/// fails unless it is on <see cref="NotYetMigrated"/>, and a file on that list that
+/// no longer writes one fails too, so the list stays honest.</para>
+///
+/// <para><b>Every page has a frame.</b> A routable page that draws anything must
+/// compose an archetype - directly, or through a shared component that does (the
+/// tabbed frames, the section headers) - or be on <see cref="OwnFrame"/> with the
+/// reason it is not. That is what stops a new page being started from a copy of
+/// an old one's markup. It is "at least one", not "exactly one": a tabbed page
+/// inside <c>SettingsPage</c> legitimately composes the frame and, in its body,
+/// <c>EmptyState</c> and <c>LoadingBlock</c>.</para>
 /// </summary>
 public sealed class ArchetypeConformanceTests
 {
@@ -30,24 +39,14 @@ public sealed class ArchetypeConformanceTests
         """class="(?:[^"]*\s)?page-head(?:\s|"|--)""", RegexOptions.Compiled);
 
     /// <summary>
-    /// Components that still hand-write their page head, relative to the repository
-    /// root. Generated from the tree. Only ever remove entries: migrate the page to
-    /// <c>PageHead</c> and delete its line in the same change.
+    /// Components that hand-write their page head, relative to the repository root.
+    /// Each is deliberate and says why. Do not add to it without the same.
     /// </summary>
     private static readonly IReadOnlySet<string> NotYetMigrated = new HashSet<string>(StringComparer.Ordinal)
     {
-        "ALDevToolbox/Components/Pages/AccountSecurity/AccessTokenCreated.razor",
-        "ALDevToolbox/Components/Pages/AccountSecurity/OAuthConsent.razor",
-        "ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor",
-        "ALDevToolbox/Components/Pages/AccountSecurity/TotpSetup.razor",
-        "ALDevToolbox/Components/Pages/Admin/AdminObjectExplorerHeader.razor",
-        "ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor",
-        "ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor",
-        "ALDevToolbox/Components/Pages/SuggestRecipe.razor",
+        // The head swaps the title for an inline rename box and its Save / Cancel, which
+        // PageHead's Title string cannot hold. One consumer, so it does not get a slot.
         "ALDevToolbox/Components/Pages/Teams/TeamDetail.razor",
-        "ALDevToolbox/Components/Pages/Teams/TeamsIndex.razor",
-        "ALDevToolbox/Components/Shared/SettingsPage.razor",
-        "ALDevToolbox/Components/Shared/TabbedPage.razor",
     };
 
     [Fact]
@@ -69,6 +68,92 @@ public sealed class ArchetypeConformanceTests
         stale.Should().BeEmpty(
             "these files no longer hand-write a page-head (migrated, moved or deleted) - good news, " +
             "but the baseline has to stay honest, so drop their entries from this test");
+    }
+
+    /// <summary>The frames a page composes. Primitives (EmptyState, LoadingBlock, FilterBar) are not frames.</summary>
+    private static readonly string[] Frames =
+    [
+        "PageHead", "ListPage", "DetailPage", "EditPage", "GeneratorPage", "LauncherPage",
+        "DocsPage", "ErrorPage",
+        // The sign-in family's frame. It predates the archetypes folder and is the
+        // handoff's auth card, one component for all eight pages.
+        "AuthCard",
+    ];
+
+    /// <summary>
+    /// Routable pages that draw their own frame, and why. Pages that draw nothing at
+    /// all (the redirects) are not listed: there is no frame to have.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> OwnFrame = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["ALDevToolbox/Components/Pages/Diff.razor"] =
+            "power tool: a one-of-a-kind layout inside the handoff's .pw frame, whose pw__head is that frame's own head",
+        ["ALDevToolbox/Components/Pages/ObjectExplorer/OeCompareFile.razor"] =
+            "power tool: the .cmp compare layout, one consumer",
+        ["ALDevToolbox/Components/Pages/RecipeDetail.razor"] =
+            "its head carries the description and tag links between the title and the actions, which DetailPage's head has no place for; the scripted move dropped them once (#839)",
+        ["ALDevToolbox/Components/Pages/Teams/TeamDetail.razor"] =
+            "its head swaps the title for an inline rename box; also on the hand-written head list above",
+    };
+
+    [Fact]
+    public void Every_routable_page_that_draws_anything_composes_a_frame()
+    {
+        var root = RepoRoot();
+        var components = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .ToDictionary(
+                p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'),
+                p => Markup(File.ReadAllText(p)),
+                StringComparer.Ordinal);
+
+        // A shared component that composes a frame carries it to the pages that use
+        // it (SettingsPage, TabbedPage, the section headers), however deep.
+        var carriers = new HashSet<string>(Frames, StringComparer.Ordinal);
+        for (var grew = true; grew;)
+        {
+            grew = false;
+            foreach (var (path, markup) in components)
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                if (!carriers.Contains(name) && !IsRoutable(markup) && Composes(markup, carriers))
+                {
+                    grew = carriers.Add(name);
+                }
+            }
+        }
+
+        var pages = components
+            .Where(c => c.Key.StartsWith("ALDevToolbox/Components/Pages/", StringComparison.Ordinal) && IsRoutable(c.Value))
+            .ToList();
+        pages.Should().HaveCountGreaterThan(100, "the scan should be finding the app's pages");
+
+        var frameless = pages
+            .Where(c => DrawsSomething(c.Value) && !Composes(c.Value, carriers))
+            .Select(c => c.Key)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        frameless.Except(OwnFrame.Keys).Should().BeEmpty(
+            "a page composes one of the frames in Components/Shared/Archetypes/ rather than starting from " +
+            "a copy of another page's markup - see \"Page archetypes\" in PROJECT.md and the rule in CLAUDE.md");
+        OwnFrame.Keys.Except(frameless).Should().BeEmpty(
+            "these pages compose a frame now (or are gone), so their exception has to go too");
+    }
+
+    private static bool IsRoutable(string markup) => Regex.IsMatch(markup, @"^@page\s", RegexOptions.Multiline);
+
+    private static bool Composes(string markup, IEnumerable<string> names) =>
+        names.Any(n => Regex.IsMatch(markup, $@"<{n}[\s/>]"));
+
+    /// <summary>An HTML element of its own - what a redirect page does not have.</summary>
+    private static bool DrawsSomething(string markup) => Regex.IsMatch(markup, @"<[a-z][a-z0-9]*[\s>]");
+
+    /// <summary>The file above its <c>@code</c> block, comments out.</summary>
+    private static string Markup(string razor)
+    {
+        var code = razor.IndexOf("\n@code", StringComparison.Ordinal);
+        var markup = code < 0 ? razor : razor[..code];
+        return Regex.Replace(markup, @"@\*.*?\*@", "", RegexOptions.Singleline);
     }
 
     private static List<string> HandWriting()

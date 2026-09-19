@@ -13,19 +13,16 @@
 <PageTitle>Suggest a recipe · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <header class="page-head">
-        <div>
-            <h1>Suggest a recipe</h1>
-            <p class="page-head__sub">
-                Submit a reusable AL recipe for an admin to review. Pick a type
-                (Snippet, Pattern, or Module), give it a clear title and
-                description, comma-separate the search keywords, and add one or
-                more files. Each file may live in a folder (set its
-                <strong>Folder</strong> field) - the ZIP download preserves the
-                folder structure.
-            </p>
-        </div>
-        <div class="page-head__actions">
+    <PageHead Title="Suggest a recipe">
+        <SubtitleContent>
+            Submit a reusable AL recipe for an admin to review. Pick a type
+            (Snippet, Pattern, or Module), give it a clear title and
+            description, comma-separate the search keywords, and add one or
+            more files. Each file may live in a folder (set its
+            <strong>Folder</strong> field) - the ZIP download preserves the
+            folder structure.
+        </SubtitleContent>
+        <Actions>
             <a class="btn btn--sm" href="/cookbook">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to cookbook</span>
@@ -37,8 +34,8 @@
                     <span>@(_busy ? "Submitting..." : "Submit for review")</span>
                 </button>
             }
-        </div>
-    </header>
+        </Actions>
+    </PageHead>
 
     @if (_submitted)
     {
