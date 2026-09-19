@@ -171,11 +171,41 @@
                         <span>
                             The two windows overlap. Business Central refuses an install while it
                             is updating the environment, so a release that lands during Microsoft's
-                            update would fail. Move the delivery window from the
-                            <a href="@($"/solutions/{Row.ProjectId}?tab=bc")">solution's Business Central tab</a>
-                            if the update date matters to the customer.
+                            update would fail. Move the delivery window if the update date matters
+                            to the customer.
                         </span>
                     </Alert>
+                }
+                @* Ours to set, and about this one environment, so it is set here rather
+                   than from a row of the solution's list. Touches no tenant: no confirm. *@
+                @if (_canManage)
+                {
+                    @if (!_windowEditing)
+                    {
+                        <div class="env-detail__window-open">
+                            <button type="button" class="btn btn--sm" @onclick="OpenWindowEditor">
+                                <Icon Name="clock" Width="14" Height="14" />
+                                <span>Change the delivery window</span>
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="env-detail__window">
+                            <div class="env-detail__window-row">
+                                <label class="env-detail__window-time">From <input type="time" class="input input--sm" @bind="_winStart" disabled="@_windowSaving" /></label>
+                                <label class="env-detail__window-time">To <input type="time" class="input input--sm" @bind="_winEnd" disabled="@_windowSaving" /></label>
+                                <button type="button" class="btn btn--sm" @onclick="SaveWindowAsync" disabled="@_windowSaving">Save window</button>
+                                <button type="button" class="btn btn--sm" @onclick="() => PersistWindowAsync(null, null)" disabled="@_windowSaving">Clear (any time)</button>
+                                <button type="button" class="btn btn--sm" @onclick="() => _windowEditing = false" disabled="@_windowSaving">Cancel</button>
+                            </div>
+                            <small class="field__hint">The hours agreed with the customer for our own installs, in the solution's time zone (@(ZoneCity(Row.TimeZone) ?? "UTC")). Releases prefill to the next opening; you can still release outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
+                            @if (_windowError is { } windowError)
+                            {
+                                <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@windowError</span>
+                            }
+                        </div>
+                    }
                 }
             </div>
         </div>
@@ -1005,6 +1035,61 @@
             () => Connection.InstallUploadedAppAsync(Row.ProjectId, Id, upload.Bytes, upload.FileName, upload.InUpdateWindow),
             $"Couldn't upload {upload.FileName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => UploadAppDialog.DoneMessage(upload, Row.EnvironmentName));
+    }
+
+    // ── Delivery window ─────────────────────────────────────────────────
+
+    private bool _windowEditing;
+    private bool _windowSaving;
+    private string? _windowError;
+    private TimeOnly? _winStart;
+    private TimeOnly? _winEnd;
+
+    private void OpenWindowEditor()
+    {
+        _windowEditing = true;
+        _windowError = null;
+        _winStart = _env!.DeliveryWindowStart;
+        _winEnd = _env.DeliveryWindowEnd;
+    }
+
+    private async Task SaveWindowAsync()
+    {
+        if (_winStart is not { } start || _winEnd is not { } end)
+        {
+            _windowError = "Enter both a start and an end time, or use Clear for 'any time'.";
+            return;
+        }
+        await PersistWindowAsync(start, end);
+    }
+
+    private async Task PersistWindowAsync(TimeOnly? start, TimeOnly? end)
+    {
+        _windowError = null;
+        _windowSaving = true;
+        try
+        {
+            await Connection.SetUpdateWindowAsync(Row.ProjectId, Id, start, end);
+            _windowEditing = false;
+            await LoadEnvironmentAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _windowError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't save the delivery window.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _windowError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save the delivery window for environment {EnvId}.", Id);
+            _windowError = "Couldn't save the delivery window. Try again in a moment.";
+        }
+        finally
+        {
+            _windowSaving = false;
+        }
     }
 
     // ── Settings ────────────────────────────────────────────────────────

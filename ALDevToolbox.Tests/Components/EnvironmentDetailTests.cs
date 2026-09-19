@@ -254,6 +254,28 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     [Fact]
+    public async Task The_delivery_window_is_set_from_the_environment_it_belongs_to()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        var cut = Render(envId);
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Change the delivery window").Click());
+        var times = cut.FindAll(".env-detail__window input[type=time]");
+        times[0].Change("22:00");
+        cut.FindAll(".env-detail__window input[type=time]")[1].Change("04:00");
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save window").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll(".env-detail__window").Should().BeEmpty());
+        await using var ctx = _db.NewContext();
+        var saved = await ctx.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        saved.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
+        saved.UpdateWindowEnd.Should().Be(new TimeOnly(4, 0));
+        cut.Markup.Should().Contain("22:00-04:00");
+    }
+
+    [Fact]
     public async Task Installed_apps_say_where_each_came_from_and_the_filter_narrows_them()
     {
         var (projectId, envId) = await SeedAsync();

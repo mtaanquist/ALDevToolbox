@@ -8,13 +8,6 @@
     the setup checklist in the rail.
 */
 
-/* The update window opens under the environment it belongs to, as a
-   .data-table sub-row rather than a floating panel - so it can never drift
-   away from the row that opened it. */
-.pd-window { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
-.pd-window__time { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--ink-3); }
-.pd-window__time .input { width: 120px; }
-
 /* An environment Business Central no longer reports. The row's keyline and
    glyph already say something is wrong; this says what. */
 .pd-gone { margin-left: var(--space-2); font-size: var(--text-xs); color: var(--danger-text); }

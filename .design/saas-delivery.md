@@ -177,7 +177,7 @@ separate columns, separate prose, and separate columns on screen.
 | Where | `update_window_start` / `_end` on `OeProjectEnvironment`, in `OeProject.BcTimeZone` | `bc_update_window_*`, mirrored from `settings/upgrade` |
 | What it means | the commercial slot agreed with the customer for *our* installs | when Microsoft patches the environment |
 | Who enforces it | our scheduler and worker — a delivery holds until the slot opens | Microsoft |
-| Editable | yes, by the consultant | read-only mirror (the API can write it, but that is a separate, explicit action) |
+| Editable | yes, by the consultant, from the environment page | read-only mirror (the API can write it, but that is a separate, explicit action) |
 
 Neither is derived from the other. In particular the delivery slot is **not** implemented
 by the App Management API's `deploymentSchedule: "UpdateWindow"` — that value defers the
