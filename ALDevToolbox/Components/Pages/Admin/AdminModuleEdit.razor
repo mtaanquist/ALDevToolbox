@@ -19,14 +19,8 @@
 
 <EditPage Title="@PageTitleText"
           IsLoading="@(!(IsEdit && _loadFailed) && _form is null)"
-          IsNotFound="@(IsEdit && _loadFailed)" Sticky="true">
-    <Crumbs>
-        <a href="/admin">Admin</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <a href="/admin/modules">Modules</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <span>@PageTitleText</span>
-    </Crumbs>
+          IsNotFound="@(IsEdit && _loadFailed)" Sticky="true"
+          Trail='@([new("Admin", "/admin"), new("Modules", "/admin/modules"), new(PageTitleText)])'>
     <SubtitleContent>
         @if (IsEdit)
         {
@@ -46,36 +40,34 @@
         </button>
     </Actions>
     <NotFound>
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Danger">
             <span>
                 No module with key <code class="code">@Key</code> was found. It may have been
                 renamed or permanently removed.
             </span>
-        </p>
+        </Alert>
     </NotFound>
     <ChildContent>
         @if (_isDeleted)
         {
-            <p class="alert alert--warn" role="status">
-                <Icon Name="triangle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn">
                 <span>
                     This module is deleted. Restore it from the
                     <a href="/admin/modules">Modules list</a> to bring it back to the picker.
                 </span>
-            </p>
+            </Alert>
         }
         @if (_saveError is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_saveError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_saveError</span>
+            </Alert>
         }
         @if (_saveSuccess is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_saveSuccess</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_saveSuccess</span>
+            </Alert>
         }
 
         <form class="edit-col" @onsubmit="SaveAsync" @onsubmit:preventDefault>

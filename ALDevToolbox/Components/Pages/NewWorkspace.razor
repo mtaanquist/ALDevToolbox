@@ -63,8 +63,7 @@
     <Notices>
         @if (_errors.Count > 0)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>
                     @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
                     before this workspace can be generated. Nothing you typed has been lost.
@@ -73,7 +72,7 @@
                         <text> @string.Join(" ", _unfieldedErrors)</text>
                     }
                 </span>
-            </p>
+            </Alert>
         }
     </Notices>
     <Form>
@@ -406,7 +405,7 @@
                 <div class="preview__head-tools">
                     <Switch Name="IncludeExamples" Label="Include example files"
                             @bind-Checked="_includeExamples" />
-                    <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                    <StatusPill Tone="live">Live</StatusPill>
                 </div>
             </div>
             @* Switch drives component state, so it posts nothing of its
@@ -442,8 +441,7 @@
             <div class="card__body ws-repo">
                 @if (_createdRepo is not null)
                 {
-                    <p class="alert alert--success" role="status">
-                        <Icon Name="circle-check" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Success">
                         <span class="u-stack">
                             @* Two ways this can have gone: straight onto the
                                default branch, or into a pull request when the
@@ -569,25 +567,23 @@
                                 </span>
                             }
                         </span>
-                    </p>
+                    </Alert>
                     @if (!string.IsNullOrEmpty(_createdRepo.SolutionWarning))
                     {
                         @* The repository is there and holds the files;
                            only the customer's solution is missing. *@
-                        <p class="alert alert--warn" role="status">
-                            <Icon Name="triangle-alert" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Warn">
                             <span>@_createdRepo.SolutionWarning</span>
-                        </p>
+                        </Alert>
                     }
                     @if (!string.IsNullOrEmpty(_createdRepo.StandardsWarning))
                     {
                         @* The repository is there and holds the files; only
                            the branch rules are missing. A warning beside the
                            success, not instead of it (#628). *@
-                        <p class="alert alert--warn" role="status">
-                            <Icon Name="triangle-alert" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Warn">
                             <span>@_createdRepo.StandardsWarning</span>
-                        </p>
+                        </Alert>
                     }
                 }
                 else if (_gitHub is null)

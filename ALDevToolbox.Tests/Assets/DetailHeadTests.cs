@@ -127,7 +127,8 @@ public sealed class DetailHeadTests
                    + "title, which .page-head has nowhere to put");
         classes.Should().Contain("detail-head__title-row");
         classes.Should().Contain("detail-head__title");
-        classes.Should().Contain("page-head__crumbs");
+        // The crumb row is CrumbNav's now; the frame's part is composing it.
+        StripComments(Read(DetailPageComponent)).Should().Contain("<CrumbNav ");
     }
 
     [Fact]
@@ -135,7 +136,7 @@ public sealed class DetailHeadTests
     {
         var markup = StripComments(Read(DetailPageComponent));
 
-        var crumbs = markup.IndexOf("page-head__crumbs", StringComparison.Ordinal);
+        var crumbs = markup.IndexOf("<CrumbNav ", StringComparison.Ordinal);
         var head = markup.IndexOf("class=\"detail-head\"", StringComparison.Ordinal);
 
         crumbs.Should().BeGreaterThan(-1);
@@ -152,8 +153,7 @@ public sealed class DetailHeadTests
     {
         var markup = StripComments(Read("ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"));
 
-        // `class="status-pill status-pill--x"`, not the `__dot` child inside it.
-        Regex.Matches(markup, @"class=""status-pill[ ""]").Count.Should().Be(1,
+        Regex.Matches(markup, @"<StatusPill\s").Count.Should().Be(1,
             because: "the build's state belongs beside the page title, where the archetype "
                    + "puts it. The Latest-build card had a second pill saying the same word, "
                    + "which reads as two different facts until you look twice");

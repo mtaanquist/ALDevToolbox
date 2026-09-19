@@ -37,17 +37,15 @@
 
         @if (_message is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Success">
                 <span>@_message</span>
-            </p>
+            </Alert>
         }
         @if (_error is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>@_error</span>
-            </p>
+            </Alert>
         }
 
         <div class="filter-bar">
@@ -157,7 +155,7 @@
                 </h2>
                 @if (_autoEnabled)
                 {
-                    <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Active</span>
+                    <StatusPill Tone="live">Active</StatusPill>
                 }
             </div>
             <div class="card__body">
@@ -168,17 +166,15 @@
                 </p>
                 @if (_autoMessage is not null)
                 {
-                    <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Success">
                 <span>@_autoMessage</span>
-            </p>
+            </Alert>
                 }
                 @if (_autoError is not null)
                 {
-                    <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Danger">
                 <span>@_autoError</span>
-            </p>
+            </Alert>
                 }
                 <div class="form-sec">
                     <label class="check">

@@ -63,10 +63,10 @@
                     <RecipeTypeBadge Type="_recipe.Type" />
                     @if (_recipe.Deprecated)
                     {
-                        <span class="status-pill status-pill--warn">
+                        <StatusPill Tone="warn">
                             <Icon Name="archive" Width="12" Height="12" />
                             Deprecated
-                        </span>
+                        </StatusPill>
                     }
                 </div>
                 <p class="rd-desc">@_recipe.Description</p>
@@ -115,8 +115,7 @@
            consultant needs to send on. See issue #626. *@
         @if (_delivery is { } delivery)
         {
-            <div class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Success" Block="true">
                 <span class="u-stack">
                     <span>
                         @(delivery.IsNewPullRequest
@@ -133,19 +132,18 @@
                         </a>
                     </span>
                 </span>
-            </div>
+            </Alert>
         }
 
         @if (_recipe.Deprecated)
         {
-            <div class="alert alert--warn">
-                <Icon Name="triangle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="" Block="true">
                 <span>
                     <b>This recipe is no longer recommended.</b>
                     It is kept so existing solutions can still find it. Check it
                     carefully before using it on a new customer.
                 </span>
-            </div>
+            </Alert>
         }
 
         <div class="detail-body">

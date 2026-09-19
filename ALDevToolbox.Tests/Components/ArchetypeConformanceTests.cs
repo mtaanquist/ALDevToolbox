@@ -140,6 +140,74 @@ public sealed class ArchetypeConformanceTests
             "these pages compose a frame now (or are gone), so their exception has to go too");
     }
 
+    /// <summary>
+    /// The pages that still pass their trail as a <c>Crumbs</c> fragment, each because a
+    /// list cannot say it. A <c>Trail</c> attribute is evaluated on every render of the
+    /// frame, a fragment only when it is drawn - so a step that reads the loaded record
+    /// has to stay a fragment, or the page throws while it is still loading.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> FragmentCrumbs = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["ALDevToolbox/Components/Pages/Admin/AuditDiffPage.razor"] = "the last step mixes text and a value",
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAuditDiffPage.razor"] = "the last step mixes text and a value",
+        ["ALDevToolbox/Components/Pages/ObjectExplorer/OeModuleDetail.razor"] = "the release step is only there when the page came from a release",
+        ["ALDevToolbox/Components/Pages/ObjectExplorer/OeObjectDetail.razor"] = "the release step is only there when the page came from a release",
+        ["ALDevToolbox/Components/Pages/ObjectExplorer/OeReleaseDetail.razor"] = "names the loaded release",
+        ["ALDevToolbox/Components/Pages/Environments/EnvironmentDetail.razor"] = "names the loaded environment and its solution",
+        ["ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"] = "names the loaded pipeline and its solution",
+        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor"] = "names the loaded release pipeline",
+        ["ALDevToolbox/Components/Pages/Projects/ProjectDetail.razor"] = "names the loaded solution",
+    };
+
+    [Fact]
+    public void A_crumb_trail_is_a_list_unless_the_page_has_a_reason()
+    {
+        var root = RepoRoot();
+        var fragments = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(p => Markup(File.ReadAllText(p)).Contains("<Crumbs>", StringComparison.Ordinal))
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        fragments.Should().BeEquivalentTo(FragmentCrumbs.Keys,
+            "a trail of plain links is written as Trail='@([new(\"Admin\", \"/admin\"), new(\"Modules\")])' so the chevrons "
+            + "and the unlinked last step are drawn one way; keep the Crumbs fragment, and list the page here with its reason, "
+            + "only when a step depends on data that is still loading or is conditional");
+    }
+
+    [Fact]
+    public void No_component_hand_writes_an_alert()
+    {
+        var root = RepoRoot();
+        var alert = new Regex(@"class=""(?:[^""]*\s)?alert(?:\s|--|"")", RegexOptions.Compiled);
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(Path.Combine("Shared", "Alert.razor"), StringComparison.Ordinal))
+            .Where(p => alert.IsMatch(Markup(File.ReadAllText(p))))
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "an alert is <Alert Tone=\"AlertTone.Danger\">...</Alert>: the tone picks the icon and the role, which "
+            + "pages used to pick by hand and picked differently (ten errors carried the warning triangle)");
+    }
+
+    [Fact]
+    public void No_component_hand_writes_a_status_pill()
+    {
+        var root = RepoRoot();
+        var pill = new Regex(@"class=""status-pill[\s""]", RegexOptions.Compiled);
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(Path.Combine("Shared", "StatusPill.razor"), StringComparison.Ordinal))
+            .Where(p => pill.IsMatch(Markup(File.ReadAllText(p))))
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "a status pill is <StatusPill Tone=\"success\">...</StatusPill>, which always carries the dot the live and running tones pulse");
+    }
+
     private static bool IsRoutable(string markup) => Regex.IsMatch(markup, @"^@page\s", RegexOptions.Multiline);
 
     private static bool Composes(string markup, IEnumerable<string> names) =>

@@ -145,14 +145,13 @@
                     }
                     else
                     {
-                        <p class="alert alert--info" role="status">
-                            <Icon Name="info" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Info" Role="status">
                             <span>
                                 Pick a GitHub repository above, or create a build pipeline first on the
                                 <a href="@($"/solutions/{_projectId}")">solution's Pipelines tab</a>.
                                 You can't save until one of the two is chosen.
                             </span>
-                        </p>
+                        </Alert>
                     }
 
                     <div class="field">
@@ -219,7 +218,7 @@
 
                 @if (_saveError is { } se)
                 {
-                    <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@se</span></p>
+                    <Alert Tone="AlertTone.Danger"><span>@se</span></Alert>
                 }
             </div>
             <div class="confirm-dialog__actions">

@@ -39,14 +39,8 @@
           Subtitle="Every Business Central environment across the solutions you can reach."
           IsLoading="@(_rows is null)"
           IsEmpty="@(_loadFailed || _rows is { Count: 0 })"
-          HasNoMatches="@(shown.Count == 0)">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <a href="/solutions">Solutions</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Environments</span>
-    </Crumbs>
+          HasNoMatches="@(shown.Count == 0)"
+          Trail='@([new("Home", "/"), new("Solutions", "/solutions"), new("Environments")])'>
     <Notices>
         @* Only a refresh failure belongs here: the table is still on screen and the
            alert annotates it. A failure to load at all gets its own state below,
@@ -54,9 +48,9 @@
            Business Central connections. *@
         @if (_error is { } error)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@error</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@error</span>
+            </Alert>
         }
 
         @* One freshness strip for the page, never one per section. The rows are a

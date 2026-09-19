@@ -22,10 +22,9 @@
 
     @if (_errorMessage is not null)
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Danger">
             <span>@_errorMessage</span>
-        </p>
+        </Alert>
     }
 
     @* No layout class on the form: .form-sec siblings separate themselves with

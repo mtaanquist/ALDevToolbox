@@ -37,7 +37,7 @@
         <span>Change #@Id</span>
     </Crumbs>
     <TitleRow>
-        <span class="status-pill @AuditActionPill(_entry!.Action)">@_entry.Action</span>
+        <StatusPill Tone="@AuditActionPill(_entry!.Action)">@_entry.Action</StatusPill>
     </TitleRow>
     <SubtitleContent>
         What changed when @_entry!.ChangedBy @AuditVerb(_entry.Action) this record.

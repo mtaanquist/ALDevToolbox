@@ -11,10 +11,9 @@
 <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.AccessTokens">
     @if (Ok == "revoked")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>Token revoked. Anything using it stops working immediately.</span>
-        </p>
+        </Alert>
     }
 
     <section class="card">

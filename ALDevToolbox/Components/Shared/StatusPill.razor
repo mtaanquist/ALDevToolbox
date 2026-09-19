@@ -1,0 +1,27 @@
+@*
+    The design system's .status-pill (.design/handoff/ComponentsPanel.dc.html): a small
+    tinted label with a coloured left edge. Tone is the sheet's own word for it -
+    muted, success, warn, danger, info, queued, running, live and the translation
+    states - so a helper that already maps a state to a tone passes it straight in.
+
+    The dot is always there. The sheet hides it on every tone but live and running,
+    where it pulses; pages that wrote the pill by hand left it out about half the
+    time, which only shows once the tone is computed and happens to be running.
+*@
+
+<span class="@CssClass" @attributes="Extra"><span class="status-pill__dot"></span>@ChildContent</span>
+
+@code {
+    [Parameter, EditorRequired] public string Tone { get; set; } = "muted";
+
+    /// <summary>Extra classes, for a page-scoped rule to hang on.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Extra { get; set; }
+
+    private string CssClass => string.IsNullOrWhiteSpace(Class)
+        ? $"status-pill status-pill--{Tone}"
+        : $"status-pill status-pill--{Tone} {Class.Trim()}";
+}

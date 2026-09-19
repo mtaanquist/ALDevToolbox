@@ -31,11 +31,11 @@
             Business Central
             @if (_bc?.IsConfigured == true)
             {
-                <span class="status-pill status-pill--success"><span class="status-pill__dot"></span><span>Connected</span></span>
+                <StatusPill Tone="success"><span>Connected</span></StatusPill>
             }
             else
             {
-                <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span><span>Not connected</span></span>
+                <StatusPill Tone="muted"><span>Not connected</span></StatusPill>
             }
         </h2>
     </div>
@@ -43,16 +43,16 @@
 
     @if (_bcMessage is not null)
     {
-        <p class="alert @(_bcOk ? "alert--success" : "alert--danger")" role="status"><Icon Name="@(_bcOk ? "circle-check" : "triangle-alert")" Width="16" Height="16" /><span>@_bcMessage</span></p>
+        <Alert Tone="@(_bcOk ? AlertTone.Success : AlertTone.Danger)" Role="status"><span>@_bcMessage</span></Alert>
     }
     @if (_bcErrors.Count > 0)
     {
-        <div class="alert alert--danger" role="alert">
+        <Alert Tone="AlertTone.Danger" Icon="" Block="true">
             @foreach (var err in _bcErrors.Values.Distinct())
             {
                 <p>@err</p>
             }
-        </div>
+        </Alert>
     }
 
     <div class="card">
@@ -116,7 +116,7 @@
         <span class="section-label">Environments</span>
         @if (_environments.Count > 0)
         {
-            <span class="status-pill status-pill--muted" style="margin-left:auto"><span class="status-pill__dot"></span><span>@EnvironmentsSummary()</span></span>
+            <StatusPill Tone="muted" style="margin-left:auto"><span>@EnvironmentsSummary()</span></StatusPill>
         }
     </div>
     <div class="card pd-env-card">
@@ -193,25 +193,22 @@
                                        table now means "something is wrong with this
                                        environment" - a Production environment is not a
                                        problem, it is the one to be careful with. *@
-                                    <span class="status-pill status-pill--muted@(isProd ? " pd-env-prod" : "")">
-                                        <span class="status-pill__dot"></span>
+                                    <StatusPill Tone="muted" Class="@(isProd ? "pd-env-prod" : null)">
                                         <span>@env.Type</span>
-                                    </span>
+                                    </StatusPill>
                                 </td>
                                 <td>
                                     @if (string.IsNullOrWhiteSpace(env.Status))
                                     {
-                                        <span class="status-pill status-pill--muted">
-                                            <span class="status-pill__dot"></span>
+                                        <StatusPill Tone="muted">
                                             <span>Not checked yet</span>
-                                        </span>
+                                        </StatusPill>
                                     }
                                     else
                                     {
-                                        <span class="status-pill status-pill--@StatusPillTone(env.Status)">
-                                            <span class="status-pill__dot"></span>
+                                        <StatusPill Tone="@StatusPillTone(env.Status)">
                                             <span>@HumaniseStatus(env.Status)</span>
-                                        </span>
+                                        </StatusPill>
                                     }
                                     @if (EnvStatusConsequence(env.Status) is { } consequence && !gone)
                                     {

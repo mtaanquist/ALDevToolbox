@@ -83,7 +83,7 @@
         {
             @* No status dot: the pill is a label for a setting, not a
                run state, and the dot beside a title reads as a divider. *@
-            <span class="status-pill status-pill--muted"><span>@badge</span></span>
+            <StatusPill Tone="muted"><span>@badge</span></StatusPill>
         }
     </TitleRow>
     <SubtitleContent>
@@ -126,15 +126,15 @@
            pill: a solution has no run state of its own. *@
         @if (_message is not null)
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@_message</span></p>
+            <Alert Tone="AlertTone.Success"><span>@_message</span></Alert>
         }
         @* Only the page-level failures ("_") stack up here; everything the user typed
            gets its error inline next to the field, the way the Access tab does. *@
         @if (_errors.TryGetValue("_", out var pageError))
         {
-            <div class="alert alert--danger" role="alert">
+            <Alert Tone="AlertTone.Danger" Icon="" Block="true">
                 <p>@pageError</p>
-            </div>
+            </Alert>
         }
 
         @if (!_canManage)

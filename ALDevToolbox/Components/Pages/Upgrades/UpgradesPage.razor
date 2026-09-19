@@ -51,14 +51,8 @@
           Subtitle="@(_denied ? string.Empty : "When each solution's environment moves to its next Business Central version, and how much longer you can put that off. Dates are UTC; times you book land in the customer's local time.")"
           IsLoading="@(!_denied && _rows is null)"
           IsEmpty="@(_denied || (_rows is not null && _totalCount == 0))"
-          HasNoMatches="@(_rows is { Count: 0 })">
-    <Crumbs>
-        <a href="/">Home</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <a href="/solutions">Solutions</a>
-        <Icon Name="chevron-right" Width="14" Height="14" />
-        <span>Upgrades</span>
-    </Crumbs>
+          HasNoMatches="@(_rows is { Count: 0 })"
+          Trail='@([new("Home", "/"), new("Solutions", "/solutions"), new("Upgrades")])'>
     <Loading>
         <div class="upg-scroll">
         <table class="data-table data-table--edge">
@@ -1253,9 +1247,8 @@
                         @item.ProjectName - @item.EnvironmentName
                         @if (item.IsProduction)
                         {
-                            <span class="status-pill status-pill--muted upg-prod">
-                                <span class="status-pill__dot"></span><span>Production</span>
-                            </span>
+                            <StatusPill Tone="muted" Class="upg-prod"><span>Production</span>
+                            </StatusPill>
                         }
                     </span>
                     <span class="upg-preview__what">@item.What</span>
@@ -1273,9 +1266,8 @@
                             @item.ProjectName - @item.EnvironmentName
                             @if (item.IsProduction)
                             {
-                                <span class="status-pill status-pill--muted upg-prod">
-                                    <span class="status-pill__dot"></span><span>Production</span>
-                                </span>
+                                <StatusPill Tone="muted" Class="upg-prod"><span>Production</span>
+                                </StatusPill>
                             }
                         </span>
                         <span class="upg-preview__what upg-preview__booked">@item.What</span>

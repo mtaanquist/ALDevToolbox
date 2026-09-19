@@ -1,0 +1,83 @@
+@*
+    The design system's .alert (.design/handoff/ComponentsPanel.dc.html): a tinted box,
+    an icon, then the message. The tone decides the two things every page used to pick
+    by hand, and sometimes picked differently:
+
+      icon   Danger circle-alert, Warn triangle-alert, Success circle-check, Info info,
+             Neutral none. Icon overrides it; Icon="" draws none.
+      role   Danger is role="alert" (announced at once), Success and Warn are
+             role="status" (announced politely), Info and Neutral have none - they are
+             usually standing notes, and a live region on a note that never changes
+             is noise. Role overrides it; Role="" removes it.
+
+    The content goes in as written - normally a <span>, sometimes a span and a link or
+    a button beside it - because .alert is a flex row and its children are the items.
+
+    A <p> unless Block is set. The two are not interchangeable: a paragraph brings the
+    browser's own margins, which the pages' spacing already counts on, and cannot hold
+    a list or another block.
+*@
+
+@if (Block)
+{
+    <div class="@CssClass" role="@EffectiveRole" @attributes="Extra">@Body</div>
+}
+else
+{
+    <p class="@CssClass" role="@EffectiveRole" @attributes="Extra">@Body</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public AlertTone Tone { get; set; }
+
+    /// <summary>Replaces the tone's icon; an empty string draws none.</summary>
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>Replaces the tone's role; an empty string removes it.</summary>
+    [Parameter] public string? Role { get; set; }
+
+    /// <summary>Extra classes, for a page-scoped rule to hang on.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Renders a <c>div</c>, for content a paragraph cannot hold.</summary>
+    [Parameter] public bool Block { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Extra { get; set; }
+
+    private string CssClass
+    {
+        get
+        {
+            var tone = Tone == AlertTone.Neutral ? "alert" : $"alert alert--{Tone.ToString().ToLowerInvariant()}";
+            return string.IsNullOrWhiteSpace(Class) ? tone : $"{tone} {Class.Trim()}";
+        }
+    }
+
+    private string? EffectiveIcon => Icon is not null
+        ? (Icon.Length == 0 ? null : Icon)
+        : Tone switch
+        {
+            AlertTone.Danger => "circle-alert",
+            AlertTone.Warn => "triangle-alert",
+            AlertTone.Success => "circle-check",
+            AlertTone.Info => "info",
+            _ => null,
+        };
+
+    // A null attribute value is not rendered at all, which is what "no role" needs.
+    private string? EffectiveRole => Role is not null
+        ? (Role.Length == 0 ? null : Role)
+        : Tone switch
+        {
+            AlertTone.Danger => "alert",
+            AlertTone.Warn or AlertTone.Success => "status",
+            _ => null,
+        };
+
+    private RenderFragment Body => @<text>@if (EffectiveIcon is { } icon)
+        {
+            <Icon Name="@icon" Width="16" Height="16" />
+        }@ChildContent</text>;
+}

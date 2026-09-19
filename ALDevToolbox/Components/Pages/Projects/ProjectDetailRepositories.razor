@@ -19,7 +19,7 @@
 <div class="form-sec__head">
     <h2 class="card__title">
         Repositories
-        <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span><span>@Edit.Repos.Count(r => !r.IsBlank()) added</span></span>
+        <StatusPill Tone="muted"><span>@Edit.Repos.Count(r => !r.IsBlank()) added</span></StatusPill>
     </h2>
 </div>
 <p class="form-sec__cap">Source repositories compiled into this solution's <code>.app</code> deliverables. Each build pulls the latest commit from every repository.</p>

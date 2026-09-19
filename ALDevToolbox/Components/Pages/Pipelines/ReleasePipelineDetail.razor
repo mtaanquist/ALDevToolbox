@@ -46,10 +46,9 @@
         <span>@_rp!.Name</span>
     </Crumbs>
     <TitleRow>
-        <span class="status-pill status-pill--@(_isProduction ? "danger" : "muted")">
-            <span class="status-pill__dot"></span>
+        <StatusPill Tone="@(_isProduction ? "danger" : "muted")">
             <span>@_rp!.ProjectEnvironment!.Type</span>
-        </span>
+        </StatusPill>
     </TitleRow>
     <SubtitleContent>
         @if (_fromReleases)
@@ -94,19 +93,18 @@
            pill beside the title, facts in a .meta-row underneath. *@
         @if (_rp!.ProjectEnvironment!.MissingSince is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="triangle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>
                     This release pipeline's target environment is no longer present in Business Central. Refresh the
                     environments on <a href="@($"/solutions/{_rp!.ProjectId}")">the solution's Business Central page</a> before releasing.
                 </span>
-            </p>
+            </Alert>
         }
         else if (_canManage && _releasesError is { } gre)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="triangle-alert" Width="16" Height="16" /><span>@gre</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@gre</span>
+            </Alert>
         }
         else if (_canManage && !HasSomethingToRelease)
         {
@@ -252,7 +250,7 @@
             </div>
             @if (_rescheduleError is { } err)
             {
-                <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@err</span></p>
+                <Alert Tone="AlertTone.Danger"><span>@err</span></Alert>
             }
             </div>
             <div class="confirm-dialog__actions">

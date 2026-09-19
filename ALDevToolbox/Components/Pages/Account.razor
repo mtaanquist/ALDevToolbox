@@ -80,50 +80,45 @@ else
             {
                 @* Endpoints redirect with err=<field>&msg=<sentence>, so the pair
                    is what carries meaning - a bare err= is a field name. *@
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Danger">
                     <span><strong>@Error:</strong> @Message</span>
-                </p>
+                </Alert>
             }
             else if (!string.IsNullOrEmpty(Message))
             {
                 @* A message with no field to blame: something went nowhere rather
                    than went wrong. Prefixing it with a field name would invent a
                    form the reader never filled in. *@
-                <p class="alert alert--warn" role="status">
-                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Warn">
                     <span>@Message</span>
-                </p>
+                </Alert>
             }
             @* The return banner below says "connected" and what to do next, so the
                generic flash would be the same news twice in two green boxes. *@
             @if (Ok is not null && !(CameFromRepositoriesTab && _github is { IsLinked: true }))
             {
-                <p class="alert alert--success" role="status">
-                    <Icon Name="circle-check" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Success">
                     <span>@FlashFor(Ok)</span>
-                </p>
+                </Alert>
             }
             @if (Required == "1")
             {
-                <p class="alert alert--warn" role="alert">
-                    <Icon Name="shield-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Warn" Icon="shield-alert" Role="alert">
                     <span>
                         Your organisation requires either two-step verification or a passkey.
                         Set one up below - you won't be able to reach the rest of the site until you do.
                     </span>
-                </p>
+                </Alert>
             }
             @if (!string.IsNullOrEmpty(_user.PendingEmail))
             {
-                <p class="alert alert--info" role="status">
-                    <Icon Name="mail" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Info" Icon="mail" Role="status">
                     <span>
                         Pending email change to <strong>@_user.PendingEmail</strong>
                         (requested @_user.PendingEmailAt?.ToString("yyyy-MM-dd HH:mm 'UTC'")).
                         The new address still needs to click the confirmation link.
                     </span>
-                </p>
+                </Alert>
             }
 
             @if (_section == Section.Profile)
@@ -235,11 +230,11 @@ else
                         </div>
                         @if (_twoStepOn)
                         {
-                            <span class="status-pill status-pill--success">On</span>
+                            <StatusPill Tone="success">On</StatusPill>
                         }
                         else
                         {
-                            <span class="status-pill status-pill--muted">Off</span>
+                            <StatusPill Tone="muted">Off</StatusPill>
                         }
                     </div>
                     <div class="setting-list">
@@ -248,7 +243,7 @@ else
                             @if (!_user.TotpEnabled)
                             {
                                 <span class="u-row">
-                                    <span class="status-pill status-pill--muted">Off</span>
+                                    <StatusPill Tone="muted">Off</StatusPill>
                                     <a href="/account/2fa/totp/setup" class="btn btn--sm">
                                         <Icon Name="shield" Width="14" Height="14" />
                                         <span>Turn on authenticator app</span>
@@ -258,7 +253,7 @@ else
                             else if (_totpAction is null)
                             {
                                 <span class="u-row">
-                                    <span class="status-pill status-pill--success">On</span>
+                                    <StatusPill Tone="success">On</StatusPill>
                                     <button type="button" class="btn btn--sm" @onclick='() => _totpAction = "regenerate"'>
                                         <Icon Name="refresh-cw" Width="14" Height="14" />
                                         <span>Get new recovery codes</span>
@@ -306,7 +301,7 @@ else
                             {
                                 <form method="post" action="/auth/account/2fa/email/disable" class="u-row">
                                     <AntiforgeryToken />
-                                    <span class="status-pill status-pill--success">On</span>
+                                    <StatusPill Tone="success">On</StatusPill>
                                     <input class="input" type="password" name="Password" required
                                            autocomplete="current-password" aria-label="Current password"
                                            placeholder="Current password" />
@@ -326,7 +321,7 @@ else
                             {
                                 <form method="post" action="/auth/account/2fa/email/begin" class="u-row">
                                     <AntiforgeryToken />
-                                    <span class="status-pill status-pill--muted">Off</span>
+                                    <StatusPill Tone="muted">Off</StatusPill>
                                     <button type="submit" class="btn btn--sm">
                                         <Icon Name="mail" Width="14" Height="14" />
                                         <span>Turn on email codes</span>
@@ -390,10 +385,9 @@ else
                         @if (!string.IsNullOrEmpty(_passkeyError))
                         {
                             <div class="card__body">
-                                <p class="alert alert--danger" role="alert">
-                                    <Icon Name="circle-alert" Width="16" Height="16" />
+                                <Alert Tone="AlertTone.Danger">
                                     <span>@_passkeyError</span>
-                                </p>
+                                </Alert>
                             </div>
                         }
                         <div class="card__foot">
@@ -417,7 +411,7 @@ else
                         </div>
                         @if (_entraLinks.Count > 0)
                         {
-                            <span class="status-pill status-pill--success">Connected</span>
+                            <StatusPill Tone="success">Connected</StatusPill>
                         }
                     </div>
                     @if (!_orgEntraEnabled)
@@ -448,7 +442,7 @@ else
                                 <SettingRow Name="@link.DisplayIdentity"
                                             Hint="@($"Microsoft account, connected {link.CreatedAt.ToLocalTime():d MMM yyyy}.")">
                                     <span class="u-row">
-                                        <span class="status-pill status-pill--success">Connected</span>
+                                        <StatusPill Tone="success">Connected</StatusPill>
                                         <button type="button" class="btn btn--sm btn--danger"
                                                 @onclick="() => DisconnectEntraAsync(link)" disabled="@_busy">
                                             <Icon Name="trash-2" Width="14" Height="14" />
@@ -467,10 +461,9 @@ else
                     @if (!string.IsNullOrEmpty(_entraLinkError))
                     {
                         <div class="card__body">
-                            <p class="alert alert--danger" role="alert">
-                                <Icon Name="circle-alert" Width="16" Height="16" />
+                            <Alert Tone="AlertTone.Danger">
                                 <span>@_entraLinkError</span>
-                            </p>
+                            </Alert>
                         </div>
                     }
                     @if (_orgEntraEnabled)
@@ -743,21 +736,21 @@ else
             {
                 @if (!string.IsNullOrEmpty(_repoOk))
                 {
-                    <p class="alert alert--success" role="status">
-                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_repoOk</span>
-                    </p>
+                    <Alert Tone="AlertTone.Success">
+                        <span>@_repoOk</span>
+                    </Alert>
                 }
                 @if (!string.IsNullOrEmpty(_repoErr))
                 {
-                    <p class="alert alert--danger" role="alert">
-                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_repoErr</span>
-                    </p>
+                    <Alert Tone="AlertTone.Danger">
+                        <span>@_repoErr</span>
+                    </Alert>
                 }
                 @if (!string.IsNullOrEmpty(_githubNote))
                 {
-                    <p class="alert alert--info" role="status">
-                        <Icon Name="info" Width="16" Height="16" /><span>@_githubNote</span>
-                    </p>
+                    <Alert Tone="AlertTone.Info" Role="status">
+                        <span>@_githubNote</span>
+                    </Alert>
                 }
 
                 @* An admin sent here to link had, until now, to reconstruct
@@ -768,8 +761,7 @@ else
                 {
                     @if (_github is { IsLinked: true, NeedsRelink: false })
                     {
-                        <div class="alert alert--success" role="status">
-                            <Icon Name="circle-check" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Success" Block="true">
                             <span class="u-stack">
                                 <span>
                                     That is your own GitHub account done. Now finish connecting your
@@ -782,18 +774,17 @@ else
                                     </a>
                                 </span>
                             </span>
-                        </div>
+                        </Alert>
                     }
                     else
                     {
-                        <p class="alert alert--info" role="status">
-                            <Icon Name="info" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Info" Role="status">
                             <span>
                                 You came from Administration &#8594; Repositories. Connect your own GitHub
                                 account below, and you will be sent back there to finish connecting your
                                 organisation.
                             </span>
-                        </p>
+                        </Alert>
                     }
                 }
 
@@ -861,20 +852,18 @@ else
                         @if (_github.NeedsRelink)
                         {
                             <div class="card__body">
-                                <p class="alert alert--warn" role="alert">
-                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                <Alert Tone="AlertTone.Warn" Role="alert">
                                     <span>
                                         This connection has stopped working - most often because it was
                                         removed on GitHub. Connect again to carry on.
                                     </span>
-                                </p>
+                                </Alert>
                             </div>
                         }
                         else if (_githubOrgLogin is not null && _github.IsOrgMember == false)
                         {
                             <div class="card__body">
-                                <p class="alert alert--info" role="status">
-                                    <Icon Name="info" Width="16" Height="16" />
+                                <Alert Tone="AlertTone.Info" Role="status">
                                     <span>
                                         Your account is connected, but GitHub does not list you in the
                                         <strong>@_githubOrgLogin</strong> organisation - so none of its
@@ -882,20 +871,19 @@ else
                                         <a href="@GitHubOrgPeopleUrl" target="_blank" rel="noopener">@_githubOrgLogin</a>
                                         to add you, then choose Check again below.
                                     </span>
-                                </p>
+                                </Alert>
                             </div>
                         }
                         else if (_githubOrgLogin is null)
                         {
                             <div class="card__body">
-                                <p class="alert alert--info" role="status">
-                                    <Icon Name="info" Width="16" Height="16" />
+                                <Alert Tone="AlertTone.Info" Role="status">
                                     <span>
                                         Nobody has told the toolbox which GitHub organisation your company
                                         works in yet, so there is nothing for it to show you. An
                                         administrator picks one under Administration &#8594; Repositories.
                                     </span>
-                                </p>
+                                </Alert>
                             </div>
                         }
 

@@ -39,20 +39,19 @@
 
     @if (!string.IsNullOrEmpty(Error))
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Error</span>
-        </p>
+        <Alert Tone="AlertTone.Danger">
+            <span>@Error</span>
+        </Alert>
     }
     @if (Ok == "invite-revoked")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" /><span>Invite revoked.</span>
-        </p>
+        <Alert Tone="AlertTone.Success">
+            <span>Invite revoked.</span>
+        </Alert>
     }
     else if (Ok == "email-pending")
     {
-        <div class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success" Block="true">
             <span>
                 Email change requested. We sent a confirmation link to the new address; it expires in 24 hours.
                 @if (!string.IsNullOrEmpty(_oneShotLink))
@@ -67,7 +66,7 @@
                     </span>
                 }
             </span>
-        </div>
+        </Alert>
     }
 
     @if (_pending is null || _active is null || _invites is null)
@@ -187,20 +186,19 @@
 
         @if (_lastError is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_lastError</span>
+            </Alert>
         }
         @if (_lastSuccess is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_lastSuccess</span>
+            </Alert>
         }
         @if (_lastFailures.Count > 0)
         {
-            <div class="alert alert--warn" role="alert">
-                <Icon Name="triangle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="alert" Block="true">
                 <span>
                     <strong>Some users couldn't be updated</strong>
                     <ul>
@@ -210,7 +208,7 @@
                         }
                     </ul>
                 </span>
-            </div>
+            </Alert>
         }
 
         <section class="card">

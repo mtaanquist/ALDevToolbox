@@ -11,17 +11,15 @@
 <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.OAuthClients">
     @if (Ok == "revoked")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>Access withdrawn. That assistant is signed out of that person's account.</span>
-        </p>
+        </Alert>
     }
     else if (Ok == "deleted")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>Assistant removed for everyone.</span>
-        </p>
+        </Alert>
     }
 
     <section class="card">

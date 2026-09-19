@@ -66,7 +66,7 @@
         <span>@Row.EnvironmentName</span>
     </Crumbs>
     <TitleRow>
-        <span class="status-pill status-pill--@StatusTone()"><span class="status-pill__dot"></span>@StatusWord(Row)</span>
+        <StatusPill Tone="@StatusTone()">@StatusWord(Row)</StatusPill>
         <span class="tag">@Row.EnvironmentType</span>
     </TitleRow>
     <SubtitleContent>@SubtitleText()</SubtitleContent>
@@ -120,11 +120,11 @@
            that is always where the eye lands afterwards is the top. *@
         @if (_settingError is { } settingError)
         {
-            <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@settingError</span></p>
+            <Alert Tone="AlertTone.Danger"><span>@settingError</span></Alert>
         }
         else if (_settingDone is { } settingDone)
         {
-            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@settingDone</span></p>
+            <Alert Tone="AlertTone.Success"><span>@settingDone</span></Alert>
         }
 
         @* Under the freshness strip, as the sheet has it, so the strip qualifies the
@@ -167,8 +167,7 @@
                 }
                 @if (WindowsOverlap())
                 {
-                    <div class="alert alert--info env-detail__overlap">
-                        <Icon Name="info" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Info" Class="env-detail__overlap" Block="true">
                         <span>
                             The two windows overlap. Business Central refuses an install while it
                             is updating the environment, so a release that lands during Microsoft's
@@ -176,7 +175,7 @@
                             <a href="@($"/solutions/{Row.ProjectId}?tab=bc")">solution's Business Central tab</a>
                             if the update date matters to the customer.
                         </span>
-                    </div>
+                    </Alert>
                 }
             </div>
         </div>
@@ -420,11 +419,11 @@
                                         <td class="data-table__col-state">
                                             @if (ready)
                                             {
-                                                <span class="status-pill status-pill--success">Ready</span>
+                                                <StatusPill Tone="success">Ready</StatusPill>
                                             }
                                             else
                                             {
-                                                <span class="status-pill status-pill--queued">Waits for @up.Requirements.Count</span>
+                                                <StatusPill Tone="queued">Waits for @up.Requirements.Count</StatusPill>
                                             }
                                         </td>
                                         <td>@up.Name</td>
@@ -481,14 +480,13 @@
 
             <p class="section-label">Environment settings</p>
             <div class="card">
-                <div class="alert alert--warn env-detail__warn">
-                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Warn" Role="" Class="env-detail__warn" Block="true">
                     <span>
                         <b>These change @Row.EnvironmentName in the customer's tenant.</b>
                         Saving here writes straight to @Row.ProjectName's Business Central
                         environment, not just to the toolbox. Agree the change with the customer first.
                     </span>
-                </div>
+                </Alert>
                 <div class="setting-list">
                     <div class="setting">
                         <span class="setting__label">

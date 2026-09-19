@@ -136,11 +136,11 @@
                 </div>
                 @if (_entraEnabled)
                 {
-                    <span class="status-pill status-pill--success">On</span>
+                    <StatusPill Tone="success">On</StatusPill>
                 }
                 else
                 {
-                    <span class="status-pill status-pill--muted">Off</span>
+                    <StatusPill Tone="muted">Off</StatusPill>
                 }
             </div>
 
@@ -351,19 +351,17 @@
             @* Whether Microsoft sign-in is even available to switch on is set
                by a site administrator, not here - so say which it is before an
                admin wonders why the toggle refuses. *@
-            <p class="alert @(_deploymentAppConfigured ? "alert--success" : "alert--info")" role="status">
-                <Icon Name="@(_deploymentAppConfigured ? "circle-check" : "info")" Width="16" Height="16" />
+            <Alert Tone="@(_deploymentAppConfigured ? AlertTone.Success : AlertTone.Info)" Role="status">
                 <span>
                     @(_deploymentAppConfigured
                         ? "Microsoft sign-in is set up on this site. All you need is the list of Microsoft organisations below."
                         : "Microsoft sign-in isn't set up on this site yet. Ask a site administrator to set it up, or use your own registration below.")
                 </span>
-            </p>
+            </Alert>
         }
-        <p class="alert alert--info">
-            <Icon Name="info" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Info">
             <span>Everything on this page applies to this organisation only.</span>
-        </p>
+        </Alert>
     </Aside>
 </AdministrationHeader>
 

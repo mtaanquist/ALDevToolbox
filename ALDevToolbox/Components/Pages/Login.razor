@@ -226,39 +226,35 @@ else
     private RenderFragment AlertsBlock => @<text>
         @if (Error == "locked")
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>
                     Too many failed sign-ins. Try again in 15 minutes, or
                     <a class="auth__link" href="/forgot-password">reset your password</a>.
                 </span>
-            </p>
+            </Alert>
         }
         else if (Error == "entra-pending")
         {
             @* Not a failure: the account was created and is queued for
                approval, which is the same good news the password signup gives. *@
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Success">
                 <span>
                     You're nearly in - your account was created and is waiting for your
                     organisation's admin to approve it. We'll email you when it's approved.
                 </span>
-            </p>
+            </Alert>
         }
         else if (ErrorMessage() is { } error)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>@error</span>
-            </p>
+            </Alert>
         }
         @if (OkMessage() is { } ok)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Success">
                 <span>@ok</span>
-            </p>
+            </Alert>
         }
     </text>;
 

@@ -70,7 +70,8 @@
 
 /* Production, emphasised but not alarmed - matching the project page's
    treatment of the same pill. */
-.upg-prod {
+/* ::deep: the pill is rendered by StatusPill, outside this file's scope. */
+::deep .upg-prod {
     font-weight: 600;
 }
 
@@ -153,7 +154,8 @@
 }
 
 /* The Production marker inside a preview row. */
-.upg-preview__who .status-pill {
+/* ::deep: the pill is rendered by StatusPill, outside this file's scope. */
+.upg-preview__who ::deep .status-pill {
     margin-left: var(--space-2);
 }
 
