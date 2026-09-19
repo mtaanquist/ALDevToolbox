@@ -485,6 +485,17 @@ that names the environment and says what the click does there:
   environment's own updates read reports as `available` can be chosen, and the service
   re-checks that at write time so a stale page can't schedule something Microsoft hasn't
   released.
+- **Updating an AppSource app** - to the version Business Central has waiting, in the update
+  window or right away. An app that waits for others can be updated too: the confirm lists
+  every app it waits for, and the write sends `installOrUpdateNeededDependencies` true only
+  for those. The service reads the waiting list again first and refuses if Business Central
+  now asks for an app that was not on the list the person agreed to. Business Central takes
+  each prerequisite to the newest version the environment supports, not the minimum.
+- **Uploading an app** - one `.app` file another company built, for which there is no
+  pipeline here. It goes straight to `pteInstall` and is never stored. Only "right away" and
+  "in the update window" are offered (the two schedules Business Central allows for an app
+  it has not seen before), the sync mode is always Add, and dependencies are **not** pulled
+  along: a missing one is refused by name. Apps we build still go through Releases.
 
 Refusals are keyed on Microsoft's error **codes** (`environmentNotFound`,
 `applicationTypeDoesNotExist`, and so on) and rendered as an instruction; the message beside the

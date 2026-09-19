@@ -334,6 +334,22 @@ public sealed class BcAppManagementClientTests
         apps.Single(a => a.Name == "Base Application").IsPerTenant.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpdateApp_says_whether_the_prerequisites_come_along(bool withDependencies)
+    {
+        var (client, handler) = Client(body: """{"id":"66666666-6666-6666-6666-666666666666","status":"scheduled"}""");
+        var appId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+
+        await client.UpdateAppAsync(Token, Family, Environment, appId, "28.5.0.1",
+            useEnvironmentUpdateWindow: true, installOrUpdateNeededDependencies: withDependencies);
+
+        handler.Url!.AbsolutePath.Should().EndWith($"/apps/{appId}/update");
+        handler.JsonBody.Should().Contain($"\"installOrUpdateNeededDependencies\":{(withDependencies ? "true" : "false")}")
+            .And.Contain("\"allowPreviewVersion\":false");
+    }
+
     [Fact]
     public async Task ListScheduledPteOperations_reads_the_name_and_sync_mode_from_parameters()
     {

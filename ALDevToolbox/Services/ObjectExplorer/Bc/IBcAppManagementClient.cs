@@ -112,13 +112,16 @@ public interface IBcAppManagementClient
     /// <paramref name="targetVersion"/> - <c>POST .../apps/{appId}/update</c>. Returns the
     /// operation it started or scheduled.
     /// <para>
-    /// Dependencies are deliberately not pulled along
-    /// (<c>installOrUpdateNeededDependencies</c> is sent false): an update that needs
-    /// another app moved first is refused by Business Central instead of quietly
-    /// updating apps nobody picked. Preview versions are never allowed.
+    /// Preview versions are never allowed.
     /// </para>
     /// </summary>
     /// <param name="useEnvironmentUpdateWindow">True to let it run in the environment's next update window; false starts it now.</param>
+    /// <param name="installOrUpdateNeededDependencies">
+    /// True to have Business Central install or update the apps this one waits for as part
+    /// of the same request - to the latest version the environment supports, not the
+    /// minimum asked for. False makes it refuse instead, so apps nobody picked never move;
+    /// the caller sends true only once somebody has seen the list and agreed to it.
+    /// </param>
     Task<BcAppOperation> UpdateAppAsync(
         string accessToken,
         string applicationFamily,
@@ -126,5 +129,6 @@ public interface IBcAppManagementClient
         Guid appId,
         string targetVersion,
         bool useEnvironmentUpdateWindow,
+        bool installOrUpdateNeededDependencies,
         CancellationToken ct = default);
 }

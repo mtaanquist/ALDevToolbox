@@ -169,18 +169,30 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         /// <summary>What an update was asked to do, so a test can pin the version and the timing.</summary>
         public (Guid AppId, string Version, bool InWindow)? Updated;
+        public bool? UpdatedWithDependencies;
 
-        public Task<BcAppOperation> UpdateAppAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, CancellationToken ct = default)
+        public Task<BcAppOperation> UpdateAppAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
         {
             Updated = (appId, targetVersion, useEnvironmentUpdateWindow);
+            UpdatedWithDependencies = installOrUpdateNeededDependencies;
             return Task.FromResult(new BcAppOperation(
                 Guid.NewGuid(), appId, "update", BcAppOperationStatus.Scheduled, "scheduled",
                 string.Empty, targetVersion, null, string.Empty, string.Empty, string.Empty,
                 true, "app", DateTimeOffset.UtcNow, null, null));
         }
 
+        public (string FileName, int Bytes, string Schedule, string SyncMode, bool WithDependencies)? Installed;
+        public BcApiException? InstallThrows;
+
         public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
-            => throw new NotSupportedException();
+        {
+            if (InstallThrows is not null) throw InstallThrows;
+            Installed = (fileName, appBytes.Length, deploymentSchedule, syncMode, installOrUpdateNeededDependencies);
+            return Task.FromResult(new BcAppOperation(
+                Guid.NewGuid(), Guid.NewGuid(), "install", BcAppOperationStatus.Running, "running",
+                string.Empty, "1.0.0.0", deploymentSchedule, string.Empty, string.Empty, string.Empty,
+                false, "app", DateTimeOffset.UtcNow, null, null));
+        }
         public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
             => throw new NotSupportedException();
     }
@@ -1087,6 +1099,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         operation.Status.Should().Be(BcAppOperationStatus.Scheduled);
         apps.Updated.Should().Be((WaitingAppId, "28.5.0.1", true));
+        apps.UpdatedWithDependencies.Should().BeFalse("a ready app must never pull other apps along");
         _panelCache.Get(projectId, envId).Should().BeNull("the page must re-read after our own write, not show the old list");
     }
 
@@ -1124,6 +1137,112 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"]
             .Should().Contain("Continia System Application");
         apps.Updated.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_app_that_waits_for_others_is_updated_with_them_once_each_one_is_confirmed()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var apps = AppsWithWaiting(
+            new BcAppUpdateRequirement(first, "Continia System Application", "Continia Software", "28.5.0.0", "update"),
+            new BcAppUpdateRequirement(second, "Continia Connector App", "Continia Software", "28.5.0.0", "install"));
+
+        await using var ctx = _db.NewContext();
+        await Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .UpdateAppAsync(projectId, envId, WaitingAppId, "28.5.0.1", useUpdateWindow: true, new[] { first, second });
+
+        apps.Updated.Should().Be((WaitingAppId, "28.5.0.1", true));
+        apps.UpdatedWithDependencies.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_prerequisite_nobody_confirmed_stops_the_update()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var seen = Guid.NewGuid();
+        var apps = AppsWithWaiting(
+            new BcAppUpdateRequirement(seen, "Continia System Application", "Continia Software", "28.5.0.0", "update"),
+            new BcAppUpdateRequirement(Guid.NewGuid(), "Continia Connector App", "Continia Software", "28.5.0.0", "update"));
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .UpdateAppAsync(projectId, envId, WaitingAppId, "28.5.0.1", useUpdateWindow: true, new[] { seen });
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"];
+        error.Should().Contain("Continia Connector App").And.NotContain("Continia System Application");
+        apps.Updated.Should().BeNull();
+    }
+
+    // ── Uploading an app by hand ──────────────────────────────────────────
+
+    [Theory]
+    [InlineData(true, BcDeploymentSchedule.UpdateWindow)]
+    [InlineData(false, BcDeploymentSchedule.Immediate)]
+    public async Task An_uploaded_app_goes_to_business_central_as_given_and_clears_the_cached_panel(bool inWindow, string schedule)
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient();
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+
+        await svc.InstallUploadedAppAsync(projectId, envId, new byte[] { 1, 2, 3 }, @"C:\Downloads\Partner_Thing_1.0.0.0.app", inWindow);
+
+        apps.Installed.Should().Be(("Partner_Thing_1.0.0.0.app", 3, schedule, BcSyncMode.Add, false),
+            "the path is dropped, the sync mode is never Force sync, and dependencies are never pulled along");
+        _panelCache.Get(projectId, envId).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Partner.zip", 3, ".app")]
+    [InlineData("Partner.app", 0, "empty")]
+    [InlineData("Partner.app", BcAppManagementClient.MaxAppBytes + 1, "50 MB")]
+    public async Task An_upload_business_central_would_refuse_never_leaves_the_toolbox(string fileName, int size, string says)
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .InstallUploadedAppAsync(projectId, envId, new byte[size], fileName, useUpdateWindow: false);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"].Should().Contain(says);
+        apps.Installed.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task What_business_central_says_about_a_refused_upload_reaches_the_person()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            InstallThrows = new BcApiException(null, "It needs Continia Core 28.0.0.0, which isn't installed."),
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .InstallUploadedAppAsync(projectId, envId, new byte[] { 1 }, "Partner.app", useUpdateWindow: false);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["App"].Should().Contain("Continia Core");
+    }
+
+    [Fact]
+    public async Task Someone_who_does_not_manage_the_solution_cannot_upload_an_app_to_it()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9778, "uploader@example.com", UserRole.User);
+        _db.OrgContext.CurrentUserId = 9778;
+        var apps = new FakeAppManagementClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .InstallUploadedAppAsync(projectId, envId, new byte[] { 1 }, "Partner.app", useUpdateWindow: false);
+
+        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        apps.Installed.Should().BeNull();
     }
 
     [Fact]

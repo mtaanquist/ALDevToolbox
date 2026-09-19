@@ -942,10 +942,15 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// update.
     /// <para>
     /// The version is not taken on trust. The waiting updates are read again first, and
-    /// the write goes ahead only for an app that is on that list, at exactly that version,
-    /// with nothing it has to wait for - so a stale page, or a caller that is not the
-    /// page, cannot move an app to a version Business Central never offered, or start an
-    /// update whose prerequisites have not been met.
+    /// the write goes ahead only for an app that is on that list, at exactly that version
+    /// - so a stale page, or a caller that is not the page, cannot move an app to a
+    /// version Business Central never offered.
+    /// </para>
+    /// <para>
+    /// An app that waits for others is updated together with them, but only the ones in
+    /// <paramref name="confirmedPrerequisiteAppIds"/>: the apps somebody was shown and
+    /// agreed to. If Business Central now asks for one that is not in that set the write
+    /// is refused, so nobody's agreement covers an app they never saw.
     /// </para>
     /// <para>
     /// Changes the customer's tenant and touches no row of ours, so like Microsoft 365
@@ -954,9 +959,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// </para>
     /// </summary>
     /// <param name="useUpdateWindow">True to let it run in the environment's next update window; false starts it now.</param>
+    /// <param name="confirmedPrerequisiteAppIds">The apps the caller agreed may be installed or updated alongside; null or empty for none.</param>
     /// <returns>The operation Business Central started or scheduled.</returns>
     public async Task<BcAppOperation> UpdateAppAsync(
-        int projectId, int environmentId, Guid appId, string targetVersion, bool useUpdateWindow, CancellationToken ct = default)
+        int projectId, int environmentId, Guid appId, string targetVersion, bool useUpdateWindow,
+        IReadOnlyCollection<Guid>? confirmedPrerequisiteAppIds = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(targetVersion))
         {
@@ -964,6 +971,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         }
 
         var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        var confirmed = confirmedPrerequisiteAppIds ?? Array.Empty<Guid>();
 
         BcAppOperation operation;
         try
@@ -975,13 +983,18 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             {
                 throw Validation("App", $"Business Central now offers {offered.Name} {offered.Version}, not {targetVersion}. Refresh and try again.");
             }
-            if (offered.Requirements.Count > 0)
+            var unconfirmed = offered.Requirements
+                .Where(r => r.AppId is not { } id || !confirmed.Contains(id))
+                .ToList();
+            if (unconfirmed.Count > 0)
             {
-                throw Validation("App",
-                    $"{offered.Name} has to wait for {string.Join(", ", offered.Requirements.Select(r => r.Name))} to be updated first.");
+                throw Validation("App", confirmed.Count == 0
+                    ? $"{offered.Name} has to wait for {string.Join(", ", unconfirmed.Select(r => r.Name))} to be updated first."
+                    : $"{offered.Name} now also waits for {string.Join(", ", unconfirmed.Select(r => r.Name))}. Refresh and look again.");
             }
 
-            operation = await _apps.UpdateAppAsync(env.Token, env.Family, env.Name, appId, offered.Version, useUpdateWindow, ct);
+            operation = await _apps.UpdateAppAsync(env.Token, env.Family, env.Name, appId, offered.Version, useUpdateWindow,
+                installOrUpdateNeededDependencies: offered.Requirements.Count > 0, ct);
         }
         catch (BcApiException ex)
         {
@@ -991,8 +1004,73 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         _panelCache.Invalidate(projectId, environmentId);
 
         _logger.LogInformation(
-            "User {UserId} asked for app {AppId} to be updated to {Version} on {Environment} (project {ProjectId}, in the update window: {InWindow}); operation {OperationId}.",
-            _orgContext.CurrentUserId, appId, targetVersion, env.Name, projectId, useUpdateWindow, operation.Id);
+            "User {UserId} asked for app {AppId} to be updated to {Version} on {Environment} (project {ProjectId}, in the update window: {InWindow}, along with {PrerequisiteCount} prerequisites); operation {OperationId}.",
+            _orgContext.CurrentUserId, appId, targetVersion, env.Name, projectId, useUpdateWindow, confirmed.Count, operation.Id);
+        return operation;
+    }
+
+    /// <summary>
+    /// Installs one extension package somebody uploaded by hand - an app another company
+    /// built, which has no pipeline here to release it from. Manage-gated.
+    /// <para>
+    /// Only the two schedules Business Central allows for an app it has not seen before
+    /// are accepted (right away, or in the update window), and the sync mode is always
+    /// Add: Force sync can drop the customer's columns, and that is not a choice to make
+    /// about a package we did not build. Dependencies are not pulled along either - a
+    /// missing one is refused by name, so nothing is installed that nobody picked.
+    /// </para>
+    /// <para>
+    /// The package is passed straight through and never stored, and the write touches no
+    /// row of ours, so like an app update it is recorded in the log rather than the audit
+    /// trail - see <c>.design/saas-delivery.md</c>.
+    /// </para>
+    /// </summary>
+    /// <returns>The operation Business Central started or scheduled.</returns>
+    public async Task<BcAppOperation> InstallUploadedAppAsync(
+        int projectId, int environmentId, byte[] appBytes, string fileName, bool useUpdateWindow, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(appBytes);
+        // Either separator, whatever this host runs on: a Windows path is not one to Linux.
+        var name = (fileName ?? string.Empty).Trim();
+        name = name[(name.LastIndexOfAny(['/', '\\']) + 1)..];
+        if (!name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+        {
+            throw Validation("App", "Choose an extension package - a file ending in .app.");
+        }
+        if (appBytes.Length == 0)
+        {
+            throw Validation("App", $"{name} is empty.");
+        }
+        if (appBytes.Length > BcAppManagementClient.MaxAppBytes)
+        {
+            throw Validation("App", $"{name} is over 50 MB, which is the largest app Business Central accepts.");
+        }
+
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+
+        BcAppOperation operation;
+        try
+        {
+            operation = await _apps.InstallPteAsync(
+                env.Token, env.Family, env.Name, appBytes, name,
+                useUpdateWindow ? BcDeploymentSchedule.UpdateWindow : BcDeploymentSchedule.Immediate,
+                BcSyncMode.Add,
+                // No language, for the reason a delivery sends none: see DeliveryService.
+                languageId: string.Empty,
+                installOrUpdateNeededDependencies: false,
+                ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("App", "Business Central didn't accept the app. " + ex.Message);
+        }
+
+        _panelCache.Invalidate(projectId, environmentId);
+
+        _logger.LogInformation(
+            "User {UserId} uploaded {FileName} ({Bytes} bytes) to {Environment} (project {ProjectId}, in the update window: {InWindow}); app {AppId} version {Version}, operation {OperationId}.",
+            _orgContext.CurrentUserId, name, appBytes.Length, env.Name, projectId, useUpdateWindow,
+            operation.AppId, operation.TargetAppVersion, operation.Id);
         return operation;
     }
 
