@@ -143,20 +143,22 @@ public sealed class BcAdminClient : IBcAdminClient
 
         var payload = new Dictionary<string, object> { ["selected"] = true };
         if (!string.IsNullOrWhiteSpace(targetVersionType)) payload["targetVersionType"] = targetVersionType.Trim();
-        // ISO-8601 in UTC, the form the documented body shows and the one the updates read
-        // hands back. Only sent when the caller is actually moving the date: a PATCH that
-        // omits it leaves the customer's existing slot alone.
+        // Both scheduling fields travel inside `scheduleDetails`, the same place the updates
+        // read hands them back. At the top level Business Central answers 200 and ignores
+        // them, so the date silently stays where it was. The block is only sent when the
+        // caller is actually moving something: a PATCH that omits it leaves the customer's
+        // existing slot alone.
+        var schedule = new Dictionary<string, object>();
+        // ISO-8601 in UTC, the form the documented body shows.
         if (selectedDateTime is { } when)
         {
-            payload["selectedDateTime"] = when.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ",
+            schedule["selectedDateTime"] = when.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ",
                 System.Globalization.CultureInfo.InvariantCulture);
         }
-        // Sent as a real JSON boolean, unlike the string "true"/"false" the Microsoft 365
-        // licence endpoint documents. This body already carries `selected` as a boolean and
-        // the same endpoint reads both flags back as booleans, so the two flags in one body
-        // stay the same shape. If Business Central ever refuses it, the string form is the
-        // first thing to try.
-        if (ignoreUpdateWindow is { } ignore) payload["ignoreUpdateWindow"] = ignore;
+        // A real JSON boolean, as the read returns it. If Business Central ever refuses it,
+        // the string form the Microsoft 365 licence endpoint documents is the first thing to try.
+        if (ignoreUpdateWindow is { } ignore) schedule["ignoreUpdateWindow"] = ignore;
+        if (schedule.Count > 0) payload["scheduleDetails"] = schedule;
 
         using var request = new HttpRequestMessage(
             HttpMethod.Patch, BcConstants.EnvironmentUpdateUrl(applicationFamily, environmentName, targetVersion))
