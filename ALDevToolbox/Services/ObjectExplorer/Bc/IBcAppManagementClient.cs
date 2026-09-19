@@ -106,4 +106,25 @@ public interface IBcAppManagementClient
         string targetVersion,
         string scheduleKind,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Asks Business Central to update one installed AppSource (Marketplace) app to
+    /// <paramref name="targetVersion"/> - <c>POST .../apps/{appId}/update</c>. Returns the
+    /// operation it started or scheduled.
+    /// <para>
+    /// Dependencies are deliberately not pulled along
+    /// (<c>installOrUpdateNeededDependencies</c> is sent false): an update that needs
+    /// another app moved first is refused by Business Central instead of quietly
+    /// updating apps nobody picked. Preview versions are never allowed.
+    /// </para>
+    /// </summary>
+    /// <param name="useEnvironmentUpdateWindow">True to let it run in the environment's next update window; false starts it now.</param>
+    Task<BcAppOperation> UpdateAppAsync(
+        string accessToken,
+        string applicationFamily,
+        string environmentName,
+        Guid appId,
+        string targetVersion,
+        bool useEnvironmentUpdateWindow,
+        CancellationToken ct = default);
 }

@@ -426,6 +426,11 @@ panel opens and reused for a short window after that:
 - **Business Central updates** — the platform versions coming to the environment, released
   or merely expected, and which one is scheduled next.
 
+One write hangs off the third list: a ready AppSource update can be started from its row
+(`ProjectConnectionService.UpdateAppAsync`, `POST .../apps/{appId}/update`). It never pulls
+dependencies along and never takes a preview version, so Business Central refuses rather than
+updating apps nobody picked. The rules and the confirm are in `.design/environment-updates.md`.
+
 **The four reads go out together, and the answer is held for fifteen minutes.** They do
 not depend on each other, so issuing them in parallel costs one round trip's wait rather
 than four. Nothing is persisted — the cache is in memory (`BcPanelCache`, a singleton

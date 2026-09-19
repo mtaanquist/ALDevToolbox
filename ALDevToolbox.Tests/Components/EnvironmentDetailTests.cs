@@ -212,6 +212,12 @@ public sealed class EnvironmentDetailTests : IDisposable
         rows[1].ClassList.Should().Contain("is-queued");
         rows[1].QuerySelector(".status-pill")!.TextContent.Should().Be("Waits for 1");
         rows[1].QuerySelectorAll(".tag").Select(t => t.TextContent).Should().Equal("Continia Core");
+
+        // The action is offered where it can work, and nowhere else: a waiting row
+        // names what it waits for, which is the next step, instead of a dead button.
+        rows[0].QuerySelector(".data-table__actions button")!.GetAttribute("aria-label")
+            .Should().Be("Update Continia Core to 28.5.0.363410");
+        rows[1].QuerySelectorAll(".data-table__actions button").Should().BeEmpty();
     }
 
     [Fact]

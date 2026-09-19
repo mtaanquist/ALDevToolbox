@@ -114,6 +114,19 @@
             }
         </div>
 
+        @* What the last write did. Up here, not beside the control that did it: the
+           writes are spread over a long page (an app, a scheduled install, three
+           settings, a booked update) and each re-reads everything, so the one place
+           that is always where the eye lands afterwards is the top. *@
+        @if (_settingError is { } settingError)
+        {
+            <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@settingError</span></p>
+        }
+        else if (_settingDone is { } settingDone)
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@settingDone</span></p>
+        }
+
         @* Under the freshness strip, as the sheet has it, so the strip qualifies the
            numbers below it - which is why this is not the frame's Meta slot. *@
         <div class="meta-row">
@@ -396,6 +409,7 @@
                                     <th scope="col">Publisher</th>
                                     <th scope="col">Target version</th>
                                     <th scope="col">Prerequisites</th>
+                                    <th scope="col" class="data-table__actions">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -432,6 +446,19 @@
                                                 </span>
                                             }
                                         </td>
+                                        <td class="data-table__actions">
+                                            @* Ready rows only. A waiting one names what it waits
+                                               for instead: updating those is the next step, and a
+                                               dead button would not say so. *@
+                                            @if (ready)
+                                            {
+                                                <button type="button" class="btn btn--sm"
+                                                        disabled="@_settingSaving" @onclick="() => UpdateAppAsync(up)"
+                                                        aria-label="@($"Update {up.Name} to {up.Version}")">
+                                                    <span class="btn__label">Update</span>
+                                                </button>
+                                            }
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -442,14 +469,7 @@
                                 {
                                     <text>Showing @updatesShown.Count of @panel.AvailableUpdates.Count, ready ones first. </text>
                                 }
-                                @if (AdminCentreUrl is { } centre)
-                                {
-                                    <text>Business Central installs these on the cadence set below, or update them in <a href="@centre" target="_blank" rel="noopener">the admin centre</a>.</text>
-                                }
-                                else
-                                {
-                                    <text>Business Central installs these on the cadence set below.</text>
-                                }
+                                Left alone, Business Central installs these on the cadence set below.
                             </span>
                             @if (updatesShown.Count < updates.Count)
                             {
@@ -470,14 +490,6 @@
                         environment, not just to the toolbox. Agree the change with the customer first.
                     </span>
                 </div>
-                @if (_settingError is { } settingError)
-                {
-                    <p class="alert alert--danger env-detail__warn" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@settingError</span></p>
-                }
-                else if (_settingDone is { } settingDone)
-                {
-                    <p class="alert alert--success env-detail__warn" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>@settingDone</span></p>
-                }
                 <div class="setting-list">
                     <div class="setting">
                         <span class="setting__label">
@@ -592,6 +604,24 @@
 
 <ConfirmDialog @ref="_confirm" />
 
+@* Its own dialog because it asks a question the others do not: when. The gentle
+   answer is the default - an app update can interrupt whoever is working in it. *@
+<ConfirmDialog @ref="_updateConfirm">
+    <fieldset class="env-detail__when">
+        <legend class="env-detail__when-legend">When should it install?</legend>
+        <label class="env-detail__when-opt">
+            <input type="radio" name="env-update-when" checked="@_updateInWindow"
+                   @onchange="() => _updateInWindow = true" />
+            <span>In the environment's next update window</span>
+        </label>
+        <label class="env-detail__when-opt">
+            <input type="radio" name="env-update-when" checked="@(!_updateInWindow)"
+                   @onchange="() => _updateInWindow = false" />
+            <span>Now - people working in the app may be interrupted</span>
+        </label>
+    </fieldset>
+</ConfirmDialog>
+
 @code {
     [Parameter] public int Id { get; set; }
 
@@ -624,6 +654,10 @@
     private bool _showAllUpdates;
 
     private ConfirmDialog? _confirm;
+    private ConfirmDialog? _updateConfirm;
+
+    /// <summary>The update dialog's answer to "when". Reset to the gentle one each time it opens.</summary>
+    private bool _updateInWindow = true;
     private string _cadence = BcAppUpdateCadence.Default;
     private string _targetVersion = string.Empty;
     private bool _settingSaving;
@@ -890,6 +924,38 @@
             () => Connection.CancelScheduledInstallAsync(Row.ProjectId, Id, appId, op.TargetAppVersion, op.ScheduleKind ?? string.Empty),
             "Couldn't cancel the scheduled install.",
             () => $"The install of {name} {op.TargetAppVersion} was cancelled.");
+    }
+
+    private static string UpdateBusyKey(BcAvailableAppUpdate update) => $"app-{update.AppId}";
+
+    /// <summary>
+    /// Updates one AppSource app to the version Business Central has waiting. The
+    /// service re-reads the waiting list before it writes, so a row that went stale
+    /// while the page sat open is refused with a sentence rather than acted on.
+    /// </summary>
+    private async Task UpdateAppAsync(BcAvailableAppUpdate update)
+    {
+        if (_updateConfirm is null) return;
+        _updateInWindow = true;
+        var installed = _panel?.InstalledApps.FirstOrDefault(a => a.AppId == update.AppId)?.Version;
+        var from = string.IsNullOrWhiteSpace(installed) ? "" : $" from {installed}";
+
+        var confirmed = await _updateConfirm.OpenAsync(
+            Row.IsProduction
+                ? $"Update {update.Name} on {Row.EnvironmentName}, a production environment?"
+                : $"Update {update.Name} on {Row.EnvironmentName}?",
+            $"{update.Name} by {update.Publisher} will go{from} to {update.Version} in {Row.ProjectName}'s "
+            + "Business Central. Once it has installed it can't be rolled back from here.",
+            "Update the app", "btn--danger");
+        if (!confirmed) return;
+
+        var inWindow = _updateInWindow;
+        await RunSettingWriteAsync(UpdateBusyKey(update),
+            () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow),
+            $"Couldn't update {update.Name}. Check the app still has admin access in the Business Central admin centre, then try again.",
+            () => inWindow
+                ? $"Business Central will update {update.Name} to {update.Version} in {Row.EnvironmentName}'s next update window."
+                : $"Business Central has started updating {update.Name} to {update.Version}. Use Refresh in a few minutes to see it finish.");
     }
 
     // ── Settings ────────────────────────────────────────────────────────

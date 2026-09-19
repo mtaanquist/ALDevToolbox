@@ -293,6 +293,8 @@ internal sealed class UpgradeActionTestFixture : IDisposable
             => throw new NotSupportedException();
         public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<BcAppOperation> UpdateAppAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     /// <summary>

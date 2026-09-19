@@ -387,7 +387,8 @@ Where it differs from the sheet, and why:
 | A sortable App header on the waiting updates | Fixed order, ready first | The order is the point of the table. |
 | Cadence saves from the select; Microsoft 365 is a switch | The same, each behind a confirm | They write to the customer's tenant. Declining puts the control back. |
 | Nothing after Environment settings | Update history | Who moved this environment's dates and what is still booked; the same feed the Upgrades page shows. |
-| No per-app Update action | None | The sheet has none and `IBcAppManagementClient` has no update call. Its own issue, with its own design pass. |
+| A read-only list of waiting AppSource updates | An **Update** button on the rows that are ready | What #809's report asked for, and the maintainer's decision on #841 to build it without a sheet. Ready rows only: a waiting row names its prerequisites instead, which is the next step. The confirm names the app, both versions, the environment and whether it is production, and asks when - the environment's next update window by default, or now. `ProjectConnectionService.UpdateAppAsync` re-reads the waiting list before it writes and refuses an app that is not on it, a version Business Central is not offering, or an app that still waits for another; dependencies are never pulled along. Manage-gated; logged, not audited, as it touches no row of ours. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../apps/{appId}/update`. Needs a design pass upstream. |
+| The result of a write beside its control | One result line under the head | The writes are spread down a long page and each re-reads everything; the top is where the eye is afterwards. |
 | Scheduled installs drawn only as an empty state | A table with a Cancel install action when there are any | The write exists and a booked install has to be reachable from somewhere. |
 
 ## Deliberately out of scope

@@ -158,6 +158,39 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
         return operation;
     }
 
+    public async Task<BcAppOperation> UpdateAppAsync(
+        string accessToken, string applicationFamily, string environmentName,
+        Guid appId, string targetVersion, bool useEnvironmentUpdateWindow, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetVersion))
+        {
+            throw new ArgumentException("An app update names the version it moves to; none was given.", nameof(targetVersion));
+        }
+
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["useEnvironmentUpdateWindow"] = useEnvironmentUpdateWindow,
+            ["targetVersion"] = targetVersion,
+            ["allowPreviewVersion"] = false,
+            ["installOrUpdateNeededDependencies"] = false,
+        });
+        var url = $"{AppsBase(applicationFamily, environmentName)}/{appId}/update";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        };
+        request.UseBearer(accessToken);
+
+        var body = await SendAsync(request, "updating the app", environmentName, ct).ConfigureAwait(false);
+        var operation = ParseOperation(body)
+            ?? throw new BcApiException(null, "Business Central accepted the app update but didn't return the operation.");
+
+        _logger.LogInformation(
+            "Asked for app {AppId} to be updated to {Version} on BC environment {Environment} (in the update window: {InWindow}); operation {OperationId} is {Status}.",
+            appId, targetVersion, environmentName, useEnvironmentUpdateWindow, operation.Id, operation.RawStatus);
+        return operation;
+    }
+
     // ── URL helpers ───────────────────────────────────────────────────────────
 
     private static string AppsBase(string applicationFamily, string environmentName) =>
