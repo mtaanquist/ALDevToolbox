@@ -21,12 +21,8 @@
 <PageTitle>Workspace settings · Configuration · AL Dev Toolbox</PageTitle>
 
 <EditPage Title="Workspace settings"
-          IsLoading="@(_loading)" Sticky="true">
-    <Crumbs>
-        <a href="/admin">Admin</a>
-        <Icon Name="chevron-right" Width="12" Height="12" />
-        <span>Workspace settings</span>
-    </Crumbs>
+          IsLoading="@(_loading)" Sticky="true"
+          Trail='@([new("Admin", "/admin"), new("Workspace settings")])'>
     <SubtitleContent>
         The VS Code workspace file that ships with every generated workspace.
         The folder list is filled in for you - everything else here, editor

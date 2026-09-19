@@ -17,12 +17,8 @@
 <PageTitle>Manage · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
 <div class="page">
-    <PageHead Title="Manage release" Sticky="true">
-        <Crumbs>
-            <a href="/admin/object-explorer">Object Explorer</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>Manage release</span>
-        </Crumbs>
+    <PageHead Title="Manage release" Sticky="true"
+              Trail='@([new("Object Explorer", "/admin/object-explorer"), new("Manage release")])'>
         <SubtitleContent>
             @if (_release is not null)
             {

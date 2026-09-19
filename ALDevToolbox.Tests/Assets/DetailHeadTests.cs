@@ -127,7 +127,8 @@ public sealed class DetailHeadTests
                    + "title, which .page-head has nowhere to put");
         classes.Should().Contain("detail-head__title-row");
         classes.Should().Contain("detail-head__title");
-        classes.Should().Contain("page-head__crumbs");
+        // The crumb row is CrumbNav's now; the frame's part is composing it.
+        StripComments(Read(DetailPageComponent)).Should().Contain("<CrumbNav ");
     }
 
     [Fact]
@@ -135,7 +136,7 @@ public sealed class DetailHeadTests
     {
         var markup = StripComments(Read(DetailPageComponent));
 
-        var crumbs = markup.IndexOf("page-head__crumbs", StringComparison.Ordinal);
+        var crumbs = markup.IndexOf("<CrumbNav ", StringComparison.Ordinal);
         var head = markup.IndexOf("class=\"detail-head\"", StringComparison.Ordinal);
 
         crumbs.Should().BeGreaterThan(-1);
