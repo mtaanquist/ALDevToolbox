@@ -15,6 +15,8 @@
     would otherwise have to repeat itself.
 *@
 
+@implements IDisposable
+
 @if (_open)
 {
     <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
@@ -27,6 +29,32 @@
                 </span>
                 <h2 id="@_titleId" class="confirm-dialog__title">@_title</h2>
             </div>
+            @if (_phase == Phase.Counting)
+            {
+                @* The second thought. Nothing has left the building yet, and the bar
+                   is the time left to say so. It drains by CSS over the whole grace
+                   period; the number beside it is what a screen reader hears. *@
+                @if (GraceContent is not null)
+                {
+                    <div class="confirm-dialog__body confirm-dialog__detail">@GraceContent</div>
+                }
+                <div class="confirm-dialog__body confirm-dialog__grace">
+                    <p role="status">Starting in @_secondsLeft @(_secondsLeft == 1 ? "second" : "seconds"). Nothing has been sent yet.</p>
+                    <div class="confirm-dialog__grace-bar" aria-hidden="true">
+                        <span style="animation-duration: @(GraceSeconds)s"></span>
+                    </div>
+                </div>
+                <div class="confirm-dialog__actions">
+                    <button type="button" class="btn" @onclick="Proceed">Start now</button>
+                    <button type="button" class="btn" @onclick="Cancel" @ref="_confirmButton">Cancel - send nothing</button>
+                </div>
+            }
+            else if (_phase == Phase.Working)
+            {
+                <div class="confirm-dialog__body confirm-dialog__detail">@WorkingContent</div>
+            }
+            else
+            {
             @if (!string.IsNullOrEmpty(_message))
             {
                 <div class="confirm-dialog__body">@_message</div>
@@ -72,6 +100,7 @@
                 <span tabindex="0" class="u-sr"
                       @onfocus="FocusFirstAction" aria-hidden="true"></span>
             </div>
+            }
         </div>
     </div>
 }
@@ -109,6 +138,29 @@
     /// of <see cref="RequireWord"/>: either can hold the button.
     /// </summary>
     [Parameter] public bool ConfirmDisabled { get; set; }
+
+    /// <summary>
+    /// Seconds between pressing confirm and the answer reaching the caller, shown as a
+    /// draining bar with a way out. For an action that is sent somewhere it cannot be
+    /// recalled from: the person gets one last look at what they agreed to, and until
+    /// the bar runs out nothing has happened. Zero (the default) answers at once.
+    /// </summary>
+    [Parameter] public int GraceSeconds { get; set; }
+
+    /// <summary>
+    /// Shown above the draining bar: what is about to happen, without the controls that
+    /// chose it. The grace period is for noticing the wrong customer, which takes the
+    /// list of customers still being on screen.
+    /// </summary>
+    [Parameter] public RenderFragment? GraceContent { get; set; }
+
+    /// <summary>
+    /// When set, the dialog stays open after a yes and shows this in place of the
+    /// question - progress, and anything that can still be stopped - until the caller
+    /// calls <see cref="Close"/>. The work is then reported where it was asked for,
+    /// rather than somewhere else on the page behind a scrim that has just gone.
+    /// </summary>
+    [Parameter] public RenderFragment? WorkingContent { get; set; }
 
     /// <summary>
     /// When set, the confirm button stays disabled until the person types this word.
@@ -204,6 +256,8 @@
         // A previous run's typed word must never carry over - the speed bump only
         // works if it is there every time.
         _typed = string.Empty;
+        StopCountdown();
+        _phase = Phase.Asking;
         _open = true;
         _needsFocus = true;
         StateHasChanged();
@@ -236,22 +290,88 @@
         catch { /* closed again before the render landed */ }
     }
 
+    private enum Phase { Asking, Counting, Working }
+
+    private Phase _phase;
+    private int _secondsLeft;
+    private CancellationTokenSource? _graceCts;
+
     private void Confirm()
     {
         // The disabled button already blocks the click; this closes the keyboard
         // route, so the gate can't be stepped over by pressing Enter.
-        if (!_wordMatches) return;
-        _open = false;
-        _tcs?.TrySetResult(true);
+        if (!_wordMatches || ConfirmDisabled) return;
+        if (GraceSeconds <= 0)
+        {
+            Proceed();
+            return;
+        }
+
+        _phase = Phase.Counting;
+        _secondsLeft = GraceSeconds;
+        _needsFocus = true;
+        _graceCts = new CancellationTokenSource();
+        _ = CountDownAsync(_graceCts.Token);
+    }
+
+    private async Task CountDownAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (_secondsLeft > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+                _secondsLeft--;
+                await InvokeAsync(StateHasChanged);
+            }
+            await InvokeAsync(Proceed);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled, or "Start now" got there first.
+        }
+    }
+
+    /// <summary>The answer is yes: hand it to the caller, and stay open only if there is work to show.</summary>
+    private void Proceed()
+    {
+        if (_tcs is null) return;
+        StopCountdown();
+        if (WorkingContent is null) _open = false;
+        else _phase = Phase.Working;
+        _tcs.TrySetResult(true);
         _tcs = null;
+        StateHasChanged();
     }
 
     private void Cancel()
     {
+        // Once the work has started there is nothing to cancel from here; the
+        // caller's own content carries whatever can still be stopped.
+        if (_phase == Phase.Working) return;
+        StopCountdown();
         _open = false;
         _tcs?.TrySetResult(false);
         _tcs = null;
     }
+
+    /// <summary>Closes a dialog that stayed open to show <see cref="WorkingContent"/>.</summary>
+    public void Close()
+    {
+        StopCountdown();
+        _open = false;
+        _phase = Phase.Asking;
+        StateHasChanged();
+    }
+
+    private void StopCountdown()
+    {
+        _graceCts?.Cancel();
+        _graceCts?.Dispose();
+        _graceCts = null;
+    }
+
+    public void Dispose() => StopCountdown();
 
     // Esc cancels - standard dialog affordance. The keydown handler is on the
     // root .modal-layer element so it fires while any descendant has focus.

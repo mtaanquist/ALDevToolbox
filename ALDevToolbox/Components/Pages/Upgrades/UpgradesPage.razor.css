@@ -23,12 +23,17 @@
     border-radius: var(--r);
 }
 
-.upg-notice--busy {
-    justify-content: flex-start;
-}
+/* A run, reported inside the dialog that started it. */
+.upg-run { display: grid; gap: var(--space-3); }
 
-.upg-notice--busy .btn {
-    margin-left: auto;
+.upg-run__text { margin: 0; color: var(--ink); }
+
+.upg-run__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
 }
 
 /* A short line: the ignores-window marker under a value, and each row's result
