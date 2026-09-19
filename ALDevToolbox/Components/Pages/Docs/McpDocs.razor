@@ -113,17 +113,14 @@
             <form method="get" action="/docs/mcp" class="mcp-client-pick">
                 <label class="field">
                     <span class="field__label">Your assistant</span>
-                    <span class="select-wrap">
+                    <SelectBox>
                         <select class="select" id="mcp-client" name="client">
                             @foreach (var c in Clients)
                             {
                                 <option value="@c.Key" selected="@(c.Key == _client)">@c.Name</option>
                             }
                         </select>
-                        <span class="select-wrap__caret">
-                            <Icon Name="chevron-down" Width="15" Height="15" />
-                        </span>
-                    </span>
+                    </SelectBox>
                 </label>
                 <button type="submit" class="btn">Show the steps</button>
             </form>

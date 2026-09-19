@@ -160,14 +160,13 @@
                                                     </button>
                                                 </div>
                                                 <div class="folder-editor__path">
-                                                    <span class="select-wrap">
+                                                    <SelectBox>
                                                         <select class="select select--sm" aria-label="Kind of dependency" @bind="dep.Kind">
                                                             <option value="@DependencyFormKind.Extension">Reference an extension in this template</option>
                                                             <option value="@DependencyFormKind.Module">Reference a catalogue module</option>
                                                             <option value="@DependencyFormKind.Literal">Literal dependency (id + name + publisher + version)</option>
                                                         </select>
-                                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                                                    </span>
+                                                    </SelectBox>
                                                 </div>
                                                 <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(extIndex, depIndex)" title="Remove dependency">
                                                     <Icon Name="trash-2" Width="12" Height="12" />

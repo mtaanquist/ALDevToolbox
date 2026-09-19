@@ -262,7 +262,7 @@
                         </td>
                         <td>@u.DisplayName</td>
                         <td>
-                            <span class="select-wrap">
+                            <SelectBox>
                                 <select class="select select--sm" aria-label="@($"Role for {u.DisplayName}")"
                                         value="@u.Role"
                                         disabled="@_busy"
@@ -272,8 +272,7 @@
                                         <option value="@role">@role</option>
                                     }
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                         </td>
                         <td class="u-muted u-num">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
                         <td class="data-table__actions">

@@ -58,49 +58,43 @@ public sealed class UnstyledMarkupTests
 
     /// <summary>
     /// <c>.select</c> sets <c>appearance: none</c>, so the browser's own arrow
-    /// is gone and the only thing left to say "this opens a list" is the
-    /// <c>.select-wrap__caret</c> icon its wrapper draws. A <c>.select</c>
-    /// without one is a text box that mysteriously refuses to be typed in.
+    /// is gone and the only thing left to say "this opens a list" is the caret
+    /// <c>SelectBox</c> draws beside it. A <c>.select</c> outside one is a text
+    /// box that mysteriously refuses to be typed in.
     ///
     /// Nothing errors and the control still works, which is why this is a test:
     /// PR 17c shipped four of them past a screenshot before anyone noticed the
-    /// arrows were missing.
+    /// arrows were missing. The wrapper is a component now (#842), so what is
+    /// left to check is that every select is inside it, and that nobody writes
+    /// the wrapper by hand again.
     /// </summary>
     [Fact]
-    public void Every_styled_select_sits_inside_a_wrapper_that_draws_its_caret()
+    public void Every_styled_select_sits_inside_a_SelectBox()
     {
         var offenders = new List<string>();
         foreach (var razor in Directory.EnumerateFiles(Components(), "*.razor", SearchOption.AllDirectories))
         {
             var markup = File.ReadAllText(razor);
+            if (!razor.EndsWith(Path.Combine("Shared", "SelectBox.razor"), StringComparison.Ordinal)
+                && Regex.IsMatch(markup, @"class=""[^""]*\bselect-wrap\b"))
+            {
+                offenders.Add($"{Path.GetFileName(razor)}: a hand-written .select-wrap; use <SelectBox>");
+            }
+
             foreach (Match m in Regex.Matches(markup, @"<select\b[^>]*class=""[^""]*\bselect\b[^""]*"""))
             {
-                // The wrapper opens somewhere above and its caret follows the
-                // close tag, so look at the span the select is nested in rather
-                // than at a fixed offset.
                 var before = markup[..m.Index];
-                // The wrapper may carry a page class alongside the component
-                // one (`class="select-wrap tr-langsel"`), so match the token,
-                // not the whole attribute - matching the attribute is how a
-                // first run at this double-wrapped four of them.
-                var openWrap = LastWrapOpen(before);
-                var closeWrap = before.LastIndexOf("</span>", StringComparison.Ordinal);
-                if (openWrap < 0 || openWrap < closeWrap)
+                var open = before.LastIndexOf("<SelectBox", StringComparison.Ordinal);
+                var close = before.LastIndexOf("</SelectBox>", StringComparison.Ordinal);
+                if (open < 0 || open < close)
                 {
-                    offenders.Add($"{Path.GetFileName(razor)}: a .select with no .select-wrap");
+                    offenders.Add($"{Path.GetFileName(razor)}: a .select outside a <SelectBox>");
                 }
             }
         }
 
         offenders.Should().BeEmpty(
-            because: ".select removes the native arrow, so the wrapper's caret is the only affordance left");
-    }
-
-    /// <summary>Index of the last <c>select-wrap</c> class token opened.</summary>
-    private static int LastWrapOpen(string before)
-    {
-        var matches = Regex.Matches(before, @"class=""[^""]*\bselect-wrap\b[^""]*""");
-        return matches.Count == 0 ? -1 : matches[^1].Index;
+            because: ".select removes the native arrow, so the caret SelectBox draws is the only affordance left");
     }
 
     /// <summary>

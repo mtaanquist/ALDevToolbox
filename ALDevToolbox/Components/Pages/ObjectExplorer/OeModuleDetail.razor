@@ -62,7 +62,7 @@
                        @oninput="OnSearch"
                        aria-label="Filter this module's objects by name or id" />
             </span>
-            <span class="select-wrap" style="width: 190px">
+            <SelectBox style="width: 190px">
                 @* The AL keywords, not prose: this is the word the grid below
                    prints and the word the user types into a search box. The
                    dropdown said "Control add-in" while the row said
@@ -88,8 +88,7 @@
                     <option value="form">form</option>
                     <option value="dataport">dataport</option>
                 </select>
-                <Icon Name="chevron-down" Css="select-wrap__caret" />
-            </span>
+            </SelectBox>
         </div>
 
         @if (_objects is { Rows.Count: 0 })

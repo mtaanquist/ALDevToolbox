@@ -368,14 +368,13 @@
                                 <input class="input" type="search" placeholder="Filter updates..."
                                        aria-label="Filter AppSource updates" @bind="_updatesFilter" @bind:event="oninput" />
                             </span>
-                            <span class="select-wrap" style="width: 150px">
+                            <SelectBox style="width: 150px">
                                 <select class="select" aria-label="Show ready or waiting updates" @bind="_updatesShow">
                                     <option value="">All updates</option>
                                     <option value="ready">Ready now</option>
                                     <option value="blocked">Waiting</option>
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                         </span>
                     }
                 </div>
@@ -495,7 +494,7 @@
                             <span class="setting__hint">How often apps the customer installed are updated. Does not affect extensions you release yourself.</span>
                         </span>
                         <span class="setting__ctl">
-                            <span class="select-wrap" style="width: 240px">
+                            <SelectBox style="width: 240px">
                                 <select id="env-cadence" class="select" value="@_cadence" disabled="@_settingSaving"
                                         @onchange="OnCadenceChangedAsync">
                                     @foreach (var option in BcAppUpdateCadence.All)
@@ -503,8 +502,7 @@
                                         <option value="@option">@BcAppUpdateCadence.Display(option)</option>
                                     }
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                         </span>
                     </div>
                     <div class="setting">
@@ -557,7 +555,7 @@
                         </span>
                         <span class="setting__ctl">
                             <span class="u-row">
-                                <span class="select-wrap" style="width: 180px">
+                                <SelectBox style="width: 180px">
                                     <select id="env-version" class="select" @bind="_targetVersion"
                                             disabled="@(_settingSaving || Choosable().Count == 0)">
                                         <option value="">Choose a version...</option>
@@ -568,8 +566,7 @@
                                             <option value="@option.TargetVersion" disabled="@option.Selected">@option.TargetVersion@(option.Selected ? " (already next)" : "")</option>
                                         }
                                     </select>
-                                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                                </span>
+                                </SelectBox>
                                 <button type="button" class="btn btn--sm @(_settingBusy == "version" ? "btn--loading" : "")"
                                         disabled="@(_settingSaving || string.IsNullOrEmpty(_targetVersion))"
                                         @onclick="SaveTargetVersionAsync">

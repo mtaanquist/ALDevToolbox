@@ -182,7 +182,8 @@
 }
 
 /* The view select's width, from the sheet. */
-.upg-view {
+/* ::deep: the wrapper is rendered by SelectBox, outside this file's scope. */
+::deep .upg-view {
     width: 230px;
 }
 

@@ -194,11 +194,12 @@
     letter-spacing: .04em;
     color: var(--ink-3);
 }
-.tr-langsel { width: 18ch; flex: none; }
+/* ::deep: the wrapper is rendered by SelectBox, outside this file's scope. */
+::deep .tr-langsel { width: 18ch; flex: none; }
 
 /* ── Toolbar ────────────────────────────────────────────────────────────── */
 
-.tr-kindsel { width: 13ch; flex: none; }
+::deep .tr-kindsel { width: 13ch; flex: none; }
 
 /* The elastic control: it absorbs the slack when the bar is wide and gives it
    back before anything wraps. */

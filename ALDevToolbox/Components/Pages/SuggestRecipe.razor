@@ -66,20 +66,19 @@
 
             <div class="field">
                 <label class="field__label" for="recipe-type">Type</label>
-                <span class="select-wrap">
+                <SelectBox>
                 <select id="recipe-type" class="select" @bind="_type">
                     <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
                     <option value="@RecipeType.Pattern">Pattern - a few related files</option>
                     <option value="@RecipeType.Module">Module - near-complete feature</option>
                 </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
                 <FieldError Field="Type" Errors="_errors" />
             </div>
 
             <div class="field">
                 <label class="field__label" for="recipe-min-version">Minimum BC application version (optional)</label>
-                <span class="select-wrap">
+                <SelectBox>
                 <select id="recipe-min-version" class="select" @bind="_minimumApplicationVersionId">
                     <option value="">No minimum</option>
                     @foreach (var v in _applicationVersions)
@@ -87,8 +86,7 @@
                         <option value="@v.Id">@v.Name (@v.Application)</option>
                     }
                 </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
                 <small class="field__hint">
                     Pick the lowest BC release this recipe compiles against. Shown as a
                     badge on the published recipe.

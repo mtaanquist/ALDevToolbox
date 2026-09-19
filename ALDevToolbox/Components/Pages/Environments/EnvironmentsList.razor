@@ -143,7 +143,7 @@
                value="@_search" @oninput="OnSearchInput" />
     </Search>
     <Filters>
-        <span class="select-wrap" style="width: 200px">
+        <SelectBox style="width: 200px">
             <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
                 <option value="">All solutions</option>
                 @foreach (var name in _rows!.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
@@ -151,16 +151,14 @@
                     <option value="@name">@name</option>
                 }
             </select>
-            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-        </span>
-        <span class="select-wrap" style="width: 170px">
+        </SelectBox>
+        <SelectBox style="width: 170px">
             <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
                 <option value="">All types</option>
                 <option value="Production">Production only</option>
                 <option value="Sandbox">Sandbox only</option>
             </select>
-            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-        </span>
+        </SelectBox>
     </Filters>
     <Trailing>
         <div class="pill-tabs">

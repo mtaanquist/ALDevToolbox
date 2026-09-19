@@ -206,7 +206,7 @@
                 <div class="card__body form-sec">
                     <div class="field">
                         <label class="field__label" for="tpl-app-version">Application version</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select class="select" id="tpl-app-version" required
                                     @bind="_form.DefaultApplicationVersionKey"
                                     @bind:after="OnApplicationVersionChanged">
@@ -223,8 +223,7 @@
                                     </option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <span class="field__hint u-row">
                             <span>
                                 Sets the BC version every extension from this template targets.

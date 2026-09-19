@@ -516,7 +516,7 @@ else
                                     </label>
                                     <label class="field">
                                         <span class="field__label">Expires</span>
-                                        <span class="select-wrap">
+                                        <SelectBox>
                                             <select class="select" name="TtlDays">
                                                 <option value="30">30 days</option>
                                                 <option value="90" selected>90 days</option>
@@ -524,8 +524,7 @@ else
                                                 <option value="365">1 year</option>
                                                 <option value="0">No expiry</option>
                                             </select>
-                                            <Icon Name="chevron-down" Css="select-wrap__caret" Width="15" Height="15" />
-                                        </span>
+                                        </SelectBox>
                                         <span class="field__hint">You can revoke a token at any time.</span>
                                     </label>
                                 </div>

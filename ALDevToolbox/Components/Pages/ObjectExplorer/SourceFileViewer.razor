@@ -102,7 +102,7 @@ else
                    release on the left, so added lines always read green in
                    the newer version regardless of which file you started
                    from. *@
-                <span class="select-wrap sv-comparesel">
+                <SelectBox Class="sv-comparesel">
                     <select class="select" onchange="if (this.value) location.assign(this.value)" aria-label="Compare this file with the same file in another release">
                         <option value="">Compare with release...</option>
                         @foreach (var t in _compareTargets)
@@ -110,8 +110,7 @@ else
                             <option value="@(t.TargetIsOlder ? Links.CompareFile(t.TargetFileId, FileId) : Links.CompareFile(FileId, t.TargetFileId))">@t.ReleaseLabel</option>
                         }
                     </select>
-                    <Icon Name="chevron-down" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             }
         </div>
 
@@ -143,14 +142,13 @@ else
                     @* A vendor's folder layout is somebody else's filing
                        system. Grouping by object kind is usually what a reader
                        wants from an app they did not write. *@
-                    <span class="select-wrap sv-tree-group">
+                    <SelectBox Class="sv-tree-group">
                         <select class="select" aria-label="Group the file list by">
                             <option value="folder" selected="@(_grouping == ExplorerTreeService.TreeGrouping.Folder)">Folder</option>
                             <option value="kind" selected="@(_grouping == ExplorerTreeService.TreeGrouping.Kind)">Object type</option>
                             <option value="none" selected="@(_grouping == ExplorerTreeService.TreeGrouping.None)">No grouping</option>
                         </select>
-                        <Icon Name="chevron-down" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                     <button type="button" class="btn btn--icon btn--sm sv-tree-collapse"
                             aria-label="Collapse all" title="Collapse every folder">
                         <Icon Name="chevrons-down-up" Width="14" Height="14" Css="btn__icon" />

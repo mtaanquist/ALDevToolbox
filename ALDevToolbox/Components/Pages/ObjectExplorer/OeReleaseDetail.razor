@@ -137,7 +137,7 @@
         <div class="filter-bar">
             @if (_scope == SearchScope.Compare)
             {
-                <span class="select-wrap" style="width: 220px">
+                <SelectBox style="width: 220px">
                     <select class="select" @bind="_compareRight" @bind:after="ReloadAsync"
                             aria-label="Release to compare with">
                         <option value="">Pick a release...</option>
@@ -149,29 +149,26 @@
                             }
                         }
                     </select>
-                    <Icon Name="chevron-down" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
 
                 @* Naming both ends rather than "A → B": nothing on the page
                    says which release is A, so the reader had to guess which
                    direction counts as added and which as removed. *@
-                <span class="select-wrap" style="width: 280px">
+                <SelectBox style="width: 280px">
                     <select class="select" @bind="_compareDirection" @bind:after="ReloadAsync"
                             aria-label="Which release to treat as the starting point">
                         <option value="ab">@_release!.Label → @CompareRightLabel</option>
                         <option value="ba">@CompareRightLabel → @_release!.Label</option>
                     </select>
-                    <Icon Name="chevron-down" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
 
-                <span class="select-wrap" style="width: 200px">
+                <SelectBox style="width: 200px">
                     <select class="select" @bind="_compareBy" @bind:after="ReloadAsync"
                             aria-label="Compare whole files or individual objects">
                         <option value="files">Show changed files</option>
                         <option value="objects">Show changed objects</option>
                     </select>
-                    <Icon Name="chevron-down" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             }
             else
             {
@@ -289,7 +286,7 @@
 
             @if (_scope != SearchScope.Compare)
             {
-                <span class="select-wrap" style="width: 190px">
+                <SelectBox style="width: 190px">
                     <select class="select" @bind="_moduleFilter" @bind:after="ReloadAsync"
                             aria-label="Filter by extension">
                         <option value="">All extensions</option>
@@ -301,8 +298,7 @@
                             }
                         }
                     </select>
-                    <Icon Name="chevron-down" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             }
 
             @*

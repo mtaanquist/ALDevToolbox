@@ -49,7 +49,7 @@
                 {
                     <div class="field">
                         <label class="field__label" for="rpe-solution">Solution</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="rpe-solution" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
                                 <option value="0" selected="@(_projectId == 0)">Choose a solution...</option>
                                 @foreach (var p in _projectOptions ?? [])
@@ -57,8 +57,7 @@
                                     <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </div>
                 }
 
@@ -102,13 +101,12 @@
                     {
                         <div class="field">
                             <label class="field__label" for="rpe-source">Where the apps come from</label>
-                            <span class="select-wrap">
+                            <SelectBox>
                                 <select id="rpe-source" class="select" @bind="_artifactSource" disabled="@_saving">
                                     <option value="@ReleaseArtifactSource.Build">Builds from a build pipeline</option>
                                     <option value="@ReleaseArtifactSource.GithubRelease">Releases published on a GitHub repository</option>
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                             <small class="field__hint">Choose GitHub releases when the apps were built somewhere else. AL Dev Toolbox installs whatever is attached to the release you pick.</small>
                         </div>
                     }
@@ -117,7 +115,7 @@
                     {
                         <div class="field">
                             <label class="field__label" for="rpe-repo">Repository to release from</label>
-                            <span class="select-wrap">
+                            <SelectBox>
                                 <select id="rpe-repo" class="select" @bind="_releaseRepositoryId" disabled="@_saving">
                                     <option value="0">Choose a repository...</option>
                                     @foreach (var repo in _releaseRepositories ?? [])
@@ -125,8 +123,7 @@
                                         <option value="@repo.Id">@repo.FullName</option>
                                     }
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                             <small class="field__hint">Its releases are what this pipeline installs. Only the .app files attached to the release are installed; other attachments are ignored.</small>
                         </div>
                     }
@@ -134,7 +131,7 @@
                     {
                         <div class="field">
                             <label class="field__label" for="rpe-build">Build pipeline to release from</label>
-                            <span class="select-wrap">
+                            <SelectBox>
                                 <select id="rpe-build" class="select" @bind="_buildPipelineId" disabled="@_saving">
                                     <option value="0">Choose a build pipeline...</option>
                                     @foreach (var bp in _buildPipelines)
@@ -142,8 +139,7 @@
                                         <option value="@bp.Id">@bp.Name</option>
                                     }
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                             <small class="field__hint">Its successful builds are what this release publishes.</small>
                         </div>
                     }
@@ -160,7 +156,7 @@
 
                     <div class="field">
                         <label class="field__label" for="rpe-env">Target environment</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="rpe-env" class="select" @bind="_environmentId" disabled="@_saving">
                                 <option value="0">Choose an environment...</option>
                                 @foreach (var env in _environments)
@@ -171,14 +167,13 @@
                                     <option value="@env.Id">@env.Name@typeSuffix@statusSuffix</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <small class="field__hint">Where the apps are installed — every app in the build goes to this one. Each environment's status is shown: you can pick one that's busy, but releases to it are refused until Business Central reports it ready.</small>
                     </div>
 
                     <div class="field">
                         <label class="field__label" for="rpe-schedule">When installs run</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="rpe-schedule" class="select" @bind="_deploymentSchedule" disabled="@_saving">
                                 @if (!BcDeploymentSchedule.Pickable.Contains(_deploymentSchedule))
                                 {
@@ -189,14 +184,13 @@
                                     <option value="@mode">@DeliveryModeDisplay.Schedule(mode)</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <small class="field__hint"><b>Right away</b> (the default) installs as soon as the release is sent. The other two hand the app to Business Central, which installs it with the customer's next minor or major update.</small>
                     </div>
 
                     <div class="field">
                         <label class="field__label" for="rpe-sync">Schema sync</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="rpe-sync" class="select" @bind="_schemaSyncMode" disabled="@_saving">
                                 @if (!BcSyncMode.IsValid(_schemaSyncMode))
                                 {
@@ -207,8 +201,7 @@
                                     <option value="@mode">@DeliveryModeDisplay.SyncMode(mode)</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <small class="field__hint"><b>Add</b> only ever adds — the safe default. <b>Force sync</b> can drop table columns and lose data.</small>
                     </div>
 

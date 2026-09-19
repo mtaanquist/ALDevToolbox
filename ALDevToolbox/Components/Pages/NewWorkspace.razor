@@ -83,7 +83,7 @@
             </div>
             <div class="field">
                 <label class="field__label" for="ws-template">Template</label>
-                <span class="select-wrap">
+                <SelectBox>
                     <select class="select" id="ws-template" name="TemplateKey" required
                             @bind="_templateKey" @bind:after="OnTemplateChanged">
                         @foreach (var t in _templates)
@@ -91,8 +91,7 @@
                             <option value="@t.Key">@t.Name</option>
                         }
                     </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
                 <FieldError Field="TemplateKey" Errors="_errors" />
                 <p class="form-sec__cap">
                     @* Non-null here because OnInitializedAsync picks a
@@ -275,7 +274,7 @@
             {
                 <div class="field">
                     <label class="field__label" for="ws-app-version">Version</label>
-                    <span class="select-wrap">
+                    <SelectBox>
                         <select class="select" id="ws-app-version" name="ApplicationVersion"
                                 @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
                             @* "Latest" sentinel: the endpoint resolves to
@@ -301,8 +300,7 @@
                                 <option value="@v.Application">@v.Name</option>
                             }
                         </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                     @* The runtime is derived from the picked entry; ship
                        it as a hidden input so the existing endpoint shape
                        (separate ApplicationVersion + RuntimeVersion fields)
@@ -685,7 +683,7 @@
                     </div>
                     <div class="field">
                         <label class="field__label" for="ws-repo-visibility">Who can see it</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             @* Bound as text, not as the bool it stands
                                for: Blazor formats a bool as "True",
                                which matches no option value and leaves
@@ -694,8 +692,7 @@
                                 <option value="private">Only people in @_gitHub.OrgLogin</option>
                                 <option value="public">Anyone on GitHub</option>
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </div>
                     <FieldError Field="GitHubRepository" Errors="_repoErrors" />
                     @* The customer's solution is chosen a column

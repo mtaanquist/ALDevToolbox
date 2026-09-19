@@ -73,15 +73,14 @@
                                 <td>
                                     @if (CanManage && Providers.Count > 1)
                                     {
-                                        <span class="select-wrap">
+                                        <SelectBox>
                                             <select class="select select--sm" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@Saving" aria-label="Host">
                                                 @foreach (var prov in Providers)
                                                 {
                                                     <option value="@prov">@prov.DisplayName()</option>
                                                 }
                                             </select>
-                                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                                        </span>
+                                        </SelectBox>
                                     }
                                     else
                                     {

@@ -32,13 +32,12 @@
     {
         <label class="field">
             <span class="field__label">Kind</span>
-            <span class="select-wrap">
+            <SelectBox>
                 <select name="Kind" required class="select">
                     <option value="first_party">First-party (Microsoft)</option>
                     <option value="third_party">Third-party / partner</option>
                 </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
+            </SelectBox>
             <small class="field__hint">
                 Third-party releases build on top of a Microsoft (first-party)
                 release - pick that base below.
@@ -50,7 +49,7 @@
     {
         <label class="field" data-oe-field-parent>
             <span class="field__label">Parent Release (optional)</span>
-            <span class="select-wrap">
+            <SelectBox>
                 <select name="ParentReleaseId" class="select">
                     <option value="">- no base release -</option>
                     @if (ParentCandidates is not null)
@@ -61,8 +60,7 @@
                         }
                     }
                 </select>
-                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-            </span>
+            </SelectBox>
             <small class="field__hint">
                 The Microsoft release this app extends, so references to its
                 objects resolve correctly.
