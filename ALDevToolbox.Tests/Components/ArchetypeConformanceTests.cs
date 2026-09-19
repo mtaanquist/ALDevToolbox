@@ -140,6 +140,23 @@ public sealed class ArchetypeConformanceTests
             "these pages compose a frame now (or are gone), so their exception has to go too");
     }
 
+    [Fact]
+    public void No_component_hand_writes_an_alert()
+    {
+        var root = RepoRoot();
+        var alert = new Regex(@"class=""(?:[^""]*\s)?alert(?:\s|--|"")", RegexOptions.Compiled);
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(Path.Combine("Shared", "Alert.razor"), StringComparison.Ordinal))
+            .Where(p => alert.IsMatch(Markup(File.ReadAllText(p))))
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "an alert is <Alert Tone=\"AlertTone.Danger\">...</Alert>: the tone picks the icon and the role, which "
+            + "pages used to pick by hand and picked differently (ten errors carried the warning triangle)");
+    }
+
     private static bool IsRoutable(string markup) => Regex.IsMatch(markup, @"^@page\s", RegexOptions.Multiline);
 
     private static bool Composes(string markup, IEnumerable<string> names) =>

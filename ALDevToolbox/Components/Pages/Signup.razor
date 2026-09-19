@@ -68,17 +68,15 @@ else if (ShowCodeCard)
         <Alerts>
             @if (Error == "code-invalid")
             {
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Danger">
                     <span>That code didn't match. Check the email and try again, or ask for a new one.</span>
-                </p>
+                </Alert>
             }
             else if (Error == "verify-invalid")
             {
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Danger">
                     <span>That link has expired. Enter your email again to get a new one.</span>
-                </p>
+                </Alert>
             }
         </Alerts>
         <ChildContent>
@@ -238,8 +236,7 @@ else
     private RenderFragment InvalidFieldAlert => @<text>
         @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>
                         @if (AuthCard.FieldLabel(@Field) is { } label)
                         {
@@ -247,7 +244,7 @@ else
                         }
                         @Message
                     </span>
-            </p>
+            </Alert>
         }
     </text>;
 }

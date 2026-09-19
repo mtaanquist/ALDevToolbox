@@ -34,15 +34,15 @@
     <ChildContent>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_okMessage</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_errMessage</span>
+            </Alert>
         }
 
         @* The generator's form-plus-sticky-aside archetype: the file list and

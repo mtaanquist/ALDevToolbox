@@ -55,8 +55,7 @@
     {
         @if (_saveError is not null)
         {
-            <div class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger" Block="true">
                 <span>
                     @_saveError
                     @if (_globalErrors.Count > 0)
@@ -72,13 +71,13 @@
                         </ul>
                     }
                 </span>
-            </div>
+            </Alert>
         }
         @if (_saveSuccess is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_saveSuccess</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_saveSuccess</span>
+            </Alert>
         }
 
         <form @onsubmit="SaveAsync" @onsubmit:preventDefault>

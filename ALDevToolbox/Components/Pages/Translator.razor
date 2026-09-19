@@ -137,13 +137,12 @@
                 }
                 else if (_repoListError is not null)
                 {
-                    <p class="alert alert--warn" role="alert">
-                        <Icon Name="circle-alert" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Warn" Role="alert">
                         <span class="u-stack">
                             <span>@_repoListError</span>
                             <span><button type="button" class="btn btn--sm" @onclick="ReloadRepositoryFilesAsync">Try again</button></span>
                         </span>
-                    </p>
+                    </Alert>
                 }
                 else if (_repoList.Count == 0)
                 {

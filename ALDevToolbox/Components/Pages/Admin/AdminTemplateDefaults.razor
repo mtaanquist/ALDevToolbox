@@ -39,15 +39,15 @@
     <ChildContent>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_okMessage</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_errMessage</span>
+            </Alert>
         }
 
         <section class="card">
@@ -227,17 +227,15 @@
             <div class="card__body form-sec">
                 @if (_pendingLogoBytes is not null)
                 {
-                    <p class="alert alert--info" role="status">
-                        <Icon Name="circle-check" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Info" Icon="circle-check" Role="status">
                         <span>New logo selected (@_pendingLogoFileName). Click <strong>Save changes</strong> to apply.</span>
-                    </p>
+                    </Alert>
                 }
                 else if (_removeLogo)
                 {
-                    <p class="alert alert--warn" role="status">
-                        <Icon Name="triangle-alert" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Warn">
                         <span>The logo will be removed when you save.</span>
-                    </p>
+                    </Alert>
                 }
                 else if (_logo is not null)
                 {

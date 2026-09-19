@@ -43,9 +43,9 @@
 
     @if (IsEdit && _loadFailed)
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>Recipe @Id was not found.</span>
-        </p>
+        <Alert Tone="AlertTone.Danger">
+            <span>Recipe @Id was not found.</span>
+        </Alert>
     }
     else
     {
@@ -331,16 +331,16 @@
 
         @if (_okMessage is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_okMessage</span>
+            </Alert>
         }
 
         @if (_lastError is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_lastError</span>
+            </Alert>
         }
     }
 </div>

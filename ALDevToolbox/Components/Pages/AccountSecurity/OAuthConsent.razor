@@ -32,13 +32,12 @@ else
 
         @if (_alreadyConsented)
         {
-            <p class="alert alert--info" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Info" Icon="circle-check" Role="status">
                 <span>
                     You've approved @_clientName for these permissions before. Allow again to
                     continue, or take the access back from your account.
                 </span>
-            </p>
+            </Alert>
         }
 
         <section class="card">

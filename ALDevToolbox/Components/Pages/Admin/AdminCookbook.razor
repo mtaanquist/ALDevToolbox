@@ -37,15 +37,15 @@
     <Notices>
         @if (!string.IsNullOrEmpty(_lastError))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_lastError</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_lastSuccess))
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_lastSuccess</span>
+            </Alert>
         }
     </Notices>
     <Filters>

@@ -33,15 +33,15 @@
     <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_okMessage</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_errMessage</span>
+            </Alert>
         }
     </Alerts>
     <Body>
@@ -95,14 +95,13 @@
                                 <AuthorizeView Roles="@HttpOrganizationContext.SiteAdminRole" Context="siteAdmin">
                                     <Authorized>
                                         <div class="u-stack">
-                                            <p class="alert alert--info">
-                                                <Icon Name="info" Width="16" Height="16" />
+                                            <Alert Tone="AlertTone.Info">
                                                 <span>
                                                     GitHub is not set up on this server yet. Set up the
                                                     GitHub app once, and every organisation here can
                                                     connect its own GitHub organisation.
                                                 </span>
-                                            </p>
+                                            </Alert>
                                             <div class="u-row">
                                                 <a class="btn" href="/site-admin/settings/github">
                                                     <Icon Name="settings" Width="16" Height="16" />
@@ -112,14 +111,13 @@
                                         </div>
                                     </Authorized>
                                     <NotAuthorized>
-                                        <p class="alert alert--info">
-                                            <Icon Name="info" Width="16" Height="16" />
+                                        <Alert Tone="AlertTone.Info">
                                             <span>
                                                 GitHub is not set up on this server yet. Ask whoever runs
                                                 AL Dev Toolbox to set it up under Site administration
                                                 &#8594; Settings &#8594; GitHub, then come back here.
                                             </span>
-                                        </p>
+                                        </Alert>
                                     </NotAuthorized>
                                 </AuthorizeView>
                             }
@@ -131,8 +129,7 @@
                                    Saying so here - with the door - beats sending
                                    them to GitHub and refusing them on the way back. *@
                                 <div class="u-stack">
-                                    <p class="alert alert--info">
-                                        <Icon Name="info" Width="16" Height="16" />
+                                    <Alert Tone="AlertTone.Info">
                                         <span>
                                             First, connect your own GitHub account. GitHub will only
                                             tell us which organisations you manage if it knows who you
@@ -140,7 +137,7 @@
                                             company's GitHub here. It takes a moment, you only do it
                                             once, and we will bring you straight back here afterwards.
                                         </span>
-                                    </p>
+                                    </Alert>
                                     <div class="u-row">
                                         @* The return marker is what turns the Account page's
                                            "connected" full stop into a way back to this job. *@
@@ -209,15 +206,14 @@
                             }
                             @if (!_github.CanCreateRepositories)
                             {
-                                <p class="alert alert--warn">
-                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                <Alert Tone="AlertTone.Warn" Role="">
                                     <span>
                                         Creating repositories from the toolbox will not work. An owner
                                         of your GitHub organisation needs to let the AL Dev Toolbox app
                                         create new repositories, and approve the change. Once they have,
                                         choose Check connection below and this list updates.
                                     </span>
-                                </p>
+                                </Alert>
                             }
                             <span class="u-row">
                                 <a href="@AccessOnGitHubUrl" target="_blank" rel="noopener">
@@ -272,8 +268,7 @@
                             </div>
                             @if (!string.IsNullOrEmpty(_testMessage))
                             {
-                                <p class="alert @(_testOk ? "alert--success" : "alert--danger")" role="status">
-                                    <Icon Name="@(_testOk ? "circle-check" : "circle-alert")" Width="16" Height="16" />
+                                <Alert Tone="@(_testOk ? AlertTone.Success : AlertTone.Danger)" Role="status">
                                     <span>
                                         @_testMessage
                                         @if (!string.IsNullOrEmpty(_testDetail))
@@ -284,7 +279,7 @@
                                             <span class="u-muted">GitHub said: @_testDetail</span>
                                         }
                                     </span>
-                                </p>
+                                </Alert>
                             }
                         </div>
                     </SettingRow>
@@ -321,16 +316,14 @@
            It does not: builds still fetch their copy with the token the person
            who started the build saved. Telling an admin otherwise would have
            them stop their team adding tokens, and every build would fail. *@
-        <p class="alert alert--info">
-            <Icon Name="info" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Info">
             <span>
                 Connecting your organisation here covers <strong>working with
                 repositories</strong> from the toolbox: creating them, and saving
                 work into them.
             </span>
-        </p>
-        <p class="alert alert--info">
-            <Icon Name="info" Width="16" Height="16" />
+        </Alert>
+        <Alert Tone="AlertTone.Info">
             <span>
                 <strong>Builds are separate, on both hosts.</strong> When a solution
                 builds, the toolbox fetches its copy of the repository as whoever
@@ -339,7 +332,7 @@
                 So a build only ever reaches what that person can reach - and they
                 each need a token there, whether or not you connect GitHub here.
             </span>
-        </p>
+        </Alert>
     </Aside>
 </AdministrationHeader>
 

@@ -21,21 +21,21 @@
     <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_okMessage</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_errMessage</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_testMessage))
         {
-            <p class="alert @(_testOk ? "alert--success" : "alert--danger")" role="status">
-                <Icon Name="@(_testOk ? "circle-check" : "circle-alert")" Width="16" Height="16" /><span>@_testMessage</span>
-            </p>
+            <Alert Tone="@(_testOk ? AlertTone.Success : AlertTone.Danger)" Role="status">
+                <span>@_testMessage</span>
+            </Alert>
         }
     </Alerts>
     <Body>
@@ -127,13 +127,12 @@
         }
     </Foot>
     <Aside>
-        <p class="alert alert--info">
-            <Icon Name="info" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Info">
             <span>
                 Your key stays on this site. It is only used to call DeepL when the
                 setting above says to.
             </span>
-        </p>
+        </Alert>
     </Aside>
 </AdministrationHeader>
 

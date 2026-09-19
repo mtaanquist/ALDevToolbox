@@ -34,9 +34,9 @@
     <Notices>
         @if (!string.IsNullOrEmpty(_lastError))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_lastError</span>
+            </Alert>
         }
     </Notices>
     @* Not found has no body of its own: the head already says it, and offers the way back. *@

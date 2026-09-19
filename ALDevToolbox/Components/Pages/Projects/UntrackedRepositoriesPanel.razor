@@ -68,10 +68,9 @@
 
         @if (_actionError is { } actionError)
         {
-            <p class="alert alert--warn" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="alert">
                 <span>@actionError</span>
-            </p>
+            </Alert>
         }
 
         @if (_loading)
@@ -82,13 +81,12 @@
         }
         else if (_failed)
         {
-            <p class="alert alert--warn" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="alert">
                 <span class="u-stack">
                     <span>The toolbox could not reach GitHub just now, so it cannot say what is untracked.</span>
                     <span><button type="button" class="btn btn--sm" @onclick="ReloadAsync">Try again</button></span>
                 </span>
-            </p>
+            </Alert>
         }
         else if (_rows.Count == 0)
         {

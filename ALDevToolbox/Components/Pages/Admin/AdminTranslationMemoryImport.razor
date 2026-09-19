@@ -38,15 +38,15 @@
     {
         @if (status.IsError)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@status.Message</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@status.Message</span>
+            </Alert>
         }
         else
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@status.Message</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@status.Message</span>
+            </Alert>
         }
     }
 

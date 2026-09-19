@@ -44,17 +44,15 @@
         {
             @if (status.IsError)
             {
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Danger">
                     <span>@status.Message</span>
-                </p>
+                </Alert>
             }
             else
             {
-                <p class="alert alert--success" role="status">
-                    <Icon Name="circle-check" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Success">
                     <span>@status.Message</span>
-                </p>
+                </Alert>
             }
         }
     </Notices>
@@ -76,15 +74,14 @@
         }
         else
         {
-            <p class="alert alert--warn" role="status">
-                <Icon Name="triangle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn">
                 <span>
                 This release is currently <strong>@_release!.Status</strong>.
                 Amends can only run against a <code>ready</code> release -
                 wait for the current import to finish, or restore the release
                 first from <a href="/admin/object-explorer">the admin index</a>.
                 </span>
-            </p>
+            </Alert>
         }
     </NotFound>
     <ChildContent>
