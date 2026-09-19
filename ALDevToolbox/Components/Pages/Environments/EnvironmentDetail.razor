@@ -732,7 +732,14 @@
             // Drawn first, then read: the head and the Updates card are ours and ready,
             // and the live half can take Business Central several seconds. LoadPanelAsync
             // raises the flag and redraws before it awaits anything.
-            await LoadPanelAsync();
+            //
+            // Only once the page is live, though. The first pass is a prerender, which
+            // has nobody to redraw for: it waits for this whole method before a byte is
+            // sent, so reading Business Central here made the click into the page hang
+            // for as long as the customer's tenant took to answer. The prerender sends
+            // the loader instead, and the live pass that follows does the reading.
+            if (RendererInfo.IsInteractive) await LoadPanelAsync();
+            else _panelLoading = true;
         }
     }
 
