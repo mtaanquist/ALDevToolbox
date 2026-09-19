@@ -21,23 +21,21 @@
 
     @if (!string.IsNullOrEmpty(Error))
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Error</span>
-        </p>
+        <Alert Tone="AlertTone.Danger">
+            <span>@Error</span>
+        </Alert>
     }
     @if (Ok == "promoted")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>They can now run the site.</span>
-        </p>
+        </Alert>
     }
     else if (Ok == "demoted")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>They can no longer run the site. Their own organisation is unaffected.</span>
-        </p>
+        </Alert>
     }
 
     <form method="get" action="/site-admin/users" class="filter-bar">

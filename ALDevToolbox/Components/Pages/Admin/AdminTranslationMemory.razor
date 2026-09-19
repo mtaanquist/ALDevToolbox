@@ -53,14 +53,13 @@
     <Notices>
         @if (_refreshMessage is not null)
         {
-            <p class="alert @(_refreshFailed ? "alert--warn" : "alert--success") tr-mem-refresh" role="status">
-                <Icon Name="@(_refreshFailed ? "circle-alert" : "check")" Width="16" Height="16" />
+            <Alert Tone="@(_refreshFailed ? AlertTone.Warn : AlertTone.Success)" Role="status" Class="tr-mem-refresh">
                 <span>@_refreshMessage</span>
                 <button type="button" class="btn btn--sm btn--ghost tr-mem-refresh__dismiss"
                         aria-label="Dismiss" @onclick="() => _refreshMessage = null">
                     <Icon Name="x" Width="14" Height="14" />
                 </button>
-            </p>
+            </Alert>
         }
 
         <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
@@ -91,10 +90,9 @@
 
         @if (_loadError is not null)
         {
-            <p class="alert alert--warn tr-mem-load-error" role="status">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Class="tr-mem-load-error">
                 <span>@_loadError</span>
-            </p>
+            </Alert>
         }
     </Notices>
     <Loading>

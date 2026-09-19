@@ -39,13 +39,12 @@
 
     @if (_submitted)
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>
                 Thanks - your suggestion is pending review. An admin will approve
                 or reject it shortly.
             </span>
-        </p>
+        </Alert>
         <a class="btn" href="/cookbook">Back to cookbook</a>
     }
     else
@@ -152,10 +151,9 @@
 
         @if (_lastError is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>@_lastError</span>
-            </p>
+            </Alert>
         }
     }
 </div>

@@ -61,13 +61,12 @@
 
     @if (IsEdit && _loadFailed)
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Danger">
             <span>
                 No template with key <code class="code">@Key</code> was found. It may have been
                 renamed or permanently removed.
             </span>
-        </p>
+        </Alert>
     }
     else if (_form is null)
     {
@@ -96,8 +95,7 @@
 
         @if (_saveError is not null)
         {
-            <div class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger" Block="true">
                 <span>
                     @_saveError
                     @if (_fieldErrors.Count > 0)
@@ -110,13 +108,13 @@
                         </ul>
                     }
                 </span>
-            </div>
+            </Alert>
         }
         @if (_saveSuccess is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_saveSuccess</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_saveSuccess</span>
+            </Alert>
         }
     }
 
@@ -133,8 +131,7 @@
                     <div class="code-editor" @ref="_tomlContainer"></div>
                     @if (_tomlIssues.Count > 0)
                     {
-                        <div class="alert alert--danger" role="alert">
-                            <Icon Name="circle-alert" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Danger" Block="true">
                             <span>
                                 <ul>
                                     @foreach (var issue in _tomlIssues)
@@ -143,7 +140,7 @@
                                     }
                                 </ul>
                             </span>
-                        </div>
+                        </Alert>
                     }
                     <p class="form-sec__cap">
                         Edits the same data the structured form does. The

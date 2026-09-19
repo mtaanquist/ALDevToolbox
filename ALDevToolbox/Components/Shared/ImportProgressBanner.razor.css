@@ -1,9 +1,5 @@
-/* Layout only. The frame, tint and icon slot are .alert .alert--info; the bar
-   is .progress, which this component is the reason exists (#586). What is left
-   is that .alert is a flex row (icon | text) and this banner has no icon, so
-   the body has to claim the full width itself. */
-
-.oe-import-progress:not([hidden]) { display: flex; }
+/* The root rule (.oe-import-progress) is in app.css: the root is rendered by Alert,
+   which a scoped rule here cannot reach. */
 
 .oe-import-progress__body {
     flex: 1;

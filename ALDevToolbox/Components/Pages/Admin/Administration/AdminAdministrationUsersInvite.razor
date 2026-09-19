@@ -26,9 +26,9 @@
 
     @if (!string.IsNullOrEmpty(Error))
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Error</span>
-        </p>
+        <Alert Tone="AlertTone.Danger">
+            <span>@Error</span>
+        </Alert>
     }
 
     @if (Ok == "created" && !string.IsNullOrEmpty(_oneShotLink))
@@ -56,10 +56,9 @@
     }
     else if (Ok == "invited")
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>Invite sent. The link is valid for 7 days.</span>
-        </p>
+        </Alert>
     }
 
     @* Archetype 6's form column - capped at 900px so the fields do not stretch

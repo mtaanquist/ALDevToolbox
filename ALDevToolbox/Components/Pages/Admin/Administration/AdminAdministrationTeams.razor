@@ -33,14 +33,13 @@
 
     @if (_error is not null)
     {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@_error</span>
-        </p>
+        <Alert Tone="AlertTone.Danger">
+            <span>@_error</span>
+        </Alert>
     }
     @if (_success is not null)
     {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" />
+        <Alert Tone="AlertTone.Success">
             <span>
                 @_success
                 @if (_createdTeamId is int created)
@@ -58,7 +57,7 @@
                     </a>
                 }
             </span>
-        </p>
+        </Alert>
     }
 
     @if (_creating)

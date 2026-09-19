@@ -43,16 +43,16 @@
 
     @if (_bcMessage is not null)
     {
-        <p class="alert @(_bcOk ? "alert--success" : "alert--danger")" role="status"><Icon Name="@(_bcOk ? "circle-check" : "triangle-alert")" Width="16" Height="16" /><span>@_bcMessage</span></p>
+        <Alert Tone="@(_bcOk ? AlertTone.Success : AlertTone.Danger)" Role="status"><span>@_bcMessage</span></Alert>
     }
     @if (_bcErrors.Count > 0)
     {
-        <div class="alert alert--danger" role="alert">
+        <Alert Tone="AlertTone.Danger" Icon="" Block="true">
             @foreach (var err in _bcErrors.Values.Distinct())
             {
                 <p>@err</p>
             }
-        </div>
+        </Alert>
     }
 
     <div class="card">

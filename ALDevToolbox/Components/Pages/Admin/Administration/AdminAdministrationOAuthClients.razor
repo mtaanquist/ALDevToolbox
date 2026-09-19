@@ -20,9 +20,9 @@
 
         @if (Ok == "revoked")
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>Consent revoked.</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>Consent revoked.</span>
+            </Alert>
         }
 
         <section class="card">

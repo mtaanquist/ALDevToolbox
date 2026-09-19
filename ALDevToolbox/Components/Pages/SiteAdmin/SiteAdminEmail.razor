@@ -84,28 +84,26 @@
         {
             @* Nothing out and something stuck: the email server is the problem,
                and saying "that can be normal" here would be wrong. *@
-            <p class="alert alert--danger" role="status">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Danger">
                 <span>
                     Nothing has gone out in the last 24 hours and email is not getting through.
                     Check <a href="/site-admin/settings/smtp">Email settings</a> and send yourself
                     a test email.
                 </span>
-            </p>
+            </Alert>
         }
         else if (_snapshot.SentLastDay == 0)
         {
             @* The one state the two lists below cannot show: they are empty
                because nothing is being sent at all, which looks identical to a
                healthy site until someone says they never got their email. *@
-            <p class="alert alert--warn" role="status">
-                <Icon Name="circle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn">
                 <span>
                     Nothing has been sent in the last 24 hours. On a quiet site that is normal.
                     If someone was expecting an email, send yourself a test from
                     <a href="/site-admin/settings/smtp">Email settings</a> to check the connection.
                 </span>
-            </p>
+            </Alert>
         }
 
         <section class="card">

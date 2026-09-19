@@ -48,9 +48,9 @@
            Business Central connections. *@
         @if (_error is { } error)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@error</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@error</span>
+            </Alert>
         }
 
         @* One freshness strip for the page, never one per section. The rows are a

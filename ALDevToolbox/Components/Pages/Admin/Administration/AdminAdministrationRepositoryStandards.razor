@@ -30,15 +30,15 @@
     <ChildContent>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_okMessage</span>
+            </Alert>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_errMessage</span>
+            </Alert>
         }
 
         <div class="gen">
@@ -204,15 +204,14 @@
                             Repositories that already exist are left alone - these are for the ones
                             created from here on.
                         </p>
-                        <p class="alert alert--info">
-                            <Icon Name="info" Width="16" Height="16" />
+                        <Alert Tone="AlertTone.Info">
                             <span>
                                 Setting branch rules needs AL Dev Toolbox to be allowed to change
                                 repository settings in your GitHub organisation. If it is not, the
                                 repository is still created with its files and whoever created it is
                                 told the rules were not set.
                             </span>
-                        </p>
+                        </Alert>
                     </div>
                 </div>
             </aside>

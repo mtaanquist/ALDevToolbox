@@ -30,17 +30,15 @@
                    can only be downloaded from GitHub once, so say plainly that it
                    has to be pasted again rather than letting someone assume it
                    survived. *@
-                <p class="alert alert--warn" role="status">
-                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Warn">
                     <span>Nothing was saved. If you had pasted the private key, paste it again before saving.</span>
-                </p>
+                </Alert>
             }
             @if (Ok == "removed")
             {
-                <p class="alert alert--success" role="status">
-                    <Icon Name="circle-check" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Success">
                     <span>Removed. No organisation on this site can use GitHub until an app is set up again.</span>
-                </p>
+                </Alert>
             }
         </SettingsBanner>
     </Alerts>
@@ -263,24 +261,22 @@
                 @* IsConfigured rather than a local: the unstyled-markup check
                    reads a bare identifier inside class="" as a CSS class name,
                    and a lowercase local would be reported as an undefined one. *@
-                <p class="alert @(IsConfigured ? "alert--success" : "alert--info")" role="status">
-                    <Icon Name="@(IsConfigured ? "circle-check" : "info")" Width="16" Height="16" />
+                <Alert Tone="@(IsConfigured ? AlertTone.Success : AlertTone.Info)" Role="status">
                     <span>
                         @(IsConfigured
                             ? "Set up. Organisations can now connect their own GitHub organisation."
                             : "Not set up yet. Follow the steps above, then fill in the form - organisations can connect once the App ID, the app's name and the private key are saved.")
                     </span>
-                </p>
+                </Alert>
             }
-            <p class="alert alert--info">
-                <Icon Name="info" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Info">
                 <span>
                     One GitHub app, shared by every organisation on this site. Filling
                     it in gives nobody access on its own: each organisation still picks
                     its own GitHub organisation, and chooses what the app may do there,
                     from its Administration &#8594; Repositories page.
                 </span>
-            </p>
+            </Alert>
         </SettingsAside>
     </Aside>
 </SiteAdminSettingsPage>

@@ -116,7 +116,7 @@
            action, never the facts. Those belong in the strip above. *@
         @if (_buildError is { } be)
         {
-            <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@be</span></p>
+            <Alert Tone="AlertTone.Danger"><span>@be</span></Alert>
         }
 
         @if (_builds.Count == 0)
@@ -214,7 +214,7 @@
 
                             @if (_latest.Status == "failed")
                             {
-                                <p class="alert alert--danger"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@(_latest.FailureMessage ?? "The build failed. See the build log below.")</span></p>
+                                <Alert Tone="AlertTone.Danger"><span>@(_latest.FailureMessage ?? "The build failed. See the build log below.")</span></Alert>
                             }
                             else if (_latestDetail is { Artifacts.Count: > 0 })
                             {
@@ -263,10 +263,9 @@
                             }
                             else if (_latest.GitHubReleaseError is { Length: > 0 } releaseError)
                             {
-                                <p class="alert alert--warn" role="status">
-                                    <Icon Name="triangle-alert" Width="16" Height="16" />
+                                <Alert Tone="AlertTone.Warn">
                                     <span>Not published to GitHub: @(releaseError.TrimEnd('.')). The .app files above are unaffected; fix this and run the pipeline again to publish.</span>
-                                </p>
+                                </Alert>
                             }
 
                             @if (_latestDetail?.ReleaseId is { } relId)

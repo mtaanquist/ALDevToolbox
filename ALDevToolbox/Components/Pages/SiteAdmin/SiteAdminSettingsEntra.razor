@@ -76,24 +76,22 @@
                 @* IsConfigured rather than a local: the unstyled-markup check
                    reads a bare identifier inside class="" as a CSS class name,
                    and a lowercase local would be reported as an undefined one. *@
-                <p class="alert @(IsConfigured ? "alert--success" : "alert--info")" role="status">
-                    <Icon Name="@(IsConfigured ? "circle-check" : "info")" Width="16" Height="16" />
+                <Alert Tone="@(IsConfigured ? AlertTone.Success : AlertTone.Info)" Role="status">
                     <span>
                         @(IsConfigured
                             ? "Set up. Organisations can now turn Microsoft sign-in on for themselves."
                             : "Not set up yet - no organisation can offer Microsoft sign-in.")
                     </span>
-                </p>
+                </Alert>
             }
-            <p class="alert alert--info">
-                <Icon Name="info" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Info">
                 <span>
                     One Microsoft app registration, shared by every organisation on this
                     site. Filling it in doesn't let anyone in on its own: each organisation
                     still turns Microsoft sign-in on, and lists which Microsoft organisations
                     may use it, on its own Administration → Identity page.
                 </span>
-            </p>
+            </Alert>
         </SettingsAside>
     </Aside>
 </SiteAdminSettingsPage>

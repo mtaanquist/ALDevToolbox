@@ -24,31 +24,31 @@
 
     @if (!string.IsNullOrEmpty(Msg))
     {
-        <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span></p>
+        <Alert Tone="AlertTone.Danger"><span>@Msg</span></Alert>
     }
     @if (Ok == "created")
     {
-        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot created.</span></p>
+        <Alert Tone="AlertTone.Success"><span>Snapshot created.</span></Alert>
     }
     else if (Ok == "restored")
     {
-        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot restored.</span></p>
+        <Alert Tone="AlertTone.Success"><span>Snapshot restored.</span></Alert>
     }
     else if (Ok == "deleted")
     {
-        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot deleted.</span></p>
+        <Alert Tone="AlertTone.Success"><span>Snapshot deleted.</span></Alert>
     }
     else if (Ok == "pinned")
     {
-        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot pinned.</span></p>
+        <Alert Tone="AlertTone.Success"><span>Snapshot pinned.</span></Alert>
     }
     else if (Ok == "unpinned")
     {
-        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot unpinned.</span></p>
+        <Alert Tone="AlertTone.Success"><span>Snapshot unpinned.</span></Alert>
     }
     else if (Ok == "uploaded")
     {
-        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot uploaded to off-site bucket.</span></p>
+        <Alert Tone="AlertTone.Success"><span>Snapshot uploaded to off-site bucket.</span></Alert>
     }
 
     @if (_activeJobs is { Count: > 0 })
@@ -74,7 +74,7 @@
                         </div>
                         @if (job.Status == OffsiteRestoreJobStatus.Failed)
                         {
-                            <p class="alert alert--danger" role="alert" data-job-error><Icon Name="circle-alert" Width="16" Height="16" /><span>@job.Error</span></p>
+                            <Alert Tone="AlertTone.Danger" data-job-error><span>@job.Error</span></Alert>
                         }
                         else
                         {
@@ -115,7 +115,7 @@
             </p>
             @if (_offsiteError is not null)
             {
-                <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@_offsiteError</span></p>
+                <Alert Tone="AlertTone.Danger"><span>@_offsiteError</span></Alert>
             }
             else if (_offsite is null)
             {

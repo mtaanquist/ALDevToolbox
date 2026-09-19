@@ -89,20 +89,19 @@
 
         @if (_lastError is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_lastError</span>
+            </Alert>
         }
         @if (_lastSuccess is not null)
         {
-            <p class="alert alert--success" role="status">
-                <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
-            </p>
+            <Alert Tone="AlertTone.Success">
+                <span>@_lastSuccess</span>
+            </Alert>
         }
         @if (_lastFailures.Count > 0)
         {
-            <div class="alert alert--warn" role="alert">
-                <Icon Name="triangle-alert" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Warn" Role="alert" Block="true">
                 <span>
                     <strong>Some entries couldn't be processed</strong>
                     <ul>
@@ -112,7 +111,7 @@
                         }
                     </ul>
                 </span>
-            </div>
+            </Alert>
         }
 
         @* --edge + a leading .data-table__col-state, matching /templates. State is

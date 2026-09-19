@@ -85,9 +85,9 @@
 
         @if (_error is not null)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_error</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@_error</span>
+            </Alert>
         }
 
         @* Only worth saying once there is somebody who could *be* the manager.
@@ -95,13 +95,12 @@
            on a team that had only just been created. *@
         @if (_canManage && _team.Members.Count > 0 && _team.Members.All(m => !m.IsManager))
         {
-            <p class="alert alert--info" role="note">
-                <Icon Name="info" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Info" Role="note">
                 <span>
                     Nobody manages this team yet. Make someone a manager so they can add
                     colleagues without an admin.
                 </span>
-            </p>
+            </Alert>
         }
 
         @if (_adding)

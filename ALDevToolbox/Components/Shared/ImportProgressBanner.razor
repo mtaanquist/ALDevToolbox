@@ -10,8 +10,8 @@
     is the third caller, which is where it becomes a component.
 *@
 
-<div class="alert alert--info oe-import-progress" data-oe-import-progress hidden
-     role="status" aria-live="polite">
+<Alert Tone="AlertTone.Info" Icon="" Role="status" Class="oe-import-progress" Block="true" data-oe-import-progress hidden
+     aria-live="polite">
     <div class="oe-import-progress__body">
         <div class="oe-import-progress__row">
             <span data-oe-import-label>Uploading...</span>
@@ -20,4 +20,4 @@
         <progress class="progress" data-oe-import-bar max="100" value="0"></progress>
         <p class="oe-import-progress__hint" data-oe-import-hint></p>
     </div>
-</div>
+</Alert>

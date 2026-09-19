@@ -47,17 +47,15 @@ else
         @{
             @if (!string.IsNullOrEmpty(Error))
             {
-                <p class="alert alert--danger" role="alert">
-                    <Icon Name="circle-alert" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Danger">
                     <span>@ErrorText(Error)</span>
-                </p>
+                </Alert>
             }
             @if (Ok == "sent")
             {
-                <p class="alert alert--success" role="status">
-                    <Icon Name="circle-check" Width="16" Height="16" />
+                <Alert Tone="AlertTone.Success">
                     <span>Code sent. It's good for a few minutes.</span>
-                </p>
+                </Alert>
             }
         }
     </Alerts>

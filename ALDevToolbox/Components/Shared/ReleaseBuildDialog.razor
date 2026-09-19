@@ -41,15 +41,14 @@
 
                 @if (_fromReleases && _releases.Count == 0)
                 {
-                    <p class="alert alert--info" role="status">
-                        <Icon Name="info" Width="16" Height="16" />
+                    <Alert Tone="AlertTone.Info" Role="status">
                         <span>
                             @(_repositoryName.Length > 0
                                 ? $"No release on {_repositoryName} has an .app file attached yet."
                                 : "No release has an .app file attached yet.")
                             Publish a release with the compiled apps attached, then come back.
                         </span>
-                    </p>
+                    </Alert>
                 }
                 else if (_fromReleases)
                 {
@@ -155,7 +154,7 @@
 
                 @if (_error is { } err)
                 {
-                    <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@err</span></p>
+                    <Alert Tone="AlertTone.Danger"><span>@err</span></Alert>
                 }
             </div>
             <div class="confirm-dialog__actions">

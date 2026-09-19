@@ -53,15 +53,14 @@
     </Foot>
     <Aside>
         <SettingsAside UpdatedAt="@_view?.UpdatedAt">
-            <p class="alert alert--info">
-                <Icon Name="info" Width="16" Height="16" />
+            <Alert Tone="AlertTone.Info">
                 <span>
                     Switching a tool off here hides it from everyone, in every
                     organisation, and stops it working until you switch it back on.
                     An organisation can switch off tools you leave on, but cannot
                     switch on ones you turn off.
                 </span>
-            </p>
+            </Alert>
         </SettingsAside>
     </Aside>
 </SiteAdminSettingsPage>

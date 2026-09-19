@@ -44,9 +44,9 @@
     <Notices>
         @if (_error is { } error)
         {
-            <p class="alert alert--danger" role="alert">
-                <Icon Name="triangle-alert" Width="16" Height="16" /><span>@error</span>
-            </p>
+            <Alert Tone="AlertTone.Danger">
+                <span>@error</span>
+            </Alert>
         }
     </Notices>
     <Loading>
