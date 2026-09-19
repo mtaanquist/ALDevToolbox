@@ -59,6 +59,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        // The page reads Business Central only once it is live; see the prerender test.
+        _ctx.SetRendererInfo(new Microsoft.AspNetCore.Components.RendererInfo("Server", isInteractive: true));
 
         using var seed = _db.NewContext();
         seed.Users.AddRange(
@@ -251,6 +253,22 @@ public sealed class EnvironmentDetailTests : IDisposable
         cut.WaitForAssertion(() => cut.Find("#upload-app-file").GetAttribute("accept").Should().Be(".app"));
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload and install")
             .HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_prerender_draws_our_half_and_a_loader_without_waiting_for_business_central()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        _ctx.SetRendererInfo(new Microsoft.AspNetCore.Components.RendererInfo("Static", isInteractive: false));
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, envId));
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Version and update dates",
+            "the head and the Updates card come from our own mirror"));
+        cut.FindAll(".loading-block").Should().NotBeEmpty("the live half is a loader until the page is live");
+        cut.FindAll("table.u-compact").Should().BeEmpty(
+            "even a cached panel is left for the live pass: the prerender must never reach for the customer's tenant");
     }
 
     [Fact]
