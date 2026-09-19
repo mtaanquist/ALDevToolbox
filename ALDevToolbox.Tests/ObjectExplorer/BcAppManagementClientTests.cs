@@ -351,6 +351,19 @@ public sealed class BcAppManagementClientTests
     }
 
     [Fact]
+    public async Task ListInstalledApps_keeps_a_row_that_calls_its_app_id_plain_id()
+    {
+        const string json = """
+        {"value":[{"id":"55555555-5555-5555-5555-555555555555","name":"CRONUS Toolbox","version":"1.2.3.4"}]}
+        """;
+        var (client, _) = Client(body: json);
+
+        var apps = await client.ListInstalledAppsAsync(Token, Family, Environment);
+
+        apps.Should().ContainSingle().Which.AppId.Should().Be(Guid.Parse("55555555-5555-5555-5555-555555555555"));
+    }
+
+    [Fact]
     public async Task ListScheduledPteOperations_reads_the_name_and_sync_mode_from_parameters()
     {
         const string json = """

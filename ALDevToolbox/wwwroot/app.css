@@ -139,6 +139,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .app__content-inner > *:not(.toast-stack) { width: 100%; margin-inline: auto; }
 
+/* The scroller has to be the containing block for what it scrolls. The
+   visually-hidden helpers (.u-sr, .u-sr-only, the real checkbox inside .switch
+   and .check) are `position: absolute`, and without this the nearest positioned
+   ancestor is .app. An absolute box escapes a scroller that is not its
+   containing block, so a hidden label 900px down a page became 900px of
+   scrollable overflow on .app itself -- which is `overflow: hidden`, so it
+   shows no scrollbar but still scrolls when asked. An in-page anchor link asks:
+   the jump scrolls every scroll container up the chain, and the whole shell
+   slid up, leaving a dead band under the sidebar and the content. */
+.app__content { position: relative; }
+
 /* Full-height tools (Compare, Translator, the Object Explorer source viewer)
    size themselves with `height: 100%`. That used to resolve against `.content`,
    which was a flex item with a definite height. The hand-off's
