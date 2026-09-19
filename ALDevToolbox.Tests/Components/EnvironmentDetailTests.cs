@@ -236,7 +236,8 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         cut.Find("input[aria-label='Filter installed apps']").Input("continia");
 
-        Sources().Should().Equal("Continia Core / AppSource");
+        // The filter re-renders on its own turn, so the narrowed list is waited for.
+        cut.WaitForAssertion(() => Sources().Should().Equal("Continia Core / AppSource"));
     }
 
     [Fact]
