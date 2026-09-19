@@ -285,31 +285,8 @@
                                             <span>Environment details</span>
                                         </a>
                                     }
-                                    @if (!gone && _windowEditEnvId != env.Id)
-                                    {
-                                        <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Delivery window</button>
-                                    }
                                 </td>
                             </tr>
-                            @if (_windowEditEnvId == env.Id)
-                            {
-                                <tr class="is-subrow" @key="@($"win-{env.Id}")">
-                                    <td colspan="7">
-                                        <div class="pd-window">
-                                            <label class="pd-window__time">From <input type="time" class="input input--sm" @bind="_winStart" disabled="@_bcSaving" /></label>
-                                            <label class="pd-window__time">To <input type="time" class="input input--sm" @bind="_winEnd" disabled="@_bcSaving" /></label>
-                                            <button type="button" class="btn btn--sm" @onclick="() => SaveWindowAsync(env.Id)" disabled="@_bcSaving">Save window</button>
-                                            <button type="button" class="btn btn--sm" @onclick="() => ClearWindowAsync(env.Id)" disabled="@_bcSaving">Clear (any time)</button>
-                                            <button type="button" class="btn btn--sm" @onclick="CancelWindowEdit" disabled="@_bcSaving">Cancel</button>
-                                        </div>
-                                        <small class="field__hint">In the solution's timezone (@(_bc?.TimeZone ?? "set one above")). Deliveries prefill to the next opening; you can still release outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
-                                        @if (_windowError is { } we)
-                                        {
-                                            <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@we</span>
-                                        }
-                                    </td>
-                                </tr>
-                            }
                         }
                     </tbody>
                 </table>
@@ -439,10 +416,6 @@
         }
     }
 
-    private int? _windowEditEnvId;
-    private TimeOnly? _winStart;
-    private TimeOnly? _winEnd;
-    private string? _windowError;
 
     /// <summary>
     /// The environments header pill: how many, and how fresh. The statuses and versions
@@ -578,52 +551,6 @@
         return clash
             ? "Overlaps Business Central's update window - a release landing then is refused while the environment is updating."
             : null;
-    }
-
-    private void OpenWindowEditor(ProjectEnvironmentRow env)
-    {
-        _windowEditEnvId = env.Id;
-        _windowError = null;
-        _winStart = env.UpdateWindowStart;
-        _winEnd = env.UpdateWindowEnd;
-    }
-
-    private void CancelWindowEdit()
-    {
-        _windowEditEnvId = null;
-        _windowError = null;
-    }
-
-    private async Task SaveWindowAsync(int environmentId)
-    {
-        if (_winStart is not { } start || _winEnd is not { } end)
-        {
-            _windowError = "Enter both a start and an end time, or use Clear for 'any time'.";
-            return;
-        }
-        await PersistWindowAsync(environmentId, start, end);
-    }
-
-    private Task ClearWindowAsync(int environmentId) => PersistWindowAsync(environmentId, null, null);
-
-    private async Task PersistWindowAsync(int environmentId, TimeOnly? start, TimeOnly? end)
-    {
-        _windowError = null;
-        try
-        {
-            await Connection.SetUpdateWindowAsync(Id, environmentId, start, end);
-            _windowEditEnvId = null;
-            await LoadBcAsync();
-        }
-        catch (PlanValidationException ex)
-        {
-            _windowError = ex.Errors.Values.FirstOrDefault() ?? "Could not save the update window.";
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to save update window for environment {EnvId}.", environmentId);
-            _windowError = "Could not save the update window.";
-        }
     }
 
     private sealed class BcEdit
