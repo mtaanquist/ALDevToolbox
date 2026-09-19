@@ -98,7 +98,17 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
         request.UseBearer(accessToken);
 
         var body = await SendAsync(request, "listing installed apps", environmentName, ct).ConfigureAwait(false);
-        return ParseInstalledApps(body);
+        var apps = ParseInstalledApps(body);
+        if (apps.Count == 0)
+        {
+            // An environment always has the base application, so an empty list means the
+            // answer wasn't shaped the way we read it. Field names only: enough to fix the
+            // parser from a log line, and nothing of the customer's in it.
+            _logger.LogWarning(
+                "BC environment {Environment} listed no installed apps we could read; the response was shaped {Shape}.",
+                environmentName, DescribeShape(body));
+        }
+        return apps;
     }
 
     public async Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(
@@ -357,7 +367,9 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
         var result = new List<BcInstalledApp>();
         foreach (var item in EnumerateValue(json))
         {
-            var appId = Guid(item, "appId");
+            // Documented as appId; the operations endpoints call the same thing id, so
+            // take either rather than drop every row over a spelling.
+            var appId = Guid(item, "appId") ?? Guid(item, "id");
             if (appId is null) continue;
             result.Add(new BcInstalledApp(
                 AppId: appId.Value,
@@ -492,6 +504,28 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
             {
                 if (item.ValueKind == JsonValueKind.Object) yield return item;
             }
+        }
+    }
+
+    /// <summary>The property names of a response and of its first row, for a log line that says why nothing parsed.</summary>
+    private static string DescribeShape(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return root.ValueKind.ToString();
+            var names = string.Join(",", root.EnumerateObject().Select(p => p.Name));
+            if (!root.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array) return $"{{{names}}}";
+            var first = value.EnumerateArray().FirstOrDefault();
+            var rowNames = first.ValueKind == JsonValueKind.Object
+                ? string.Join(",", first.EnumerateObject().Select(p => p.Name))
+                : first.ValueKind.ToString();
+            return $"{{{names}}} with {value.GetArrayLength()} rows of {{{rowNames}}}";
+        }
+        catch (JsonException)
+        {
+            return "not JSON";
         }
     }
 
