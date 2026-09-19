@@ -113,11 +113,17 @@ public sealed class ProjectDetailBcTests : IDisposable
         var cut = _ctx.Render<ProjectDetailBc>(p => p.Add(c => c.Id, id));
         cut.WaitForAssertion(() => cut.FindAll("input[name=bc-reg]").Should().HaveCount(2));
 
-        cut.FindAll("input[name=bc-reg]")[1].Change(true);
+        // Found and changed inside the wait, and asserted inside one: on a slow machine the
+        // page is still settling when the first render returns, and a re-render between
+        // the find and the change, or the change and the assert, loses the race.
+        cut.WaitForAssertion(() => cut.FindAll("input[name=bc-reg]")[1].Change(true));
 
-        cut.FindAll("#bc-client, #bc-secret, #bc-expiry").Should().HaveCount(3);
-        cut.Find(".pd-before").TextContent.Should().NotContain(OrgClientId,
-            "the customer authorises their own registration now, not the organisation's");
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#bc-client, #bc-secret, #bc-expiry").Should().HaveCount(3);
+            cut.Find(".pd-before").TextContent.Should().NotContain(OrgClientId,
+                "the customer authorises their own registration now, not the organisation's");
+        });
     }
 
     [Fact]
