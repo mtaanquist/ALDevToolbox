@@ -41,8 +41,6 @@ public sealed class ArchetypeConformanceTests
         "ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor",
         "ALDevToolbox/Components/Pages/AccountSecurity/TotpSetup.razor",
         "ALDevToolbox/Components/Pages/Admin/AdminObjectExplorerHeader.razor",
-        "ALDevToolbox/Components/Pages/NewExtension.razor",
-        "ALDevToolbox/Components/Pages/NewWorkspace.razor",
         "ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor",
         "ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor",
         "ALDevToolbox/Components/Pages/SuggestRecipe.razor",

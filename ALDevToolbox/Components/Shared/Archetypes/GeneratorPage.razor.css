@@ -1,0 +1,11 @@
+/* The Generate button lives in the sticky aside rather than a bottom bar, so
+   it spans the rail and gets the taller control height the handoff gives it
+   (PageGenerator.dc.html sets both inline). */
+.gen__go {
+    width: 100%;
+    height: var(--control-h-lg);
+}
+
+.gen__note {
+    text-align: center;
+}
