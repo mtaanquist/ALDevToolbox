@@ -49,10 +49,10 @@
     <TitleRow>
         @if (_template?.Deprecated == true)
         {
-            <span class="status-pill status-pill--warn">
+            <StatusPill Tone="warn">
                 <Icon Name="archive" Width="12" Height="12" />
                 Deprecated
-            </span>
+            </StatusPill>
         }
     </TitleRow>
     <Actions>

@@ -235,11 +235,11 @@ else
                         </div>
                         @if (_twoStepOn)
                         {
-                            <span class="status-pill status-pill--success">On</span>
+                            <StatusPill Tone="success">On</StatusPill>
                         }
                         else
                         {
-                            <span class="status-pill status-pill--muted">Off</span>
+                            <StatusPill Tone="muted">Off</StatusPill>
                         }
                     </div>
                     <div class="setting-list">
@@ -248,7 +248,7 @@ else
                             @if (!_user.TotpEnabled)
                             {
                                 <span class="u-row">
-                                    <span class="status-pill status-pill--muted">Off</span>
+                                    <StatusPill Tone="muted">Off</StatusPill>
                                     <a href="/account/2fa/totp/setup" class="btn btn--sm">
                                         <Icon Name="shield" Width="14" Height="14" />
                                         <span>Turn on authenticator app</span>
@@ -258,7 +258,7 @@ else
                             else if (_totpAction is null)
                             {
                                 <span class="u-row">
-                                    <span class="status-pill status-pill--success">On</span>
+                                    <StatusPill Tone="success">On</StatusPill>
                                     <button type="button" class="btn btn--sm" @onclick='() => _totpAction = "regenerate"'>
                                         <Icon Name="refresh-cw" Width="14" Height="14" />
                                         <span>Get new recovery codes</span>
@@ -306,7 +306,7 @@ else
                             {
                                 <form method="post" action="/auth/account/2fa/email/disable" class="u-row">
                                     <AntiforgeryToken />
-                                    <span class="status-pill status-pill--success">On</span>
+                                    <StatusPill Tone="success">On</StatusPill>
                                     <input class="input" type="password" name="Password" required
                                            autocomplete="current-password" aria-label="Current password"
                                            placeholder="Current password" />
@@ -326,7 +326,7 @@ else
                             {
                                 <form method="post" action="/auth/account/2fa/email/begin" class="u-row">
                                     <AntiforgeryToken />
-                                    <span class="status-pill status-pill--muted">Off</span>
+                                    <StatusPill Tone="muted">Off</StatusPill>
                                     <button type="submit" class="btn btn--sm">
                                         <Icon Name="mail" Width="14" Height="14" />
                                         <span>Turn on email codes</span>
@@ -417,7 +417,7 @@ else
                         </div>
                         @if (_entraLinks.Count > 0)
                         {
-                            <span class="status-pill status-pill--success">Connected</span>
+                            <StatusPill Tone="success">Connected</StatusPill>
                         }
                     </div>
                     @if (!_orgEntraEnabled)
@@ -448,7 +448,7 @@ else
                                 <SettingRow Name="@link.DisplayIdentity"
                                             Hint="@($"Microsoft account, connected {link.CreatedAt.ToLocalTime():d MMM yyyy}.")">
                                     <span class="u-row">
-                                        <span class="status-pill status-pill--success">Connected</span>
+                                        <StatusPill Tone="success">Connected</StatusPill>
                                         <button type="button" class="btn btn--sm btn--danger"
                                                 @onclick="() => DisconnectEntraAsync(link)" disabled="@_busy">
                                             <Icon Name="trash-2" Width="14" Height="14" />

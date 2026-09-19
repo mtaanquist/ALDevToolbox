@@ -70,7 +70,7 @@
                         <span class="audit__what">
                             <span class="audit__who">@e.ChangedBy</span> @Verb(e.Action) this @FriendlyEntityName()
                         </span>
-                        <span class="status-pill @ActionPill(e.Action)">@e.Action</span>
+                        <StatusPill Tone="@ActionPill(e.Action)">@e.Action</StatusPill>
                         <Icon Name="chevron-right" Width="15" Height="15" Css="audit__caret" />
                     </button>
                     @if (open)
@@ -176,9 +176,9 @@
 
     private static string ActionPill(AuditAction action) => action switch
     {
-        AuditAction.Created => "status-pill--success",
-        AuditAction.Deleted => "status-pill--danger",
-        _ => "status-pill--warn",
+        AuditAction.Created => "success",
+        AuditAction.Deleted => "danger",
+        _ => "warn",
     };
 
     /// <summary>Up to two initials for the row's avatar chip.</summary>

@@ -152,8 +152,7 @@ public sealed class DetailHeadTests
     {
         var markup = StripComments(Read("ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"));
 
-        // `class="status-pill status-pill--x"`, not the `__dot` child inside it.
-        Regex.Matches(markup, @"class=""status-pill[ ""]").Count.Should().Be(1,
+        Regex.Matches(markup, @"<StatusPill\s").Count.Should().Be(1,
             because: "the build's state belongs beside the page title, where the archetype "
                    + "puts it. The Latest-build card had a second pill saying the same word, "
                    + "which reads as two different facts until you look twice");
