@@ -45,7 +45,7 @@
         <form method="get" action="/admin/audit" class="card filter-grid" onchange="this.submit()">
             <label class="field">
                 <span class="field__label">Entity type</span>
-                <span class="select-wrap">
+                <SelectBox>
                     <select class="select" name="entityType">
                         <option value="">Any</option>
                         @foreach (var type in Enum.GetValues<AuditEntityType>())
@@ -53,12 +53,11 @@
                             <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
                         }
                     </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             </label>
             <label class="field">
                 <span class="field__label">Action</span>
-                <span class="select-wrap">
+                <SelectBox>
                     <select class="select" name="action">
                         <option value="">Any</option>
                         @foreach (var act in Enum.GetValues<AuditAction>())
@@ -66,8 +65,7 @@
                             <option value="@act" selected="@(Action == act.ToString())">@act</option>
                         }
                     </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             </label>
             <label class="field">
                 <span class="field__label">Record id</span>

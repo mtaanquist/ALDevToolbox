@@ -52,7 +52,7 @@
                         the bill. "Only when asked" is the cheapest.
                     </HintContent>
                     <ChildContent>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="mt-trigger" class="select" @bind="_trigger" disabled="@_saving"
                                     aria-label="When to translate automatically">
                                 <option value="@MtTrigger.Off">Never - no translation service is used</option>
@@ -60,8 +60,7 @@
                                 <option value="@MtTrigger.AutoWhenNoExactMatch">When there is no match in your memory</option>
                                 <option value="@MtTrigger.AlwaysAuto">For everything</option>
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </ChildContent>
                 </SettingRow>
 
@@ -72,13 +71,12 @@
                         Free and paid keys both work.
                     </HintContent>
                     <ChildContent>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="mt-provider" class="select" @bind="_provider" disabled="@_saving"
                                     aria-label="Translation service">
                                 <option value="deepl">DeepL</option>
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </ChildContent>
                 </SettingRow>
 

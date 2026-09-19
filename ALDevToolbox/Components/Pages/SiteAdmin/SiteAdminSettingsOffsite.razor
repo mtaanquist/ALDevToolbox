@@ -56,13 +56,12 @@
 
                     <SettingRow Name="Where to store them"
                                 Hint="Pick the kind of storage first - some of the fields below only apply to one of them.">
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select class="select" name="Provider">
                                 <option value="s3" selected="@(!azure)">S3-compatible (AWS, MinIO, R2, B2)</option>
                                 <option value="azure-blob" selected="@azure">Azure Blob Storage</option>
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </SettingRow>
 
                     <SettingRow Name="Bucket or container"

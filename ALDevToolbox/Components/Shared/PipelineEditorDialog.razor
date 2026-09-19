@@ -46,7 +46,7 @@
                 {
                     <div class="field">
                         <label class="field__label" for="pe-solution">Solution</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="pe-solution" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
                                 <option value="0" selected="@(_projectId == 0)">Choose a solution...</option>
                                 @foreach (var p in _projectOptions ?? [])
@@ -54,8 +54,7 @@
                                     <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </div>
                 }
 
@@ -148,7 +147,7 @@
                 {
                     <div class="field">
                         <label class="field__label" for="pe-release-repo">Publish successful builds to GitHub</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="pe-release-repo" class="select" @bind="_releaseRepositoryId" disabled="@_saving">
                                 <option value="0">Don't publish releases</option>
                                 @foreach (var repo in _releaseRepositories)
@@ -156,8 +155,7 @@
                                     <option value="@repo.Id">@repo.FullName</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <small class="field__hint">All apps in a build have to share one version number, because the release is tagged with it. If they don't match, the build still succeeds and its files can still be downloaded here; only the release is skipped.</small>
                     </div>
                 }
@@ -165,12 +163,11 @@
                 {
                     <div class="field">
                         <label class="field__label" for="pe-release-repo">Publish successful builds to GitHub</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="pe-release-repo" class="select" disabled>
                                 <option value="0">Don't publish releases</option>
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <small class="field__hint">
                             @(_releaseRepositoriesFailed
                                 ? "Couldn't reach GitHub just now; try again."

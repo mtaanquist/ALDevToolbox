@@ -128,7 +128,7 @@
                 <div class="form-grid">
                     <div class="field">
                         <label class="field__label" for="cfg-folder-style">Workspace folder name</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             @* Each option shows what it does to one customer's
                                name, run through the generator's own CustomerNaming
                                so the label cannot drift from the result. *@
@@ -138,8 +138,7 @@
                                     <option value="@style">@StyleOption(style)</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <span class="field__hint">
                             Examples are for a customer called @ExampleCustomer. The
                             <code class="code">.code-workspace</code> file inside takes the same name.
@@ -148,15 +147,14 @@
 
                     <div class="field">
                         <label class="field__label" for="cfg-repo-style">Repository name</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select class="select" id="cfg-repo-style" @bind="_repositoryStyle">
                                 @foreach (var style in RepositoryStyles)
                                 {
                                     <option value="@style">@StyleOption(style)</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <span class="field__hint">
                             Suggested on New Workspace - the consultant can still type another name.
                         </span>
@@ -164,14 +162,13 @@
 
                     <div class="field">
                         <label class="field__label" for="cfg-prefix-mode">Where the extension prefix comes from</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select class="select" id="cfg-prefix-mode" @bind="_prefixMode">
                                 <option value="@ExtensionPrefixMode.Hidden">The customer's short name</option>
                                 <option value="@ExtensionPrefixMode.Fixed">Always the same word</option>
                                 <option value="@ExtensionPrefixMode.PerWorkspace">Decided on each workspace</option>
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                         <span class="field__hint">@PrefixModeHint</span>
                     </div>
 

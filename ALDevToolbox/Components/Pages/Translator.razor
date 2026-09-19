@@ -245,15 +245,14 @@ else
             <div class="tr-langs">
                 <span class="tr-flag" title="Source language">@FlagOf(_sourceLang)</span>
                 <Icon Name="arrow-right" Width="13" Height="13" />
-                <span class="select-wrap tr-langsel">
+                <SelectBox Class="tr-langsel">
                     <select class="select" aria-label="Target language" @onchange="OnTargetLangChanged">
                         @foreach (var l in Languages)
                         {
                             <option value="@l.Code" selected="@(l.Code == _targetLang)">@l.Name (@l.Code)</option>
                         }
                     </select>
-                    <Icon Name="chevron-down" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             </div>
 
             <span class="pw__spacer"></span>
@@ -318,15 +317,14 @@ else
                 </button>
             </div>
 
-            <span class="select-wrap tr-kindsel">
+            <SelectBox Class="tr-kindsel">
                 <select class="select" aria-label="Kind" @onchange="OnKindChanged">
                     @foreach (var k in KindOptions())
                     {
                         <option value="@k" selected="@(k == _kind)">@k</option>
                     }
                 </select>
-                <Icon Name="chevron-down" Css="select-wrap__caret" />
-            </span>
+            </SelectBox>
 
             <div class="tr-search">
                 <Icon Name="search" Width="14" Height="14" />

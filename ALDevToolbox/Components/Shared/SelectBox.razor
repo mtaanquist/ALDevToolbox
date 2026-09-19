@@ -1,0 +1,27 @@
+@*
+    The frame round a <select>: .select-wrap and its caret, from
+    .design/handoff/ComponentsPanel.dc.html. .select sets appearance: none, so a
+    select without the caret beside it does not look like one - and the caret was a
+    line every page had to remember. This writes it.
+
+    The <select> itself stays the page's, as the content: @bind, @bind:after and
+    @onchange are compile-time directives on a real element, and a component that
+    owned the select would have to reinvent them for every value type in use.
+
+    A class passed through Class is outside the page's scoped stylesheet - style it
+    with ::deep. See PROJECT.md, "Page archetypes".
+*@
+
+<span class="@CssClass" @attributes="Extra">@ChildContent<Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" /></span>
+
+@code {
+    /// <summary>Extra classes on the wrapper, usually one that sets its width.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>The <c>select class="select"</c>.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Extra { get; set; }
+
+    private string CssClass => string.IsNullOrWhiteSpace(Class) ? "select-wrap" : $"select-wrap {Class.Trim()}";
+}

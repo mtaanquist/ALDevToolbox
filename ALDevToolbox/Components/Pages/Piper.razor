@@ -46,15 +46,14 @@
             {
                 <div class="field">
                     <label class="field__label" for="piper-table-sep">Cell separator</label>
-                    <span class="select-wrap">
+                    <SelectBox>
                         <select id="piper-table-sep" class="select" @bind="TableSeparatorKey">
                             <option value="tab">Tab</option>
                             <option value="comma">Comma</option>
                             <option value="semicolon">Semicolon</option>
                             <option value="pipe">Pipe</option>
                         </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                 </div>
                 <label class="check">
                     <input type="checkbox" @bind="TableHasHeaders" />
@@ -66,15 +65,14 @@
                 {
                     <div class="field">
                         <label class="field__label" for="piper-column">Column</label>
-                        <span class="select-wrap">
+                        <SelectBox>
                             <select id="piper-column" class="select" @bind="SelectedColumn">
                                 @foreach (var header in _table.Headers)
                                 {
                                     <option value="@header">@(string.IsNullOrEmpty(header) ? "(unnamed column)" : header)</option>
                                 }
                             </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
+                        </SelectBox>
                     </div>
                 }
             }
@@ -114,15 +112,14 @@
 
             <div class="field">
                 <label class="field__label" for="piper-format">Output format</label>
-                <span class="select-wrap">
+                <SelectBox>
                     <select id="piper-format" class="select" @bind="Format">
                         <option value="@PiperOutputFormat.BcOr">BC OR (a|b|c)</option>
                         <option value="@PiperOutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
                         <option value="@PiperOutputFormat.Sql">SQL ('a','b','c')</option>
                         <option value="@PiperOutputFormat.Custom">Custom...</option>
                     </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             </div>
 
             @if (Format == PiperOutputFormat.Custom)
@@ -169,14 +166,13 @@
 
             <div class="field">
                 <label class="field__label" for="piper-sort">Sort items</label>
-                <span class="select-wrap">
+                <SelectBox>
                     <select id="piper-sort" class="select" @bind="Sort">
                         <option value="@PiperSortOrder.None">None (keep input order)</option>
                         <option value="@PiperSortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
                         <option value="@PiperSortOrder.Descending">Descending (Z → A, 9 → 1)</option>
                     </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
             </div>
 
             @if (_mode == InputMode.Text)

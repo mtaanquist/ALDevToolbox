@@ -100,7 +100,7 @@
             </div>
             <div class="field">
                 <label class="field__label" for="ext-template">Template</label>
-                <span class="select-wrap">
+                <SelectBox>
                     <select class="select" id="ext-template" name="TemplateKey" required
                             disabled="@(_workspaceContext is not null)"
                             @bind="_templateKey" @bind:after="OnTemplateChanged">
@@ -109,8 +109,7 @@
                             <option value="@t.Key">@t.Name</option>
                         }
                     </select>
-                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                </span>
+                </SelectBox>
                 <FieldError Field="TemplateKey" Errors="_errors" />
                 @* When the field is disabled the browser drops it from the
                    form post, so mirror the value into a hidden input - the
@@ -209,7 +208,7 @@
             {
                 <div class="field">
                     <label class="field__label" for="ext-app-version">Version</label>
-                    <span class="select-wrap">
+                    <SelectBox>
                         <select class="select" id="ext-app-version" name="ApplicationVersion"
                                 @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
                             @* "Latest" sentinel - resolves to the highest
@@ -225,8 +224,7 @@
                                 <option value="@v.Application">@v.Name</option>
                             }
                         </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                     <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
                     <FieldError Field="ApplicationVersion" Errors="_errors" />
                     <FieldError Field="RuntimeVersion" Errors="_errors" />

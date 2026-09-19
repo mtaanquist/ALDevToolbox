@@ -70,14 +70,13 @@
 
                 <div class="field">
                     <label class="field__label" for="recipe-type">Type</label>
-                    <span class="select-wrap">
+                    <SelectBox>
                         <select class="select" id="recipe-type" @bind="_type">
                             <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
                             <option value="@RecipeType.Pattern">Pattern - a few related files</option>
                             <option value="@RecipeType.Module">Module - near-complete feature</option>
                         </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                     <FieldError Field="Type" Errors="_errors" />
                 </div>
 
@@ -117,7 +116,7 @@
 
                 <div class="field">
                     <label class="field__label" for="recipe-min-version">Minimum BC application version</label>
-                    <span class="select-wrap">
+                    <SelectBox>
                         <select class="select" id="recipe-min-version" @bind="_minimumApplicationVersionId">
                             <option value="">No minimum</option>
                             @foreach (var v in _applicationVersions)
@@ -125,8 +124,7 @@
                                 <option value="@v.Id">@v.Name (@v.Application)</option>
                             }
                         </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                     <span class="field__hint">
                         Shown as a badge on the browser card and detail page so users can
                         tell at a glance whether this recipe targets their runtime.

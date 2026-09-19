@@ -240,7 +240,7 @@
                         }
                         <div class="sub-rows__foot">
                             <label class="u-sr" for="mod-dep-picker">Catalogue entry to add</label>
-                            <span class="select-wrap">
+                            <SelectBox>
                                 <select class="select" id="mod-dep-picker" @bind="_pickerDepId" disabled="@(unusedCatalog.Count == 0)">
                                     <option value="">
                                         @(unusedCatalog.Count == 0 ? "All catalogue entries are already in this module." : "Pick a catalogue entry...")
@@ -257,8 +257,7 @@
                                         </optgroup>
                                     }
                                 </select>
-                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                            </span>
+                            </SelectBox>
                             <button type="button" class="btn btn--primary btn--sm"
                                     disabled="@(string.IsNullOrEmpty(_pickerDepId))"
                                     @onclick="AddFromCatalogue">

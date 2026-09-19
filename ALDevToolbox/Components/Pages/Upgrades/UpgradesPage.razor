@@ -116,7 +116,7 @@
         <div class="cmdbar">
             <div class="cmdbar__row">
                 <div class="cmdbar__group">
-                    <span class="select-wrap upg-view">
+                    <SelectBox Class="upg-view">
                         <select class="select" aria-label="Filter environments"
                                 value="@ViewValue(_type, _onlyWaiting)" @onchange="OnViewChanged">
                             <option value="@ViewValue(string.Empty, false)">All environments</option>
@@ -134,8 +134,7 @@
                                 }
                             }
                         </select>
-                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                    </span>
+                    </SelectBox>
                 </div>
                 @* Filters as you type - the fleet is already in hand - and puts the
                    search in the address once you leave the box or press Enter. *@
