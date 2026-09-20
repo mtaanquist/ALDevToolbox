@@ -36,6 +36,7 @@ public sealed class ProjectsBrowserTests : IDisposable
                 .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
+        _ctx.Services.AddScoped<CustomerModuleService>();
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
             new Microsoft.AspNetCore.Http.HttpContextAccessor());
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));

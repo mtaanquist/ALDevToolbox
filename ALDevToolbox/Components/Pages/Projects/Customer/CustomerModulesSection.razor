@@ -1,0 +1,248 @@
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@inject CustomerModuleService Modules
+@inject ILogger<CustomerModulesSection> Log
+
+@* Which of the modules support cares about this customer has, and at which version.
+   Read from Business Central for a customer online - nobody can keep that up by hand -
+   and typed in for one who isn't. *@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title">Modules</h2>
+            <p class="card__sub">
+                @if (_modules.ReadFromEnvironment)
+                {
+                    @if (_modules.EnvironmentName is { } envName && _modules.FetchedAt is { } fetched)
+                    {
+                        <text>What is installed in <a href="@($"/environments/{_modules.EnvironmentId}/apps")">@envName</a>, as Business Central reported it @RelativeTime.Ago(fetched). Only modules in your organisation's catalogue are shown.</text>
+                    }
+                    else
+                    {
+                        <text>Read from the customer's Business Central. Only modules in your organisation's catalogue are shown.</text>
+                    }
+                }
+                else
+                {
+                    <text>The add-ons this customer runs, and the version of each.</text>
+                }
+            </p>
+        </div>
+        @if (CanEdit && !_editing && _modules.Modules.Count > 0)
+        {
+            <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>Add module</span>
+            </button>
+        }
+    </div>
+
+    @if (_editing)
+    {
+        <form @onsubmit="() => SaveAsync()">
+            <div class="card__body">
+                <div class="form-grid">
+                    <section class="field">
+                        <label class="field__label" for="module-pick">Module</label>
+                        <SelectBox>
+                            <select id="module-pick" class="select" required @ref="_firstField" @bind="_moduleId" disabled="@(_saving || _editingRow is not null)">
+                                <option value="">Choose a module...</option>
+                                @foreach (var option in _catalog)
+                                {
+                                    <option value="@option.Id">@option.Name</option>
+                                }
+                            </select>
+                        </SelectBox>
+                        <FieldError Field="ModuleId" Errors="_errors" />
+                        <small class="field__hint">Not in the list? An editor or administrator adds it under Admin → Customer modules.</small>
+                    </section>
+                    <section class="field">
+                        <label class="field__label" for="module-version">Version</label>
+                        <input id="module-version" type="text" class="input" maxlength="50" @bind="_version" disabled="@_saving" placeholder="e.g. 8.1.0.0" />
+                        <FieldError Field="Version" Errors="_errors" />
+                    </section>
+                    <section class="field">
+                        <label class="field__label" for="module-note">Note</label>
+                        <input id="module-note" type="text" class="input" maxlength="250" @bind="_note" disabled="@_saving" placeholder="e.g. OCR runs on their own server" />
+                        <FieldError Field="Note" Errors="_errors" />
+                    </section>
+                </div>
+                @if (_error is { } error)
+                {
+                    <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+                }
+            </div>
+            <div class="card__foot">
+                <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
+                    <span class="btn__label">@(_editingRow is null ? "Add module" : "Save module")</span>
+                </button>
+                @if (_editingRow is null)
+                {
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => SaveAsync(another: true)">Save and add another</button>
+                }
+                <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+            </div>
+        </form>
+    }
+    @if (!_editing && _error is { } listError)
+    {
+        <div class="card__body"><Alert Tone="AlertTone.Danger"><span>@listError</span></Alert></div>
+    }
+
+    @if (_modules.Modules.Count == 0 && !_editing)
+    {
+        <EmptyState Icon="package" Title="@EmptyTitle()" Quiet="true">
+            <Text>@EmptyText()</Text>
+            <Action>
+                @if (CanEdit && _modules.CatalogCount > 0)
+                {
+                    <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">Add module</button>
+                }
+            </Action>
+        </EmptyState>
+    }
+    else if (_modules.Modules.Count > 0)
+    {
+        <ul class="cust-list">
+            @foreach (var row in _modules.Modules)
+            {
+                <li class="cust-list__row" @key="row.ModuleId">
+                    <span class="cust-list__main">
+                        <span class="cust-list__name">@row.Name</span>
+                        @if (row.Publisher is { } publisher)
+                        {
+                            <span class="u-muted">@publisher</span>
+                        }
+                    </span>
+                    <span class="cust-list__detail">
+                        <span class="u-num cust-list__version">@(row.Version ?? "Version not recorded")</span>
+                        @if (row.Note is { } note)
+                        {
+                            <span class="u-muted">@note</span>
+                        }
+                    </span>
+                    @if (CanEdit)
+                    {
+                        <span class="cust-list__actions">
+                            <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => StartEditingAsync(row)"
+                                    aria-label="@($"Edit {row.Name}")">Edit</button>
+                            <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => RemoveAsync(row)"
+                                    aria-label="@($"Remove {row.Name}")">Remove</button>
+                        </span>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    /// <summary>What the tab read for this section. The section re-reads for itself only after its own writes.</summary>
+    [Parameter, EditorRequired] public SolutionModules Initial { get; set; } = default!;
+
+    private SolutionModules _modules = default!;
+    private bool _initialised;
+    private List<CatalogModule> _catalog = new();
+    private bool _editing;
+    private SolutionModule? _editingRow;
+    private bool _saving;
+    private string? _error;
+    private Dictionary<string, string> _errors = new();
+    private ConfirmDialog? _confirm;
+    private ElementReference _firstField;
+    private bool _focusPending;
+
+    private string _moduleId = string.Empty;
+    private string _version = string.Empty;
+    private string _note = string.Empty;
+
+    /// <summary>Typed in only where it cannot be read: an online solution's list is Business Central's.</summary>
+    private bool CanEdit => CanManage && !_modules.ReadFromEnvironment;
+
+    protected override void OnParametersSet()
+    {
+        if (_initialised) return;
+        _modules = Initial;
+        _initialised = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending || !_editing) return;
+        _focusPending = false;
+        try { await _firstField.FocusAsync(); }
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException or Microsoft.JSInterop.JSDisconnectedException) { }
+    }
+
+    private string EmptyTitle() => _modules switch
+    {
+        { CatalogCount: 0 } => "Your organisation hasn't listed any modules yet",
+        { ReadFromEnvironment: true, EnvironmentName: null } => "No environment has been read yet",
+        { ReadFromEnvironment: true, FetchedAt: null } => "Installed apps haven't been read yet",
+        { ReadFromEnvironment: true } => "None of the catalogue's modules is installed",
+        _ => "No modules recorded",
+    };
+
+    private string EmptyText() => _modules switch
+    {
+        { CatalogCount: 0 } => "An editor or administrator chooses which add-ons are worth tracking under Admin → Customer modules. Once they have, this fills in.",
+        { ReadFromEnvironment: true, EnvironmentName: null } => "Connect the solution on its Business Central tab and its environments, and what is installed in them, are read overnight.",
+        { ReadFromEnvironment: true, FetchedAt: null } => "They are read overnight, or straight away when someone who manages the solution opens the environment's Apps tab.",
+        { ReadFromEnvironment: true } => $"Business Central reports other apps in {_modules.EnvironmentName}; open the environment to see them all.",
+        _ => CanManage ? "Pick the add-ons they run from the catalogue and note the version of each." : "The solution's owner or an administrator can add them.",
+    };
+
+    private async Task StartEditingAsync(SolutionModule? row)
+    {
+        if (_catalog.Count == 0) _catalog = await Modules.ListCatalogAsync();
+        _editingRow = row;
+        _moduleId = row?.ModuleId.ToString() ?? string.Empty;
+        _version = row?.Version ?? string.Empty;
+        _note = row?.Note ?? string.Empty;
+        _errors = new();
+        _error = null;
+        _editing = true;
+        _focusPending = true;
+    }
+
+    private async Task SaveAsync(bool another = false)
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await Modules.SaveSolutionModuleAsync(Id, _editingRow?.RowId,
+                new SolutionModuleInput(int.TryParse(_moduleId, out var moduleId) ? moduleId : null, _version, _note));
+            _modules = await Modules.GetSolutionModulesAsync(Id);
+            if (another) await StartEditingAsync(null); else _editing = false;
+        }
+        catch (PlanValidationException ex) { _errors = new(ex.Errors); }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save a module for project {ProjectId}.", Id);
+            _error = "Couldn't save the module. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemoveAsync(SolutionModule row)
+    {
+        if (_confirm is null) return;
+        if (!await _confirm.OpenAsync($"Remove {row.Name}?", "It comes off this solution's modules. The catalogue keeps it.", "Remove module")) return;
+        try
+        {
+            await Modules.DeleteSolutionModuleAsync(Id, row.RowId);
+            _modules = await Modules.GetSolutionModulesAsync(Id);
+        }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+    }
+}

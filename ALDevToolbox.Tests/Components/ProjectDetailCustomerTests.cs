@@ -32,6 +32,7 @@ public sealed class ProjectDetailCustomerTests : IDisposable
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ProjectCustomerInfoService>();
+        _ctx.Services.AddScoped<CustomerModuleService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
@@ -167,7 +168,7 @@ public sealed class ProjectDetailCustomerTests : IDisposable
         var cut = Render(id);
 
         cut.FindAll(".card__title").Select(t => t.TextContent).Should().Equal(
-            "Customer", "Getting in", "Contacts", "Who knows this customer", "Integrations");
+            "Customer", "Getting in", "Contacts", "Modules", "Who knows this customer", "Integrations");
         cut.FindAll(".empty button, .empty-state button, .card button").Select(b => b.TextContent.Trim()).Should()
             .Contain(["Add notes", "Add contact", "Add colleague", "Add integration"]);
         cut.FindAll(".btn--primary").Should().BeEmpty();
@@ -246,5 +247,75 @@ public sealed class ProjectDetailCustomerTests : IDisposable
 
         cut.Markup.Should().Contain("Peter Saddow").And.Contain("At their hosting or IT partner");
         cut.FindAll("button").Should().BeEmpty();
+    }
+
+    // ── Modules ─────────────────────────────────────────────────────────
+
+    private async Task<int> SeedCatalogModuleAsync(string name, Guid? appId = null)
+    {
+        await using var ctx = _db.NewContext();
+        var module = new CustomerModule { OrganizationId = TestDb.DefaultOrgId, Name = name, Publisher = "Continia Software", AppId = appId, CreatedAt = DateTime.UtcNow };
+        ctx.CustomerModules.Add(module);
+        await ctx.SaveChangesAsync();
+        return module.Id;
+    }
+
+    [Fact]
+    public async Task An_on_premises_customers_modules_are_picked_from_the_catalogue_with_a_version()
+    {
+        var moduleId = await SeedCatalogModuleAsync("Continia Document Capture");
+        var id = await SeedDescribedAsync();
+        var cut = Render(id);
+        var modules = cut.FindComponent<CustomerModulesSection>();
+
+        modules.WaitForAssertion(() => modules.FindAll("button").Single(b => b.TextContent.Trim() == "Add module").Click());
+        modules.WaitForAssertion(() => modules.Find("#module-pick").Change(moduleId.ToString()));
+        modules.WaitForAssertion(() => modules.Find("#module-version").Change("6.1.0.1"));
+        modules.WaitForAssertion(() => modules.Find("form").Submit());
+
+        modules.WaitForAssertion(() =>
+        {
+            modules.Find(".cust-list__name").TextContent.Should().Be("Continia Document Capture");
+            modules.Find(".cust-list__version").TextContent.Should().Be("6.1.0.1");
+        });
+    }
+
+    [Fact]
+    public async Task An_online_customers_modules_are_read_from_business_central_and_nobody_is_offered_an_edit()
+    {
+        var appId = Guid.NewGuid();
+        await SeedCatalogModuleAsync("Continia Document Capture", appId);
+        var id = await SeedAsync(p => { p.HostingType = ProjectHostingType.MicrosoftCloud; p.BcVersion = "BC 25.3"; });
+        await using (var ctx = _db.NewContext())
+        {
+            var env = new OeProjectEnvironment { OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Production", Type = "Production", FetchedAt = DateTime.UtcNow };
+            ctx.OeProjectEnvironments.Add(env);
+            await ctx.SaveChangesAsync();
+            ctx.OeEnvironmentApps.Add(new OeEnvironmentApp
+            {
+                OrganizationId = TestDb.DefaultOrgId, EnvironmentId = env.Id, AppId = appId, Name = "Document Capture",
+                Publisher = "Continia Software", Version = "25.1.0.0", FetchedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        var cut = Render(id);
+        var modules = cut.FindComponent<CustomerModulesSection>();
+
+        modules.Find(".cust-list__version").TextContent.Should().Be("25.1.0.0");
+        modules.Markup.Should().Contain("as Business Central reported it");
+        modules.FindAll("button").Should().BeEmpty("what is installed is Business Central's to say");
+    }
+
+    [Fact]
+    public async Task With_no_catalogue_the_modules_section_says_who_sets_one_up_instead_of_offering_an_empty_picker()
+    {
+        var id = await SeedDescribedAsync();
+
+        var cut = Render(id);
+        var modules = cut.FindComponent<CustomerModulesSection>();
+
+        modules.Markup.Should().Contain("Your organisation hasn't listed any modules yet");
+        modules.FindAll("button").Should().BeEmpty();
     }
 }

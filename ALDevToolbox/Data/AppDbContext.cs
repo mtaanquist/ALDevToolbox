@@ -209,6 +209,10 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectContact> OeProjectContacts => Set<OeProjectContact>();
     public DbSet<OeProjectPerson> OeProjectPeople => Set<OeProjectPerson>();
     public DbSet<OeProjectIntegration> OeProjectIntegrations => Set<OeProjectIntegration>();
+    // Customer modules: the catalogue, what was typed in, and what environments report.
+    public DbSet<CustomerModule> CustomerModules => Set<CustomerModule>();
+    public DbSet<OeProjectModule> OeProjectModules => Set<OeProjectModule>();
+    public DbSet<OeEnvironmentApp> OeEnvironmentApps => Set<OeEnvironmentApp>();
     // Artifacts tool — first-class builds split off Release (see .design/artifacts.md).
     public DbSet<OeProjectBuild> OeProjectBuilds => Set<OeProjectBuild>();
     public DbSet<OeProjectBuildRepoCommit> OeProjectBuildRepoCommits => Set<OeProjectBuildRepoCommit>();
@@ -334,6 +338,9 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectContact>(modelBuilder);
         ScopeToOrganization<OeProjectPerson>(modelBuilder);
         ScopeToOrganization<OeProjectIntegration>(modelBuilder);
+        ScopeToOrganization<CustomerModule>(modelBuilder);
+        ScopeToOrganization<OeProjectModule>(modelBuilder);
+        ScopeToOrganization<OeEnvironmentApp>(modelBuilder);
         ScopeToOrganization<OeProjectBuild>(modelBuilder);
         ScopeToOrganization<OeProjectBuildRepoCommit>(modelBuilder);
         ScopeToOrganization<OeProjectBuildCommit>(modelBuilder);

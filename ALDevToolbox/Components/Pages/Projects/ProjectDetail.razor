@@ -237,14 +237,13 @@
     {
         get
         {
-            var tabs = new List<HeaderTabs.HeaderTabItem>
-            {
-                Tab("General", Section.General),
-                Tab("Repositories", Section.Repos),
-            };
+            var tabs = new List<HeaderTabs.HeaderTabItem>();
 
-            // For everyone who can see the solution: it is what support reads.
+            // First, and the tab an existing solution opens on: it is what most people
+            // opening a solution come to read. A solution being created has no customer yet.
             if (Id is not null) tabs.Add(Tab("Customer", Section.Customer));
+            tabs.Add(Tab("General", Section.General));
+            tabs.Add(Tab("Repositories", Section.Repos));
 
             if (Id is not null && _canManage)
             {
@@ -321,8 +320,16 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (string.Equals(OpenTab, "bc", StringComparison.OrdinalIgnoreCase)) _section = Section.Bc;
-        else if (string.Equals(OpenTab, "customer", StringComparison.OrdinalIgnoreCase)) _section = Section.Customer;
+        _section = OpenTab?.ToLowerInvariant() switch
+        {
+            "bc" => Section.Bc,
+            "general" => Section.General,
+            "repositories" => Section.Repos,
+            "customer" => Section.Customer,
+            "pipelines" => Section.Pipelines,
+            "access" => Section.Access,
+            _ => Id is null ? Section.General : Section.Customer,
+        };
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
 
         if (Id is null)

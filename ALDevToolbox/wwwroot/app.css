@@ -363,6 +363,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .cust-list__row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr) auto; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); }
 .cust-list__main, .cust-list__detail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; overflow-wrap: anywhere; }
 .cust-list__name { font-weight: var(--fw-semibold); color: var(--ink); }
+.cust-list__version { font-family: var(--font-mono); font-size: var(--text-sm); }
 .cust-list__actions { display: flex; gap: var(--space-1); }
 @container (max-width: 720px) { .cust-list__row { grid-template-columns: minmax(0, 1fr); } }
 .cust-notes { display: grid; gap: var(--space-4); }

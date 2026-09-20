@@ -1,8 +1,8 @@
 # Customer information on a Solution
 
 Status: **part shipped.** Slice 1 (hosting and the basics, #859) and slice 2 (getting in,
-contacts, who knows the customer, integrations) are built. Modules (slice 3) and the
-Solutions list's side panel (slice 4) are planned. Each section is labelled with its
+contacts, who knows the customer, integrations, #860) and slice 3 (modules) are built.
+The Solutions list's side panel (slice 4) is planned. Each section is labelled with its
 slice.
 
 ## Why
@@ -71,10 +71,9 @@ the Customer tab edits it for an on-premises one, where that tab is gone.
 ### The Customer tab (slices 1-3)
 
 One new tab on the Solution page, **Customer**, shown to everyone who can see the
-Solution, and opened directly with `?tab=customer`. In slice 1 it sits after Repositories
-and General stays the opening tab; once it carries contacts and modules (slice 3) it moves
-first and becomes the tab a Solution opens on, because by then it is what most people
-opening a Solution come for. It is a *read* view with an Edit
+Solution. It is the first tab and the one an existing Solution opens on, because it is
+what most people opening a Solution come for; a Solution being created has no customer
+yet and opens on General. It is a *read* view with an Edit
 action, not a settings form: the named reader outnumbers the named editor many times
 over, and a page of inputs is a poor way to read a phone number.
 
@@ -122,25 +121,46 @@ first thing anyone saves.
 
 ### Modules (slice 3)
 
-`module_catalog` is an organisation-wide list of the third-party modules support cares
-about: publisher, name, and the Business Central app id when it has one. An Admin keeps
-it; it starts empty.
+`customer_modules` is an organisation-wide list of the third-party modules support cares
+about: name, publisher, and the Business Central app id when it is an app. It is kept at
+`/admin/customer-modules` (Admin and Editor, like the other content pages; "Customer
+modules" in the nav, because "Modules" there already means template modules). The named
+user knows the add-ons by name and has never seen an app id, so the usual way to add one
+is **Add from installed apps**: everything Business Central has reported anywhere in the
+organisation that is not in the catalogue yet, Microsoft's own apps left out, the most
+widespread first. **Add by hand** is for an old NAV add-on that is not an app.
 
-`oe_project_modules` says a Solution has a catalogue module, at a version, with an
-optional note.
+Which modules a Solution has comes from one of two places, never both:
 
-- **On-premises Solutions** - typed in: pick from the catalogue, enter the version.
-- **Online Solutions** - read, not typed. The installed apps of the Solution's production
-  environment are already read for the environment page
-  (`ProjectConnectionService.GetEnvironmentPanelAsync`); the Modules section shows the
-  ones whose app id is in the catalogue, with the version Business Central reports, and
-  links to the environment for the rest. Nothing is stored, so nothing goes stale -
-  which is the point: in the list being replaced, an online customer's module version
-  reads "BC Online" because nobody could keep it up.
+- **On-premises Solutions** - typed in. `oe_project_modules`: a catalogue module, a
+  version, a note; one row per module. Manage-gated.
+- **Online Solutions** - read, not typed, and the service refuses a typed row. The list is
+  the catalogue matched against `oe_environment_apps` for the Solution's production
+  environment (a sandbox only when there is no production): by app id, or by name and
+  publisher for a catalogue entry without one. The card says which environment and how
+  old the reading is, and links to the environment's Apps tab for everything else.
 
-The Solutions list gains a module filter ("who has Document Capture?") in the same
-slice; for online Solutions that needs a stored snapshot, refreshed by the nightly
-environment sweep, and the slice decides its shape then.
+**Why a mirror, not the live read.** The installed-apps read is made with the customer's
+credentials and is manage-gated, so the support consultant this tab is for could not
+trigger it. `oe_environment_apps` holds what Business Central last reported per
+environment and is readable by anyone who can see the Solution. It is brought in line, in
+place, by `ProjectConnectionService.MirrorInstalledAppsAsync` from two callers: the
+environment refresh (so the nightly sweep keeps the whole fleet current) and a live panel
+read (so opening an environment's Apps tab freshens it at once). An answer with no apps in
+it is treated as a failed read and leaves the last good mirror alone - an environment
+always has the base application.
+
+An empty Modules card says *why* it is empty, because the four reasons need four
+different next steps: no catalogue yet, no environment read yet, installed apps not read
+yet, or genuinely none of the catalogue's modules installed.
+
+The Solutions list has a **Has {module}** filter, shown once there is a catalogue. It is
+part of the list's GET form, so a filtered list is a shareable address; it counts a module
+either way (typed in, or installed in any current environment).
+
+With modules in, **Customer is the first tab and the one an existing Solution opens on.**
+Links that mean another tab say so (`?tab=repositories`, `pipelines`, `bc`, `general`,
+`access`).
 
 ### The Solutions list and its side panel (slice 4)
 
