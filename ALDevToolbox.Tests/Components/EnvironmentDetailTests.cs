@@ -349,6 +349,20 @@ public sealed class EnvironmentDetailTests : IDisposable
         cut.Markup.Should().Contain("Version and update dates", "the numbers above the tabs are on every tab");
     }
 
+    [Theory]
+    [InlineData("whatever")]
+    [InlineData("overview")]
+    [InlineData("2")]
+    public async Task A_segment_that_names_no_tab_is_stripped_back_to_the_overview(string segment)
+    {
+        var (_, envId) = await SeedAsync();
+
+        _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, segment));
+
+        var nav = _ctx.Services.GetRequiredService<NavigationManager>();
+        nav.Uri.Should().EndWith($"/environments/{envId}");
+    }
+
     [Fact]
     public async Task History_is_our_own_record_and_asks_business_central_nothing()
     {

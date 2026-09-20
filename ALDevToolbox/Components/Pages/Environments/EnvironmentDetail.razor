@@ -7,6 +7,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
 @inject ILogger<EnvironmentDetail> Log
+@inject NavigationManager Nav
 @using System.Globalization
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.ValueObjects
@@ -856,9 +857,16 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = Enum.TryParse<Section>(OpenTab, ignoreCase: true, out var asked) && Enum.IsDefined(asked)
-            ? asked
-            : Section.Overview;
+        var known = Enum.TryParse<Section>(OpenTab, ignoreCase: true, out var asked)
+            && Enum.IsDefined(asked) && !int.TryParse(OpenTab, out _);
+        if (OpenTab is not null && (!known || asked == Section.Overview))
+        {
+            // A segment that names no tab is dropped from the address rather than left
+            // there looking like a place: Overview has one address, the bare one.
+            Nav.NavigateTo($"/environments/{Id}", replace: true);
+            return;
+        }
+        _tab = known ? asked : Section.Overview;
 
         if (_loadedId != Id)
         {
