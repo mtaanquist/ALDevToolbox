@@ -143,6 +143,22 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Every copy asked for, as (source, new name, type), so a test can pin exactly
+        /// what reached the tenant - and show that a refusal sent nothing at all.
+        /// </summary>
+        public List<(string Source, string NewName, string Type)> Copies { get; } = new();
+        public BcApiException? CopyThrows;
+
+        public Task<BcEnvironmentCopy> CopyEnvironmentAsync(
+            string accessToken, string? applicationFamily, string sourceEnvironmentName,
+            string newEnvironmentName, string newEnvironmentType, CancellationToken ct = default)
+        {
+            if (CopyThrows is not null) throw CopyThrows;
+            Copies.Add((sourceEnvironmentName, newEnvironmentName, newEnvironmentType));
+            return Task.FromResult(new BcEnvironmentCopy("op-1f8f", "scheduled"));
+        }
+
         /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
         public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
 
@@ -947,6 +963,206 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         await act.Should().ThrowAsync<ProjectAccessDeniedException>();
         admin.Recovered.Should().BeEmpty();
+    }
+
+    // ── Copying an environment ────────────────────────────────────────────
+
+    /// <summary>
+    /// Business Central schedules the copy rather than making it there and then, so the
+    /// write is followed by a re-read: the new environment appears as soon as Microsoft
+    /// lists it, and on this read it usually has not yet - which must not be an error.
+    /// </summary>
+    [Fact]
+    public async Task Copying_an_environment_sends_the_new_name_and_type_and_re_reads_the_list()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[]
+            {
+                new BcEnvironment("Production", "Production") { Status = "Active" },
+                new BcEnvironment("CRONUS-Test", "Sandbox") { Status = "Preparing" },
+            },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+                projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        admin.Copies.Should().ContainSingle().Which
+            .Should().Be(("Production", "CRONUS-Test", BcEnvironmentTypes.Sandbox));
+
+        await using var verify = _db.NewContext();
+        var names = await verify.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == projectId).Select(e => e.Name).ToListAsync();
+        names.Should().Contain("CRONUS-Test", "the re-read afterwards is what brings the new one in");
+    }
+
+    /// <summary>The copy may not be listed for an hour, and that is not a failure of the write.</summary>
+    [Fact]
+    public async Task A_copy_business_central_has_not_listed_yet_is_not_an_error()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") { Status = "Active" } },
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+            projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        await act.Should().NotThrowAsync();
+        admin.Copies.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Copying_puts_a_line_on_the_source_environments_toolbox_history()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") { Status = "Active" } },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+                projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        await using var read = _db.NewContext();
+        var entry = await read.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync();
+        entry.EnvironmentId.Should().Be(envId, "the line belongs to the environment that was copied");
+        entry.Kind.Should().Be(UpgradeActionKind.CopyEnvironment);
+        entry.Status.Should().Be(UpgradeActionStatus.Sent, "a record, never something for the worker to fire");
+        entry.Outcome.Should().Contain("CRONUS-Test").And.Contain("sandbox");
+        entry.RequestedBy.Should().Contain("owner@example.com");
+    }
+
+    /// <summary>
+    /// Business Central's rules for an environment name, refused here rather than as a
+    /// wire code minutes later. The service is the source of truth; the dialog mirrors it.
+    /// </summary>
+    [Theory]
+    [InlineData("", "Enter a name")]
+    [InlineData("   ", "Enter a name")]
+    [InlineData("9Lives", "start with a letter")]
+    [InlineData("-Test", "start with a letter")]
+    [InlineData("CRONUS Test", "letters, numbers, dashes and underscores")]
+    [InlineData("CRONUS.Test", "letters, numbers, dashes and underscores")]
+    [InlineData("CRONUSCRONUSCRONUSCRONUSCRONUSCRONUS", "too long")]
+    public async Task A_name_business_central_would_refuse_is_refused_before_anything_is_sent(
+        string name, string expected)
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+            projectId, envId, name, BcEnvironmentTypes.Sandbox);
+
+        var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+        thrown.Which.Errors["NewName"].Should().Contain(expected);
+        admin.Copies.Should().BeEmpty("nothing was sent to the customer's tenant");
+    }
+
+    /// <summary>
+    /// Our own mirror answers the commonest mistake before a round trip, and names the
+    /// environment that is in the way. Case-insensitively: Business Central's names are.
+    /// </summary>
+    [Fact]
+    public async Task A_name_this_solution_already_uses_is_refused_by_our_own_mirror()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+            projectId, envId, "production", BcEnvironmentTypes.Sandbox);
+
+        var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+        thrown.Which.Errors["NewName"].Should().Contain("already has an environment called");
+        admin.Copies.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_deleted_environment_cannot_be_copied()
+    {
+        var (projectId, envId) = await SeedDeletedEnvironmentAsync();
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+            projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+        thrown.Which.Errors["Environment"].Should().Contain("has been deleted");
+        admin.Copies.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// An environment part-way through an update is a moving target, and a copy of one is
+    /// a copy of a moment nobody can name. The same reading the delivery gate makes.
+    /// </summary>
+    [Fact]
+    public async Task An_environment_business_central_is_still_working_on_cannot_be_copied()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        await using (var seed = _db.NewContext())
+        {
+            var row = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == envId);
+            row.Status = "Upgrading";
+            await seed.SaveChangesAsync();
+        }
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+            projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+        thrown.Which.Errors["Environment"].Should().Contain("upgrading");
+        admin.Copies.Should().BeEmpty();
+    }
+
+    /// <summary>A refusal from Business Central arrives as a sentence, and leaves no history line.</summary>
+    [Fact]
+    public async Task A_copy_business_central_refuses_comes_back_as_a_field_keyed_sentence()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        var admin = new FakeAdminClient
+        {
+            CopyThrows = new BcApiException(
+                HttpStatusCode.BadRequest,
+                "An environment with that name already exists in the customer's Business Central. Pick another name."),
+        };
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+                projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+            var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+            thrown.Which.Errors["Environment"].Should().Contain("already exists");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.OeEnvironmentUpgradeActions.AsNoTracking().AnyAsync(a => a.EnvironmentId == envId))
+            .Should().BeFalse("nothing happened, so nothing is recorded");
+    }
+
+    [Fact]
+    public async Task Someone_who_does_not_manage_the_solution_cannot_copy_its_environments()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("Production");
+        await SeedUserAsync(9777, "onlooker2@example.com", UserRole.User);
+        _db.OrgContext.CurrentUserId = 9777;
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).CopyEnvironmentAsync(
+            projectId, envId, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        admin.Copies.Should().BeEmpty();
     }
 
     [Fact]

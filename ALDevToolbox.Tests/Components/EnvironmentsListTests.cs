@@ -170,6 +170,63 @@ public sealed class EnvironmentsListTests : IDisposable
             .HasAttribute("disabled").Should().BeTrue("nothing has been chosen yet");
     }
 
+    // ── Copying an environment from the row menu ──────────────────────────
+
+    /// <summary>
+    /// Copy asks for a name and two decisions before it does anything, so unlike the
+    /// one-click entries beside it, it is offered only to somebody who may go through
+    /// with it - taking all that back with "you may not" is a worse answer than never
+    /// asking.
+    /// </summary>
+    [Fact]
+    public async Task A_row_offers_a_copy_and_the_dialog_names_that_environment_and_its_customer()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Copy...").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Copy Production?");
+            cut.Markup.Should().Contain("CRONUS Denmark");
+            cut.Find("#copy-env-name").GetAttribute("value").Should().Be("Production-Copy");
+        });
+    }
+
+    [Fact]
+    public async Task Someone_who_can_see_a_solution_but_not_manage_it_is_not_offered_a_copy()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        // A colleague who can see this Public solution but neither owns it nor is on a
+        // team assigned to it.
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.Add(new User
+            {
+                Id = 9801, OrganizationId = TestDb.DefaultOrgId, Email = "colleague@example.com",
+                PasswordHash = "x", DisplayName = "Colleague", Role = UserRole.Editor,
+                Status = UserStatus.Active, CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        _db.OrgContext.CurrentUserId = 9801;
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
+        cut.FindAll("button.menu__item").Select(b => b.TextContent.Trim())
+            .Should().NotContain("Copy...");
+    }
+
     [Fact]
     public async Task An_environment_part_way_through_an_update_does_not_need_attention()
     {
@@ -315,7 +372,8 @@ public sealed class EnvironmentsListTests : IDisposable
 
         var menu = cut.FindAll("button.menu__item, a.menu__item").Select(b => b.TextContent.Trim()).ToList();
         menu.Should().Contain("Recover this environment...")
-            .And.NotContain("Upload an app...", "nothing can be installed on a deleted environment");
+            .And.NotContain("Upload an app...", "nothing can be installed on a deleted environment")
+            .And.NotContain("Copy...", "and there is nothing to copy until it is back");
         menu[0].Should().Be("Recover this environment...", "it is the only thing left to do, and the only one with a deadline");
     }
 

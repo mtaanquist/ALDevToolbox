@@ -230,6 +230,93 @@ public sealed class BcAdminClient : IBcAdminClient
         _ => DescribeSettingsFailure(status, body, "recovering the environment"),
     };
 
+    public async Task<BcEnvironmentCopy> CopyEnvironmentAsync(
+        string accessToken, string? applicationFamily, string sourceEnvironmentName,
+        string newEnvironmentName, string newEnvironmentType, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(newEnvironmentName))
+        {
+            throw new ArgumentException("Name the environment the copy becomes.", nameof(newEnvironmentName));
+        }
+        if (BcEnvironmentTypes.Normalize(newEnvironmentType) is not { } type)
+        {
+            throw new ArgumentException(
+                "A copy is either a Sandbox or a Production environment.", nameof(newEnvironmentType));
+        }
+
+        // The documented body: the new environment's name and what it should be. The
+        // source is named by the route, so it is never repeated here.
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["environmentName"] = newEnvironmentName.Trim(),
+            ["type"] = type,
+        });
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, BcConstants.EnvironmentCopyUrl(applicationFamily, sourceEnvironmentName))
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.UseBearer(accessToken);
+
+        var body = await SendAsync(request, "copying the environment", sourceEnvironmentName, NotFoundPolicy.Error, ct,
+            DescribeCopyFailure).ConfigureAwait(false);
+
+        var copy = ParseCopyOperation(body);
+        _logger.LogInformation(
+            "Asked Business Central to copy {Environment} to {NewEnvironment} ({Type}); operation {OperationId} is {Status}.",
+            sourceEnvironmentName, newEnvironmentName, type, copy.OperationId, copy.Status);
+        return copy;
+    }
+
+    /// <summary>
+    /// Reads the operation out of a 202. Deliberately forgiving: the copy has been
+    /// accepted by the time this runs, so a body we can't read costs the caller an
+    /// operation id, never the write.
+    /// </summary>
+    internal static BcEnvironmentCopy ParseCopyOperation(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new BcEnvironmentCopy(null, null);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                ? new BcEnvironmentCopy(Text(doc.RootElement, "id"), Text(doc.RootElement, "status"))
+                : new BcEnvironmentCopy(null, null);
+        }
+        catch (JsonException)
+        {
+            return new BcEnvironmentCopy(null, null);
+        }
+    }
+
+    /// <summary>
+    /// Turns a refused copy into a sentence a consultant can act on. Every code Microsoft
+    /// documents for this endpoint is a different situation with a different next step -
+    /// a name already taken, a name against the rules, a tenant out of environments or out
+    /// of storage, a tenant already making one - so they are told apart here rather than
+    /// all arriving as "the API refused it". Anything else falls through to the shared
+    /// settings wording.
+    /// </summary>
+    internal static string DescribeCopyFailure(HttpStatusCode status, string body) => ErrorCode(body) switch
+    {
+        "resourceExists" =>
+            "An environment with that name already exists in the customer's Business Central. Pick another name.",
+        "environmentNameNotValid" =>
+            $"Business Central won't take that name. {BcEnvironmentName.Rule}",
+        "maximumNumberOfEnvironmentsAllowedReached" =>
+            "The customer has as many environments as their licences allow. Delete one they no longer use, or add capacity, then try again.",
+        "maximumStorageCapacityUsageReached" =>
+            "The customer's Business Central has no room left for another environment. Free some up, or add capacity, then try again.",
+        "tenantAlreadyProvisioning" =>
+            "Business Central is already creating an environment for this customer. Try again once that one has finished.",
+        "environmentNotFound" =>
+            "Business Central no longer has the environment you're copying. Refresh the environments and try again.",
+        "conflictingDeveloperExtensions" =>
+            "The environment you're copying has uploaded extensions that clash with developer extensions in the copy. "
+            + "Sort the clash out in the admin centre, then copy it again.",
+        _ => DescribeSettingsFailure(status, body, "copying the environment"),
+    };
+
     public async Task SelectTargetVersionAsync(
         string accessToken, string? applicationFamily, string environmentName,
         string targetVersion, string? targetVersionType,

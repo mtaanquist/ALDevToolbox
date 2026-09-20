@@ -418,10 +418,70 @@ is followed by a re-read of the customer's environments: the row moves to `Recov
 then out of the Deleted view on its own. A failed re-read costs the freshness, never the
 write.
 
-**Deliberately not built.** Deleting an environment, copying one, renaming one and restoring
-one to a point in time all stay in the admin centre. Recover is here because it is the one
-of them with a deadline — a fortnight, after which nobody can do it at all — and because the
-toolbox is where a deleted environment is noticed.
+**Deliberately not built.** Deleting an environment, renaming one and restoring one to a
+point in time all stay in the admin centre. Recover is here because it is the one of them
+with a deadline — a fortnight, after which nobody can do it at all — and because the toolbox
+is where a deleted environment is noticed. Copying one is here for the opposite reason: it
+has no deadline and is simply the thing an ops engineer does most often, which is the next
+section.
+
+## Copying an environment
+
+The most common errand this page's reader would otherwise open the admin centre for: make a
+copy of an environment, almost always a customer's production into a fresh sandbox, to try
+an update or reproduce a problem on their real data. Named user: the same consultant or ops
+engineer who manages the customer's solution. It is one `POST
+.../environments/{family}/{source}/copy` carrying the new environment's name and its type,
+and it is the one write here that *adds* something to the customer's tenant — it counts
+against their storage allowance, and a production copy against their licences.
+
+It carries the four things every tenant write does: it is gated on managing the solution
+(`ResolveEnvironmentAsync`), it sits behind a confirm that names the environment and its
+customer, it records "Copied the environment" in the **source** environment's Toolbox
+history — the one that existed when it was asked for, and the one somebody later asks where
+the sandbox came from — and a `BcApiException` reaches the page as a sentence. Every code
+Microsoft documents for this endpoint is told apart, because they are different situations
+with different next steps: a name already taken, a name against the rules, a tenant out of
+environments, out of storage, or already making one, a source that has gone, and a source
+whose uploaded extensions clash with developer extensions in the copy.
+
+**Two things are refused before anything is sent.** A source the customer has deleted, which
+has nothing to copy until it is back; and a source Business Central is not reporting as
+ready, because an environment part-way through an update is a moving target and a copy of
+one is a copy of a moment nobody can name. That second reading is `BcEnvironmentStatus`'s,
+the same one the delivery gate makes — ready, or a status we have no opinion about.
+
+**The name rules are Microsoft's and live in one place.** `BcEnvironmentName` holds them:
+start with a letter, then letters, digits, dashes and underscores, fewer than thirty
+characters. The service is the source of truth and the dialog mirrors them in `pattern` and
+`maxlength`, so the browser answers first and the rule is on screen as the person types —
+Business Central's own refusal arrives minutes later as `environmentNameNotValid`, which is
+too late to be help. A name the solution already has is refused from our own mirror,
+case-insensitively, before a round trip.
+
+**The dialog says what the copy is, not how the copy works.** It defaults the name to
+`<source>-Copy` and the type to Sandbox, which is the rarer-is-dearer way round: a
+production copy turns the confirm red and says it costs the customer a licence and one of
+the production environments they are allowed. Copying production into a sandbox says plainly
+that the sandbox will hold the customer's real data, because a sandbox is not a blank
+environment and everyone let into it can read all of it. A customer at or over their storage
+allowance is **warned and not blocked** — Microsoft decides whether there is room, and by
+the time somebody reads the warning capacity may have been added.
+
+**Nothing waits for it.** Business Central schedules the copy and takes its time: the new
+environment appears in the environments list as `Preparing` and turns `Active` when it is
+ready, which can be an hour later. The write is followed by the same re-read Recover does,
+so the new environment shows up as soon as Microsoft lists it — and **its absence from that
+read is not an error**, which is the whole reason the dialog and the success notice both say
+where to go and watch instead: the source environment's Operations tab, which is Business
+Central's own record of what it is doing. No polling beyond that, and no job row of ours.
+
+**Copy is the one row-menu entry offered only to a manager.** Its neighbours on the
+Environments list are one click and a refusal; this one asks for a name and two decisions
+first, and taking all of that back with "you may not" is a worse answer than never having
+asked. `UpgradeFleetRow.CanManage` carries that answer, computed as a subquery over
+`ProjectAccess.ManageProjectPredicate` in the same round trip as `CanAct` — never a
+substitute for the service-side check, which is made on every write regardless.
 
 ## The Environments list, against its designed sheet
 
@@ -438,7 +498,7 @@ Where it still differs, and why:
 | The sheet has | We have | Why |
 | --- | --- | --- |
 | "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
-| A row menu: Open environment, Open in Business Central, Refresh this environment | The first two, plus Upload an app or - on a deleted environment - Recover | A refresh is per solution, not per environment, and the freshness strip already does it. The other two are writes the sheet does not draw; see "Deleted environments". |
+| A row menu: Open environment, Open in Business Central, Refresh this environment | The first two, plus Upload an app and Copy, or - on a deleted environment - Recover | A refresh is per solution, not per environment, and the freshness strip already does it. The other three are writes the sheet does not draw; see "Deleted environments" and "Copying an environment". Copy is the only one shown to managers alone, for the reason given there. **Needs a design pass upstream.** |
 | Three views | A fourth, **Deleted**, when there is one | The sheet has no notion of an environment that is deleted but recoverable. See "Deleted environments" above. |
 | Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
 | Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
@@ -517,6 +577,7 @@ Where it differs from the sheet, and why:
 | Nothing after Environment settings | Update history | Who moved this environment's dates and what is still booked; the same feed the Upgrades page shows. |
 | A read-only list of waiting AppSource updates | An **Update** button on the rows that are ready | What #809's report asked for, and the maintainer's decision on #841 to build it without a sheet. Ready rows only: a waiting row names its prerequisites instead, which is the next step. The confirm names the app, both versions, the environment and whether it is production, and asks when - the environment's next update window by default, or now. `ProjectConnectionService.UpdateAppAsync` re-reads the waiting list before it writes and refuses an app that is not on it, a version Business Central is not offering, or an app that still waits for another; dependencies are never pulled along. Manage-gated; logged, not audited, as it touches no row of ours. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../apps/{appId}/update`. Needs a design pass upstream. |
 | The result of a write beside its control | One result line under the head | The writes are spread down a long page and each re-reads everything; the top is where the eye is afterwards. |
+| Nothing about copying the environment | **Copy this environment...** as a third outline button in the head, and **Copy...** in the Environments list's row menu; both open the same dialog | The sheet draws a page that only reads and adjusts. Copying is the errand this page's reader would otherwise open the admin centre for, and it is the one write here that adds an environment to the customer's tenant; see "Copying an environment" above. Not shown on a deleted environment, which has nothing to copy. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../copy`. **There is no sheet for this; it needs a design pass upstream.** |
 | Nothing about a deleted environment | A danger alert above the meta row, with **Recover this environment** | The sheet draws a live environment. A deleted one changes what every number under it means, and it has a deadline; see "Deleted environments" above. |
 | One long page: Updates, Apps, Environment settings | Four tabs under the meta row - **Overview** (the Updates card, both windows, the three settings), **Apps** (scheduled installs, installed apps, AppSource updates waiting, Upload an app), **Operations**, **Toolbox history** | The page had grown past what the sheet drew (uploads, app updates, the delivery window, history) and the thing looked for was a long scroll away. The head, the freshness strip, the result line and the meta row stay above the tabs because they are true on every one. The tabs are real links (`/environments/{id}/apps`), so one can be bookmarked and Back works; the page reads the environment once per id, and a change of tab reads only what that tab shows - Overview and Apps share the one cached panel, Operations has its own read, History asks Business Central nothing. Refresh re-reads the open tab. Maintainer's decision, 2026-09-20; needs a design pass upstream. |
 | No operations list | **Operations**: Business Central's own record for the environment (`GET .../environments/{name}/operations`) - app installs, updates and uninstalls, platform updates, restarts, renames, setting changes - newest first, each as a sentence with a status, who started it, when (the solution's time zone) and how long it took; a failure carries Business Central's message | Toolbox history is what *we* did from here (named so at the tab strip, where the choice between the two is made); an update started in the admin centre, or one Microsoft ran overnight, is only in Business Central's record. Two tabs rather than one merged timeline until there is real data to judge a merge by. Read live on every visit, never cached: the point is to watch something finish. Manage-gated like the panel, and read-only. Operation types and statuses are worded in `BcEnvironmentOperationDisplay`; one Microsoft adds later is spaced out into words rather than shown as the wire token. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation. |

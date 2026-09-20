@@ -87,6 +87,19 @@
                 <span>Open the admin centre</span>
             </a>
         }
+        @* The most common thing this page's reader would otherwise open the admin
+           centre for. An outline button like its neighbours: it writes to the
+           customer's tenant, and nothing on this page is the primary action. A
+           deleted environment has nothing to copy - the alert below offers the one
+           thing left to do to it. *@
+        @if (_canManage && !Row.IsSoftDeleted)
+        {
+            <button type="button" class="btn @(_settingBusy == "copy" ? "btn--loading" : "")"
+                    @onclick="CopyAsync" disabled="@_settingSaving">
+                <Icon Name="copy" Width="15" Height="15" />
+                <span class="btn__label">@(_settingBusy == "copy" ? "Starting the copy" : "Copy this environment...")</span>
+            </button>
+        }
     </Actions>
     <ChildContent>
         <div class="freshness @FreshnessClass()">
@@ -130,7 +143,17 @@
         }
         else if (_settingDone is { } settingDone)
         {
-            <Alert Tone="AlertTone.Success"><span>@settingDone</span></Alert>
+            @* Some outcomes are only half told here: a copy runs for an hour after the
+               page has said it started, so the notice carries the way to go and watch it. *@
+            <Alert Tone="AlertTone.Success">
+                <span>
+                    @settingDone
+                    @if (_settingDoneLink is { } link)
+                    {
+                        <text> </text><a href="@link.Href">@link.Text</a><text>.</text>
+                    }
+                </span>
+            </Alert>
         }
 
         @* The first thing on the page for a deleted environment, because it changes what
@@ -784,6 +807,7 @@
 </ConfirmDialog>
 
 <UploadAppDialog @ref="_uploadDialog" />
+<CopyEnvironmentDialog @ref="_copyDialog" />
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -823,6 +847,7 @@
     private bool _updateInWindow = true;
 
     private UploadAppDialog? _uploadDialog;
+    private CopyEnvironmentDialog? _copyDialog;
 
     /// <summary>What the app in the update dialog waits for, and so what moves with it. Empty for a ready app.</summary>
     private IReadOnlyList<BcAppUpdateRequirement> _updateAlongside = Array.Empty<BcAppUpdateRequirement>();
@@ -832,6 +857,9 @@
     private string? _settingBusy;
     private string? _settingError;
     private string? _settingDone;
+
+    /// <summary>Where to go on from an outcome the page cannot finish telling - a copy that is still running.</summary>
+    private (string Href, string Text)? _settingDoneLink;
 
     /// <summary>The tab in the address: "apps", "operations" or "history". Absent, or anything else, is Overview.</summary>
     [Parameter] public string? OpenTab { get; set; }
@@ -1326,6 +1354,31 @@
             () => UploadAppDialog.DoneMessage(upload, Row.EnvironmentName));
     }
 
+    // ── Copying the environment ─────────────────────────────────────────
+
+    /// <summary>
+    /// Makes a new environment from this one. The dialog collects the name and the type
+    /// and carries the warnings; the write is refused by the service for anyone who does
+    /// not manage the solution, whatever this page offered.
+    /// </summary>
+    private async Task CopyAsync()
+    {
+        if (_copyDialog is null) return;
+        var copy = await _copyDialog.OpenAsync(
+            Row.ProjectName, Row.EnvironmentName, Row.IsProduction, Row.TenantStorageUse);
+        if (copy is null) return;
+
+        var made = await RunSettingWriteAsync("copy",
+            () => Connection.CopyEnvironmentAsync(Row.ProjectId, Id, copy.Name, copy.Type),
+            $"Couldn't copy {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            () => CopyEnvironmentDialog.DoneMessage(copy, Row.EnvironmentName));
+        if (made)
+        {
+            // The copy outlives this page load, so the notice says where to watch it.
+            _settingDoneLink = ($"/environments/{Id}/operations", "Open the Operations tab");
+        }
+    }
+
     // ── Delivery window ─────────────────────────────────────────────────
 
     private bool _windowEditing;
@@ -1533,6 +1586,7 @@
         _settingBusy = busyKey;
         _settingError = null;
         _settingDone = null;
+        _settingDoneLink = null;
         StateHasChanged();
         try
         {

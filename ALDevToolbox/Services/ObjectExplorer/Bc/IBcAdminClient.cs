@@ -122,6 +122,28 @@ public interface IBcAdminClient
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>
+    /// Makes a copy of <paramref name="sourceEnvironmentName"/> under
+    /// <paramref name="newEnvironmentName"/>. A write to the customer's tenant that adds
+    /// an environment to it, so it counts against their allowance and, for a production
+    /// copy, their licences.
+    /// <para>
+    /// Business Central answers with a scheduled operation and takes its time: the new
+    /// environment appears in the environments list as <c>Preparing</c> and turns
+    /// <c>Active</c> when it is ready. Nothing here waits for that — the returned
+    /// <see cref="BcEnvironmentCopy"/> is the operation, and the environment's own
+    /// Operations tab is where it is watched.
+    /// </para>
+    /// <para>
+    /// <paramref name="newEnvironmentType"/> is a <see cref="BcEnvironmentTypes"/> value.
+    /// A refusal comes back as a <see cref="BcApiException"/> whose message is already a
+    /// sentence; the codes Microsoft documents for this endpoint are told apart.
+    /// </para>
+    /// </summary>
+    Task<BcEnvironmentCopy> CopyEnvironmentAsync(
+        string accessToken, string? applicationFamily, string sourceEnvironmentName,
+        string newEnvironmentName, string newEnvironmentType, CancellationToken ct = default);
+
+    /// <summary>
     /// Reads the environment's <em>Microsoft platform-update window</em>
     /// (<c>settings/upgrade</c>) — mirrored as context beside the toolbox's own delivery
     /// slot, never as a source for it. Returns <c>null</c> when the environment has no

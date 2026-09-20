@@ -899,6 +899,110 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// Copies an environment into a new one — almost always a customer's production into a
+    /// fresh sandbox, to try an update or reproduce a problem on real data. Gated on
+    /// managing the solution and confirmed by name at the page, because the copy adds an
+    /// environment to the customer's tenant: it counts against their storage allowance,
+    /// and a production copy against their licences.
+    /// <para>
+    /// Refuses before anything is sent when the source is one the customer has deleted, or
+    /// one Business Central is not reporting as ready — a copy of an environment part-way
+    /// through an update would be a copy of an unknown moment. The name is checked against
+    /// Business Central's rules and against the names this solution already has, so the
+    /// common mistake is answered here rather than as a wire code.
+    /// </para>
+    /// <para>
+    /// Microsoft schedules the copy rather than making it there and then, so the customer's
+    /// environments are re-read afterwards; the new one appears as <c>Preparing</c> once
+    /// Business Central lists it, which may not be on this read. A failed re-read costs the
+    /// freshness, never the write. Recorded in the log and in the <em>source</em>
+    /// environment's Toolbox history — see <c>.design/environment-updates.md</c>,
+    /// "Copying an environment".
+    /// </para>
+    /// </summary>
+    /// <returns>The operation Business Central scheduled, for the log and the Operations tab.</returns>
+    public async Task<BcEnvironmentCopy> CopyEnvironmentAsync(
+        int projectId, int sourceEnvironmentId, string newName, string targetType, CancellationToken ct = default)
+    {
+        if (BcEnvironmentName.Validate(newName) is { } nameProblem)
+        {
+            throw Validation("NewName", nameProblem);
+        }
+        if (BcEnvironmentTypes.Normalize(targetType) is not { } type)
+        {
+            throw Validation("TargetType", "Choose whether the copy is a sandbox or a production environment.");
+        }
+        var name = newName.Trim();
+
+        var env = await ResolveEnvironmentAsync(projectId, sourceEnvironmentId, ct);
+
+        var source = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == env.Id)
+            .Select(e => new { e.SoftDeletedOn, e.Status, e.Type })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
+
+        if (source.SoftDeletedOn is not null || BcEnvironmentStatus.IsSoftDeleted(source.Status))
+        {
+            throw Validation("Environment",
+                $"{env.Name} has been deleted, so there is nothing to copy. Bring it back first.");
+        }
+        // The same reading the delivery gate makes: ready, or a status we have no opinion
+        // about. Anything else is a moving target, and a copy of one is a copy of nothing
+        // anybody can name.
+        if (!BcEnvironmentStatus.CanPublish(source.Status))
+        {
+            throw Validation("Environment",
+                $"Business Central reports {env.Name} as {BcEnvironmentStatus.Humanise(source.Status).ToLowerInvariant()} right now, "
+                + "so it can't be copied. Wait until it is running again, then try again.");
+        }
+
+        // Our mirror, not Business Central's word - but it catches the common mistake
+        // before a round trip, and says which environment is in the way.
+        var taken = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == projectId && e.MissingSince == null)
+            .Select(e => e.Name)
+            .ToListAsync(ct);
+        if (taken.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw Validation("NewName", $"This solution already has an environment called {name}. Pick another name.");
+        }
+
+        BcEnvironmentCopy copy;
+        try
+        {
+            copy = await _adminClient.CopyEnvironmentAsync(env.Token, env.Family, env.Name, name, type, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Environment", ex.Message);
+        }
+
+        await RecordEnvironmentActionAsync(projectId, env.Id, UpgradeActionKind.CopyEnvironment,
+            $"Copied to {name}, a {type.ToLowerInvariant()} environment.", ct);
+
+        _logger.LogInformation(
+            "User {UserId} asked Business Central to copy {Environment} ({SourceType}) to {NewEnvironment} ({Type}) in project {ProjectId}; operation {OperationId} is {Status}.",
+            _orgContext.CurrentUserId, env.Name, source.Type, name, type, projectId, copy.OperationId, copy.Status);
+
+        try
+        {
+            // Already gated above, which is what this entry point requires of its callers.
+            // The copy takes a while, so the new environment may not be listed yet - that
+            // is not a failure, and the page says where to watch it instead.
+            await RefreshEnvironmentsUnattendedAsync(projectId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Asked for a copy of {Environment} but couldn't re-read project {ProjectId}'s environments afterwards.",
+                env.Name, projectId);
+        }
+
+        return copy;
+    }
+
+    /// <summary>
     /// Selects the platform version the environment updates to next — a reschedule of the
     /// customer's Business Central upgrade. Refuses a version the environment doesn't
     /// report as available, so a stale page can't schedule something Microsoft hasn't

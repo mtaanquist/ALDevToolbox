@@ -70,6 +70,7 @@ public sealed class UpgradeFleetService
         var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
         var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
         var actionable = ProjectAccess.UpdateOpsProjectPredicate(snapshot);
+        var manageable = ProjectAccess.ManageProjectPredicate(snapshot);
 
         var query = _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.MissingSince == null);
@@ -82,7 +83,7 @@ public sealed class UpgradeFleetService
         var rows = await query
             .Where(e => _db.OeProjects.Where(visible)
                 .Any(p => p.Id == e.ProjectId && p.DeletedAt == null))
-            .Select(ToRow(actionable))
+            .Select(ToRow(actionable, manageable))
             .ToListAsync(ct).ConfigureAwait(false);
 
         // Ordered in memory: "Production first" is a presentation rule, not something
@@ -108,13 +109,14 @@ public sealed class UpgradeFleetService
         var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
         var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
         var actionable = ProjectAccess.UpdateOpsProjectPredicate(snapshot);
+        var manageable = ProjectAccess.ManageProjectPredicate(snapshot);
 
         var found = _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.Id == environmentId && e.MissingSince == null)
             .Where(e => _db.OeProjects.Where(visible)
                 .Any(p => p.Id == e.ProjectId && p.DeletedAt == null));
 
-        var row = await found.Select(ToRow(actionable)).FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        var row = await found.Select(ToRow(actionable, manageable)).FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (row is null) return null;
 
         // The same filtered query, so visibility is decided once and not re-argued here.
@@ -150,11 +152,12 @@ public sealed class UpgradeFleetService
 
     /// <summary>
     /// The fleet row for one environment. Shared by the list and the single read so the
-    /// two cannot disagree about what a row says; the "may act" answer stays a subquery
+    /// two cannot disagree about what a row says; both "may act" answers stay subqueries
     /// either way.
     /// </summary>
     private Expression<Func<OeProjectEnvironment, UpgradeFleetRow>> ToRow(
-        Expression<Func<OeProject, bool>> actionable) =>
+        Expression<Func<OeProject, bool>> actionable,
+        Expression<Func<OeProject, bool>> manageable) =>
         e => new UpgradeFleetRow(
             e.ProjectId,
             e.Project!.Name,
@@ -182,7 +185,8 @@ public sealed class UpgradeFleetService
                 .Where(x => x.ProjectId == e.ProjectId && x.MissingSince == null)
                 .Sum(x => x.BcDatabaseKb),
             e.SoftDeletedOn,
-            e.HardDeletePendingOn);
+            e.HardDeletePendingOn,
+            _db.OeProjects.Where(manageable).Any(p => p.Id == e.ProjectId));
 
     /// <summary>
     /// Asks Business Central for fresh answers about <paramref name="projectIds"/> by
@@ -303,7 +307,14 @@ public sealed record UpgradeFleetRow(
     /// good. Null when Microsoft did not say, which is a different fact from "not deleted"
     /// and the pages word it as one.
     /// </summary>
-    DateTime? HardDeletePendingOn = null)
+    DateTime? HardDeletePendingOn = null,
+    /// <summary>
+    /// True when the caller manages this row's solution - its owner, an org admin, or
+    /// anyone on a team assigned to it. What decides whether a list offers this row an
+    /// action that only a manager may take; never a substitute for the service-side
+    /// check, which <see cref="ProjectConnectionService"/> makes on every write.
+    /// </summary>
+    bool CanManage = false)
 {
     /// <summary>
     /// True for an environment the customer deleted and Business Central is still
