@@ -175,6 +175,43 @@ public sealed class BcEnvironmentSettingsClientTests
         message.Should().NotContain(code, "the wire code is not what a consultant reads");
     }
 
+    /// <summary>
+    /// The recovery goes to the environment's own <c>recover</c> route and carries no
+    /// body: the environment is named by the route and everything else is Microsoft's to
+    /// decide.
+    /// </summary>
+    [Fact]
+    public async Task The_recover_write_posts_to_the_recover_route_with_no_body()
+    {
+        var (client, handler) = Client(HttpStatusCode.Accepted,
+            """{"id":"1f8f","type":"recover","status":"scheduled"}""");
+
+        await client.RecoverEnvironmentAsync(Token, Family, "JLE-260911110359");
+
+        handler.Method.Should().Be(HttpMethod.Post);
+        handler.Url!.AbsolutePath.Should().EndWith("/environments/JLE-260911110359/recover");
+        handler.Body.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Microsoft's two refusals for this endpoint are different situations with different
+    /// next steps, so a consultant is told which - never the wire code.
+    /// </summary>
+    [Theory]
+    [InlineData("deletedEnvironmentRecoveryInProgress", "already bringing this environment back")]
+    [InlineData("invalidStatusCannotRecoverDeletedEnvironment", "in the state it is in now")]
+    [InlineData("environmentNotFound", "no longer has this environment")]
+    public async Task A_refused_recovery_is_described_by_its_code(string code, string expected)
+    {
+        var (client, _) = Client(HttpStatusCode.BadRequest, $$"""{"code":"{{code}}","message":"Localized prose."}""");
+
+        var act = () => client.RecoverEnvironmentAsync(Token, Family, "JLE-260911110359");
+
+        var thrown = (await act.Should().ThrowAsync<BcApiException>()).Which;
+        thrown.Message.Should().Contain(expected);
+        thrown.Message.Should().NotContain(code, "the wire code is not what a consultant reads");
+    }
+
     [Fact]
     public void An_unrecognised_refusal_still_names_what_was_being_done()
     {

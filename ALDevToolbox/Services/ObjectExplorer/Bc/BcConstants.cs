@@ -123,6 +123,13 @@ internal static class BcConstants
     public static string EnvironmentAppCadenceUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/appSourceAppsUpdateCadence";
 
+    /// <summary>
+    /// Brings back an environment the customer deleted, while Microsoft is still keeping
+    /// it. POST with no body; the answer is an operation, not the environment.
+    /// </summary>
+    public static string EnvironmentRecoverUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/recover";
+
     /// <summary>Whether people holding only a Microsoft 365 licence may sign in to the environment.</summary>
     public static string EnvironmentM365AccessUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/accesswithm365licenses";

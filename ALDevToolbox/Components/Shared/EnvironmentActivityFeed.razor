@@ -122,6 +122,7 @@ else
     {
         if (entry.Kind == UpgradeActionKind.UpdateApp) return "Updated an AppSource app";
         if (entry.Kind == UpgradeActionKind.UploadApp) return "Uploaded an app";
+        if (entry.Kind == UpgradeActionKind.RecoverEnvironment) return "Recovered the environment";
         if (entry.Kind == UpgradeActionKind.PushDateToLatest)
         {
             return entry.IsBooking

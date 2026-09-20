@@ -122,6 +122,32 @@ public sealed class UpgradesPageTests : IDisposable
         return cut;
     }
 
+    /// <summary>
+    /// The page exists to move update dates, and a deleted environment's date cannot be
+    /// moved: Business Central offers it no update at all. It is dropped in the fleet
+    /// query rather than in the page, so the counts, the checkbox selection and the two
+    /// bulk actions all agree without each having to remember.
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_environment_is_not_on_the_upgrades_table_at_all()
+    {
+        await SeedOneEnvironmentAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var env = await ctx.OeProjectEnvironments.SingleAsync(e => e.Name == "Production");
+            env.Status = "SoftDeleted";
+            env.SoftDeletedOn = DateTime.UtcNow.AddDays(-2);
+            env.HardDeletePendingOn = DateTime.UtcNow.AddDays(12);
+            await ctx.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<UpgradesPage>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".empty-state").Should().NotBeEmpty());
+        cut.FindAll(".data-table tbody tr").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Production");
+    }
+
     [Fact]
     public async Task The_first_column_names_the_record_the_way_the_rest_of_the_app_does()
     {

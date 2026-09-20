@@ -222,6 +222,139 @@ public sealed class EnvironmentsListTests : IDisposable
         running.TextContent.Should().NotContain("Running", "a healthy row spends no words on its state");
     }
 
+    // ── Deleted environments live in a view of their own ──────────────────
+
+    /// <summary>Marks a seeded environment as one the customer deleted.</summary>
+    private async Task SoftDeleteAsync(string name, DateTime? goneForGood)
+    {
+        await using var ctx = _db.NewContext();
+        var env = await ctx.OeProjectEnvironments.SingleAsync(e => e.Name == name);
+        env.Status = "SoftDeleted";
+        env.SoftDeletedOn = DateTime.UtcNow.AddDays(-2);
+        env.HardDeletePendingOn = goneForGood;
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// A deleted environment cannot be published to or updated, so listing it beside the
+    /// live ones makes the fleet look both bigger and sicker than it is. In particular it
+    /// must not count under Needs attention, which is a list of things to go and do.
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_environment_is_out_of_the_working_views_and_out_of_needs_attention()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(id, "JLE-260911110359", "Sandbox", "Active", now, now);
+        await SoftDeleteAsync("JLE-260911110359", new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
+        cut.Find(".data-table tbody tr").TextContent.Should().Contain("Production");
+        cut.Markup.Should().NotContain("JLE-260911110359", "the default view is the fleet you can work with");
+
+        var tabs = cut.FindAll(".pill-tab").Select(t => t.TextContent.Trim()).ToList();
+        tabs.First(t => t.StartsWith("All")).Should().EndWith("1");
+        tabs.First(t => t.StartsWith("Needs attention")).Should()
+            .EndWith("0", "a deleted environment is not something somebody has to go and fix");
+        tabs.Should().Contain(t => t.StartsWith("Deleted"));
+    }
+
+    /// <summary>
+    /// Nothing deleted is the normal state, and a view that is always empty is one people
+    /// learn to ignore - which is the view that has to be noticed on the fortnight it
+    /// isn't empty.
+    /// </summary>
+    [Fact]
+    public async Task The_deleted_view_is_not_offered_when_nothing_has_been_deleted()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
+        cut.FindAll(".pill-tab").Select(t => t.TextContent.Trim())
+            .Should().NotContain(t => t.StartsWith("Deleted"));
+    }
+
+    [Fact]
+    public async Task The_deleted_view_says_when_each_one_goes_for_good_and_offers_to_bring_it_back()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "JLE-260911110359", "Sandbox", "Active", now, now);
+        await SoftDeleteAsync("JLE-260911110359", new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Deleted")).Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            var row = cut.FindAll(".data-table tbody tr").Should().ContainSingle().Subject;
+            row.TextContent.Should().Contain("JLE-260911110359");
+            row.QuerySelectorAll(".cell-stack__sub").Last().TextContent
+                .Should().Be("Gone for good on 04 Oct 2026");
+        });
+
+        cut.FindAll("button.menu__item").Select(b => b.TextContent.Trim())
+            .Should().Contain("Recover this environment...")
+            .And.NotContain("Upload an app...", "nothing can be installed on a deleted environment");
+    }
+
+    /// <summary>
+    /// Microsoft does not always give the date. An unknown one is said plainly rather
+    /// than left as a dash the reader would have to take as "no deadline".
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_environment_with_no_deadline_from_microsoft_says_so()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "JLE", "Sandbox", "Active", now, now);
+        await SoftDeleteAsync("JLE", goneForGood: null);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Deleted")).Click());
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".data-table tbody tr .cell-stack__sub").Last().TextContent
+                .Should().Be("Business Central hasn't said when it goes for good"));
+    }
+
+    /// <summary>
+    /// The confirm names the environment and its customer before a write reaches the
+    /// tenant, and says out loud when the environment is a production one.
+    /// </summary>
+    [Fact]
+    public async Task Recovering_asks_first_and_names_the_environment_and_its_customer()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "JLE-260911110359", "Production", "Active", now, now);
+        await SoftDeleteAsync("JLE-260911110359", new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Deleted")).Click());
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Recover this environment...").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Bring back JLE-260911110359, a production environment?");
+            cut.Markup.Should().Contain("CRONUS Denmark");
+        });
+    }
+
     // ── Storage: the environment's size, the customer's tenant against its allowance ──
 
     private async Task SetStorageAsync(int projectId, long quotaKb, params (string Environment, long Kb)[] sizes)

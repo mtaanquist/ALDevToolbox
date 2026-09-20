@@ -5,6 +5,7 @@ using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
@@ -198,6 +199,63 @@ public sealed class CustomerModuleServiceTests : IDisposable
 
         (await svc.ListProjectIdsWithModuleAsync(capture)).Should().BeEquivalentTo([online, onPrem]);
         (await svc.ListCatalogAsync()).Single().Solutions.Should().Be(2);
+    }
+
+    /// <summary>Marks a seeded environment as one the customer deleted.</summary>
+    private async Task SoftDeleteEnvironmentAsync(int environmentId)
+    {
+        await using var ctx = _db.NewContext();
+        var env = await ctx.OeProjectEnvironments.SingleAsync(e => e.Id == environmentId);
+        env.Status = "SoftDeleted";
+        env.SoftDeletedOn = DateTime.UtcNow.AddDays(-2);
+        env.HardDeletePendingOn = DateTime.UtcNow.AddDays(12);
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The card reads from the customer's production environment. A deleted one still has
+    /// its app list in our mirror, but it lists what was installed on the day it was
+    /// deleted - which is not what the customer has now, and would quietly become the
+    /// answer the moment a production environment is deleted.
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_environment_is_never_the_one_the_modules_are_read_from()
+    {
+        await AddToCatalogAsync("Continia Document Capture", "Continia Software", CaptureAppId);
+        var fornav = Guid.NewGuid();
+        await AddToCatalogAsync("ForNAV", "ForNAV", fornav);
+        var id = await SeedSolutionAsync("CRONUS Denmark", ProjectHostingType.MicrosoftCloud);
+        var deleted = await SeedEnvironmentAsync(id, "Production", "Production",
+            (CaptureAppId, "Document Capture", "Continia Software", "25.1.0.0"));
+        await SeedEnvironmentAsync(id, "Live", "Production", (fornav, "ForNAV", "ForNAV", "8.1.0.0"));
+        await SoftDeleteEnvironmentAsync(deleted);
+
+        await using var ctx = _db.NewContext();
+        var modules = await Svc(ctx).GetSolutionModulesAsync(id);
+
+        modules.EnvironmentName.Should().Be("Live");
+        modules.Modules.Select(m => m.Name).Should().Equal("ForNAV");
+    }
+
+    /// <summary>
+    /// And the Solutions list's filter reads the same environments, so a customer never
+    /// appears under a module only their deleted environment had.
+    /// </summary>
+    [Fact]
+    public async Task The_module_filter_ignores_apps_on_a_deleted_environment()
+    {
+        var capture = await AddToCatalogAsync("Continia Document Capture", "Continia Software", CaptureAppId);
+        var keeps = await SeedSolutionAsync("CRONUS Denmark", ProjectHostingType.MicrosoftCloud);
+        await SeedEnvironmentAsync(keeps, "Production", "Production",
+            (CaptureAppId, "Document Capture", "Continia Software", "25.1.0.0"));
+        var lost = await SeedSolutionAsync("CRONUS Norway", ProjectHostingType.MicrosoftCloud);
+        var deleted = await SeedEnvironmentAsync(lost, "Production", "Production",
+            (CaptureAppId, "Document Capture", "Continia Software", "25.1.0.0"));
+        await SoftDeleteEnvironmentAsync(deleted);
+
+        await using var ctx = _db.NewContext();
+
+        (await Svc(ctx).ListProjectIdsWithModuleAsync(capture)).Should().BeEquivalentTo([keeps]);
     }
 
     [Fact]

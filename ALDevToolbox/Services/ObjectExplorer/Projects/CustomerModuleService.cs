@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Projects;
@@ -158,7 +159,10 @@ public sealed class CustomerModuleService
         }
 
         // Production first; a solution with only sandboxes still has something to show.
+        // A deleted environment is never the one read from: its app list is whatever was
+        // installed on the day it was deleted, which is not what the customer has now.
         var environments = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(EnvironmentQueries.NotSoftDeleted)
             .Where(e => e.ProjectId == projectId && e.MissingSince == null)
             .Select(e => new { e.Id, e.Name, e.Type })
             .ToListAsync(ct);
@@ -244,8 +248,13 @@ public sealed class CustomerModuleService
             .Where(m => m.ModuleId == moduleId).Select(m => m.ProjectId).ToListAsync(ct);
         if (module.AppId is { } appId)
         {
+            // The same environments the card reads from, so the filter and the card
+            // cannot disagree about which customers have a module.
+            var live = _db.OeProjectEnvironments.AsNoTracking()
+                .Where(EnvironmentQueries.NotSoftDeleted)
+                .Where(e => e.MissingSince == null);
             ids.AddRange(await _db.OeEnvironmentApps.AsNoTracking()
-                .Where(a => a.AppId == appId && a.Environment!.MissingSince == null)
+                .Where(a => a.AppId == appId && live.Any(e => e.Id == a.EnvironmentId))
                 .Select(a => a.Environment!.ProjectId).ToListAsync(ct));
         }
         return ids.ToHashSet();

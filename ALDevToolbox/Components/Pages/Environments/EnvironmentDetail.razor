@@ -133,6 +133,38 @@
             <Alert Tone="AlertTone.Success"><span>@settingDone</span></Alert>
         }
 
+        @* The first thing on the page for a deleted environment, because it changes what
+           everything below it means: the version, the windows and the app lists are all
+           the state it was in when the customer deleted it. It says the deadline, not
+           just the fact, since the deadline is the only thing anyone can still act on. *@
+        @if (Row.IsSoftDeleted)
+        {
+            <Alert Tone="AlertTone.Danger" Block="true">
+                <span>
+                    <b>@Row.EnvironmentName has been deleted@(Row.SoftDeletedOn is { } deletedOn ? $" on {deletedOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}" : "").</b>
+                    @if (Row.HardDeletePendingOn is { } goneOn)
+                    {
+                        <text> Business Central is keeping it until @goneOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture), and after that it is gone for good.</text>
+                    }
+                    else
+                    {
+                        <text> Business Central keeps a deleted environment for a fortnight and hasn't said when this one goes for good.</text>
+                    }
+                    <text> Nothing can be installed on it or updated until it is back.</text>
+                    @if (_canManage)
+                    {
+                        <span class="env-detail__recover">
+                            <button type="button" class="btn btn--sm @(_settingBusy == "recover" ? "btn--loading" : "")"
+                                    @onclick="RecoverAsync" disabled="@_settingSaving">
+                                <Icon Name="archive-restore" Width="14" Height="14" />
+                                <span class="btn__label">Recover this environment</span>
+                            </button>
+                        </span>
+                    }
+                </span>
+            </Alert>
+        }
+
         @* Under the freshness strip, as the sheet has it, so the strip qualifies the
            numbers below it - which is why this is not the frame's Meta slot. *@
         <div class="meta-row">
@@ -1396,6 +1428,31 @@
             () => enable
                 ? $"Business Central now allows Microsoft 365 licence sign-in on {Row.EnvironmentName}."
                 : $"Business Central no longer allows Microsoft 365 licence sign-in on {Row.EnvironmentName}.");
+    }
+
+    /// <summary>
+    /// Brings the environment back while Business Central is still keeping it. Confirmed
+    /// by name, and louder when it is a production environment: recovering one puts a
+    /// customer's live data back in front of their users.
+    /// </summary>
+    private async Task RecoverAsync()
+    {
+        if (_confirm is null) return;
+
+        var confirmed = await _confirm.OpenAsync(
+            Row.IsProduction
+                ? $"Bring back {Row.EnvironmentName}, a production environment?"
+                : $"Bring back {Row.EnvironmentName}?",
+            $"{Row.EnvironmentName} ({Row.EnvironmentType}) belongs to {Row.ProjectName}. "
+            + "Business Central will restore it with the data it held when it was deleted, "
+            + "and people will be able to sign in to it again. It takes a few minutes.",
+            "Bring it back", confirmButtonClass: "btn--primary", confirmIcon: "archive-restore");
+        if (!confirmed) return;
+
+        await RunSettingWriteAsync("recover",
+            () => Connection.RecoverEnvironmentAsync(Row.ProjectId, Id),
+            $"Couldn't bring {Row.EnvironmentName} back. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            () => $"Business Central is bringing {Row.EnvironmentName} back. It can take a few minutes; use Refresh to see where it has got to.");
     }
 
     /// <summary>

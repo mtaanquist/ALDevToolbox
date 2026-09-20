@@ -76,11 +76,7 @@ public sealed class UpgradeFleetService
 
         if (!includeSoftDeleted)
         {
-            // Both signals are checked because either can arrive first; the status
-            // compare is case-insensitive as Microsoft's casing is stored verbatim
-            // (issue #808).
-            query = query.Where(e => e.SoftDeletedOn == null
-                                     && (e.Status == null || e.Status.ToUpper() != "SOFTDELETED"));
+            query = query.Where(EnvironmentQueries.NotSoftDeleted);
         }
 
         var rows = await query
@@ -184,7 +180,9 @@ public sealed class UpgradeFleetService
             // environment the customer has, not just the ones on this page.
             _db.OeProjectEnvironments
                 .Where(x => x.ProjectId == e.ProjectId && x.MissingSince == null)
-                .Sum(x => x.BcDatabaseKb));
+                .Sum(x => x.BcDatabaseKb),
+            e.SoftDeletedOn,
+            e.HardDeletePendingOn);
 
     /// <summary>
     /// Asks Business Central for fresh answers about <paramref name="projectIds"/> by
@@ -297,8 +295,24 @@ public sealed record UpgradeFleetRow(
     /// <summary>What the customer's tenant is allowed across all its environments, in kilobytes.</summary>
     long? TenantQuotaKb = null,
     /// <summary>What all the tenant's environments use together, in kilobytes. Filled by the list, not the query.</summary>
-    long? TenantUsedKb = null)
+    long? TenantUsedKb = null,
+    /// <summary>When the customer deleted the environment; null for one that is still live.</summary>
+    DateTime? SoftDeletedOn = null,
+    /// <summary>
+    /// When Business Central stops keeping the deleted environment and it is gone for
+    /// good. Null when Microsoft did not say, which is a different fact from "not deleted"
+    /// and the pages word it as one.
+    /// </summary>
+    DateTime? HardDeletePendingOn = null)
 {
+    /// <summary>
+    /// True for an environment the customer deleted and Business Central is still
+    /// keeping. Either signal counts, for the reason the mirror stores both. Nothing can
+    /// be published, updated or rescheduled on one, so it is kept out of the working
+    /// lists and shown under its own view.
+    /// </summary>
+    public bool IsSoftDeleted => SoftDeletedOn is not null || BcEnvironmentStatus.IsSoftDeleted(Status);
+
     /// <summary>
     /// How full the customer's tenant is, as a fraction; above 1 when over its allowance,
     /// which Business Central permits. Null until both halves have been read.

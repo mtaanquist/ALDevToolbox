@@ -200,6 +200,86 @@ public sealed class EnvironmentDetailTests : IDisposable
         open.GetAttribute("href").Should().Be($"https://businesscentral.dynamics.com/{TenantId:D}/Production");
     }
 
+    /// <summary>Marks the seeded environment as one the customer deleted.</summary>
+    private async Task SoftDeleteAsync(int environmentId, DateTime? goneForGood)
+    {
+        await using var ctx = _db.NewContext();
+        var env = await ctx.OeProjectEnvironments.SingleAsync(e => e.Id == environmentId);
+        env.Status = "SoftDeleted";
+        env.SoftDeletedOn = new DateTime(2026, 9, 20, 9, 0, 0, DateTimeKind.Utc);
+        env.HardDeletePendingOn = goneForGood;
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// A deleted environment's page leads with the fact and the deadline, because both
+    /// change what everything below them means - the version, the windows and the app
+    /// lists are all the state it was in on the day it was deleted.
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_environment_says_so_at_the_top_with_the_date_it_goes_for_good()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        await SoftDeleteAsync(envId, new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = Render(envId);
+
+        var alert = cut.FindAll(".alert--danger").Should().ContainSingle().Subject;
+        alert.TextContent.Should().Contain("Production has been deleted on 20 Sep 2026");
+        alert.TextContent.Should().Contain("keeping it until 04 Oct 2026");
+        alert.QuerySelector("button")!.TextContent.Should().Contain("Recover this environment");
+    }
+
+    [Fact]
+    public async Task A_deleted_environment_with_no_deadline_from_microsoft_says_how_long_it_normally_keeps_one()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        await SoftDeleteAsync(envId, goneForGood: null);
+
+        var cut = Render(envId);
+
+        cut.Find(".alert--danger").TextContent.Should()
+            .Contain("keeps a deleted environment for a fortnight and hasn't said when this one goes for good");
+    }
+
+    /// <summary>A live environment gets none of it - the alert is not a permanent fixture.</summary>
+    [Fact]
+    public async Task A_live_environment_gets_no_deleted_alert()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+
+        var cut = Render(envId);
+
+        cut.FindAll(".alert--danger").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Recover this environment");
+    }
+
+    /// <summary>
+    /// The confirm names the environment, its customer and says out loud that it is a
+    /// production one, before anything reaches the customer's tenant.
+    /// </summary>
+    [Fact]
+    public async Task Recovering_asks_first_and_names_the_environment()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        await SoftDeleteAsync(envId, new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = Render(envId);
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".alert--danger button").Single(b => b.TextContent.Contains("Recover this environment")).Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Bring back Production, a production environment?");
+            cut.Markup.Should().Contain("CRONUS Denmark");
+        });
+    }
+
     [Fact]
     public async Task Waiting_updates_put_the_ready_ones_first_and_name_what_the_rest_wait_for()
     {

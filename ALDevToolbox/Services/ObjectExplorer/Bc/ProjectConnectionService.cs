@@ -835,6 +835,70 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// Brings back an environment the customer deleted, while Business Central is still
+    /// keeping it — the one write here that undoes somebody else's decision, so it is
+    /// gated on managing the solution and confirmed by name at the page.
+    /// <para>
+    /// Refuses an environment that isn't deleted: there is nothing to recover, and
+    /// Business Central would answer with a code rather than a sentence. Afterwards the
+    /// customer's environments are re-read, because Microsoft schedules the recovery
+    /// rather than doing it there and then and the row's state has to move on its own.
+    /// A failed re-read costs the freshness, never the write.
+    /// </para>
+    /// <para>
+    /// Changes the customer's tenant and touches no row of ours, so it is recorded in the
+    /// log and in the environment's Toolbox history rather than the audit trail — see
+    /// <c>.design/environment-updates.md</c>, "Deleted environments".
+    /// </para>
+    /// </summary>
+    public async Task RecoverEnvironmentAsync(int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+
+        var row = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == env.Id)
+            .Select(e => new { e.SoftDeletedOn, e.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
+
+        if (row.SoftDeletedOn is null && !BcEnvironmentStatus.IsSoftDeleted(row.Status))
+        {
+            throw Validation("Environment",
+                $"{env.Name} hasn't been deleted, so there is nothing to bring back.");
+        }
+
+        try
+        {
+            await _adminClient.RecoverEnvironmentAsync(env.Token, env.Family, env.Name, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Environment", ex.Message);
+        }
+
+        await RecordEnvironmentActionAsync(projectId, env.Id, UpgradeActionKind.RecoverEnvironment,
+            $"Asked Business Central to bring {env.Name} back.", ct);
+
+        _panelCache.Invalidate(projectId, environmentId);
+
+        _logger.LogInformation(
+            "User {UserId} asked for the deleted environment {Environment} (project {ProjectId}) to be recovered.",
+            _orgContext.CurrentUserId, env.Name, projectId);
+
+        try
+        {
+            // Already gated above, which is what this entry point requires of its callers.
+            await RefreshEnvironmentsUnattendedAsync(projectId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Recovered {Environment} but couldn't re-read project {ProjectId}'s environments afterwards.",
+                env.Name, projectId);
+        }
+    }
+
+    /// <summary>
     /// Selects the platform version the environment updates to next — a reschedule of the
     /// customer's Business Central upgrade. Refuses a version the environment doesn't
     /// report as available, so a stale page can't schedule something Microsoft hasn't
@@ -1559,12 +1623,10 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
     /// <summary>
     /// True when the API says this environment has been soft-deleted. Either signal is
-    /// enough, and the status is compared case-insensitively because enum-ish values are
-    /// stored verbatim from Microsoft (see <see cref="BcEnvironment"/>).
+    /// enough: the stamp can arrive without the status and the other way round.
     /// </summary>
     private static bool IsSoftDeleted(BcEnvironment env) =>
-        env.SoftDeletedOn is not null
-        || string.Equals(env.Status?.Trim(), "SoftDeleted", StringComparison.OrdinalIgnoreCase);
+        env.SoftDeletedOn is not null || BcEnvironmentStatus.IsSoftDeleted(env.Status);
 
     /// <summary>
     /// Strips the <c>-yyMMddHHmmss</c> deletion stamp Business Central appends when an

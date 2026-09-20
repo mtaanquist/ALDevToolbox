@@ -33,8 +33,30 @@ public static class BcEnvironmentStatus
     /// <summary>The one status that means "publish away".</summary>
     public const string Active = "Active";
 
+    /// <summary>
+    /// The status of an environment the customer has deleted and Microsoft is still
+    /// keeping — recoverable until the hard delete. Every page that has to tell a
+    /// deleted environment from a live one reads it through <see cref="IsSoftDeleted"/>
+    /// rather than comparing the string itself.
+    /// </summary>
+    public const string SoftDeleted = "SoftDeleted";
+
     private static readonly string[] BusyStatuses = ["Upgrading", "Preparing", "NotReady", "Recovering"];
-    private static readonly string[] DeletingStatuses = ["Removing", "SoftDeleting", "SoftDeleted"];
+    private static readonly string[] DeletingStatuses = ["Removing", "SoftDeleting", SoftDeleted];
+
+    /// <summary>
+    /// True when Business Central reports the environment as deleted-but-recoverable.
+    /// Compared case-insensitively, because the status is stored exactly as Microsoft
+    /// spelled it (see <see cref="BcEnvironment"/>), and trimmed for the same reason.
+    /// <para>
+    /// This is the one lifecycle state the toolbox splits out rather than merely
+    /// describes: a soft-deleted environment cannot be published to, updated or
+    /// rescheduled, so it is kept out of the working lists and shown on its own. See
+    /// <c>.design/environment-updates.md</c>, "Deleted environments".
+    /// </para>
+    /// </summary>
+    public static bool IsSoftDeleted(string? status) =>
+        string.Equals(status?.Trim(), SoftDeleted, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Classifies a status string. Null/blank is <see cref="BcEnvironmentReadiness.Unknown"/>.</summary>
     public static BcEnvironmentReadiness Classify(string? status)

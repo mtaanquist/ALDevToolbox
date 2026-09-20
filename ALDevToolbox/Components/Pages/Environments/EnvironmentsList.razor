@@ -21,9 +21,10 @@
     Upgrades page is the same rows with scheduling on top; this one is the
     read-only view of the same fleet, so they deliberately share the query
     rather than growing a second one that could disagree. The one difference
-    is soft-deleted environments: Upgrades drops them (their update date
-    cannot be moved), this page keeps them, because "deleted, still
-    restorable" is a state worth seeing here.
+    is deleted environments: Upgrades drops them (their update date cannot
+    be moved), this page asks for them and puts them in a view of their own,
+    because an environment Business Central is still keeping is the one
+    thing here somebody can still act on before it is too late.
 
     Nothing here calls Business Central. The rows come from the mirror on
     oe_project_environments, which a nightly sweep and this page's Refresh keep
@@ -170,7 +171,7 @@
     </Filters>
     <Trailing>
         <div class="pill-tabs">
-            @foreach (var tab in AllTabs)
+            @foreach (var tab in Tabs())
             {
                 <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
                         title="@TabHint(tab)" @onclick="() => _tab = tab">
@@ -189,6 +190,17 @@
                     <Text>
                         Every environment reported a healthy state, and none of them are
                         waiting on you.
+                    </Text>
+                </EmptyState>
+            }
+            else if (_tab == Tab.Deleted && NoOtherFilters())
+            {
+                @* The view is only offered when something is in it, so this is what a
+                   reader standing in it sees when a refresh brings the last one back. *@
+                <EmptyState Icon="circle-check" Title="Nothing has been deleted">
+                    <Text>
+                        Business Central isn't holding a deleted environment for any of
+                        these customers.
                     </Text>
                 </EmptyState>
             }
@@ -295,9 +307,18 @@
                                 }
                                 @* Offered on every row and refused by the service for someone
                                    who doesn't manage the solution: the rows don't carry that
-                                   answer, and the refusal says who to ask. *@
-                                <button type="button" class="menu__item" role="menuitem"
-                                        disabled="@_uploading" @onclick="() => UploadAppAsync(row)">Upload an app...</button>
+                                   answer, and the refusal says who to ask. The same reading
+                                   applies to Recover below. *@
+                                @if (row.IsSoftDeleted)
+                                {
+                                    <button type="button" class="menu__item" role="menuitem"
+                                            disabled="@_busy" @onclick="() => RecoverAsync(row)">Recover this environment...</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="menu__item" role="menuitem"
+                                            disabled="@_busy" @onclick="() => UploadAppAsync(row)">Upload an app...</button>
+                                }
                             </RowActions>
                         </td>
                     </tr>
@@ -320,6 +341,7 @@
 </ListPage>
 
 <UploadAppDialog @ref="_uploadDialog" />
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     /// <summary>The fleet, newest read wins. Null while loading; empty means nothing connected.</summary>
@@ -327,10 +349,13 @@
 
     private string? _error;
 
-    /// <summary>The outcome of an upload, shown where a refresh failure would be.</summary>
+    /// <summary>The outcome of an upload or a recovery, shown where a refresh failure would be.</summary>
     private string? _done;
-    private bool _uploading;
+
+    /// <summary>A write from a row menu is in flight; the other rows' menu items wait for it.</summary>
+    private bool _busy;
     private UploadAppDialog? _uploadDialog;
+    private ConfirmDialog? _confirm;
 
     /// <summary>
     /// Set when the initial listing threw. Kept apart from <see cref="_error"/> so the
@@ -355,14 +380,24 @@
     /// </summary>
     private static readonly TimeSpan StaleAfter = TimeSpan.FromHours(36);
 
-    private enum Tab { All, UpdatingSoon, NeedsAttention }
+    private enum Tab { All, UpdatingSoon, NeedsAttention, Deleted }
 
-    private static readonly Tab[] AllTabs = new[] { Tab.All, Tab.UpdatingSoon, Tab.NeedsAttention };
+    /// <summary>
+    /// The views on offer. Deleted only appears when Business Central is actually holding
+    /// one: most of the time nothing has been deleted, and a view that is always empty is
+    /// a place people learn to ignore - which is exactly the view that has to be noticed
+    /// on the fortnight it isn't empty.
+    /// </summary>
+    private Tab[] Tabs() =>
+        (_rows ?? new()).Any(r => r.IsSoftDeleted)
+            ? [Tab.All, Tab.UpdatingSoon, Tab.NeedsAttention, Tab.Deleted]
+            : [Tab.All, Tab.UpdatingSoon, Tab.NeedsAttention];
 
     private static string TabLabel(Tab tab) => tab switch
     {
         Tab.UpdatingSoon => "Update scheduled",
         Tab.NeedsAttention => "Needs attention",
+        Tab.Deleted => "Deleted",
         _ => "All",
     };
 
@@ -376,9 +411,12 @@
     {
         Tab.UpdatingSoon => "Environments with an update date from Business Central",
         Tab.NeedsAttention =>
-            "Environments Business Central reports as suspended or deleted, "
-            + "reported no state for, or that returned something unexpected - "
-            + "and those of a customer at or over their storage allowance",
+            "Environments Business Central reports as suspended, reported no state for, "
+            + "or that returned something unexpected - and those of a customer at or "
+            + "over their storage allowance",
+        Tab.Deleted =>
+            "Environments the customer has deleted. Business Central keeps them for a "
+            + "fortnight, and until then they can be brought back",
         _ => "Every environment you can reach",
     };
 
@@ -529,8 +567,17 @@
         return q.Where(r => MatchesTab(r, _tab));
     }
 
+    /// <summary>
+    /// Which view a row belongs to. A deleted environment appears in exactly one of them:
+    /// nothing can be published, updated or rescheduled on it, so listing it beside the
+    /// live ones makes the fleet look both bigger and sicker than it is - and in
+    /// particular it is not something that "needs attention", which is a list of things
+    /// somebody has to go and do.
+    /// </summary>
     private static bool MatchesTab(UpgradeFleetRow row, Tab tab) => tab switch
     {
+        Tab.Deleted => row.IsSoftDeleted,
+        _ when row.IsSoftDeleted => false,
         Tab.UpdatingSoon => row.NextUpdateDate is not null,
         Tab.NeedsAttention => NeedsAttention(row),
         _ => true,
@@ -560,6 +607,9 @@
     /// </summary>
     private static string NextWhen(UpgradeFleetRow row)
     {
+        // A deleted environment has no next update and never will. What its reader wants
+        // instead is the deadline: after that day Business Central cannot bring it back.
+        if (row.IsSoftDeleted) return GoneForGood(row);
         if (row.NextUpdateDate is { } date) return date.ToString("dd MMM yyyy, HH:mm") + " UTC";
         if (row.NextUpdateVersion is not null) return "Date not announced yet";
         // With nothing scheduled, this line is where the design names a state that is
@@ -568,7 +618,17 @@
     }
 
     /// <summary>The next version, or a dash when Business Central is offering none.</summary>
-    private static string NextVersion(UpgradeFleetRow row) => row.NextUpdateVersion ?? "—";
+    private static string NextVersion(UpgradeFleetRow row) => row.IsSoftDeleted ? "—" : row.NextUpdateVersion ?? "—";
+
+    /// <summary>
+    /// The day a deleted environment stops being recoverable. Microsoft doesn't always
+    /// give the date, and an unknown one is said plainly rather than left as a dash the
+    /// reader has to interpret as "no deadline".
+    /// </summary>
+    private static string GoneForGood(UpgradeFleetRow row) =>
+        row.HardDeletePendingOn is { } gone
+            ? $"Gone for good on {gone:dd MMM yyyy}"
+            : "Business Central hasn't said when it goes for good";
 
     // fetched_at is NOT NULL on the row, so this always has a real answer; the
     // fallback is only for a projection that somehow didn't carry it.
@@ -612,7 +672,7 @@
         var upload = await _uploadDialog.OpenAsync(row.ProjectName, row.EnvironmentName, row.IsProduction);
         if (upload is null) return;
 
-        _uploading = true;
+        _busy = true;
         _error = null;
         _done = null;
         StateHasChanged();
@@ -636,7 +696,57 @@
         }
         finally
         {
-            _uploading = false;
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Brings a deleted environment back. Business Central schedules the recovery rather
+    /// than doing it there and then, so the list is re-read afterwards and the row moves
+    /// out of the Deleted view on its own once Microsoft has finished.
+    /// </summary>
+    private async Task RecoverAsync(UpgradeFleetRow row)
+    {
+        if (_confirm is null) return;
+        var confirmed = await _confirm.OpenAsync(
+            row.IsProduction
+                ? $"Bring back {row.EnvironmentName}, a production environment?"
+                : $"Bring back {row.EnvironmentName}?",
+            $"{row.EnvironmentName} ({row.EnvironmentType}) belongs to {row.ProjectName}. "
+            + "Business Central will restore it with the data it held when it was deleted, "
+            + "and people will be able to sign in to it again. It takes a few minutes.",
+            "Bring it back", confirmButtonClass: "btn--primary", confirmIcon: "archive-restore");
+        if (!confirmed) return;
+
+        _busy = true;
+        _error = null;
+        _done = null;
+        StateHasChanged();
+        try
+        {
+            await Connection.RecoverEnvironmentAsync(row.ProjectId, row.EnvironmentId);
+            _done = $"Business Central is bringing {row.EnvironmentName} back. It moves out of Deleted once it has.";
+            await LoadAsync();
+            // Recovering the last one takes the view away with it; standing in a view
+            // that is no longer offered would look like the page had lost the rows.
+            if (_tab == Tab.Deleted && !Tabs().Contains(Tab.Deleted)) _tab = Tab.All;
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.Values.FirstOrDefault() ?? $"Couldn't bring {row.EnvironmentName} back.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Recovering environment {EnvId} failed.", row.EnvironmentId);
+            _error = $"Couldn't bring {row.EnvironmentName} back. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.";
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 }
