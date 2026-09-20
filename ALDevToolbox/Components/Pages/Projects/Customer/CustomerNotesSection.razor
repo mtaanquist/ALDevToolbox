@@ -1,0 +1,142 @@
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@inject ProjectCustomerInfoService CustomerInfo
+@inject ILogger<CustomerNotesSection> Log
+
+@* Getting in, hosting notes and general notes: prose, read on a call. One editor for
+   the three, because they are written together by the same person. *@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title">Getting in</h2>
+            <p class="card__sub">How to reach the customer's system, where it is hosted, and anything else worth knowing before you connect.</p>
+        </div>
+        @if (CanManage && !_editing && _notes is { IsEmpty: false })
+        {
+            <button type="button" class="btn btn--sm" @onclick="StartEditing">
+                <Icon Name="pencil" Width="14" Height="14" />
+                <span>Edit notes</span>
+            </button>
+        }
+    </div>
+    @if (_notes is null)
+    {
+        <LoadingBlock Text="Loading notes..." />
+    }
+    else if (_editing)
+    {
+        <form @onsubmit="SaveAsync">
+            <div class="card__body cust-notes__editor">
+                <Alert Tone="AlertTone.Info" Role="">
+                    <span>Don't put passwords or keys in these boxes - say where they are kept instead, e.g. "in the password manager, under CRONUS". Each box holds up to 4,000 characters.</span>
+                </Alert>
+                <section class="field">
+                    <label class="field__label" for="cust-access">How to get in</label>
+                    <textarea id="cust-access" class="textarea" rows="5" maxlength="@ProjectCustomerInfoService.NotesMaxLength"
+                              @bind="_access" disabled="@_saving" placeholder="e.g. VPN through the customer's portal, then remote desktop to CRONUS-BC01. Ask their IT for an account."></textarea>
+                    <FieldError Field="AccessDescription" Errors="_errors" />
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-hostnotes">Hosting notes</label>
+                    <textarea id="cust-hostnotes" class="textarea" rows="3" maxlength="@ProjectCustomerInfoService.NotesMaxLength"
+                              @bind="_hosting" disabled="@_saving" placeholder="e.g. Two servers: CRONUS-BC01 (service tier) and CRONUS-SQL01."></textarea>
+                    <FieldError Field="HostingNotes" Errors="_errors" />
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-knowledge">Good to know</label>
+                    <textarea id="cust-knowledge" class="textarea" rows="4" maxlength="@ProjectCustomerInfoService.NotesMaxLength"
+                              @bind="_knowledge" disabled="@_saving" placeholder="e.g. Month-end runs on the last working day - avoid restarts then."></textarea>
+                    <FieldError Field="KnowledgeNotes" Errors="_errors" />
+                </section>
+                @if (_error is { } error)
+                {
+                    <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+                }
+            </div>
+            <div class="card__foot">
+                <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving"><span class="btn__label">Save notes</span></button>
+                <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+            </div>
+        </form>
+    }
+    else if (_notes.IsEmpty)
+    {
+        <EmptyState Icon="key-round" Title="Nobody has written down how to get in" Quiet="true">
+            <Text>@(CanManage ? "A few lines here save the next person a phone call." : "The solution's owner or an administrator can add it.")</Text>
+            <Action>
+                @if (CanManage)
+                {
+                    <button type="button" class="btn btn--sm" @onclick="StartEditing">Add notes</button>
+                }
+            </Action>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="card__body cust-notes">
+            @if (_notes.AccessDescription is { } access)
+            {
+                <div><h3 class="cust-notes__label">How to get in</h3><p class="cust-notes__text">@access</p></div>
+            }
+            @if (_notes.HostingNotes is { } hosting)
+            {
+                <div><h3 class="cust-notes__label">Hosting notes</h3><p class="cust-notes__text">@hosting</p></div>
+            }
+            @if (_notes.KnowledgeNotes is { } knowledge)
+            {
+                <div><h3 class="cust-notes__label">Good to know</h3><p class="cust-notes__text">@knowledge</p></div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    private CustomerNotes? _notes;
+    private bool _editing;
+    private bool _saving;
+    private string? _error;
+    private Dictionary<string, string> _errors = new();
+    private string _access = string.Empty;
+    private string _hosting = string.Empty;
+    private string _knowledge = string.Empty;
+
+    /// <summary>What the tab read for this section. The section re-reads for itself only after its own writes.</summary>
+    [Parameter, EditorRequired] public CustomerNotes Initial { get; set; } = default!;
+
+    protected override void OnParametersSet() => _notes ??= Initial;
+
+    private void StartEditing()
+    {
+        _access = _notes!.AccessDescription ?? string.Empty;
+        _hosting = _notes.HostingNotes ?? string.Empty;
+        _knowledge = _notes.KnowledgeNotes ?? string.Empty;
+        _errors = new();
+        _error = null;
+        _editing = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await CustomerInfo.SaveNotesAsync(Id, new CustomerNotes(_access, _hosting, _knowledge));
+            _notes = await CustomerInfo.GetNotesAsync(Id) ?? _notes;
+            _editing = false;
+        }
+        catch (PlanValidationException ex) { _errors = new(ex.Errors); }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save customer notes for project {ProjectId}.", Id);
+            _error = "Couldn't save the notes. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+}

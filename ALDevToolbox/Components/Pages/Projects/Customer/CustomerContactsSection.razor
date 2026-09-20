@@ -1,0 +1,235 @@
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@inject ProjectCustomerInfoService CustomerInfo
+@inject ILogger<CustomerContactsSection> Log
+
+@* A handful of contacts per customer, read far more than written: a list with one
+   editor at a time and an obvious Add button, not a grid. *@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title">Contacts</h2>
+            <p class="card__sub">Who to call or write to - at the customer, at their hosting or IT partner, at another Microsoft partner, or here with us.</p>
+        </div>
+        @if (CanManage && !_editing && _rows is { Count: > 0 })
+        {
+            <button type="button" class="btn btn--sm" @onclick="() => StartEditing(null)">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>Add contact</span>
+            </button>
+        }
+    </div>
+    @if (_rows is null)
+    {
+        <LoadingBlock Text="Loading contacts..." />
+    }
+    else
+    {
+        @if (_editing)
+        {
+            <form @onsubmit="() => SaveAsync()">
+                <div class="card__body">
+                    <div class="form-grid">
+                        <section class="field">
+                            <label class="field__label" for="contact-name">Name</label>
+                            <input id="contact-name" type="text" class="input" maxlength="100" required @ref="_firstField"
+                                   @bind="_name" disabled="@_saving" placeholder="e.g. Annette Hill" />
+                            <FieldError Field="Name" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="contact-type">Where they work</label>
+                            <SelectBox>
+                                <select id="contact-type" class="select" @bind="_type" disabled="@_saving">
+                                    @foreach (var option in Enum.GetValues<ProjectContactType>())
+                                    {
+                                        <option value="@option">@TypeText(option)</option>
+                                    }
+                                </select>
+                            </SelectBox>
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="contact-company">Company</label>
+                            <input id="contact-company" type="text" class="input" maxlength="100"
+                                   @bind="_company" disabled="@_saving" placeholder="e.g. CRONUS A/S" />
+                            <FieldError Field="Company" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="contact-email">Email</label>
+                            <input id="contact-email" type="email" class="input" maxlength="200"
+                                   @bind="_email" disabled="@_saving" placeholder="e.g. annette@cronus.example" />
+                            <FieldError Field="Email" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="contact-phone">Phone</label>
+                            <input id="contact-phone" type="tel" class="input" maxlength="50"
+                                   @bind="_phone" disabled="@_saving" placeholder="e.g. +45 12 34 56 78" />
+                            <FieldError Field="Phone" Errors="_errors" />
+                        </section>
+                    </div>
+                    @if (_error is { } error)
+                    {
+                        <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+                    }
+                </div>
+                <div class="card__foot">
+                    <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
+                        <span class="btn__label">@(_editingId is null ? "Add contact" : "Save contact")</span>
+                    </button>
+                    @if (_editingId is null)
+                    {
+                        <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => SaveAsync(another: true)">Save and add another</button>
+                    }
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+                </div>
+            </form>
+        }
+        @if (!_editing && _error is { } listError)
+        {
+            <div class="card__body"><Alert Tone="AlertTone.Danger"><span>@listError</span></Alert></div>
+        }
+        @if (_rows.Count == 0 && !_editing)
+        {
+            <EmptyState Icon="mail" Title="No contacts yet" Quiet="true">
+                <Text>@(CanManage ? "Start with the person at the customer who knows their Business Central." : "The solution's owner or an administrator can add them.")</Text>
+                <Action>
+                    @if (CanManage)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="() => StartEditing(null)">Add contact</button>
+                    }
+                </Action>
+            </EmptyState>
+        }
+        else if (_rows.Count > 0)
+        {
+            <ul class="cust-list">
+                @foreach (var row in _rows)
+                {
+                    <li class="cust-list__row" @key="row.Id">
+                        <span class="cust-list__main">
+                            <span class="cust-list__name">@row.Name</span>
+                            <span class="tag">@TypeText(row.Type)</span>
+                            @if (row.Company is { } company)
+                            {
+                                <span class="u-muted">@company</span>
+                            }
+                        </span>
+                        <span class="cust-list__detail">
+                            @if (row.Email is { } email)
+                            {
+                                <a href="@($"mailto:{email}")">@email</a>
+                            }
+                            @if (row.Phone is { } phone)
+                            {
+                                <a href="@($"tel:{phone.Replace(" ", string.Empty)}")">@phone</a>
+                            }
+                        </span>
+                        @if (CanManage)
+                        {
+                            <span class="cust-list__actions">
+                                <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => StartEditing(row)"
+                                        aria-label="@($"Edit {row.Name}")">Edit</button>
+                                <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => RemoveAsync(row)"
+                                        aria-label="@($"Remove {row.Name}")">Remove</button>
+                            </span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    private List<CustomerContact>? _rows;
+    private bool _editing;
+    private int? _editingId;
+    private bool _saving;
+    private string? _error;
+    private Dictionary<string, string> _errors = new();
+    private ConfirmDialog? _confirm;
+    private ElementReference _firstField;
+    private bool _focusPending;
+
+    private string _name = string.Empty;
+    private ProjectContactType _type = ProjectContactType.Customer;
+    private string _company = string.Empty;
+    private string _email = string.Empty;
+    private string _phone = string.Empty;
+
+    /// <summary>What the tab read for this section. The section re-reads for itself only after its own writes.</summary>
+    [Parameter, EditorRequired] public List<CustomerContact> Initial { get; set; } = default!;
+
+    protected override void OnParametersSet() => _rows ??= Initial;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending || !_editing) return;
+        _focusPending = false;
+        try { await _firstField.FocusAsync(); }
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException or Microsoft.JSInterop.JSDisconnectedException) { }
+    }
+
+    private void StartEditing(CustomerContact? row)
+    {
+        _editingId = row?.Id;
+        _name = row?.Name ?? string.Empty;
+        _type = row?.Type ?? ProjectContactType.Customer;
+        _company = row?.Company ?? string.Empty;
+        _email = row?.Email ?? string.Empty;
+        _phone = row?.Phone ?? string.Empty;
+        _errors = new();
+        _error = null;
+        _editing = true;
+        _focusPending = true;
+    }
+
+    private async Task SaveAsync(bool another = false)
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await CustomerInfo.SaveContactAsync(Id, _editingId, new CustomerContactInput(_type, _name, _company, _email, _phone));
+            _rows = await CustomerInfo.ListContactsAsync(Id);
+            // At rollout somebody types in a few contacts for each of a hundred customers.
+            if (another) StartEditing(null); else _editing = false;
+        }
+        catch (PlanValidationException ex) { _errors = new(ex.Errors); }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save a contact for project {ProjectId}.", Id);
+            _error = "Couldn't save the contact. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemoveAsync(CustomerContact row)
+    {
+        if (_confirm is null) return;
+        if (!await _confirm.OpenAsync($"Remove {row.Name}?", "They come off this solution's contacts. Nothing else changes.", "Remove contact")) return;
+        try
+        {
+            await CustomerInfo.DeleteContactAsync(Id, row.Id);
+            _rows = await CustomerInfo.ListContactsAsync(Id);
+        }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+    }
+
+    internal static string TypeText(ProjectContactType type) => type switch
+    {
+        ProjectContactType.Customer => "At the customer",
+        ProjectContactType.HostingPartner => "At their hosting or IT partner",
+        ProjectContactType.MicrosoftPartner => "At another Microsoft partner",
+        ProjectContactType.Internal => "Here with us",
+        _ => type.ToString(),
+    };
+}

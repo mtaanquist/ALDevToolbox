@@ -162,4 +162,123 @@ public sealed class ProjectCustomerInfoServiceTests : IDisposable
 
         await act.Should().ThrowAsync<ProjectAccessDeniedException>();
     }
+
+    // ── Notes and the three lists ───────────────────────────────────────
+
+    [Fact]
+    public async Task Notes_round_trip_and_blank_clears()
+    {
+        var id = await SeedAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx).SaveNotesAsync(id, new CustomerNotes("  VPN, then CRONUS-BC01 ", "   ", null));
+
+        await using var read = _db.NewContext();
+        var notes = await Svc(read).GetNotesAsync(id);
+
+        notes.Should().Be(new CustomerNotes("VPN, then CRONUS-BC01", null, null));
+    }
+
+    [Fact]
+    public async Task Notes_longer_than_the_column_are_refused_by_field()
+    {
+        var id = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        var act = () => Svc(ctx).SaveNotesAsync(id, new CustomerNotes(new string('x', 4001), null, null));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Keys.Should().Equal("AccessDescription");
+    }
+
+    [Fact]
+    public async Task Contacts_list_the_customers_own_people_first_and_can_be_changed_and_removed()
+    {
+        var id = await SeedAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = Svc(ctx);
+            await svc.SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.HostingPartner, "Peter Saddow", "CRONUS Hosting", null, "+45 87 65 43 21"));
+            await svc.SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.Customer, "Annette Hill", null, "annette@cronus.example", null));
+        }
+
+        await using var read = _db.NewContext();
+        var contacts = await Svc(read).ListContactsAsync(id);
+        contacts.Select(c => c.Name).Should().Equal("Annette Hill", "Peter Saddow");
+
+        await Svc(read).SaveContactAsync(id, contacts[0].Id, new CustomerContactInput(ProjectContactType.Customer, "Annette Hill-Jensen", null, "annette@cronus.example", null));
+        await Svc(read).DeleteContactAsync(id, contacts[1].Id);
+
+        (await Svc(read).ListContactsAsync(id)).Select(c => c.Name).Should().Equal("Annette Hill-Jensen");
+    }
+
+    [Theory]
+    [InlineData(null, "a@cronus.example", null, "Name")]
+    [InlineData("Annette Hill", null, null, "Email")]
+    [InlineData("Annette Hill", "not an email", null, "Email")]
+    public async Task A_contact_needs_a_name_and_a_way_to_reach_them(string? name, string? email, string? phone, string field)
+    {
+        var id = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        var act = () => Svc(ctx).SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.Customer, name, null, email, phone));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey(field);
+    }
+
+    [Fact]
+    public async Task A_colleague_is_listed_once_and_their_role_is_edited_rather_than_stacked()
+    {
+        var id = await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        await svc.SavePersonAsync(id, null, new CustomerPersonInput(OtherUserId, ProjectPersonRole.Consultant, "finance"));
+
+        var again = () => svc.SavePersonAsync(id, null, new CustomerPersonInput(OtherUserId, ProjectPersonRole.Developer, null));
+        (await again.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("UserId");
+
+        var row = (await svc.ListPeopleAsync(id)).Single();
+        await svc.SavePersonAsync(id, row.Id, new CustomerPersonInput(OtherUserId, ProjectPersonRole.Architect, "finance, warehouse"));
+
+        (await svc.ListPeopleAsync(id)).Single().Should().BeEquivalentTo(
+            new { UserId = OtherUserId, Role = ProjectPersonRole.Architect, Areas = "finance, warehouse", Email = "other@example.com" });
+    }
+
+    [Fact]
+    public async Task A_colleague_has_to_be_someone_in_the_organisation()
+    {
+        var id = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        var act = () => Svc(ctx).SavePersonAsync(id, null, new CustomerPersonInput(424242, ProjectPersonRole.Consultant, null));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("UserId");
+    }
+
+    [Fact]
+    public async Task Integrations_round_trip_with_their_direction_and_need_a_name()
+    {
+        var id = await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        await svc.SaveIntegrationAsync(id, null, new CustomerIntegrationInput(" Webshop orders ", ProjectIntegrationDirection.Inbound));
+
+        (await svc.ListIntegrationsAsync(id)).Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { Name = "Webshop orders", Direction = ProjectIntegrationDirection.Inbound });
+        var blank = () => svc.SaveIntegrationAsync(id, null, new CustomerIntegrationInput("  ", ProjectIntegrationDirection.Both));
+        (await blank.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Name");
+    }
+
+    [Fact]
+    public async Task None_of_the_lists_can_be_changed_by_someone_who_only_sees_the_solution()
+    {
+        var id = await SeedAsync();
+        _db.OrgContext.CurrentUserId = OtherUserId;
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        await ((Func<Task>)(() => svc.SaveNotesAsync(id, new CustomerNotes("x", null, null)))).Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.Customer, "A", null, "a@cronus.example", null)))).Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.SavePersonAsync(id, null, new CustomerPersonInput(OwnerUserId, ProjectPersonRole.Consultant, null)))).Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.SaveIntegrationAsync(id, null, new CustomerIntegrationInput("Webshop", ProjectIntegrationDirection.Both)))).Should().ThrowAsync<ProjectAccessDeniedException>();
+        (await svc.GetAllAsync(id)).Should().NotBeNull("reading follows the solution's visibility");
+    }
 }

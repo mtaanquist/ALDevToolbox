@@ -1,4 +1,5 @@
 using ALDevToolbox.Components.Pages.Projects;
+using ALDevToolbox.Components.Pages.Projects.Customer;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services;
@@ -151,5 +152,99 @@ public sealed class ProjectDetailCustomerTests : IDisposable
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("starting with https://"));
         cut.FindAll("#cust-url").Should().HaveCount(1);
+    }
+
+    // ── The hand-kept lists under the basics ────────────────────────────
+
+    private async Task<int> SeedDescribedAsync() =>
+        await SeedAsync(p => { p.HostingType = ProjectHostingType.CustomerHardware; p.BcVersion = "NAV 2018 CU12"; });
+
+    [Fact]
+    public async Task Once_something_is_entered_each_section_says_what_it_is_for_and_how_to_start()
+    {
+        var id = await SeedDescribedAsync();
+
+        var cut = Render(id);
+
+        cut.FindAll(".card__title").Select(t => t.TextContent).Should().Equal(
+            "Customer", "Getting in", "Contacts", "Who knows this customer", "Integrations");
+        cut.FindAll(".empty button, .empty-state button, .card button").Select(b => b.TextContent.Trim()).Should()
+            .Contain(["Add notes", "Add contact", "Add colleague", "Add integration"]);
+        cut.FindAll(".btn--primary").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_contact_is_added_from_the_list_and_reads_back_with_links_to_reach_them()
+    {
+        var id = await SeedDescribedAsync();
+        var cut = Render(id);
+        var contacts = cut.FindComponent<CustomerContactsSection>();
+
+        contacts.WaitForAssertion(() => contacts.FindAll("button").Single(b => b.TextContent.Trim() == "Add contact").Click());
+        contacts.WaitForAssertion(() => contacts.Find("#contact-name").Change("Annette Hill"));
+        contacts.WaitForAssertion(() => contacts.Find("#contact-email").Change("annette@cronus.example"));
+        contacts.WaitForAssertion(() => contacts.Find("#contact-phone").Change("+45 12 34 56 78"));
+        contacts.WaitForAssertion(() => contacts.Find("form").Submit());
+
+        contacts.WaitForAssertion(() =>
+        {
+            contacts.Find(".cust-list__name").TextContent.Should().Be("Annette Hill");
+            contacts.Find(".cust-list .tag").TextContent.Should().Be("At the customer");
+            contacts.FindAll(".cust-list__detail a").Select(a => a.GetAttribute("href")).Should()
+                .Equal("mailto:annette@cronus.example", "tel:+4512345678");
+        });
+    }
+
+    [Fact]
+    public async Task Save_and_add_another_keeps_the_editor_open_and_empty_for_the_next_one()
+    {
+        var id = await SeedDescribedAsync();
+        var cut = Render(id);
+        var contacts = cut.FindComponent<CustomerContactsSection>();
+        contacts.WaitForAssertion(() => contacts.FindAll("button").Single(b => b.TextContent.Trim() == "Add contact").Click());
+        contacts.WaitForAssertion(() => contacts.Find("#contact-name").Change("Annette Hill"));
+        contacts.WaitForAssertion(() => contacts.Find("#contact-phone").Change("+45 12 34 56 78"));
+
+        contacts.WaitForAssertion(() => contacts.FindAll("button").Single(b => b.TextContent.Trim() == "Save and add another").Click());
+
+        contacts.WaitForAssertion(() =>
+        {
+            contacts.Find(".cust-list__name").TextContent.Should().Be("Annette Hill");
+            contacts.Find("#contact-name").GetAttribute("value").Should().BeNullOrEmpty();
+        });
+    }
+
+    [Fact]
+    public async Task A_contact_with_no_way_to_reach_them_is_refused_beside_the_field()
+    {
+        var id = await SeedDescribedAsync();
+        var cut = Render(id);
+        var contacts = cut.FindComponent<CustomerContactsSection>();
+
+        contacts.WaitForAssertion(() => contacts.FindAll("button").Single(b => b.TextContent.Trim() == "Add contact").Click());
+        contacts.WaitForAssertion(() => contacts.Find("#contact-name").Change("Annette Hill"));
+        contacts.WaitForAssertion(() => contacts.Find("form").Submit());
+
+        contacts.WaitForAssertion(() => contacts.Markup.Should().Contain("so there is a way to reach them"));
+    }
+
+    [Fact]
+    public async Task Someone_who_cannot_manage_the_solution_reads_the_lists_and_sees_no_way_to_change_them()
+    {
+        var id = await SeedDescribedAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OeProjectContacts.Add(new OeProjectContact
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Type = ProjectContactType.HostingPartner,
+                Name = "Peter Saddow", Phone = "+45 87 65 43 21", CreatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        var cut = Render(id, canManage: false);
+
+        cut.Markup.Should().Contain("Peter Saddow").And.Contain("At their hosting or IT partner");
+        cut.FindAll("button").Should().BeEmpty();
     }
 }
