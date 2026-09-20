@@ -28,12 +28,14 @@
     {
         <form @onsubmit="SaveAsync">
             <div class="card__body cust-notes__editor">
+                <Alert Tone="AlertTone.Info" Role="">
+                    <span>Don't put passwords or keys in these boxes - say where they are kept instead, e.g. "in the password manager, under CRONUS". Each box holds up to 4,000 characters.</span>
+                </Alert>
                 <section class="field">
                     <label class="field__label" for="cust-access">How to get in</label>
                     <textarea id="cust-access" class="textarea" rows="5" maxlength="@ProjectCustomerInfoService.NotesMaxLength"
                               @bind="_access" disabled="@_saving" placeholder="e.g. VPN through the customer's portal, then remote desktop to CRONUS-BC01. Ask their IT for an account."></textarea>
                     <FieldError Field="AccessDescription" Errors="_errors" />
-                    <small class="field__hint">Don't put passwords here - say where the password is kept.</small>
                 </section>
                 <section class="field">
                     <label class="field__label" for="cust-hostnotes">Hosting notes</label>

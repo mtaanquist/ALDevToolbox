@@ -11,13 +11,13 @@
     <div class="card__head">
         <div>
             <h2 class="card__title">Who knows this customer</h2>
-            <p class="card__sub">Colleagues to ask, and what each of them knows. This doesn't change who can open or edit the solution - that is the Access tab.</p>
+            <p class="card__sub">Colleagues to ask about this customer, and what each one knows. Who may open or edit the solution is set on the Access tab.</p>
         </div>
         @if (CanManage && !_editing && _rows is { Count: > 0 })
         {
             <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">
                 <Icon Name="plus" Width="14" Height="14" />
-                <span>Add a colleague</span>
+                <span>Add colleague</span>
             </button>
         }
     </div>
@@ -29,13 +29,13 @@
     {
         @if (_editing)
         {
-            <form @onsubmit="SaveAsync">
+            <form @onsubmit="() => SaveAsync()">
                 <div class="card__body">
                     <div class="form-grid">
                         <section class="field">
                             <label class="field__label" for="person-user">Colleague</label>
                             <SelectBox>
-                                <select id="person-user" class="select" @bind="_userId" disabled="@(_saving || _editingId is not null)">
+                                <select id="person-user" class="select" required @ref="_firstField" @bind="_userId" disabled="@(_saving || _editingId is not null)">
                                     <option value="">Choose a colleague...</option>
                                     @foreach (var option in _users)
                                     {
@@ -46,7 +46,7 @@
                             <FieldError Field="UserId" Errors="_errors" />
                         </section>
                         <section class="field">
-                            <label class="field__label" for="person-role">Their role here</label>
+                            <label class="field__label" for="person-role">Role with this customer</label>
                             <SelectBox>
                                 <select id="person-role" class="select" @bind="_role" disabled="@_saving">
                                     @foreach (var option in Enum.GetValues<ProjectPersonRole>())
@@ -72,6 +72,10 @@
                     <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
                         <span class="btn__label">@(_editingId is null ? "Add colleague" : "Save colleague")</span>
                     </button>
+                    @if (_editingId is null)
+                    {
+                        <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => SaveAsync(another: true)">Save and add another</button>
+                    }
                     <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
                 </div>
             </form>
@@ -87,7 +91,7 @@
                 <Action>
                     @if (CanManage)
                     {
-                        <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">Add a colleague</button>
+                        <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">Add colleague</button>
                     }
                 </Action>
             </EmptyState>
@@ -139,6 +143,16 @@
     private string? _error;
     private Dictionary<string, string> _errors = new();
     private ConfirmDialog? _confirm;
+    private ElementReference _firstField;
+    private bool _focusPending;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending || !_editing) return;
+        _focusPending = false;
+        try { await _firstField.FocusAsync(); }
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException or Microsoft.JSInterop.JSDisconnectedException) { }
+    }
 
     private string _userId = string.Empty;
     private ProjectPersonRole _role = ProjectPersonRole.Consultant;
@@ -159,9 +173,10 @@
         _errors = new();
         _error = null;
         _editing = true;
+        _focusPending = true;
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(bool another = false)
     {
         _saving = true;
         _errors = new();
@@ -171,7 +186,7 @@
             await CustomerInfo.SavePersonAsync(Id, _editingId,
                 new CustomerPersonInput(int.TryParse(_userId, out var userId) ? userId : null, _role, _areas));
             _rows = await CustomerInfo.ListPeopleAsync(Id);
-            _editing = false;
+            if (another) await StartEditingAsync(null); else _editing = false;
         }
         catch (PlanValidationException ex) { _errors = new(ex.Errors); }
         catch (ProjectAccessDeniedException ex) { _error = ex.Message; }

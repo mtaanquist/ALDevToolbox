@@ -91,7 +91,10 @@ Sections, top to bottom:
    it is prose about VPNs and jump hosts, and encrypting it would promise a protection
    that the text itself would undo the first time someone pasted a password into it.
 3. **Contacts** (slice 2) - `oe_project_contacts`: name, company, email, phone, and a
-   type (`Customer`, `HostingPartner`, `MicrosoftPartner`, `Internal`). A short list,
+   type (`Customer`, `HostingPartner`, `MicrosoftPartner`, `Internal`; on screen "At the
+   customer", "At their hosting or IT partner" - which is where the old list's IT supplier
+   goes - "At another Microsoft partner", "Here with us"). Each add form has **Save and
+   add another**, because with no import somebody types these in a few hundred times. A short list,
    one row each, edited in place with an **Add contact** button - not a grid.
 4. **Modules** (slice 3) - see below.
 5. **Who knows this customer** (slice 2) - `oe_project_people`: one of our users, a role

@@ -29,13 +29,13 @@
     {
         @if (_editing)
         {
-            <form @onsubmit="SaveAsync">
+            <form @onsubmit="() => SaveAsync()">
                 <div class="card__body">
                     <div class="form-grid">
                         <section class="field">
                             <label class="field__label" for="integration-name">Integrated with</label>
                             <input id="integration-name" type="text" class="input" maxlength="100" required @ref="_firstField"
-                                   @bind="_name" disabled="@_saving" placeholder="e.g. Webshop orders, or the bank's payment files" />
+                                   @bind="_name" disabled="@_saving" placeholder="e.g. their webshop, the bank, a warehouse system" />
                             <FieldError Field="Name" Errors="_errors" />
                         </section>
                         <section class="field">
@@ -59,6 +59,10 @@
                     <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
                         <span class="btn__label">@(_editingId is null ? "Add integration" : "Save integration")</span>
                     </button>
+                    @if (_editingId is null)
+                    {
+                        <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => SaveAsync(another: true)">Save and add another</button>
+                    }
                     <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
                 </div>
             </form>
@@ -69,7 +73,7 @@
         }
         @if (_rows.Count == 0 && !_editing)
         {
-            <EmptyState Icon="plug" Title="No integrations listed" Quiet="true">
+            <EmptyState Icon="plug" Title="Nobody has listed any integrations" Quiet="true">
                 <Text>@(CanManage ? "List what their Business Central sends to or receives from, if anything." : "The solution's owner or an administrator can add them.")</Text>
                 <Action>
                     @if (CanManage)
@@ -146,7 +150,7 @@
         _focusPending = true;
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(bool another = false)
     {
         _saving = true;
         _errors = new();
@@ -155,7 +159,7 @@
         {
             await CustomerInfo.SaveIntegrationAsync(Id, _editingId, new CustomerIntegrationInput(_name, _direction));
             _rows = await CustomerInfo.ListIntegrationsAsync(Id);
-            _editing = false;
+            if (another) StartEditing(null); else _editing = false;
         }
         catch (PlanValidationException ex) { _errors = new(ex.Errors); }
         catch (ProjectAccessDeniedException ex) { _error = ex.Message; }

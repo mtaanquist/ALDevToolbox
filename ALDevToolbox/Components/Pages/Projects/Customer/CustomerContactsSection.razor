@@ -11,7 +11,7 @@
     <div class="card__head">
         <div>
             <h2 class="card__title">Contacts</h2>
-            <p class="card__sub">Who to call or write to: at the customer, their IT supplier, a hosting partner, or here.</p>
+            <p class="card__sub">Who to call or write to - at the customer, at their hosting or IT partner, at another Microsoft partner, or here with us.</p>
         </div>
         @if (CanManage && !_editing && _rows is { Count: > 0 })
         {
@@ -29,7 +29,7 @@
     {
         @if (_editing)
         {
-            <form @onsubmit="SaveAsync">
+            <form @onsubmit="() => SaveAsync()">
                 <div class="card__body">
                     <div class="form-grid">
                         <section class="field">
@@ -39,7 +39,7 @@
                             <FieldError Field="Name" Errors="_errors" />
                         </section>
                         <section class="field">
-                            <label class="field__label" for="contact-type">They are</label>
+                            <label class="field__label" for="contact-type">Where they work</label>
                             <SelectBox>
                                 <select id="contact-type" class="select" @bind="_type" disabled="@_saving">
                                     @foreach (var option in Enum.GetValues<ProjectContactType>())
@@ -77,6 +77,10 @@
                     <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
                         <span class="btn__label">@(_editingId is null ? "Add contact" : "Save contact")</span>
                     </button>
+                    @if (_editingId is null)
+                    {
+                        <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => SaveAsync(another: true)">Save and add another</button>
+                    }
                     <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
                 </div>
             </form>
@@ -186,7 +190,7 @@
         _focusPending = true;
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(bool another = false)
     {
         _saving = true;
         _errors = new();
@@ -195,7 +199,8 @@
         {
             await CustomerInfo.SaveContactAsync(Id, _editingId, new CustomerContactInput(_type, _name, _company, _email, _phone));
             _rows = await CustomerInfo.ListContactsAsync(Id);
-            _editing = false;
+            // At rollout somebody types in a few contacts for each of a hundred customers.
+            if (another) StartEditing(null); else _editing = false;
         }
         catch (PlanValidationException ex) { _errors = new(ex.Errors); }
         catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
@@ -222,9 +227,9 @@
     internal static string TypeText(ProjectContactType type) => type switch
     {
         ProjectContactType.Customer => "At the customer",
-        ProjectContactType.HostingPartner => "Hosting partner",
-        ProjectContactType.MicrosoftPartner => "Microsoft partner",
-        ProjectContactType.Internal => "One of us",
+        ProjectContactType.HostingPartner => "At their hosting or IT partner",
+        ProjectContactType.MicrosoftPartner => "At another Microsoft partner",
+        ProjectContactType.Internal => "Here with us",
         _ => type.ToString(),
     };
 }

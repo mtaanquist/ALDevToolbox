@@ -169,7 +169,7 @@ public sealed class ProjectDetailCustomerTests : IDisposable
         cut.FindAll(".card__title").Select(t => t.TextContent).Should().Equal(
             "Customer", "Getting in", "Contacts", "Who knows this customer", "Integrations");
         cut.FindAll(".empty button, .empty-state button, .card button").Select(b => b.TextContent.Trim()).Should()
-            .Contain(["Add notes", "Add contact", "Add a colleague", "Add integration"]);
+            .Contain(["Add notes", "Add contact", "Add colleague", "Add integration"]);
         cut.FindAll(".btn--primary").Should().BeEmpty();
     }
 
@@ -192,6 +192,25 @@ public sealed class ProjectDetailCustomerTests : IDisposable
             contacts.Find(".cust-list .tag").TextContent.Should().Be("At the customer");
             contacts.FindAll(".cust-list__detail a").Select(a => a.GetAttribute("href")).Should()
                 .Equal("mailto:annette@cronus.example", "tel:+4512345678");
+        });
+    }
+
+    [Fact]
+    public async Task Save_and_add_another_keeps_the_editor_open_and_empty_for_the_next_one()
+    {
+        var id = await SeedDescribedAsync();
+        var cut = Render(id);
+        var contacts = cut.FindComponent<CustomerContactsSection>();
+        contacts.WaitForAssertion(() => contacts.FindAll("button").Single(b => b.TextContent.Trim() == "Add contact").Click());
+        contacts.WaitForAssertion(() => contacts.Find("#contact-name").Change("Annette Hill"));
+        contacts.WaitForAssertion(() => contacts.Find("#contact-phone").Change("+45 12 34 56 78"));
+
+        contacts.WaitForAssertion(() => contacts.FindAll("button").Single(b => b.TextContent.Trim() == "Save and add another").Click());
+
+        contacts.WaitForAssertion(() =>
+        {
+            contacts.Find(".cust-list__name").TextContent.Should().Be("Annette Hill");
+            contacts.Find("#contact-name").GetAttribute("value").Should().BeNullOrEmpty();
         });
     }
 
@@ -225,7 +244,7 @@ public sealed class ProjectDetailCustomerTests : IDisposable
 
         var cut = Render(id, canManage: false);
 
-        cut.Markup.Should().Contain("Peter Saddow").And.Contain("Hosting partner");
+        cut.Markup.Should().Contain("Peter Saddow").And.Contain("At their hosting or IT partner");
         cut.FindAll("button").Should().BeEmpty();
     }
 }
