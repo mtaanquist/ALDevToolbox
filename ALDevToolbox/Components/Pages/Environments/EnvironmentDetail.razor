@@ -634,7 +634,7 @@
 
 @* Its own dialog because it asks a question the others do not: when. The gentle
    answer is the default - an app update can interrupt whoever is working in it. *@
-<ConfirmDialog @ref="_updateConfirm">
+<ConfirmDialog @ref="_updateConfirm" Wide="true">
     @if (_updateAlongside.Count > 0)
     {
         <div class="env-detail__alongside">
@@ -643,9 +643,9 @@
                 @foreach (var req in _updateAlongside)
                 {
                     <li>
-                        <span>@req.Name</span>
-                        <span class="u-muted">@req.Publisher</span>
-                        <span class="u-num env-detail__mono">@(string.IsNullOrWhiteSpace(req.Version) ? "" : $"to {req.Version} or newer")</span>
+                        <span class="env-detail__alongside-name">@req.Name</span>
+                        <span class="u-muted env-detail__alongside-pub">@req.Publisher</span>
+                        <span class="u-num env-detail__mono env-detail__alongside-ver">@(string.IsNullOrWhiteSpace(req.Version) ? "" : $"to {req.Version} or newer")</span>
                     </li>
                 }
             </ul>
