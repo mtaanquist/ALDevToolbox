@@ -39,12 +39,31 @@ public sealed class EnvironmentRefreshWorker : QueueDrainWorker<EnvironmentRefre
         _logger = logger;
     }
 
+    /// <summary>
+    /// A breath between one customer and the next. The sweep is a run of back-to-back
+    /// requests that nobody is waiting on, so it costs nothing to be unhurried: a second
+    /// per customer is under two minutes across a hundred of them. Settable for tests.
+    /// </summary>
+    internal TimeSpan PauseBetweenSolutions { get; set; } = TimeSpan.FromSeconds(1);
+
+    // The run being drained: how many solutions, how many Business Central requests
+    // (two per solution and three per environment - see MirrorBcEnvironmentDetailsAsync),
+    // and since when. Logged when the queue empties, so how long a night's sweep really
+    // takes is a line in the log rather than an estimate.
+    private int _runSolutions;
+    private int _runRequests;
+    private long _runStarted;
+
     protected override async Task RunJobAsync(EnvironmentRefreshJob job, CancellationToken ct)
     {
+        if (_runSolutions == 0) _runStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+
         using var orgScope = AmbientOrganizationScope.Enter(job.Identity);
         await using var scope = _services.CreateAsyncScope();
         var connections = scope.ServiceProvider.GetRequiredService<ProjectConnectionService>();
         var result = await connections.RefreshEnvironmentsUnattendedAsync(job.ProjectId, ct).ConfigureAwait(false);
+        _runSolutions++;
+        _runRequests += 2 + (result.IsSuccess ? 3 * result.EnvironmentCount : 0);
         if (result.IsSuccess)
         {
             _logger.LogInformation(
@@ -58,6 +77,19 @@ public sealed class EnvironmentRefreshWorker : QueueDrainWorker<EnvironmentRefre
             _logger.LogWarning(
                 "Couldn't refresh Business Central environments for project {ProjectId}: {Message}",
                 job.ProjectId, result.Message);
+        }
+
+        if (_queue.Reader.Count == 0)
+        {
+            _logger.LogInformation(
+                "Environment refresh run finished: {Solutions} solution(s), about {Requests} Business Central request(s), in {Elapsed}.",
+                _runSolutions, _runRequests, System.Diagnostics.Stopwatch.GetElapsedTime(_runStarted));
+            _runSolutions = 0;
+            _runRequests = 0;
+        }
+        else if (PauseBetweenSolutions > TimeSpan.Zero)
+        {
+            await Task.Delay(PauseBetweenSolutions, ct).ConfigureAwait(false);
         }
     }
 

@@ -107,10 +107,14 @@ public static class ObjectExplorerRegistration
         // api.businesscentral.dynamics.com), so no SSRF guard is needed — just a bounded
         // timeout. The per-request bearer + URL are set by the BC clients. See
         // .design/saas-delivery.md.
+        services.AddTransient<ALDevToolbox.Services.ObjectExplorer.Bc.BcThrottleHandler>();
         services.AddHttpClient(ALDevToolbox.Services.ObjectExplorer.Bc.BcConstants.HttpClientName, client =>
         {
-            client.Timeout = TimeSpan.FromSeconds(100);
-        });
+            // Above the throttle handler's longest wait plus two attempts.
+            client.Timeout = TimeSpan.FromSeconds(180);
+        })
+        // A read Business Central throttles is retried once after the wait it asked for.
+        .AddHttpMessageHandler<ALDevToolbox.Services.ObjectExplorer.Bc.BcThrottleHandler>();
 
         // DVD download client for the Object Explorer "import release from URL" flow.
         // Same SSRF guard as the CIMD client (dial only publicly routable IPs), but

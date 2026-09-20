@@ -41,6 +41,15 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
     // night rather than twelve times inside the sweep hour.
     private DateOnly? _lastSweptUtcDate;
 
+    /// <summary>
+    /// How far into the sweep hour tonight's sweep starts. Every installation of this
+    /// toolbox - and a good deal else in the world - fires on the hour; a few random
+    /// minutes keeps us out of that spike at Microsoft's sign-in and admin endpoints.
+    /// Chosen once per process, inside the hour so the hour check below still holds.
+    /// </summary>
+    internal static readonly TimeSpan MaxStartOffset = TimeSpan.FromMinutes(40);
+    private readonly TimeSpan _startOffset;
+
     public EnvironmentRefreshScheduler(
         IServiceProvider services,
         EnvironmentRefreshQueue queue,
@@ -59,7 +68,17 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
         _queue = queue;
         _clock = clock;
         _logger = logger;
+        _startOffset = TimeSpan.FromMinutes(Random.Shared.Next(0, (int)MaxStartOffset.TotalMinutes + 1));
     }
+
+    /// <summary>
+    /// Whether a poll at <paramref name="nowUtc"/> should sweep: inside the sweep hour, at
+    /// or past tonight's offset into it, and not already done today.
+    /// </summary>
+    internal static bool IsDue(DateTime nowUtc, DateOnly? lastSweptUtcDate, TimeSpan startOffset) =>
+        nowUtc.Hour == SweepHourUtc
+        && lastSweptUtcDate != DateOnly.FromDateTime(nowUtc)
+        && nowUtc.TimeOfDay >= TimeSpan.FromHours(SweepHourUtc) + startOffset;
 
     protected override async Task TickAsync(CancellationToken ct)
     {
@@ -67,7 +86,7 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
         // poll lands in the sweep hour and today's sweep hasn't run yet.
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
         var today = DateOnly.FromDateTime(nowUtc);
-        if (nowUtc.Hour != SweepHourUtc || _lastSweptUtcDate == today) return;
+        if (!IsDue(nowUtc, _lastSweptUtcDate, _startOffset)) return;
 
         await SweepAsync(ct).ConfigureAwait(false);
         _lastSweptUtcDate = today;
@@ -112,6 +131,12 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
                     {
                         enqueued++;
                     }
+
+                    // A full queue makes the line above wait for the worker, which is
+                    // progress, not a stall: each job that gets in restarts the active
+                    // clock, so /healthz/workers only complains when nothing has gone in
+                    // for the whole ceiling - which is a worker that has actually stopped.
+                    Heartbeat.BeginActive();
                 }
             }
             catch (Exception ex)

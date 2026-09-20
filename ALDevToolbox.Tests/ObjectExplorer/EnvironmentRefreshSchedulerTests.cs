@@ -69,6 +69,21 @@ public sealed class EnvironmentRefreshSchedulerTests : IDisposable
         targets.Should().NotContain(halfOwn);
     }
 
+    [Fact]
+    public void The_sweep_starts_a_few_minutes_into_its_hour_once_a_night()
+    {
+        var offset = TimeSpan.FromMinutes(17);
+        DateTime At(int hour, int minute) => new(2026, 9, 21, hour, minute, 0, DateTimeKind.Utc);
+
+        EnvironmentRefreshScheduler.IsDue(At(3, 15), null, offset).Should().BeFalse("it is not on the hour with everybody else");
+        EnvironmentRefreshScheduler.IsDue(At(3, 20), null, offset).Should().BeTrue("the first five-minute poll past the offset");
+        EnvironmentRefreshScheduler.IsDue(At(3, 25), new DateOnly(2026, 9, 21), offset).Should().BeFalse("once a night");
+        EnvironmentRefreshScheduler.IsDue(At(3, 20), new DateOnly(2026, 9, 20), offset).Should().BeTrue("yesterday's sweep does not count");
+        EnvironmentRefreshScheduler.IsDue(At(4, 0), null, offset).Should().BeFalse();
+        (TimeSpan.FromMinutes(55) > EnvironmentRefreshScheduler.MaxStartOffset).Should().BeTrue(
+            "the latest start plus one five-minute poll still has to land inside the sweep hour");
+    }
+
     private async Task<int> SeedProjectAsync(
         string name, Guid? tenant, string? clientId, string? secret, DateTime? deletedAt = null)
     {

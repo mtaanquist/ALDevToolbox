@@ -83,6 +83,33 @@ non-user-gated refresh path (the `AcquireDeliveryContextAsync` precedent) and ne
 `bc_connection_verified_at` — a refresh nobody asked for must not present itself as the
 consultant's own connection test.
 
+**The sweep is a guest on somebody else's API, and behaves like one.** Microsoft documents
+no limits for the admin center API, so there is nothing to pace against in advance; what we
+can do is be unhurried and do as we are told.
+
+- *One request at a time.* One worker drains the queue, and a solution's calls - a token,
+  the environment list, then the update window, the next update and the installed apps for
+  each environment (two plus three per environment) - go out one after another. A customer
+  is its own Microsoft tenant, so each sees a handful of requests a night.
+- *A breath between customers.* The worker waits a second before the next solution. Nobody
+  is waiting on the sweep; a hundred customers cost under two minutes.
+- *Not on the hour.* The sweep starts a random few minutes into its hour (up to forty,
+  drawn once per process), because everything else in the world fires at 03:00 sharp.
+- *Told to slow down, it slows down.* `BcThrottleHandler`, on the shared Business Central
+  HTTP client, retries a **read** answered with 429 (or a 503 that names a wait) once,
+  after the `Retry-After` it was given, capped at a minute. A write is never re-sent on
+  our own initiative. Still throttled after that is an ordinary failed read: the customer
+  keeps last night's mirror.
+- *Parallelism was considered and left out.* Several customers at once would be safe for
+  the same per-tenant reason and would shorten the run, but it means a degree-of-parallelism
+  knob on `QueueDrainWorker`, which every worker inherits. The worker now logs each run -
+  solutions, requests, elapsed - so that decision can be made on a measurement.
+
+The queue holds 256 solutions and **waits** when full rather than dropping, so nothing is
+lost past that size; the scheduler restarts its heartbeat's active clock on every job it
+gets in, so waiting for a slot does not read as a stall on `/healthz/workers`, while a
+worker that has really stopped still does.
+
 The **full** updates list is still fetched for the environment panel rather than read from
 the mirror: the mirror is one row for listing many environments, not a replacement for the
 detail a consultant opens on purpose. That fetch is cached briefly once made — see "The
