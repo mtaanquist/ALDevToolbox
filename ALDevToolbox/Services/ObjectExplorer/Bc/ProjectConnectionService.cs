@@ -1341,6 +1341,20 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             {
                 ApplyFetched(row, env, now);
                 row.MissingSince = null; // back if it had vanished
+
+                // The fold below only happens the first time the renamed environment is
+                // seen. A solution that met it before the fold existed has both rows
+                // already - the old name, "no longer present" for good, and the stamped
+                // one - so a refresh that finds the pair puts them back together.
+                if (FoldTarget(env, byName, fetchedNames) is { } stale && stale.Id != row.Id)
+                {
+                    await AbsorbStaleTwinAsync(row, stale, ct);
+                    byName.Remove(stale.Name);
+                    existing.Remove(stale);
+                    _logger.LogInformation(
+                        "Merged environment row {StaleEnvironmentName} into its soft-deleted continuation {EnvironmentName} for project {ProjectId}.",
+                        stale.Name, row.Name, project.Id);
+                }
                 continue;
             }
 
@@ -1378,6 +1392,35 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 row.MissingSince = now;
             }
         }
+    }
+
+    /// <summary>
+    /// Merges the row an environment had under its old name into the row it has under its
+    /// soft-deleted one. The stamped row survives, because its name is the one the API
+    /// answers to and keeping it means nothing is renamed into a unique index mid-save.
+    /// What the old row carried comes across first: its release pipelines (which would
+    /// otherwise block the delete), its update history, and the delivery window somebody
+    /// set on it if the survivor has none. The caller saves.
+    /// </summary>
+    private async Task AbsorbStaleTwinAsync(OeProjectEnvironment survivor, OeProjectEnvironment stale, CancellationToken ct)
+    {
+        var pipelines = await _db.OeReleasePipelines
+            .Where(r => r.ProjectEnvironmentId == stale.Id)
+            .ToListAsync(ct);
+        foreach (var pipeline in pipelines) pipeline.ProjectEnvironmentId = survivor.Id;
+
+        var actions = await _db.OeEnvironmentUpgradeActions
+            .Where(a => a.EnvironmentId == stale.Id)
+            .ToListAsync(ct);
+        foreach (var action in actions) action.EnvironmentId = survivor.Id;
+
+        if (survivor.UpdateWindowStart is null && survivor.UpdateWindowEnd is null)
+        {
+            survivor.UpdateWindowStart = stale.UpdateWindowStart;
+            survivor.UpdateWindowEnd = stale.UpdateWindowEnd;
+        }
+
+        _db.OeProjectEnvironments.Remove(stale);
     }
 
     /// <summary>
