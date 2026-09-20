@@ -138,6 +138,21 @@ internal static class BcConstants
     public static string EnvironmentCopyUrl(string? applicationFamily, string sourceEnvironmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, sourceEnvironmentName)}/copy";
 
+    /// <summary>
+    /// Who is signed in to the environment right now. A GET answers the live list; a
+    /// DELETE on one session id below it ends that session. Read every time and never
+    /// cached - the whole point is what is happening this minute.
+    /// </summary>
+    public static string EnvironmentSessionsUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/sessions";
+
+    /// <summary>
+    /// One session of an environment, addressed by the id the sessions list reports.
+    /// DELETE ends it. Microsoft's session ids are integers, not GUIDs.
+    /// </summary>
+    public static string EnvironmentSessionUrl(string? applicationFamily, string environmentName, int sessionId) =>
+        $"{EnvironmentSessionsUrl(applicationFamily, environmentName)}/{sessionId}";
+
     /// <summary>Whether people holding only a Microsoft 365 licence may sign in to the environment.</summary>
     public static string EnvironmentM365AccessUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/accesswithm365licenses";

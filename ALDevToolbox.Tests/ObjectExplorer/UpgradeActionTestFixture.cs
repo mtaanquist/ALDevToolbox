@@ -285,6 +285,10 @@ internal sealed class UpgradeActionTestFixture : IDisposable
             => throw new NotSupportedException();
         public Task<BcEnvironmentCopy> CopyEnvironmentAsync(string accessToken, string? applicationFamily, string sourceEnvironmentName, string newEnvironmentName, string newEnvironmentType, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcSession>> ListSessionsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task CancelSessionAsync(string accessToken, string? applicationFamily, string environmentName, int sessionId, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class UnusedAppManagementClient : IBcAppManagementClient

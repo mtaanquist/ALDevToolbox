@@ -59,6 +59,31 @@ public interface IBcAdminClient
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>
+    /// Who is signed in to the environment right now - people in the web client, web
+    /// service callers, and Business Central's own background sessions. Live every time:
+    /// nothing about this answer is worth caching, and nothing about it is stored.
+    /// An environment that is gone answers with an empty list, as
+    /// <see cref="ListEnvironmentOperationsAsync"/> does. Throws
+    /// <see cref="BcApiException"/> on any other non-success status.
+    /// </summary>
+    Task<IReadOnlyList<BcSession>> ListSessionsAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Ends one session on the environment. A write to the customer's tenant, and one
+    /// somebody feels immediately: Business Central drops the session where it stands and
+    /// whatever that person had not saved is lost. Callers confirm by name first.
+    /// <para>
+    /// A session that has already ended answers 404, which comes back as a
+    /// <see cref="BcApiException"/> whose message says so - Microsoft documents no error
+    /// codes of its own for this endpoint, so the shared settings wording carries the rest.
+    /// </para>
+    /// </summary>
+    Task CancelSessionAsync(
+        string accessToken, string? applicationFamily, string environmentName, int sessionId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// The time zones Business Central accepts for an update window. Tenant-wide, so it
     /// takes no environment. Its ids are the only values
     /// <see cref="SetUpdateSettingsAsync"/> will take.

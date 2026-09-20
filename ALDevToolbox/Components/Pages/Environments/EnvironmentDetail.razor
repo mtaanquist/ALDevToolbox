@@ -2,6 +2,7 @@
 @page "/environments/{Id:int}/{OpenTab}"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
@@ -112,6 +113,10 @@
                 @if (_tab == Section.Operations && _operationsFetchedAt is { } opsRead)
                 {
                     <text>Operations read from Business Central <span class="freshness__age">@RelativeTime.Ago(opsRead)</span>. </text>
+                }
+                @if (_tab == Section.Sessions && _sessionsFetchedAt is { } sessionsRead)
+                {
+                    <text>Sessions read from Business Central <span class="freshness__age">@RelativeTime.Ago(sessionsRead)</span>. </text>
                 }
                 @if (Row.EnvironmentFetchedAt is { } mirrored)
                 {
@@ -741,6 +746,68 @@
                                            TimeZoneLabel="@(ZoneCity(Row.TimeZone) ?? "UTC")" />
             }
         }
+        else if (_tab == Section.Sessions)
+        {
+            @* Who is signed in this minute, and the way to end one of those sessions.
+               The one live part of the page: it reads on arrival and keeps itself
+               current while it is open. See .design/environment-updates.md, "Sessions". *@
+            @if (Row.IsSoftDeleted)
+            {
+                <div class="card">
+                    <EmptyState Icon="users" Title="Nobody can be signed in to a deleted environment" Quiet="true">
+                        <Text>
+                            Business Central ended every session when @Row.EnvironmentName was
+                            deleted. Bring it back and people can sign in again.
+                        </Text>
+                    </EmptyState>
+                </div>
+            }
+            else if (!_canManage)
+            {
+                <div class="card">
+                    <EmptyState Icon="lock" Title="Only people who manage this solution can see who is signed in" Quiet="true">
+                        <Text>
+                            This list comes from the customer's own Business Central, and ending
+                            a session signs somebody out of it. Ask the solution's owner or an
+                            administrator to add you to one of its teams.
+                        </Text>
+                    </EmptyState>
+                </div>
+            }
+            else if (_sessionsError is { } sessionsError)
+            {
+                <div class="card">
+                    <EmptyState Icon="plug" Title="Couldn't read who is signed in to this environment">
+                        <Text>@sessionsError</Text>
+                        <Action>
+                            <a class="btn" href="@($"/solutions/{Row.ProjectId}?tab=bc")">Check the solution's connection</a>
+                        </Action>
+                    </EmptyState>
+                </div>
+            }
+            else if (_sessions is null)
+            {
+                <LoadingBlock Text="@($"Asking Business Central who is signed in to {Row.EnvironmentName}...")" />
+            }
+            else
+            {
+                <EnvironmentSessionsList Sessions="_sessions"
+                                         EnvironmentName="@Row.EnvironmentName"
+                                         FetchedAt="_sessionsFetchedAt"
+                                         Refreshing="_sessionsLoading"
+                                         Busy="_settingSaving"
+                                         Stopped="_sessionsLiveStopped"
+                                         StoppedAfterText="@LiveForText()"
+                                         UpdateFailed="@_sessionsStaleNote"
+                                         UpdateEverySeconds="@((int)SessionsLiveEvery.TotalSeconds)"
+                                         CanCancel="true"
+                                         OperationsHref="@TabHref(Section.Operations)"
+                                         OnCancel="CancelSessionAsync"
+                                         OnRefresh="RefreshSessionsAsync"
+                                         TimeZone="UpdateWindow.ResolveTimeZone(Row.TimeZone)"
+                                         TimeZoneLabel="@(ZoneCity(Row.TimeZone) ?? "UTC")" />
+            }
+        }
         else
         {
             @* Our own record, not Business Central's, so it is outside every branch above: a
@@ -861,10 +928,10 @@
     /// <summary>Where to go on from an outcome the page cannot finish telling - a copy that is still running.</summary>
     private (string Href, string Text)? _settingDoneLink;
 
-    /// <summary>The tab in the address: "apps", "operations" or "history". Absent, or anything else, is Overview.</summary>
+    /// <summary>The tab in the address: "apps", "operations", "sessions" or "history". Absent, or anything else, is Overview.</summary>
     [Parameter] public string? OpenTab { get; set; }
 
-    private enum Section { Overview, Apps, Operations, History }
+    private enum Section { Overview, Apps, Operations, Sessions, History }
     private Section _tab = Section.Overview;
 
     /// <summary>The environment the page last read, so a change of tab does not read it again.</summary>
@@ -875,11 +942,45 @@
     private string? _operationsError;
     private DateTime? _operationsFetchedAt;
 
+    // ── Sessions ────────────────────────────────────────────────────────
+    //
+    // The one live thing on the page. Everything else here is a fact that holds for
+    // minutes or days; who is signed in is true for seconds, so a list that is not
+    // being kept current is a list that is quietly wrong. See
+    // .design/environment-updates.md, "Sessions".
+
+    private List<BcSession>? _sessions;
+    private bool _sessionsLoading;
+    private string? _sessionsError;
+    private DateTime? _sessionsFetchedAt;
+
+    /// <summary>Set when an automatic re-read failed and the last good list is still worth showing.</summary>
+    private string? _sessionsStaleNote;
+
+    /// <summary>True once the live loop has given up, so the card can offer to start it again.</summary>
+    private bool _sessionsLiveStopped;
+
+    /// <summary>True while the tab is the one on screen, which is what the loop runs for.</summary>
+    private bool _sessionsTabActive;
+
+    /// <summary>True while the cancel confirm is open: the row it names must not move under the person.</summary>
+    private bool _sessionsConfirmOpen;
+
+    /// <summary>
+    /// How often the Sessions tab re-reads while it is open, and how long it keeps doing
+    /// so before stopping. Parameters only so a test needn't wait thirty seconds for a
+    /// tick; nothing in the app passes them, and the card's copy is written from them so
+    /// the sentence and the timer cannot disagree.
+    /// </summary>
+    [Parameter] public TimeSpan SessionsLiveEvery { get; set; } = TimeSpan.FromSeconds(30);
+    [Parameter] public TimeSpan SessionsLiveFor { get; set; } = TimeSpan.FromMinutes(10);
+
     private List<HeaderTabs.HeaderTabItem> SectionTabs =>
     [
         Tab("Overview", Section.Overview),
         Tab("Apps", Section.Apps),
         Tab("Operations", Section.Operations),
+        Tab("Sessions", Section.Sessions),
         Tab("Toolbox history", Section.History),
     ];
 
@@ -924,12 +1025,13 @@
         }
     </div>;
 
-    private bool Refreshing => _panelLoading || _operationsLoading;
+    private bool Refreshing => _panelLoading || _operationsLoading || _sessionsLoading;
 
     /// <summary>Refresh re-reads what the open tab shows.</summary>
     private async Task RefreshAsync()
     {
         if (_tab == Section.Operations) await LoadOperationsAsync();
+        else if (_tab == Section.Sessions) await RefreshSessionsAsync();
         else if (_tab == Section.History) _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
         else await LoadPanelAsync(forceRefresh: true);
     }
@@ -955,6 +1057,7 @@
             _panelError = null;
             _operations = null;
             _operationsError = null;
+            LeaveSessionsTab();
             _startedUpdates.Clear();
             await LoadEnvironmentAsync();
             _loaded = true;
@@ -965,6 +1068,11 @@
             _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
         }
         if (_env is null) return;
+
+        // Leaving the Sessions tab always stops it reading, whatever else is true -
+        // and it drops the list it held, because coming back to a sessions list that
+        // is minutes old would answer the wrong question.
+        if (_tab != Section.Sessions && _sessionsTabActive) LeaveSessionsTab();
 
         if (_canManage)
         {
@@ -979,7 +1087,8 @@
             // the loader instead, and the live pass that follows does the reading.
             //
             // And only what the open tab shows: Overview and Apps share the one cached
-            // panel read, Operations has its own, History asks Business Central nothing.
+            // panel read, Operations and Sessions each have their own, History asks
+            // Business Central nothing.
             var wantsPanel = _tab is Section.Overview or Section.Apps;
             if (!RendererInfo.IsInteractive) _panelLoading = wantsPanel;
             else if (wantsPanel && _panel is null && _panelError is null) await LoadPanelAsync();
@@ -989,6 +1098,15 @@
                 // The list names an app only by id. The panel knows the names, and is
                 // usually cached; the list is already on screen while it is read.
                 if (_operations is not null && _panel is null && _panelError is null) await LoadPanelAsync();
+            }
+            else if (_tab == Section.Sessions && !_sessionsTabActive && !Row.IsSoftDeleted)
+            {
+                // Arriving on the tab reads at once - by a click or by landing straight
+                // on the address - and starts the loop that keeps it current. Never a
+                // tab that waits for a button: an empty Sessions tab is a wrong answer.
+                _sessionsTabActive = true;
+                StartSessionsLive();
+                await LoadSessionsAsync();
             }
         }
     }
@@ -1023,6 +1141,241 @@
             _operationsLoading = false;
         }
     }
+
+    // ── Sessions: reading, keeping current, and ending one ──────────────
+
+    /// <summary>
+    /// Reads who is signed in. <paramref name="automatic"/> marks a read the loop asked
+    /// for rather than a person: one of those failing must not replace a list somebody is
+    /// reading out to a customer with an error card, so it keeps the list and says quietly
+    /// that it couldn't be updated. A first read that fails has nothing to keep.
+    /// </summary>
+    private async Task LoadSessionsAsync(bool automatic = false)
+    {
+        if (_sessionsLoading) return;
+        _sessionsLoading = true;
+        if (!automatic)
+        {
+            _sessionsError = null;
+            _sessionsStaleNote = null;
+        }
+        StateHasChanged();
+        try
+        {
+            _sessions = await Connection.ListEnvironmentSessionsAsync(Row.ProjectId, Id);
+            _sessionsFetchedAt = DateTime.UtcNow;
+            _sessionsError = null;
+            _sessionsStaleNote = null;
+        }
+        catch (PlanValidationException ex)
+        {
+            SessionsFailed(ex.Errors.Values.FirstOrDefault() ?? "Couldn't read who is signed in to this environment.");
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            // Lost between the check and the read; the quiet card says the rest.
+            _canManage = false;
+            StopSessionsLive();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to read the sessions for environment {EnvId}.", Id);
+            SessionsFailed("Something went wrong at our end while asking Business Central. Try Refresh in a moment.");
+        }
+        finally
+        {
+            _sessionsLoading = false;
+        }
+
+        void SessionsFailed(string message)
+        {
+            if (automatic && _sessions is not null)
+            {
+                _sessionsStaleNote = message;
+                return;
+            }
+            _sessions = null;
+            _sessionsError = message;
+        }
+    }
+
+    /// <summary>Reads now, and starts the ten minutes over: Refresh is also how the loop is restarted.</summary>
+    private async Task RefreshSessionsAsync()
+    {
+        if (!Row.IsSoftDeleted && _canManage)
+        {
+            _sessionsTabActive = true;
+            StartSessionsLive();
+        }
+        await LoadSessionsAsync();
+    }
+
+    /// <summary>Stops the loop and forgets the list. Nothing about a session outlives the tab.</summary>
+    private void LeaveSessionsTab()
+    {
+        StopSessionsLive();
+        _sessionsTabActive = false;
+        _sessions = null;
+        _sessionsError = null;
+        _sessionsFetchedAt = null;
+        _sessionsStaleNote = null;
+        _sessionsLiveStopped = false;
+    }
+
+    /// <summary>How long it keeps itself current, for the line that says it has stopped.</summary>
+    private string LiveForText()
+    {
+        var minutes = (int)Math.Round(SessionsLiveFor.TotalMinutes);
+        if (minutes >= 1) return minutes == 1 ? "1 minute" : $"{minutes} minutes";
+        var seconds = Math.Max(1, (int)Math.Round(SessionsLiveFor.TotalSeconds));
+        return seconds == 1 ? "1 second" : $"{seconds} seconds";
+    }
+
+    // The same mechanism the Upgrades page polls with, and deliberately not a second
+    // one: every tick goes through InvokeAsync, which puts the read on the renderer's
+    // synchronisation context, and that is what keeps it from colliding with a click
+    // handler on this circuit's one AppDbContext. It gives up after a few minutes
+    // because a browser tab left open overnight must not read a customer's tenant all
+    // night - one request every thirty seconds against one tenant is fine, an unbounded
+    // one is not.
+
+    private System.Threading.Timer? _sessionsLive;
+    private DateTime _sessionsLiveUntilUtc;
+
+    private void StartSessionsLive()
+    {
+        StopSessionsLive();
+        _sessionsLiveStopped = false;
+        _sessionsLiveUntilUtc = DateTime.UtcNow.Add(SessionsLiveFor);
+        _sessionsLive = new System.Threading.Timer(
+            _ => _ = SessionsTickAsync(), null, SessionsLiveEvery, SessionsLiveEvery);
+    }
+
+    private void StopSessionsLive()
+    {
+        _sessionsLive?.Dispose();
+        _sessionsLive = null;
+    }
+
+    private async Task SessionsTickAsync()
+    {
+        if (DateTime.UtcNow > _sessionsLiveUntilUtc)
+        {
+            StopSessionsLive();
+            try
+            {
+                await InvokeAsync(() =>
+                {
+                    _sessionsLiveStopped = true;
+                    StateHasChanged();
+                });
+            }
+            catch (ObjectDisposedException)
+            {
+                // The circuit went while we were saying so. Nothing left to tell.
+            }
+            return;
+        }
+
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                // Never over the top of a read or a write of our own, and never while
+                // the confirm is open: the row somebody is about to end must not move or
+                // vanish under them between reading it and pressing the button.
+                if (!_sessionsTabActive || _sessionsLoading || _settingSaving || _sessionsConfirmOpen) return;
+                await LoadSessionsAsync(automatic: true);
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            StopSessionsLive();
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "The environment page stopped keeping the session list current for {EnvId}.", Id);
+            StopSessionsLive();
+        }
+    }
+
+    /// <summary>
+    /// Ends one session on the customer's environment. The confirm names the person, what
+    /// their session is running, the environment and whether it is a production one, and
+    /// says plainly what it costs them - because it is the only write on this page whose
+    /// consequence lands on somebody who isn't in the room.
+    /// </summary>
+    private async Task CancelSessionAsync(BcSession session)
+    {
+        if (_confirm is null) return;
+
+        var who = string.IsNullOrWhiteSpace(session.UserId) ? "an unnamed user" : session.UserId;
+        var doing = BcSessionDisplay.Doing(session);
+        var running = string.Equals(doing, BcSessionDisplay.Idle, StringComparison.Ordinal)
+            ? string.Empty
+            : $" and is running {doing}";
+
+        bool confirmed;
+        _sessionsConfirmOpen = true;
+        try
+        {
+            confirmed = await _confirm.OpenAsync(
+                Row.IsProduction
+                    ? $"End {who}'s session on {Row.EnvironmentName}, a production environment?"
+                    : $"End {who}'s session on {Row.EnvironmentName}?",
+                $"{who} has been signed in to {Row.EnvironmentName} ({Row.EnvironmentType}) in {Row.ProjectName} "
+                + $"through the {BcSessionDisplay.ClientTypePhrase(session.ClientType)}{running}. "
+                + "Business Central ends the session at once and anything they have not saved is lost. "
+                + "They can sign in again straight away.",
+                "End the session", confirmButtonClass: "btn--danger", confirmIcon: "user-x");
+        }
+        finally
+        {
+            _sessionsConfirmOpen = false;
+        }
+        if (!confirmed) return;
+
+        // Deliberately not RunSettingWriteAsync: that re-reads the apps panel, which is
+        // a call to the customer's tenant this tab has no use for. What has to be fresh
+        // afterwards is the session list, and the history the line was written to.
+        _settingSaving = true;
+        _settingBusy = "session";
+        _settingError = null;
+        _settingDone = null;
+        _settingDoneLink = null;
+        StateHasChanged();
+        try
+        {
+            await Connection.CancelEnvironmentSessionAsync(Row.ProjectId, Id, session.SessionId);
+            _settingDone = $"{who}'s session on {Row.EnvironmentName} was ended.";
+            _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+        }
+        catch (PlanValidationException ex)
+        {
+            _settingError = ex.Errors.Values.FirstOrDefault()
+                ?? $"Couldn't end that session on {Row.EnvironmentName}. Try Refresh, then try again.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _settingError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to end a session on environment {EnvId}.", Id);
+            _settingError = $"Couldn't end that session on {Row.EnvironmentName}. Try Refresh, then try again.";
+        }
+        finally
+        {
+            _settingSaving = false;
+            _settingBusy = null;
+        }
+
+        // Either way the list is re-read: a refusal usually means the session has gone.
+        await LoadSessionsAsync();
+    }
+
+    public void Dispose() => StopSessionsLive();
 
     /// <summary>The operations list names an app only by id; the panel, when it has been read, knows the name.</summary>
     private string? AppNameFor(Guid appId) =>

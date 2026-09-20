@@ -1,0 +1,6 @@
+.env-sessions__counted { display: flex; align-items: center; gap: var(--space-2); }
+.env-sessions__tools { gap: var(--space-2); align-items: center; }
+.env-sessions__fresh { font-size: var(--text-sm); white-space: nowrap; }
+.env-sessions__when { white-space: nowrap; }
+.env-sessions__count { font-size: var(--text-sm); }
+.env-sessions__note { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-3); font-size: var(--text-sm); border-bottom: 1px solid var(--border); }

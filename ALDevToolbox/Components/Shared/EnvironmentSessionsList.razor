@@ -1,0 +1,215 @@
+@using System.Globalization
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+
+@*
+    Who is signed in to one environment right now, and the way to end one of those
+    sessions. The classic call behind it: "posting has been running for an hour and
+    everything is locked" - and the fix, until now, meant opening the customer's admin
+    centre and finding the Sessions page there.
+
+    Named user: a support consultant or an ops engineer, on the phone to the customer.
+    They know Business Central; nothing here should need them to know anything else.
+
+    Nothing on this list is stored anywhere. See .design/environment-updates.md,
+    "Sessions". Presentational only: the page reads the sessions, keeps them current,
+    and performs the cancel.
+*@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title env-sessions__counted">Signed in now<span class="badge">@Sessions.Count</span></h2>
+            @* The cadence is claimed only while it is true: once it has stopped, the
+               notice below says so and this line must not go on promising otherwise. *@
+            <p class="card__sub">
+                Everyone and everything with a session open on @EnvironmentName, longest-running first.
+                @if (!Stopped)
+                {
+                    <text>Updates every @UpdateEverySeconds seconds while this tab is open.</text>
+                }
+                Times are in @TimeZoneLabel time, and nothing on this list is stored.
+            </p>
+        </div>
+        <span class="u-row env-sessions__tools">
+            <span class="u-muted env-sessions__fresh">@FreshnessText()</span>
+            <button type="button" class="btn btn--sm @(Refreshing ? "btn--loading" : "")"
+                    @onclick="OnRefresh" disabled="@Refreshing">
+                <Icon Name="refresh-cw" Width="14" Height="14" />
+                <span class="btn__label">@(Refreshing ? "Refreshing" : "Refresh")</span>
+            </button>
+        </span>
+    </div>
+
+    @* Two quiet lines rather than an error card: the list on screen is still useful,
+       and replacing it with a red box would take away the thing the person is reading
+       out to the customer. *@
+    @* The sentence states the fact and the button beside it is the instruction: a
+       caption that tells somebody which control to press is a missing affordance. *@
+    @if (Stopped)
+    {
+        <div class="card__body env-sessions__note">
+            <Icon Name="clock" Width="14" Height="14" />
+            <span>Stopped updating after @StoppedAfterText.</span>
+            <button type="button" class="btn btn--sm" @onclick="OnRefresh" disabled="@Refreshing">Keep updating</button>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(UpdateFailed))
+    {
+        <div class="card__body env-sessions__note">
+            <Icon Name="triangle-alert" Width="14" Height="14" />
+            <span>@UpdateFailed The list below is the last one we could read.</span>
+        </div>
+    }
+
+    @if (Sessions.Count == 0)
+    {
+        @* The state where the answer contradicts what the customer is saying on the
+           phone - "everything is locked" against nobody signed in - so it offers the
+           next place to look rather than stopping at the good news. And it never
+           claims the present tense on a list that could not be updated. *@
+        <EmptyState Icon="users"
+                    Title="@(string.IsNullOrWhiteSpace(UpdateFailed)
+                        ? $"Nobody is signed in to {EnvironmentName}"
+                        : $"Nobody was signed in to {EnvironmentName} when we last looked")"
+                    Quiet="true">
+            <Text>
+                No people, no web services and no job queue sessions are open, so nothing
+                here is holding a record.
+            </Text>
+            <Action>
+                @if (OperationsHref is { } operations)
+                {
+                    <a class="btn btn--sm" href="@operations">See what Business Central is doing</a>
+                }
+            </Action>
+        </EmptyState>
+    }
+    else
+    {
+        <table class="data-table data-table--edge u-compact">
+            <thead>
+                <tr>
+                    <th class="data-table__col-state" scope="col"><span class="u-sr">Long-running</span></th>
+                    <th scope="col">Who</th>
+                    <th scope="col">Signed in through</th>
+                    <th scope="col">Signed in since</th>
+                    <th scope="col">Running now</th>
+                    <th scope="col">For how long</th>
+                    @if (CanCancel)
+                    {
+                        <th scope="col" class="data-table__actions">Actions</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var session in Sessions)
+                {
+                    var long_running = BcSessionDisplay.IsLongRunning(session);
+                    var rowState = long_running ? "is-running" : string.Empty;
+                    <tr class="@rowState" @key="session.SessionId">
+                        <td class="data-table__col-state">
+                            @if (long_running)
+                            {
+                                <StatusPill Tone="warn">Long-running</StatusPill>
+                            }
+                        </td>
+                        <td>@(string.IsNullOrWhiteSpace(session.UserId) ? "Not named" : session.UserId)</td>
+                        <td>@BcSessionDisplay.ClientTypeWord(session.ClientType)</td>
+                        <td class="env-sessions__when">@Since(session)</td>
+                        <td>@BcSessionDisplay.Doing(session)</td>
+                        <td class="u-num">@BcSessionDisplay.Duration(session.CurrentOperationDuration)</td>
+                        @if (CanCancel)
+                        {
+                            <td class="data-table__actions">
+                                @* One verb for this, everywhere: the row, the question
+                                   and the answer. "Cancel session" on a row whose
+                                   dialog then says "End" makes somebody stop and
+                                   wonder whether they are the same thing - and the
+                                   dialog cannot say "Cancel", because its other
+                                   button already does. *@
+                                <button type="button" class="btn btn--sm btn--danger"
+                                        disabled="@Busy"
+                                        @onclick="() => OnCancel.InvokeAsync(session)"
+                                        aria-label="@($"End the session of {(string.IsNullOrWhiteSpace(session.UserId) ? "an unnamed user" : session.UserId)}")">
+                                    End session
+                                </button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="card__foot">
+            <span class="u-muted env-sessions__count">
+                A session is marked long-running when it has spent @LongRunningText or more on
+                the same operation. A job queue task often has, so treat it as a place to look
+                rather than a fault.
+            </span>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The sessions, longest-running first. Never null: the page draws its own loading state.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<BcSession> Sessions { get; set; } = Array.Empty<BcSession>();
+
+    [Parameter, EditorRequired] public string EnvironmentName { get; set; } = string.Empty;
+
+    /// <summary>When the list on screen was read, so the head can say how fresh it is.</summary>
+    [Parameter] public DateTime? FetchedAt { get; set; }
+
+    /// <summary>True while a read is in flight, for the button's loading state.</summary>
+    [Parameter] public bool Refreshing { get; set; }
+
+    /// <summary>True while a cancel is in flight: every row's button waits for it.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>True once the tab has stopped keeping itself current, so the head says so.</summary>
+    [Parameter] public bool Stopped { get; set; }
+
+    /// <summary>How long it kept itself current before stopping, in words ("10 minutes").</summary>
+    [Parameter] public string StoppedAfterText { get; set; } = "a while";
+
+    /// <summary>Set when an automatic re-read failed and the last good list is still on screen.</summary>
+    [Parameter] public string? UpdateFailed { get; set; }
+
+    /// <summary>How often the page re-reads, for the sub-line - so the copy and the timer cannot disagree.</summary>
+    [Parameter] public int UpdateEverySeconds { get; set; } = 30;
+
+    /// <summary>True when this person may end a session. Reading is manage-gated too; ending is the write.</summary>
+    [Parameter] public bool CanCancel { get; set; }
+
+    /// <summary>Raised with the session somebody asked to end. The page confirms and performs it.</summary>
+    [Parameter] public EventCallback<BcSession> OnCancel { get; set; }
+
+    /// <summary>Raised when somebody presses Refresh in the card's head.</summary>
+    [Parameter] public EventCallback OnRefresh { get; set; }
+
+    /// <summary>
+    /// Where Business Central's own record of the environment is. The next place to look
+    /// when nobody is signed in and the customer says everything is locked.
+    /// </summary>
+    [Parameter] public string? OperationsHref { get; set; }
+
+    [Parameter] public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Utc;
+    [Parameter] public string TimeZoneLabel { get; set; } = "UTC";
+
+    private string LongRunningText =>
+        $"{(int)BcSessionDisplay.LongRunningAfter.TotalMinutes} minutes";
+
+    /// <summary>
+    /// How old the list is. Said out loud rather than left to the reader, because a
+    /// sessions list is the one thing on this page where a minute's age changes the
+    /// answer - somebody may have signed out since.
+    /// </summary>
+    private string FreshnessText() =>
+        FetchedAt is { } at ? $"Read {RelativeTime.Ago(at)}" : "Not read yet";
+
+    private string Since(BcSession session)
+    {
+        if (session.LogOnDate is not { } at) return "—";
+        var local = TimeZoneInfo.ConvertTimeFromUtc(at.UtcDateTime, TimeZone);
+        return local.ToString("dd MMM, HH:mm", CultureInfo.InvariantCulture);
+    }
+}

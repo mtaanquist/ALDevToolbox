@@ -126,6 +126,16 @@ public enum UpgradeActionKind
     /// and the one somebody later asks where the sandbox came from.
     /// </summary>
     CopyEnvironment,
+
+    /// <summary>
+    /// A session signed in to the environment was ended. Recorded like
+    /// <see cref="UpdateApp"/> — never booked, written already <c>Sent</c>. The session
+    /// list itself is never stored (see <c>.design/environment-updates.md</c>,
+    /// "Sessions"), so this line is the only lasting record that somebody was signed out,
+    /// and its <see cref="OeEnvironmentUpgradeAction.Outcome"/> names who and what they
+    /// were running.
+    /// </summary>
+    CancelSession,
 }
 
 /// <summary>

@@ -132,6 +132,101 @@ public sealed class BcAdminClient : IBcAdminClient
         return body is null ? Array.Empty<BcEnvironmentOperation>() : ParseEnvironmentOperations(body);
     }
 
+    public async Task<IReadOnlyList<BcSession>> ListSessionsAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        var url = BcConstants.EnvironmentSessionsUrl(applicationFamily, environmentName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.UseBearer(accessToken);
+
+        // An environment that is gone has nobody signed in to it, which is an answer
+        // rather than a fault - the same reading the operations list gives a 404.
+        var body = await SendAsync(
+                request, "reading who is signed in to the environment", environmentName, NotFoundPolicy.Absent, ct)
+            .ConfigureAwait(false);
+        return body is null ? Array.Empty<BcSession>() : ParseSessions(body);
+    }
+
+    public async Task CancelSessionAsync(
+        string accessToken, string? applicationFamily, string environmentName, int sessionId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete, BcConstants.EnvironmentSessionUrl(applicationFamily, environmentName, sessionId));
+        request.UseBearer(accessToken);
+
+        // A 404 is a refusal here, not an absence: the session was there a moment ago and
+        // "it has already ended" is the one thing the person needs to be told.
+        await SendAsync(request, "ending the session", environmentName, NotFoundPolicy.Error, ct,
+            DescribeCancelSessionFailure).ConfigureAwait(false);
+        _logger.LogInformation("Ended session {SessionId} on {Environment}.", sessionId, environmentName);
+    }
+
+    /// <summary>
+    /// Turns a refused cancel into a sentence. Microsoft documents no error codes of its
+    /// own for this endpoint, so the one case worth telling apart is the status: a session
+    /// that ended between the list and the click is a 404, and that is the likeliest
+    /// failure of all because the list is minutes - sometimes seconds - old.
+    /// </summary>
+    internal static string DescribeCancelSessionFailure(HttpStatusCode status, string body) =>
+        status == HttpStatusCode.NotFound
+            ? "That session had already ended. Refresh the list to see who is signed in now."
+            : DescribeSettingsFailure(status, body, "ending the session");
+
+    /// <summary>
+    /// Parses the sessions envelope. Forgiving in the same three ways the neighbouring
+    /// parsers are: a body that is not JSON is a <see cref="BcApiException"/>, an answer
+    /// with no list is an empty list, and a row with no session id is skipped - it could
+    /// not be cancelled anyway, and it is the one field the rest of the feature rests on.
+    /// </summary>
+    internal static IReadOnlyList<BcSession> ParseSessions(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<BcSession>();
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new BcApiException(null, "Business Central returned a session list we couldn't read.", ex);
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("value", out var value)
+                || value.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<BcSession>();
+            }
+
+            var result = new List<BcSession>();
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                if (Count(item, "sessionId") is not { } id) continue;
+
+                result.Add(new BcSession(
+                    SessionId: id,
+                    UserId: Text(item, "userId") ?? string.Empty,
+                    ClientType: Text(item, "clientType") ?? string.Empty,
+                    LogOnDate: Instant(item, "logOnDate"),
+                    EntryPointOperation: Text(item, "entryPointOperation") ?? string.Empty,
+                    EntryPointObjectName: Text(item, "entryPointObjectName") ?? string.Empty,
+                    // Microsoft types this one as a string and its neighbour as an int,
+                    // so both are read whichever way they arrive.
+                    EntryPointObjectId: Text(item, "entryPointObjectId") ?? Count(item, "entryPointObjectId")?.ToString() ?? string.Empty,
+                    EntryPointObjectType: Text(item, "entryPointObjectType") ?? string.Empty,
+                    CurrentObjectName: Text(item, "currentObjectName") ?? string.Empty,
+                    CurrentObjectId: Count(item, "currentObjectId"),
+                    CurrentObjectType: Text(item, "currentObjectType") ?? string.Empty,
+                    CurrentOperationDuration: Span(item, "currentOperationDuration")));
+            }
+            return result;
+        }
+    }
+
     public async Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminTimezonesUrl);
@@ -719,6 +814,62 @@ public sealed class BcAdminClient : IBcAdminClient
                 _ => null,
             }
             : null;
+
+    /// <summary>
+    /// A whole number by name, tolerating Microsoft's casing and a number that arrived as
+    /// a string. <see cref="Number"/>'s case-sensitive sibling exists for the update
+    /// payload, whose shape is known; this one reads a session, where the casing is not.
+    /// </summary>
+    private static int? Count(JsonElement element, string property) =>
+        TryProperty(element, property, out var v)
+            ? v.ValueKind switch
+            {
+                JsonValueKind.Number when v.TryGetInt32(out var n) => n,
+                JsonValueKind.String when int.TryParse(v.GetString(), System.Globalization.CultureInfo.InvariantCulture, out var n) => n,
+                _ => null,
+            }
+            : null;
+
+    /// <summary>A moment by name, tolerating Microsoft's casing. <see cref="Moment"/>'s case-insensitive sibling.</summary>
+    private static DateTimeOffset? Instant(JsonElement element, string property) =>
+        TryProperty(element, property, out var v) && v.ValueKind == JsonValueKind.String
+        && DateTimeOffset.TryParse(v.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal, out var when)
+            ? when
+            : null;
+
+    /// <summary>
+    /// A duration by name. <b>Microsoft documents <c>currentOperationDuration</c> as a
+    /// <c>long</c> and names no unit</b>, so both readings it could plausibly be are
+    /// accepted: a number is read as milliseconds, and a string as a time span
+    /// (<c>00:05:12.34</c>), which is the form the .NET server behind this API writes one
+    /// in. A negative number is nonsense and reads as "not said".
+    /// </summary>
+    private static TimeSpan? Span(JsonElement element, string property)
+    {
+        if (!TryProperty(element, property, out var v)) return null;
+        return v.ValueKind switch
+        {
+            JsonValueKind.Number when v.TryGetInt64(out var ms) && ms >= 0 => TimeSpan.FromMilliseconds(ms),
+            JsonValueKind.String => ReadSpanText(v.GetString()),
+            _ => null,
+        };
+    }
+
+    private static TimeSpan? ReadSpanText(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        // A bare number first, and milliseconds as it would be as a JSON number. It has
+        // to come first: TimeSpan.TryParse reads "2500" happily - as 2500 *days*.
+        if (long.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, out var ms))
+        {
+            return ms >= 0 ? TimeSpan.FromMilliseconds(ms) : null;
+        }
+        return TimeSpan.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, out var span)
+            && span >= TimeSpan.Zero
+            ? span
+            : null;
+    }
 
     private static DateTimeOffset? Moment(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v)

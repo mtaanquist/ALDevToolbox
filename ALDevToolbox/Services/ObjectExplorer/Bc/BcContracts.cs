@@ -393,6 +393,183 @@ public static class BcEnvironmentOperationDisplay
 }
 
 /// <summary>
+/// One person (or one background job) signed in to an environment right now, from
+/// <c>GET .../environments/{name}/sessions</c>. Nothing here is ever stored: a user id
+/// and what that person is doing is personal data, so the list is shown and forgotten.
+/// See <c>.design/environment-updates.md</c>, "Sessions".
+/// <para>
+/// Every field but <see cref="SessionId"/> is optional as far as this record is
+/// concerned - a background session has no current object, and Microsoft's own example
+/// shows fields that can come back empty - so an absent one is an empty string or null
+/// rather than a reason to drop the row.
+/// </para>
+/// </summary>
+/// <param name="SessionId">Business Central's id for the session, and what a cancel addresses. An integer, not a GUID.</param>
+/// <param name="UserId">Who is signed in, as Business Central reports them - usually their email address.</param>
+/// <param name="ClientType">The wire word for how they got in (<c>WebClient</c>, <c>Background</c>, <c>WebServiceClient</c>, ...). Worded for the screen by <see cref="BcSessionDisplay"/>.</param>
+/// <param name="LogOnDate">When the session started.</param>
+/// <param name="CurrentOperationDuration">
+/// How long the session has been in the operation it is running now. <b>Microsoft
+/// documents the field as a <c>long</c> and names no unit</b>; the parser reads a number
+/// as milliseconds and a string as a time span, and this is the one field here that has
+/// not been checked against a live tenant.
+/// </param>
+public sealed record BcSession(
+    int SessionId,
+    string UserId,
+    string ClientType,
+    DateTimeOffset? LogOnDate,
+    string EntryPointOperation,
+    string EntryPointObjectName,
+    string EntryPointObjectId,
+    string EntryPointObjectType,
+    string CurrentObjectName,
+    int? CurrentObjectId,
+    string CurrentObjectType,
+    TimeSpan? CurrentOperationDuration);
+
+/// <summary>
+/// How a session reads on screen, in the words a consultant on the phone to a customer
+/// would use. The same treatment <see cref="BcEnvironmentOperationDisplay"/> gives an
+/// operation: every value Microsoft has today gets a phrase, and one they add tomorrow is
+/// spaced out into words rather than reaching anybody as a wire token.
+/// </summary>
+public static class BcSessionDisplay
+{
+    /// <summary>
+    /// How long a session may sit in one operation before the row is marked.
+    /// <para>
+    /// The number is ours - Business Central marks nothing - so it is chosen to be
+    /// defensible rather than clever. A person clicking through the web client finishes
+    /// an operation in well under a second, so anything still running after a minute is
+    /// doing work rather than waiting for somebody; five minutes is where a consultant on
+    /// the phone would start looking at it, and it is a round figure they can hold in
+    /// their head. It marks a row and orders the list. It never hides a row, and it
+    /// never decides anything: a nightly job legitimately runs for hours.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan LongRunningAfter = TimeSpan.FromMinutes(5);
+
+    /// <summary>True when this session has been in its current operation long enough to be worth a look.</summary>
+    public static bool IsLongRunning(BcSession session) =>
+        session.CurrentOperationDuration is { } duration && duration >= LongRunningAfter;
+
+    /// <summary>
+    /// How somebody got in, as a phrase. Business Central's client types are wire words
+    /// (<c>WebServiceClient</c>, <c>ODataV4</c>), and the people reading this say "the web
+    /// client" and "a web service".
+    /// </summary>
+    public static string ClientTypeWord(string? clientType) => Normalise(clientType) switch
+    {
+        "web" or "webclient" => "Web client",
+        "tablet" => "Tablet",
+        "phone" => "Phone",
+        "desktop" or "windows" or "windowsclient" => "Desktop client",
+        "webservice" or "webserviceclient" or "soap" or "soapwebserviceclient" => "Web service (SOAP)",
+        "odata" or "odatav4" or "odatav4client" or "odatawebserviceclient" => "Web service (OData)",
+        "api" or "apiclient" => "Web service (API)",
+        "background" or "backgroundsession" => "Background",
+        "nas" or "nasclient" or "jobqueue" => "Job queue",
+        "child" or "childsession" => "Background (child session)",
+        "management" or "managementclient" => "Management client",
+        "" => "Unknown",
+        _ => SpaceOut(clientType!),
+    };
+
+    /// <summary>
+    /// The same thing inside a sentence ("ended Ola's <em>web client</em> session"). Written
+    /// out per arm rather than lower-cased from <see cref="ClientTypeWord"/>, because
+    /// "ended their web service (soap) session" is how a wire value leaks into copy.
+    /// </summary>
+    public static string ClientTypePhrase(string? clientType) => Normalise(clientType) switch
+    {
+        "web" or "webclient" => "web client",
+        "tablet" => "tablet",
+        "phone" => "phone",
+        "desktop" or "windows" or "windowsclient" => "desktop client",
+        "webservice" or "webserviceclient" or "soap" or "soapwebserviceclient" => "web service",
+        "odata" or "odatav4" or "odatav4client" or "odatawebserviceclient" => "web service",
+        "api" or "apiclient" => "web service",
+        "background" or "backgroundsession" or "child" or "childsession" => "background",
+        "nas" or "nasclient" or "jobqueue" => "job queue",
+        "management" or "managementclient" => "management client",
+        _ => "Business Central",
+    };
+
+    /// <summary>
+    /// What the session is running now, as something a consultant can repeat to a
+    /// customer - the object it is in, with the kind and number in brackets so it can be
+    /// found in Business Central. Falls back to what the session came in through, and
+    /// then to a plain phrase; never to an empty cell.
+    /// </summary>
+    /// <summary>A session doing nothing nameable. Compared by the callers that word a sentence around <see cref="Doing"/>.</summary>
+    public const string Idle = "Idle";
+
+    public static string Doing(BcSession session)
+    {
+        if (Describe(session.CurrentObjectName, session.CurrentObjectType, session.CurrentObjectId?.ToString()) is { } now)
+        {
+            return now;
+        }
+        if (Describe(session.EntryPointObjectName, session.EntryPointObjectType, session.EntryPointObjectId) is { } entry)
+        {
+            return entry;
+        }
+        // One word, because this column is eye-scanned for the row that is busy.
+        return string.IsNullOrWhiteSpace(session.EntryPointOperation) ? Idle : session.EntryPointOperation;
+    }
+
+    /// <summary>
+    /// The line the environment's Toolbox history keeps. It names the person and what
+    /// their session was doing, because "cancelled session 47" answers nothing a week
+    /// later - which is the whole reason the history line is written from the session
+    /// itself rather than from its id.
+    /// </summary>
+    public static string HistoryLine(BcSession session)
+    {
+        var who = string.IsNullOrWhiteSpace(session.UserId) ? "Somebody's" : $"{session.UserId}'s";
+        var doing = Doing(session);
+        var running = string.Equals(doing, Idle, StringComparison.Ordinal)
+            ? string.Empty
+            : $", which was running {doing}";
+        return $"Ended {who} {ClientTypePhrase(session.ClientType)} session{running}.";
+    }
+
+    /// <summary>How long, in the same rounded words the Operations tab uses for "Took".</summary>
+    public static string Duration(TimeSpan? duration)
+    {
+        if (duration is not { } took || took < TimeSpan.Zero) return "—";
+        if (took.TotalSeconds < 1) return "Under a second";
+        if (took.TotalMinutes < 1) return $"{(int)took.TotalSeconds} sec";
+        return took.TotalHours < 1 ? $"{(int)took.TotalMinutes} min" : $"{(int)took.TotalHours} h {took.Minutes} min";
+    }
+
+    /// <summary>"Sales Order (page 42)", or null when there is no object worth naming.</summary>
+    private static string? Describe(string? name, string? type, string? id)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var kind = string.IsNullOrWhiteSpace(type) ? null : SpaceOut(type).ToLowerInvariant();
+        var number = string.IsNullOrWhiteSpace(id) || id == "0" ? null : id.Trim();
+        return (kind, number) switch
+        {
+            ({ }, { }) => $"{name.Trim()} ({kind} {number})",
+            ({ }, null) => $"{name.Trim()} ({kind})",
+            (null, { }) => $"{name.Trim()} ({number})",
+            _ => name.Trim(),
+        };
+    }
+
+    private static string Normalise(string? value) =>
+        new string((value ?? string.Empty).Where(char.IsAsciiLetterOrDigit).ToArray()).ToLowerInvariant();
+
+    private static string SpaceOut(string token)
+    {
+        var spaced = System.Text.RegularExpressions.Regex.Replace(token, "(?<=[a-z])(?=[A-Z])", " ").ToLowerInvariant();
+        return spaced.Length == 0 ? spaced : char.ToUpperInvariant(spaced[0]) + spaced[1..];
+    }
+}
+
+/// <summary>
 /// How much database each of a tenant's environments uses, and what the tenant is allowed
 /// in total. Business Central can go over its allowance, so used may exceed the total.
 /// </summary>
