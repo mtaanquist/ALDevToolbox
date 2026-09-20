@@ -177,4 +177,11 @@ public class OeProjectEnvironment
     /// mirror reads as "there is nothing scheduled" rather than "never read".
     /// </summary>
     public DateTime? BcNextUpdateFetchedAt { get; set; }
+
+    /// <summary>
+    /// The environment's database size in kilobytes, as Business Central last reported it.
+    /// Null until read, or when Business Central could not work it out. The allowance it
+    /// counts against is the tenant's - <see cref="OeProject.BcStorageQuotaKb"/>.
+    /// </summary>
+    public long? BcDatabaseKb { get; set; }
 }

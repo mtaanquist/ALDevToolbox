@@ -141,8 +141,20 @@
             <span class="meta-item"><span class="meta-item__label">Country</span><span class="meta-item__value">@CountryText()</span></span>
             <span class="meta-item"><span class="meta-item__label">Delivery window</span><span class="meta-item__value">@DeliveryWindowText()</span></span>
             <span class="meta-item"><span class="meta-item__label">Next update</span><span class="meta-item__value">@(Row.NextUpdateDate is { } next ? next.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) : "—")</span></span>
+            <span class="meta-item"><span class="meta-item__label">Database</span><span class="meta-item__value">@(Row.DatabaseKb is { } dbSize ? StorageDisplay.Size(dbSize) : "—")</span></span>
             <span class="meta-item"><span class="meta-item__label">Apps installed</span><span class="meta-item__value">@(_panel is { InstalledAppsError: null } p ? p.InstalledApps.Count.ToString() : _panel is null && _panelError is null ? "—" : "Not read")</span></span>
         </div>
+
+        @if (Row.TenantStorageUse is { } storageUse && StorageDisplay.Tone(storageUse) is { Length: > 0 } storageTone)
+        {
+            <Alert Tone="@(storageTone == "danger" ? AlertTone.Danger : AlertTone.Warn)" Role="" Block="true">
+                <span>
+                    <b>@StorageDisplay.Summary(storageUse, Row.TenantQuotaKb!.Value).</b>
+                    The allowance is shared by all of @Row.ProjectName's environments, so deleting a sandbox
+                    frees room as well as buying more does.
+                </span>
+            </Alert>
+        }
 
         @* Under the numbers that are true on every tab. Real links, so a tab can be
            bookmarked and Back works; the page reads the environment once and a change of

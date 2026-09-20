@@ -125,6 +125,15 @@ public class OeProject
     public string? VoiceAccountNumber { get; set; }
 
     /// <summary>How to get in: VPN, jump host, who to ask. Prose, never credentials.</summary>
+    /// <summary>
+    /// The storage the customer's tenant is allowed, across all its environments, in
+    /// kilobytes, as Business Central last reported it. Null until read.
+    /// </summary>
+    public long? BcStorageQuotaKb { get; set; }
+
+    /// <summary>When the storage figures were last read - this and each environment's size.</summary>
+    public DateTime? BcStorageFetchedAt { get; set; }
+
     public string? AccessDescription { get; set; }
 
     /// <summary>Where and how it is hosted, beyond the hosting type.</summary>

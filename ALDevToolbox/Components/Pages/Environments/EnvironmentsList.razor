@@ -105,10 +105,10 @@
             <thead>
                 <tr>
                     <th class="data-table__col-state"><span class="u-sr">State</span></th>
-                    <th>Environment</th><th>Solution</th><th>Now on</th><th>Next update</th><th>Last checked</th><th class="data-table__actions">Actions</th>
+                    <th>Environment</th><th>Solution</th><th>Now on</th><th>Next update</th><th>Storage</th><th>Last checked</th><th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
-            <tbody><TableSkeletonRows Columns="6" StateColumn="true" /></tbody>
+            <tbody><TableSkeletonRows Columns="7" StateColumn="true" /></tbody>
         </table>
         <LoadingBlock Text="Loading environments..." UnderTable="true" />
     </Loading>
@@ -221,6 +221,7 @@
                     <th scope="col">Solution</th>
                     <th scope="col">Now on</th>
                     <th scope="col">Next update</th>
+                    <th scope="col">Storage</th>
                     <th scope="col">Last checked</th>
                     <th scope="col" class="data-table__actions">Actions</th>
                 </tr>
@@ -256,6 +257,29 @@
                                 <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@NextVersion(row)</span>
                                 <span class="cell-stack__sub">@NextWhen(row)</span>
                             </span>
+                        </td>
+                        <td>
+                            @* The size is this environment's; the bar is the customer's whole
+                               tenant against its allowance, because that is what runs out. It
+                               repeats on each of a customer's rows so it is never a scroll away. *@
+                            @if (row.DatabaseKb is { } size)
+                            {
+                                <span class="cell-stack env-storage">
+                                    <span class="cell-stack__main u-num">@StorageDisplay.Size(size)</span>
+                                    @if (row.TenantStorageUse is { } use)
+                                    {
+                                        var tone = StorageDisplay.Tone(use);
+                                        <progress class="progress env-storage__bar @(tone.Length > 0 ? $"env-storage__bar--{tone}" : "")"
+                                                  max="1" value="@Math.Min(use, 1).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                  aria-label="@StorageDisplay.Summary(use, row.TenantQuotaKb!.Value)"></progress>
+                                        <span class="cell-stack__sub @(tone.Length > 0 ? $"env-storage__note--{tone}" : "")">@StorageDisplay.Summary(use, row.TenantQuotaKb!.Value)</span>
+                                    }
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="u-muted">—</span>
+                            }
                         </td>
                         <td class="u-muted">@Checked(row)</td>
                         <td class="data-table__actions">
@@ -353,7 +377,8 @@
         Tab.UpdatingSoon => "Environments with an update date from Business Central",
         Tab.NeedsAttention =>
             "Environments Business Central reports as suspended or deleted, "
-            + "reported no state for, or that returned something unexpected",
+            + "reported no state for, or that returned something unexpected - "
+            + "and those of a customer at or over their storage allowance",
         _ => "Every environment you can reach",
     };
 
@@ -518,9 +543,12 @@
     /// reports a state it will not leave on its own. Two things deliberately don't
     /// count — "nothing is scheduled" isn't a problem, and neither is an environment
     /// part-way through an update, which is the system working.
+    /// <para>A customer at or over their storage allowance counts too: nothing is broken
+    /// yet, but it is a conversation somebody has to have. Filling up (amber) does not -
+    /// the bar already says so, and a list of things to do should not grow on a warning.</para>
     /// </summary>
     private static bool NeedsAttention(UpgradeFleetRow row) =>
-        StateUnknown(row) || RowState(row) is "is-failed" or "is-queued";
+        StateUnknown(row) || RowState(row) is "is-failed" or "is-queued" || row.TenantStorageUse >= 1;
 
     // ── Presentation ─────────────────────────────────────────────────────
 

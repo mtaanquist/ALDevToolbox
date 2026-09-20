@@ -183,13 +183,14 @@ public sealed class EnvironmentDetailTests : IDisposable
             .Equal("/solutions", $"/solutions/{projectId}", "/environments");
 
         cut.FindAll(".meta-row .meta-item__label").Select(l => l.TextContent).Should()
-            .Equal("Type", "BC version", "Country", "Delivery window", "Next update", "Apps installed");
+            .Equal("Type", "BC version", "Country", "Delivery window", "Next update", "Database", "Apps installed");
         var meta = cut.FindAll(".meta-row .meta-item__value").Select(v => v.TextContent.Trim()).ToList();
         meta[1].Should().Be("28.2.41125.0");
         meta[2].Should().Be("Denmark (DK)");
         meta[3].Should().Be("22:00-04:00 (Copenhagen)");
         meta[4].Should().Be("12 Oct 2026");
-        meta[5].Should().Be("3");
+        meta[5].Should().Be("—", "storage has not been read for this one");
+        meta[6].Should().Be("3");
 
         cut.FindAll(".kv-grid .meta-item__label").Select(l => l.TextContent).Should().Equal(
             "Current version", "Next update version", "Scheduled for", "Latest possible date",

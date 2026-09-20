@@ -1612,6 +1612,24 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .Where(e => e.ProjectId == project.Id && e.MissingSince == null)
             .ToListAsync(ct);
 
+        // Storage is the tenant's: one read covers every environment's size and the one
+        // allowance they share. A failure costs the freshness, never the figures.
+        try
+        {
+            var storage = await _adminClient.GetTenantStorageAsync(token, ct);
+            foreach (var row in rows)
+            {
+                row.BcDatabaseKb = storage.DatabaseKilobytesByEnvironment.TryGetValue(row.Name, out var kb) ? kb : null;
+            }
+            project.BcStorageQuotaKb = storage.AllowedKilobytes;
+            project.BcStorageFetchedAt = _clock.GetUtcNow().UtcDateTime;
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning(
+                "Couldn't read the storage figures for project {ProjectId}: {Message}.", project.Id, ex.Message);
+        }
+
         foreach (var row in rows)
         {
             ct.ThrowIfCancellationRequested();

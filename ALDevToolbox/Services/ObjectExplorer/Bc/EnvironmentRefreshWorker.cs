@@ -47,7 +47,8 @@ public sealed class EnvironmentRefreshWorker : QueueDrainWorker<EnvironmentRefre
     internal TimeSpan PauseBetweenSolutions { get; set; } = TimeSpan.FromSeconds(1);
 
     // The run being drained: how many solutions, how many Business Central requests
-    // (two per solution and three per environment - see MirrorBcEnvironmentDetailsAsync),
+    // (a token and the list, then the two storage reads and three per environment - see
+    // MirrorBcEnvironmentDetailsAsync),
     // and since when. Logged when the queue empties, so how long a night's sweep really
     // takes is a line in the log rather than an estimate.
     private int _runSolutions;
@@ -63,7 +64,7 @@ public sealed class EnvironmentRefreshWorker : QueueDrainWorker<EnvironmentRefre
         var connections = scope.ServiceProvider.GetRequiredService<ProjectConnectionService>();
         var result = await connections.RefreshEnvironmentsUnattendedAsync(job.ProjectId, ct).ConfigureAwait(false);
         _runSolutions++;
-        _runRequests += 2 + (result.IsSuccess ? 3 * result.EnvironmentCount : 0);
+        _runRequests += 2 + (result.IsSuccess ? 2 + 3 * result.EnvironmentCount : 0);
         if (result.IsSuccess)
         {
             _logger.LogInformation(

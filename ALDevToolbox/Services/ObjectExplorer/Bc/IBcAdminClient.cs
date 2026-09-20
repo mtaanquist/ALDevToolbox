@@ -46,6 +46,15 @@ public interface IBcAdminClient
     /// as <see cref="ListEnvironmentUpdatesAsync"/> does. Throws
     /// <see cref="BcApiException"/> on any other non-success status.
     /// </summary>
+    /// <summary>
+    /// The database size of every environment in the tenant, by environment name, and
+    /// what the tenant is allowed in total. The allowance is the <em>tenant's</em> - all
+    /// its environments share it - which is why this is one read and not one per
+    /// environment. An environment whose size Business Central could not work out (it
+    /// reports -1) is left out. Throws <see cref="BcApiException"/> on a non-success status.
+    /// </summary>
+    Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default);
+
     Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 

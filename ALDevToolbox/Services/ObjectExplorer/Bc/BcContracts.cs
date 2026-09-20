@@ -307,3 +307,9 @@ public static class BcEnvironmentOperationDisplay
         return spaced.Length == 0 ? spaced : char.ToUpperInvariant(spaced[0]) + spaced[1..];
     }
 }
+
+/// <summary>
+/// How much database each of a tenant's environments uses, and what the tenant is allowed
+/// in total. Business Central can go over its allowance, so used may exceed the total.
+/// </summary>
+public sealed record BcTenantStorage(IReadOnlyDictionary<string, long> DatabaseKilobytesByEnvironment, long? AllowedKilobytes);

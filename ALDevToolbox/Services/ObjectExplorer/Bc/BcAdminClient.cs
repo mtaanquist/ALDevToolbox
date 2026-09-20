@@ -61,6 +61,64 @@ public sealed class BcAdminClient : IBcAdminClient
         return body is null ? Array.Empty<BcEnvironmentUpdate>() : ParseEnvironmentUpdates(body);
     }
 
+    public async Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default)
+    {
+        using var used = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminUsedStorageUrl);
+        used.UseBearer(accessToken);
+        var usedBody = await SendSettingsAsync(used, "reading the database sizes", TenantScope, ct).ConfigureAwait(false);
+
+        using var quotas = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminQuotasUrl);
+        quotas.UseBearer(accessToken);
+        var quotaBody = await SendSettingsAsync(quotas, "reading the storage allowance", TenantScope, ct).ConfigureAwait(false);
+
+        return ParseTenantStorage(usedBody, quotaBody);
+    }
+
+    internal static BcTenantStorage ParseTenantStorage(string usedJson, string quotasJson)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        long? total = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(usedJson))
+            {
+                using var doc = JsonDocument.Parse(usedJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in value.EnumerateArray())
+                    {
+                        if (item.ValueKind != JsonValueKind.Object || Text(item, "environmentName") is not { } name) continue;
+                        // -1 is Business Central saying it could not work the size out.
+                        if (item.TryGetProperty("databaseStorageInKilobytes", out var kb)
+                            && kb.ValueKind == JsonValueKind.Number && kb.TryGetInt64(out var size) && size >= 0)
+                        {
+                            sizes[name] = size;
+                        }
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(quotasJson))
+            {
+                using var doc = JsonDocument.Parse(quotasJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("storageInKilobytes", out var storage) && storage.ValueKind == JsonValueKind.Object
+                    && storage.TryGetProperty("total", out var t) && t.ValueKind == JsonValueKind.Number
+                    && t.TryGetInt64(out var allowed) && allowed > 0)
+                {
+                    total = allowed;
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            throw new BcApiException(null, "Business Central returned storage figures we couldn't read.", ex);
+        }
+
+        return new BcTenantStorage(sizes, total);
+    }
+
     public async Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
     {

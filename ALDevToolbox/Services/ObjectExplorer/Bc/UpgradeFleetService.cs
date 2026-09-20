@@ -177,7 +177,14 @@ public sealed class UpgradeFleetService
             e.BcNextUpdateFetchedAt,
             _db.OeProjects.Where(actionable).Any(p => p.Id == e.ProjectId),
             e.FetchedAt,
-            e.AadTenantId ?? e.Project!.BcTenantId);
+            e.AadTenantId ?? e.Project!.BcTenantId,
+            e.BcDatabaseKb,
+            e.Project!.BcStorageQuotaKb,
+            // The allowance is the tenant's, so what counts against it is every
+            // environment the customer has, not just the ones on this page.
+            _db.OeProjectEnvironments
+                .Where(x => x.ProjectId == e.ProjectId && x.MissingSince == null)
+                .Sum(x => x.BcDatabaseKb));
 
     /// <summary>
     /// Asks Business Central for fresh answers about <paramref name="projectIds"/> by
@@ -284,8 +291,22 @@ public sealed record UpgradeFleetRow(
     /// else the one the solution's connection was set up with. Only here to build
     /// <see cref="BusinessCentralUrl"/>.
     /// </summary>
-    Guid? TenantId = null)
+    Guid? TenantId = null,
+    /// <summary>This environment's database size in kilobytes; null when not read.</summary>
+    long? DatabaseKb = null,
+    /// <summary>What the customer's tenant is allowed across all its environments, in kilobytes.</summary>
+    long? TenantQuotaKb = null,
+    /// <summary>What all the tenant's environments use together, in kilobytes. Filled by the list, not the query.</summary>
+    long? TenantUsedKb = null)
 {
+    /// <summary>
+    /// How full the customer's tenant is, as a fraction; above 1 when over its allowance,
+    /// which Business Central permits. Null until both halves have been read.
+    /// </summary>
+    public double? TenantStorageUse => TenantQuotaKb is > 0 && TenantUsedKb is { } used
+        ? (double)used / TenantQuotaKb.Value
+        : null;
+
     /// <summary>
     /// The environment in Business Central's own web client, or null when the tenant is
     /// not known. The environment name is a path segment, so it is escaped.
