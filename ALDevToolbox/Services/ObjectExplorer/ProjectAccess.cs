@@ -157,6 +157,30 @@ public sealed class ProjectAccess
         }
     }
 
+    /// <summary>
+    /// The list-query form of <see cref="CanManageAsync"/>: which projects
+    /// <paramref name="snapshot"/> may manage. For a list that offers a manage-gated
+    /// action per row and would otherwise have to ask once per row.
+    ///
+    /// <para>Compose it <em>alongside</em> <see cref="VisibleProjectPredicate"/>, not
+    /// instead of it: this axis answers "may act", never "may see". Keep it in step with
+    /// <see cref="CanManageAsync"/> — the service re-checks there on every write, and
+    /// this only decides what is offered.</para>
+    /// </summary>
+    public static Expression<Func<OeProject, bool>> ManageProjectPredicate(AccessSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.IsSiteAdmin || snapshot.IsOrgAdmin) return _ => true;
+        if (snapshot.UserId is null) return _ => false;
+
+        // Written out longhand, like the other predicates in this file: EF has to
+        // translate the whole tree to SQL and an invoked expression variable doesn't
+        // survive that trip.
+        var userId = snapshot.UserId.Value;
+        var teamIds = snapshot.TeamIds.ToList();
+        return p => p.CreatedByUserId == userId || p.Teams.Any(t => teamIds.Contains(t.TeamId));
+    }
+
     // ── Environment-update axis (a different axis from manage) ──────────
 
     /// <summary>

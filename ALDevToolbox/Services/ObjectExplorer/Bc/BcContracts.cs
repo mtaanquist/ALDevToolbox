@@ -221,6 +221,90 @@ public static class BcAppUpdateCadence
 }
 
 /// <summary>
+/// What an environment is: the two types Business Central offers, as the copy write
+/// sends them. Wire values, so they are sent verbatim.
+/// </summary>
+public static class BcEnvironmentTypes
+{
+    public const string Sandbox = "Sandbox";
+    public const string Production = "Production";
+
+    /// <summary>Every accepted value, in the order a picker offers them.</summary>
+    public static readonly IReadOnlyList<string> All = [Sandbox, Production];
+
+    /// <summary>Canonical spelling of a stored value, case-insensitively; null when unknown.</summary>
+    public static string? Normalize(string? value) =>
+        All.FirstOrDefault(v => string.Equals(v, value?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True when Business Central calls this environment a production one.</summary>
+    public static bool IsProduction(string? value) =>
+        string.Equals(value?.Trim(), Production, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Business Central's rules for what an environment may be called, in one place so the
+/// service (the source of truth) and the dialog's inline hint cannot drift apart. The
+/// rules are Microsoft's, reported as <c>environmentNameNotValid</c> when broken.
+/// </summary>
+public static class BcEnvironmentName
+{
+    /// <summary>
+    /// Business Central takes "fewer than 30 characters", so 29 is the longest name that
+    /// is accepted. Mirrored on the input's <c>maxlength</c>.
+    /// </summary>
+    public const int MaxLength = 29;
+
+    /// <summary>
+    /// The same rules as <see cref="Validate"/>, for the input's <c>pattern</c> attribute
+    /// so the browser answers before the server has to.
+    /// </summary>
+    public const string Pattern = "[A-Za-z][A-Za-z0-9_-]{0,28}";
+
+    /// <summary>The rules in one sentence, shown under the field and repeated in a refusal.</summary>
+    public const string Rule =
+        "Start with a letter, then letters, numbers, dashes or underscores - up to 29 characters.";
+
+    /// <summary>
+    /// Why this name won't do, or null when it will. One sentence, naming the rule that
+    /// was broken rather than restating all of them.
+    /// </summary>
+    public static string? Validate(string? name)
+    {
+        var value = (name ?? string.Empty).Trim();
+        if (value.Length == 0) return "Enter a name for the new environment.";
+        if (value.Length > MaxLength) return $"That name is too long. Business Central allows up to {MaxLength} characters.";
+        if (!char.IsAsciiLetter(value[0])) return "An environment name has to start with a letter.";
+        return value.All(c => char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_')
+            ? null
+            : "An environment name can only hold letters, numbers, dashes and underscores.";
+    }
+
+    /// <summary>
+    /// The name to offer first: the source with <c>-Copy</c> on the end, shortened from
+    /// the source's side so the suffix - the part that says what this environment is -
+    /// always survives.
+    /// </summary>
+    public static string Suggest(string sourceName)
+    {
+        const string suffix = "-Copy";
+        var stem = (sourceName ?? string.Empty).Trim();
+        if (stem.Length == 0) return "Copy";
+        if (stem.Length + suffix.Length > MaxLength) stem = stem[..(MaxLength - suffix.Length)];
+        return stem.TrimEnd('-', '_') + suffix;
+    }
+}
+
+/// <summary>
+/// What Business Central answered when asked to copy an environment: the long-running
+/// operation it scheduled, not the new environment. Both fields are best-effort - the
+/// copy has been accepted by the time this is returned, and a body we couldn't read is
+/// not a reason to tell anyone it failed.
+/// </summary>
+/// <param name="OperationId">Microsoft's id for the copy, for the log and the Operations tab.</param>
+/// <param name="Status">Where it had got to when it answered - <c>scheduled</c>, usually.</param>
+public sealed record BcEnvironmentCopy(string? OperationId, string? Status);
+
+/// <summary>
 /// One thing Business Central did, or is doing, to an environment - an app install or
 /// update, a platform update, a rename, a restart, a setting change. Whoever did it:
 /// this toolbox, the admin centre, or Microsoft.

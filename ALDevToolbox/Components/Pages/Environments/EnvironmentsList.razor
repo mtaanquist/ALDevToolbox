@@ -58,7 +58,15 @@
         else if (_done is { } done)
         {
             <Alert Tone="AlertTone.Success">
-                <span>@done</span>
+                <span>
+                    @done
+                    @* A copy runs for an hour after this line appears, so the notice
+                       carries the way to go and watch it. *@
+                    @if (_doneLink is { } link)
+                    {
+                        <text> </text><a href="@link.Href">@link.Text</a><text>.</text>
+                    }
+                </span>
             </Alert>
         }
 
@@ -96,7 +104,12 @@
 
         @if (_refreshNote is { } note)
         {
-            <p class="note note--info"><span class="note__body">@note</span></p>
+            @* A note is an icon beside a body: without the icon the body lands in the
+               icon's own 18px column and breaks a word to a line. *@
+            <p class="note note--info">
+                <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                <span class="note__body">@note</span>
+            </p>
         }
 
         @* What this view is, in the view itself. The pill's tooltip says the same, but a
@@ -105,6 +118,7 @@
         @if (_tab == Tab.Deleted && _rows is { Count: > 0 })
         {
             <p class="note note--info">
+                <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
                 <span class="note__body">
                     These have been deleted in Business Central. Each one can be brought
                     back until the date below - after that it is gone, with its data.
@@ -321,11 +335,12 @@
                                is per solution, not per environment, and the strip above
                                already does it. *@
                             <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
-                                @* Offered on every row and refused by the service for someone
-                                   who doesn't manage the solution: the rows don't carry that
-                                   answer, and the refusal says who may. Recover leads the menu
-                                   on a deleted row - it is the only thing left to do to one,
-                                   and the only one with a deadline. *@
+                                @* Recover and Upload are offered on every row and refused by the
+                                   service for someone who doesn't manage the solution: each is
+                                   one click, and the refusal says who may. Copy is the exception,
+                                   for the reason below it. Recover leads the menu on a deleted
+                                   row - it is the only thing left to do to one, and the only one
+                                   with a deadline. *@
                                 @if (row.IsSoftDeleted)
                                 {
                                     <button type="button" class="menu__item" role="menuitem"
@@ -341,6 +356,15 @@
                                 {
                                     <button type="button" class="menu__item" role="menuitem"
                                             disabled="@_busy" @onclick="() => UploadAppAsync(row)">Upload an app...</button>
+                                }
+                                @* Copy is the one entry offered only to people who manage the
+                                   solution. The others are one click and a refusal; this one
+                                   asks for a name and two decisions first, and taking all that
+                                   back with "you may not" is a worse answer than never asking. *@
+                                @if (row.CanManage && !row.IsSoftDeleted)
+                                {
+                                    <button type="button" class="menu__item" role="menuitem"
+                                            disabled="@_busy" @onclick="() => CopyAsync(row)">Copy...</button>
                                 }
                             </RowActions>
                         </td>
@@ -364,6 +388,7 @@
 </ListPage>
 
 <UploadAppDialog @ref="_uploadDialog" />
+<CopyEnvironmentDialog @ref="_copyDialog" />
 <ConfirmDialog @ref="_confirm" />
 
 @code {
@@ -372,12 +397,16 @@
 
     private string? _error;
 
-    /// <summary>The outcome of an upload or a recovery, shown where a refresh failure would be.</summary>
+    /// <summary>The outcome of an upload, a recovery or a copy, shown where a refresh failure would be.</summary>
     private string? _done;
+
+    /// <summary>Where to go on from an outcome this page cannot finish telling - a copy that is still running.</summary>
+    private (string Href, string Text)? _doneLink;
 
     /// <summary>A write from a row menu is in flight; the other rows' menu items wait for it.</summary>
     private bool _busy;
     private UploadAppDialog? _uploadDialog;
+    private CopyEnvironmentDialog? _copyDialog;
     private ConfirmDialog? _confirm;
 
     /// <summary>
@@ -717,6 +746,7 @@
         _busy = true;
         _error = null;
         _done = null;
+        _doneLink = null;
         StateHasChanged();
         try
         {
@@ -735,6 +765,51 @@
         {
             Log.LogError(ex, "Uploading an app failed for environment {EnvId}.", row.EnvironmentId);
             _error = $"Couldn't upload {upload.FileName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Makes a new environment from this row's. The list has no live panel to re-read
+    /// afterwards, so the outcome is a notice - and because the copy goes on running long
+    /// after it, the notice says where to watch it finish.
+    /// </summary>
+    private async Task CopyAsync(UpgradeFleetRow row)
+    {
+        if (_copyDialog is null) return;
+        var copy = await _copyDialog.OpenAsync(
+            row.ProjectName, row.EnvironmentName, row.IsProduction, row.TenantStorageUse);
+        if (copy is null) return;
+
+        _busy = true;
+        _error = null;
+        _done = null;
+        _doneLink = null;
+        StateHasChanged();
+        try
+        {
+            await Connection.CopyEnvironmentAsync(row.ProjectId, row.EnvironmentId, copy.Name, copy.Type);
+            _done = CopyEnvironmentDialog.DoneMessage(copy, row.EnvironmentName);
+            _doneLink = ($"/environments/{row.EnvironmentId}/operations", $"Open {row.EnvironmentName}'s Operations tab");
+            // Business Central may not list the new one yet; the re-read is what brings
+            // it in as soon as it does, and its absence is not a failure.
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.Values.FirstOrDefault() ?? $"Couldn't copy {row.EnvironmentName}.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Copying environment {EnvId} failed.", row.EnvironmentId);
+            _error = $"Couldn't copy {row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.";
         }
         finally
         {
@@ -767,6 +842,7 @@
         _busy = true;
         _error = null;
         _done = null;
+        _doneLink = null;
         StateHasChanged();
         try
         {

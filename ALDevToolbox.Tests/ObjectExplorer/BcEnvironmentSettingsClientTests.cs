@@ -212,6 +212,94 @@ public sealed class BcEnvironmentSettingsClientTests
         thrown.Message.Should().NotContain(code, "the wire code is not what a consultant reads");
     }
 
+    // ── Copying an environment ────────────────────────────────────────────
+
+    /// <summary>
+    /// The copy is a POST on the <em>source</em> environment's own route, and the body
+    /// carries only what the new environment is: its name and its type. The source is
+    /// named by the route and must never be repeated in the body.
+    /// </summary>
+    [Fact]
+    public async Task The_copy_write_posts_the_new_name_and_type_to_the_sources_copy_route()
+    {
+        var (client, handler) = Client(HttpStatusCode.Accepted,
+            """{"id":"1f8f","type":"copy","status":"scheduled","environmentName":"CRONUS-Test"}""");
+
+        var copy = await client.CopyEnvironmentAsync(
+            Token, Family, Environment, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        handler.Method.Should().Be(HttpMethod.Post);
+        handler.Url!.AbsolutePath.Should().EndWith("/environments/Production/copy");
+        handler.Body.Should().Contain("\"environmentName\":\"CRONUS-Test\"").And.Contain("\"type\":\"Sandbox\"");
+        handler.Body.Should().NotContain("sourceEnvironmentName", "the source is the route, not the body");
+        copy.OperationId.Should().Be("1f8f");
+        copy.Status.Should().Be("scheduled");
+    }
+
+    /// <summary>
+    /// The copy has been accepted by the time the body is read, so a body we can't make
+    /// sense of costs the caller an operation id and never the write.
+    /// </summary>
+    [Fact]
+    public async Task A_copy_whose_answer_cannot_be_read_still_counts_as_asked_for()
+    {
+        var (client, _) = Client(HttpStatusCode.Accepted, "<html>gateway</html>");
+
+        var copy = await client.CopyEnvironmentAsync(
+            Token, Family, Environment, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        copy.OperationId.Should().BeNull();
+        copy.Status.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_copy_needs_a_type_business_central_recognises()
+    {
+        var (client, handler) = Client();
+
+        var act = () => client.CopyEnvironmentAsync(Token, Family, Environment, "CRONUS-Test", "Staging");
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        handler.Url.Should().BeNull("nothing reached the customer's tenant");
+    }
+
+    /// <summary>
+    /// Each code Microsoft documents for this endpoint is a different situation with a
+    /// different next step - a name already taken is not a tenant out of licences - so a
+    /// consultant is told which. Never the wire code.
+    /// </summary>
+    [Theory]
+    [InlineData("resourceExists", "already exists")]
+    [InlineData("environmentNameNotValid", "Start with a letter")]
+    [InlineData("maximumNumberOfEnvironmentsAllowedReached", "as many environments as their licences allow")]
+    [InlineData("maximumStorageCapacityUsageReached", "no room left")]
+    [InlineData("tenantAlreadyProvisioning", "already creating an environment")]
+    [InlineData("environmentNotFound", "no longer has the environment you're copying")]
+    [InlineData("conflictingDeveloperExtensions", "clash")]
+    public async Task A_refused_copy_is_described_by_its_code(string code, string expected)
+    {
+        var (client, _) = Client(HttpStatusCode.BadRequest, $$"""{"code":"{{code}}","message":"Localized prose."}""");
+
+        var act = () => client.CopyEnvironmentAsync(
+            Token, Family, Environment, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        var thrown = (await act.Should().ThrowAsync<BcApiException>()).Which;
+        thrown.Message.Should().Contain(expected);
+        thrown.Message.Should().NotContain(code, "the wire code is not what a consultant reads");
+    }
+
+    [Fact]
+    public async Task A_copy_refused_for_a_reason_microsoft_has_not_documented_still_says_what_was_asked()
+    {
+        var (client, _) = Client(HttpStatusCode.BadRequest, """{"code":"somethingNew","message":"Boom."}""");
+
+        var act = () => client.CopyEnvironmentAsync(
+            Token, Family, Environment, "CRONUS-Test", BcEnvironmentTypes.Sandbox);
+
+        (await act.Should().ThrowAsync<BcApiException>())
+            .Which.Message.Should().Contain("copying the environment").And.Contain("Boom.");
+    }
+
     [Fact]
     public void An_unrecognised_refusal_still_names_what_was_being_done()
     {

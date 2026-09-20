@@ -1,0 +1,176 @@
+@*
+    Copy one Business Central environment into a new one - almost always a customer's
+    production into a fresh sandbox, to try an update or reproduce a problem on real
+    data. Shared by the environment page and the Environments list's row menu.
+
+    The dialog only collects the answer - what the copy is called and what it is. The
+    caller sends it (ProjectConnectionService.CopyEnvironmentAsync) and reports the
+    outcome where its own page reports outcomes, so the two pages cannot word the same
+    result differently. See .design/environment-updates.md, "Copying an environment".
+
+    The confirm is re-voiced as the person chooses, which is why the dialog is opened on
+    its own parameters rather than with per-call overrides: the button names the
+    environment being made, and a production copy is a different, redder question from a
+    sandbox one.
+*@
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+
+<ConfirmDialog @ref="_confirm"
+               Wide="true"
+               Title="@DialogTitle"
+               Message="@DialogMessage"
+               ConfirmLabel="@ConfirmLabel"
+               ConfirmButtonClass="@ConfirmClass"
+               ConfirmIcon="copy"
+               ConfirmDisabled="@(NameProblem is not null)">
+    <div class="field copy-env__name">
+        <label class="field__label" for="copy-env-name">Name for the new environment</label>
+        <input id="copy-env-name" class="input" type="text" required
+               maxlength="@BcEnvironmentName.MaxLength" pattern="@BcEnvironmentName.Pattern"
+               placeholder="e.g. CRONUS-Test" autocomplete="off" spellcheck="false"
+               aria-invalid="@(NameProblem is not null ? "true" : null)"
+               aria-describedby="copy-env-name-help"
+               value="@_name" @oninput="OnNameInput" />
+        @* The rule as the person types, not after they submit: the name is the only
+           thing they have to get right, and Business Central's refusal arrives minutes
+           later as a code. An emptied field says so too - the button greys out either
+           way, and a dead button with no reason beside it is a dead end. *@
+        @if (NameProblem is { } problem)
+        {
+            <span id="copy-env-name-help" class="field-error" role="alert">
+                <Icon Name="triangle-alert" Width="13" Height="13" />@problem
+            </span>
+        }
+        else
+        {
+            <small id="copy-env-name-help" class="field__hint">@BcEnvironmentName.Rule</small>
+        }
+    </div>
+
+    <fieldset class="copy-env__type">
+        <legend class="copy-env__type-legend">What should the copy be?</legend>
+        <label class="copy-env__type-opt">
+            <input type="radio" name="copy-env-type"
+                   checked="@(!IsProductionTarget)" @onchange="() => _type = BcEnvironmentTypes.Sandbox" />
+            <span>Sandbox - for testing and training</span>
+        </label>
+        <label class="copy-env__type-opt">
+            <input type="radio" name="copy-env-type"
+                   checked="@IsProductionTarget" @onchange="() => _type = BcEnvironmentTypes.Production" />
+            <span>Production - for the business to work in</span>
+        </label>
+    </fieldset>
+
+    @* A note is drawn as an icon beside a body - the glyph carries the tone for anyone
+       who cannot tell the tints apart, and without it the body sits in the icon's
+       18px column and breaks a word to a line. *@
+    <div class="copy-env__notes">
+        @if (IsProductionTarget)
+        {
+            <p class="note note--danger">
+                <span class="note__icon"><Icon Name="triangle-alert" Width="17" Height="17" /></span>
+                <span class="note__body">
+                    A production environment counts against @_customer's Business Central licences and
+                    against the number of production environments they are allowed. Choose Sandbox
+                    unless people are going to work in this one.
+                </span>
+            </p>
+        }
+        else if (_sourceIsProduction)
+        {
+            <p class="note note--warn">
+                <span class="note__icon"><Icon Name="triangle-alert" Width="17" Height="17" /></span>
+                <span class="note__body">
+                    The sandbox will hold @_customer's real data - the same customers, invoices and
+                    people as @_source. Everyone you let into it can read all of it.
+                </span>
+            </p>
+        }
+        @if (_storageFull)
+        {
+            <p class="note note--warn">
+                <span class="note__icon"><Icon Name="database" Width="17" Height="17" /></span>
+                <span class="note__body">
+                    @_customer has already used up the storage their Business Central allows. A copy
+                    takes as much room again as @_source, so Business Central may refuse it. Delete a
+                    sandbox they no longer use, or ask them to buy more storage, first.
+                </span>
+            </p>
+        }
+    </div>
+
+    @* Written for somebody who has not pressed the button yet: "you can close this"
+       here means Cancel, and nothing has started. *@
+    <p class="copy-env__wait">
+        Business Central does the copying - an hour or more for a large environment. Once it has
+        started you can leave the page; @_source's Operations tab shows how far it has got.
+    </p>
+</ConfirmDialog>
+
+@code {
+    /// <summary>What the person chose: what the copy is called, and what it is.</summary>
+    public sealed record Copy(string Name, string Type);
+
+    private ConfirmDialog? _confirm;
+    private string _name = string.Empty;
+    private string _type = BcEnvironmentTypes.Sandbox;
+    private string _customer = string.Empty;
+    private string _source = string.Empty;
+    private bool _sourceIsProduction;
+    private bool _storageFull;
+
+    private bool IsProductionTarget => BcEnvironmentTypes.IsProduction(_type);
+
+    /// <summary>Why the typed name won't do, or null. The same check the service makes.</summary>
+    private string? NameProblem => BcEnvironmentName.Validate(_name);
+
+    private string DialogTitle => $"Copy {_source}?";
+
+    private string DialogMessage =>
+        $"Business Central makes a new environment for {_customer} from {_source}, with everything it "
+        + $"holds now - its data, its apps and its settings. {_source} itself is left alone.";
+
+    /// <summary>The button says what it makes, so the name is read once more before the click.</summary>
+    private string ConfirmLabel => NameProblem is null ? $"Copy to {_name.Trim()}" : "Copy";
+
+    /// <summary>
+    /// Red for a production copy, which is the choice that costs the customer a licence;
+    /// the dialog takes its tint and its glyph from this.
+    /// </summary>
+    private string ConfirmClass => IsProductionTarget ? "btn--danger" : "btn--primary";
+
+    /// <summary>
+    /// Asks what the copy is called and what it is. Null when the person backed out.
+    /// Sandbox is the default every time: a production copy is the rarer, dearer answer.
+    /// </summary>
+    /// <param name="tenantStorageUse">
+    /// How full the customer's tenant is, as a fraction of its allowance (1 or more means
+    /// at or over it). Null when we haven't read both halves; the dialog then says nothing
+    /// about storage rather than guessing.
+    /// </param>
+    public async Task<Copy?> OpenAsync(
+        string projectName, string sourceName, bool sourceIsProduction, double? tenantStorageUse = null)
+    {
+        if (_confirm is null) return null;
+        _customer = projectName;
+        _source = sourceName;
+        _sourceIsProduction = sourceIsProduction;
+        _storageFull = tenantStorageUse >= 1;
+        _type = BcEnvironmentTypes.Sandbox;
+        _name = BcEnvironmentName.Suggest(sourceName);
+        StateHasChanged();
+
+        var confirmed = await _confirm.OpenAsync();
+        return confirmed && NameProblem is null ? new Copy(_name.Trim(), _type) : null;
+    }
+
+    /// <summary>The sentence for a page's success notice, so both callers say the same thing.</summary>
+    public static string DoneMessage(Copy copy, string sourceName) =>
+        // "Making X from Y", never "copying Y to X": the second reads as pushing one
+        // environment's data into another that already exists, which is the one thing
+        // this never does.
+        $"Business Central is making {copy.Name} from {sourceName}. It takes a while; {copy.Name} "
+        + "appears in the environments list once it is ready.";
+
+    private void OnNameInput(ChangeEventArgs e) => _name = e.Value?.ToString() ?? string.Empty;
+}

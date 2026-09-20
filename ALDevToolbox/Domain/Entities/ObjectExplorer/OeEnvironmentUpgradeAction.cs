@@ -118,6 +118,14 @@ public enum UpgradeActionKind
     /// somebody else's deletion, and the history is where that is answered for.
     /// </summary>
     RecoverEnvironment,
+
+    /// <summary>
+    /// A copy of the environment was asked for, under a new name. Recorded like
+    /// <see cref="UpdateApp"/> — never booked, written already <c>Sent</c>, and on the
+    /// <em>source</em> environment, which is the one that existed when it was asked for
+    /// and the one somebody later asks where the sandbox came from.
+    /// </summary>
+    CopyEnvironment,
 }
 
 /// <summary>

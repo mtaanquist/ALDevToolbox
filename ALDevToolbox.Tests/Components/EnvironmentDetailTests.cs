@@ -280,6 +280,72 @@ public sealed class EnvironmentDetailTests : IDisposable
         });
     }
 
+    // ── Copying the environment ───────────────────────────────────────────
+
+    /// <summary>
+    /// The commonest thing this page's reader would otherwise open the admin centre for,
+    /// so it sits in the head beside the other two. An outline button: it writes to the
+    /// customer's tenant, and nothing on this page is the one thing to do.
+    /// </summary>
+    [Fact]
+    public async Task Someone_who_manages_the_solution_is_offered_a_copy_from_the_head()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+
+        var cut = Render(envId);
+
+        var copy = cut.FindAll(".page-head__actions button")
+            .Should().ContainSingle(b => b.TextContent.Contains("Copy this environment...")).Subject;
+        copy.ClassList.Should().NotContain("btn--primary");
+    }
+
+    [Fact]
+    public async Task Someone_who_can_see_the_solution_but_not_manage_it_is_not_offered_a_copy()
+    {
+        var (_, envId) = await SeedAsync();
+        _db.OrgContext.CurrentUserId = ColleagueUserId;
+
+        var cut = Render(envId);
+
+        cut.Markup.Should().NotContain("Copy this environment...");
+    }
+
+    /// <summary>A deleted environment has nothing to copy; the alert offers the one thing left to do.</summary>
+    [Fact]
+    public async Task A_deleted_environment_is_not_offered_a_copy()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        await SoftDeleteAsync(envId, new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = Render(envId);
+
+        cut.Markup.Should().NotContain("Copy this environment...");
+        cut.Find(".alert--danger button").TextContent.Should().Contain("Recover this environment");
+    }
+
+    [Fact]
+    public async Task The_copy_dialog_names_the_environment_and_offers_a_name_for_the_new_one()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+
+        var cut = Render(envId);
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".page-head__actions button")
+                .Single(b => b.TextContent.Contains("Copy this environment...")).Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Copy Production?");
+            cut.Find("#copy-env-name").GetAttribute("value").Should().Be("Production-Copy");
+            // Production into a sandbox: the sandbox holds the customer's real data.
+            cut.Find(".note--warn").TextContent.Should().Contain("real data");
+        });
+    }
+
     [Fact]
     public async Task Waiting_updates_put_the_ready_ones_first_and_name_what_the_rest_wait_for()
     {

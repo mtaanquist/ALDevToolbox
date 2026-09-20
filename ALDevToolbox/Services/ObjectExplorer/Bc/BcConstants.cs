@@ -130,6 +130,14 @@ internal static class BcConstants
     public static string EnvironmentRecoverUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/recover";
 
+    /// <summary>
+    /// Makes a copy of an environment under a new name. POST with the new name and the
+    /// type the copy should be; the answer is a long-running operation, not the new
+    /// environment. Named for the <em>source</em>, which is the environment being read.
+    /// </summary>
+    public static string EnvironmentCopyUrl(string? applicationFamily, string sourceEnvironmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, sourceEnvironmentName)}/copy";
+
     /// <summary>Whether people holding only a Microsoft 365 licence may sign in to the environment.</summary>
     public static string EnvironmentM365AccessUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/accesswithm365licenses";

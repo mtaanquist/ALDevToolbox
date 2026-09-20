@@ -1,0 +1,41 @@
+.copy-env__name { margin: var(--space-3) 0 0; }
+
+/* The same "choose one" block the upload dialog draws for its timing. */
+.copy-env__type {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface-2);
+    display: grid;
+    gap: var(--space-2);
+}
+
+.copy-env__type-legend {
+    padding: 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.copy-env__type-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
+
+.copy-env__notes {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.copy-env__notes:not(:empty) { margin: var(--space-3) 0 0; }
+
+/* Not a note: nothing here is a risk, it is how long to expect and where to look. */
+.copy-env__wait {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
