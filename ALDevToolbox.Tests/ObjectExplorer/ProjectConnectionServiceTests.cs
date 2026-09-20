@@ -930,6 +930,54 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_refresh_mirrors_what_is_installed_and_a_later_one_brings_it_in_line()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient { OnList = () => new[] { new BcEnvironment("Production", "Production") } };
+        var core = Guid.NewGuid();
+        var gone = Guid.NewGuid();
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { Installed(core, "Continia Core", "28.4"), Installed(gone, "Old Add-on", "1.0") },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin, apps).RefreshEnvironmentsAsync(id);
+        apps.OnInstalled = () => new[] { Installed(core, "Continia Core", "28.5") };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin, apps).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var mirrored = await verify.OeEnvironmentApps.AsNoTracking().ToListAsync();
+        mirrored.Should().ContainSingle().Which.Should().BeEquivalentTo(new { AppId = core, Name = "Continia Core", Version = "28.5" });
+    }
+
+    [Fact]
+    public async Task An_answer_with_no_apps_in_it_is_a_failed_read_and_keeps_the_last_good_mirror()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient { OnList = () => new[] { new BcEnvironment("Production", "Production") } };
+        var apps = new FakeAppManagementClient { OnInstalled = () => new[] { Installed(Guid.NewGuid(), "Continia Core", "28.4") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin, apps).RefreshEnvironmentsAsync(id);
+
+        apps.OnInstalled = Array.Empty<BcInstalledApp>;
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin, apps).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        (await verify.OeEnvironmentApps.AsNoTracking().CountAsync()).Should().Be(1,
+            "an environment always has the base application, so nothing at all means the read went wrong");
+    }
+
+    private static BcInstalledApp Installed(Guid appId, string name, string version) =>
+        new(appId, name, "Continia Software", version, "Installed", "global", true, null, string.Empty);
+
+    [Fact]
     public async Task Operations_come_back_newest_first_whatever_order_business_central_used()
     {
         var id = await SeedProjectAsync();

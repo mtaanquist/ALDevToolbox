@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject IHttpContextAccessor Http
+@inject CustomerModuleService CustomerModules
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 
 @*
@@ -56,6 +57,23 @@
                placeholder="Search by name, owner, or repository..."
                aria-label="Search solutions" />
     </Search>
+    <SearchFormExtras>
+        @* "Who has Document Capture?" - only once the organisation has a module catalogue.
+           Inside the GET form so the answer is a shareable address; choosing one submits
+           it, and without scripting Enter in the search box still does. *@
+        @if (_modules.Count > 0)
+        {
+            <SelectBox style="width: 240px">
+                <select class="select" name="module" aria-label="Filter by module" onchange="this.form.requestSubmit()">
+                    <option value="">All solutions</option>
+                    @foreach (var module in _modules)
+                    {
+                        <option value="@module.Id" selected="@(module.Id == _moduleId)">Has @module.Name</option>
+                    }
+                </select>
+            </SelectBox>
+        }
+    </SearchFormExtras>
     <Loading>
         <table class="data-table data-table--edge">
             <thead>
@@ -90,9 +108,9 @@
     </Empty>
     <NoMatches>
         <div class="card">
-            <EmptyState Icon="funnel-x" Title="@($"No solutions match \"{_search}\"")">
-                <Text>Try a shorter search term, or clear it to see all @_totalCount.</Text>
-                <Action><a class="btn" href="/solutions">Clear search</a></Action>
+            <EmptyState Icon="funnel-x" Title="@NoMatchTitle()">
+                <Text>@(_moduleId is null ? "Try a shorter search term" : "Try another module or a shorter search term"), or clear it to see all @_totalCount.</Text>
+                <Action><a class="btn" href="/solutions">@(_moduleId is null ? "Clear search" : "Show all solutions")</a></Action>
             </EmptyState>
         </div>
     </NoMatches>
@@ -173,6 +191,8 @@
     private List<ProjectArtifactsRow>? _rows;
     private int _totalCount;
     private string _search = string.Empty;
+    private List<CatalogModule> _modules = new();
+    private int? _moduleId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -180,6 +200,26 @@
         var all = await Artifacts.ListProjectsAsync();
         _totalCount = all.Count;
         _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListProjectsAsync(_search);
+
+        _modules = await CustomerModules.ListCatalogAsync();
+        if (int.TryParse(Http.HttpContext?.Request.Query["module"], out var moduleId) && _modules.Any(m => m.Id == moduleId))
+        {
+            // The rows are already the ones this person may see; the module only narrows them.
+            _moduleId = moduleId;
+            var having = await CustomerModules.ListProjectIdsWithModuleAsync(moduleId);
+            _rows = _rows.Where(r => having.Contains(r.Id)).ToList();
+        }
+    }
+
+    private string NoMatchTitle()
+    {
+        var module = _modules.FirstOrDefault(m => m.Id == _moduleId)?.Name;
+        return (module, _search) switch
+        {
+            (null, _) => $"No solutions match \"{_search}\"",
+            (_, "") => $"No solution has {module}",
+            _ => $"No solution matching \"{_search}\" has {module}",
+        };
     }
 
     /// <summary>

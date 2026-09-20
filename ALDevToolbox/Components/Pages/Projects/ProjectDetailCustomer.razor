@@ -3,6 +3,7 @@
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Components.Pages.Projects.Customer
 @inject ProjectCustomerInfoService CustomerInfo
+@inject CustomerModuleService CustomerModules
 @using Microsoft.JSInterop
 @inject ILogger<ProjectDetailCustomer> Log
 
@@ -196,6 +197,10 @@ else
 {
     <CustomerNotesSection Id="Id" CanManage="CanManage" Initial="all.Notes" />
     <CustomerContactsSection Id="Id" CanManage="CanManage" Initial="all.Contacts" />
+    @if (_modules is { } modules)
+    {
+        <CustomerModulesSection Id="Id" CanManage="CanManage" Initial="modules" />
+    }
     <CustomerPeopleSection Id="Id" CanManage="CanManage" Initial="all.People" />
     <CustomerIntegrationsSection Id="Id" CanManage="CanManage" Initial="all.Integrations" />
 }
@@ -209,9 +214,11 @@ else
 
     private CustomerBasics? _basics;
     private CustomerInfoSnapshot? _all;
+    private SolutionModules? _modules;
 
     private bool NothingYet => !_editing && _basics is { IsEmpty: true } && _all is { } a
-        && a.Notes.IsEmpty && a.Contacts.Count == 0 && a.People.Count == 0 && a.Integrations.Count == 0;
+        && a.Notes.IsEmpty && a.Contacts.Count == 0 && a.People.Count == 0 && a.Integrations.Count == 0
+        && _modules is not { Modules.Count: > 0 };
     private bool _editing;
     private bool _saving;
     private string? _error;
@@ -250,6 +257,7 @@ else
         if (_basics is not null) return;
         // One read for the whole tab, in sequence - see GetAllAsync for why.
         _all = await CustomerInfo.GetAllAsync(Id);
+        if (_all is not null) _modules = await CustomerModules.GetSolutionModulesAsync(Id);
         _basics = _all?.Basics ?? new(null, null, null, null, null, null, null);
     }
 

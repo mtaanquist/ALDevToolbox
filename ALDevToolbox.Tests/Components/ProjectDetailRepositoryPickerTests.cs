@@ -56,6 +56,8 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddScoped<ProjectService>();
+        _ctx.Services.AddScoped<ProjectCustomerInfoService>();
+        _ctx.Services.AddScoped<CustomerModuleService>();
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddScoped<PipelineService>();
         _ctx.Services.AddScoped<TeamService>();
@@ -98,6 +100,18 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         _db.OrgContext.CurrentUserId = OwnerUserId;
     }
 
+    /// <summary>
+    /// These are about the settings tabs. An existing solution opens on Customer and the
+    /// page takes its tab from the address - set here, not in the constructor, because
+    /// several tests register more services first and resolving one closes the container.
+    /// </summary>
+    private IRenderedComponent<ProjectDetail> RenderOnSettings(int projectId)
+    {
+        var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo(Microsoft.AspNetCore.Components.NavigationManagerExtensions.GetUriWithQueryParameter(nav, "tab", "general"));
+        return _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+    }
+
     public void Dispose()
     {
         _db.WaitForQueriesToSettle();
@@ -115,7 +129,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         await ReadyAsync(api);
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
         await PickAsync(cut, "base-app");
 
@@ -136,7 +150,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         await ReadyAsync(api);
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
         await PickAsync(cut, "base-app");
         await SaveAsync(cut);
@@ -158,7 +172,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         await ReadyAsync(api);
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
         await PickAsync(cut, "base-app");
         await PickAsync(cut, "base-app");
@@ -181,7 +195,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         await ReadyAsync(api);
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
         await PickAsync(cut, "base-app");
 
@@ -197,7 +211,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         await ReadyAsync(api);
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         // The escape hatch for Azure DevOps and for repositories outside the
@@ -232,7 +246,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         }
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         cut.FindAll(".repo-picker").Should().BeEmpty();
@@ -246,7 +260,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         var projectId = await SeedProjectAsync();
         _db.AddGitHubServices(_ctx.Services);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         cut.FindAll(".repo-picker").Should().BeEmpty();
@@ -263,7 +277,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         // cannot have yet, not a step they have to complete first.
         _db.AddGitHubServices(_ctx.Services, ListableApi("cronus-dk/base-app"));
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         cut.FindAll(".repo-picker").Should().BeEmpty();
@@ -285,7 +299,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         // No handler at all: every call to GitHub throws.
         _db.AddGitHubServices(_ctx.Services);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         cut.Find(".repo-picker").Should().NotBeNull();
@@ -301,7 +315,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         _db.AddGitHubServices(_ctx.Services, api);
         _db.OrgContext.CurrentUserId = OwnerUserId + 1;
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         cut.FindAll(".repo-picker").Should().BeEmpty();
@@ -316,7 +330,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         await ReadyAsync(api);
         _db.AddGitHubServices(_ctx.Services, api);
 
-        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = RenderOnSettings(projectId);
         await OpenReposTabAsync(cut);
 
         cut.FindAll(".settings__body .btn--primary").Should().BeEmpty();

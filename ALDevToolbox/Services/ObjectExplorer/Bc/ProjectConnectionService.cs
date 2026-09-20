@@ -566,8 +566,58 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             _clock.GetUtcNow().UtcDateTime);
 
         _panelCache.Set(projectId, environmentId, panel);
+
+        // A successful read is also the freshest answer to "which modules does this
+        // customer have", which people who cannot make this read still need to see.
+        if (installed.Error is null && installed.Items.Count > 0)
+        {
+            try
+            {
+                await MirrorInstalledAppsAsync(project.OrganizationId, environmentId, installed.Items, ct);
+                await _db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogWarning(ex, "Couldn't mirror the installed apps of environment {EnvironmentId}.", environmentId);
+            }
+        }
         return panel;
     }
+
+    /// <summary>
+    /// Brings <c>oe_environment_apps</c> in line with what Business Central just reported,
+    /// in place: changed rows are updated, gone ones removed, new ones added. The caller
+    /// saves. Never called with an empty list - an environment always has the base
+    /// application, so "nothing" is a failed read and must not wipe the last good one.
+    /// See <c>.design/solution-customer-info.md</c>, "Modules".
+    /// </summary>
+    private async Task MirrorInstalledAppsAsync(
+        int organizationId, int environmentId, IReadOnlyList<BcInstalledApp> apps, CancellationToken ct)
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var existing = await _db.OeEnvironmentApps.Where(a => a.EnvironmentId == environmentId).ToListAsync(ct);
+        var byId = existing.ToDictionary(a => a.AppId);
+        var reported = new HashSet<Guid>();
+
+        foreach (var app in apps)
+        {
+            if (!reported.Add(app.AppId)) continue;
+            if (!byId.TryGetValue(app.AppId, out var row))
+            {
+                row = new OeEnvironmentApp { OrganizationId = organizationId, EnvironmentId = environmentId, AppId = app.AppId };
+                _db.OeEnvironmentApps.Add(row);
+            }
+            row.Name = Truncate(app.Name, 250);
+            row.Publisher = Truncate(app.Publisher, 250);
+            row.Version = Truncate(app.Version, 50);
+            row.FetchedAt = now;
+        }
+
+        _db.OeEnvironmentApps.RemoveRange(existing.Where(a => !reported.Contains(a.AppId)));
+    }
+
+    private static string Truncate(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
 
     /// <summary>
     /// Which of the apps in an environment this toolbox has actually released there.
@@ -1591,6 +1641,20 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             {
                 _logger.LogWarning(
                     "Couldn't read the Business Central platform updates for {Environment} (project {ProjectId}): {Message}.",
+                    row.Name, project.Id, ex.Message);
+            }
+
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var family = string.IsNullOrWhiteSpace(row.ApplicationFamily) ? BcConstants.DefaultApplicationFamily : row.ApplicationFamily;
+                var apps = await _apps.ListInstalledAppsAsync(token, family, row.Name, ct);
+                if (apps.Count > 0) await MirrorInstalledAppsAsync(project.OrganizationId, row.Id, apps, ct);
+            }
+            catch (BcApiException ex)
+            {
+                _logger.LogWarning(
+                    "Couldn't read the installed apps for {Environment} (project {ProjectId}): {Message}.",
                     row.Name, project.Id, ex.Message);
             }
         }

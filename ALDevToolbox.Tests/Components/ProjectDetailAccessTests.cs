@@ -48,6 +48,8 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddScoped<ProjectService>();
+        _ctx.Services.AddScoped<ProjectCustomerInfoService>();
+        _ctx.Services.AddScoped<CustomerModuleService>();
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddScoped<PipelineService>();
         _ctx.Services.AddScoped<TeamService>();
@@ -84,6 +86,10 @@ public sealed class ProjectDetailAccessTests : IDisposable
         seed.Users.AddRange(NewUser(OwnerUserId, "owner@example.com"), NewUser(OutsiderUserId, "nils@example.com"));
         seed.SaveChanges();
         _db.OrgContext.CurrentUserId = OwnerUserId;
+        // These are about the settings tabs; an existing solution opens on Customer, and
+        // the page takes its tab from the address.
+        var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo(Microsoft.AspNetCore.Components.NavigationManagerExtensions.GetUriWithQueryParameter(nav, "tab", "general"));
     }
 
     public void Dispose()

@@ -1,0 +1,265 @@
+@page "/admin/customer-modules"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@rendermode InteractiveServer
+@inject CustomerModuleService Modules
+@inject ILogger<AdminCustomerModules> Log
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+
+@*
+    The organisation's short list of third-party modules worth tracking per customer.
+    See .design/solution-customer-info.md, "Modules".
+
+    Named user: whoever looks after the support team's customer overview - they know the
+    add-ons by name (Document Capture, ForNAV) and have never seen an app ID. So a module
+    is normally added by picking it from what Business Central has already reported in
+    some customer's environment; typing one in is for old NAV add-ons that are not apps.
+*@
+
+<PageTitle>Customer modules · Admin · AL Dev Toolbox</PageTitle>
+
+<ListPage Title="Customer modules"
+          Trail='@([new("Admin", "/admin"), new("Customer modules")])'
+          IsLoading="@(_rows is null)"
+          LoadingText="Loading the module catalogue..."
+          IsEmpty="@(_rows is { Count: 0 } && !_editing && !_picking)">
+    <SubtitleContent>
+        The modules worth tracking per customer, so "do they have it, and which version?" can be
+        answered from a solution's Customer tab - and the Solutions list filtered by it.
+    </SubtitleContent>
+    <Actions>
+        <button type="button" class="btn" disabled="@(_editing || _picking)" @onclick="StartPickingAsync">
+            <Icon Name="cloud-download" Width="15" Height="15" />
+            <span>Add from installed apps</span>
+        </button>
+        <button type="button" class="btn" disabled="@(_editing || _picking)" @onclick="() => StartEditing(null)">
+            <Icon Name="plus" Width="15" Height="15" />
+            <span>Add by hand</span>
+        </button>
+    </Actions>
+    <Notices>
+        @if (_error is { } error)
+        {
+            <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+        }
+    </Notices>
+    <Empty>
+        <div class="card">
+            <EmptyState Icon="package" Title="No modules in the catalogue yet" Heading="true">
+                <Text>
+                    Start from what your customers already run: pick the add-ons that matter from the
+                    apps Business Central has reported. For an older add-on that isn't an app, add it by hand.
+                </Text>
+                <Action>
+                    <button type="button" class="btn" @onclick="StartPickingAsync">Add from installed apps</button>
+                    <button type="button" class="btn" @onclick="() => StartEditing(null)">Add by hand</button>
+                </Action>
+            </EmptyState>
+        </div>
+    </Empty>
+    <ChildContent>
+        @if (_picking)
+        {
+            <div class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Apps your customers have installed</h2>
+                        <p class="card__sub">Everything Business Central has reported that isn't in the catalogue yet, the ones most customers have first. Microsoft's own apps are left out.</p>
+                    </div>
+                    <button type="button" class="btn btn--sm" @onclick="() => _picking = false">Done</button>
+                </div>
+                @if (_seen is null)
+                {
+                    <LoadingBlock Text="Looking through the environments..." />
+                }
+                else if (_seen.Count == 0)
+                {
+                    <EmptyState Icon="cloud-download" Title="Nothing to pick from yet" Quiet="true">
+                        <Text>Installed apps are read overnight from each connected solution's environments.</Text>
+                        <Action>
+                            <button type="button" class="btn btn--sm" @onclick="() => { _picking = false; StartEditing(null); }">Add by hand instead</button>
+                        </Action>
+                    </EmptyState>
+                }
+                else
+                {
+                    <table class="data-table u-compact">
+                        <thead>
+                            <tr><th scope="col">App</th><th scope="col">Publisher</th><th scope="col">Seen in</th><th scope="col" class="data-table__actions">Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var app in _seen)
+                            {
+                                <tr @key="app.AppId">
+                                    <td>@app.Name</td>
+                                    <td>@app.Publisher</td>
+                                    <td>@(app.Solutions == 1 ? "1 solution" : $"{app.Solutions} solutions")</td>
+                                    <td class="data-table__actions">
+                                        <button type="button" class="btn btn--sm" disabled="@_saving" @onclick="() => AddSeenAsync(app)"
+                                                aria-label="@($"Add {app.Name} to the catalogue")">Add</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+
+        @if (_editing)
+        {
+            <form class="card" @onsubmit="SaveAsync">
+                <div class="card__body">
+                    <div class="form-grid">
+                        <section class="field">
+                            <label class="field__label" for="cm-name">Name</label>
+                            <input id="cm-name" type="text" class="input" maxlength="250" required @bind="_name" disabled="@_saving" placeholder="e.g. Continia Document Capture" />
+                            <FieldError Field="Name" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="cm-publisher">Publisher</label>
+                            <input id="cm-publisher" type="text" class="input" maxlength="250" @bind="_publisher" disabled="@_saving" placeholder="e.g. Continia Software" />
+                            <FieldError Field="Publisher" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="cm-appid">Business Central app ID</label>
+                            @* pattern mirrors the Guid.TryParse in CustomerModuleService. *@
+                            <input id="cm-appid" type="text" class="input" @bind="_appId" disabled="@_saving"
+                                   pattern="[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}" title="An app ID looks like 11111111-2222-3333-4444-555555555555"
+                                   placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
+                            <FieldError Field="AppId" Errors="_errors" />
+                            <small class="field__hint">Leave this empty for an older add-on that isn't a Business Central app - you can still add it to each customer yourself. If it is an app and you know its ID, paste it here and it will be found automatically for customers on Business Central online.</small>
+                        </section>
+                    </div>
+                </div>
+                <div class="card__foot">
+                    <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
+                        <span class="btn__label">@(_editingId is null ? "Add module" : "Save module")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+                </div>
+            </form>
+        }
+
+        @if (_rows is { Count: > 0 })
+        {
+            <div class="card">
+                <table class="data-table">
+                    <thead>
+                        <tr><th scope="col">Module</th><th scope="col">Publisher</th><th scope="col">Found automatically</th><th scope="col">Solutions</th><th scope="col" class="data-table__actions">Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr @key="row.Id">
+                                <td>@row.Name</td>
+                                <td>@(row.Publisher ?? "—")</td>
+                                <td>@(row.AppId is null ? "No - add it to each customer" : "Yes, for customers online")</td>
+                                <td class="u-num">@row.Solutions</td>
+                                <td class="data-table__actions">
+                                    <button type="button" class="btn btn--sm btn--ghost" disabled="@(_editing || _picking)" @onclick="() => StartEditing(row)"
+                                            aria-label="@($"Edit {row.Name}")">Edit</button>
+                                    <button type="button" class="btn btn--sm btn--ghost" disabled="@(_editing || _picking)" @onclick="() => RemoveAsync(row)"
+                                            aria-label="@($"Remove {row.Name}")">Remove</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </ChildContent>
+</ListPage>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private List<CatalogModule>? _rows;
+    private List<SeenApp>? _seen;
+    private bool _picking;
+    private bool _editing;
+    private int? _editingId;
+    private bool _saving;
+    private string? _error;
+    private Dictionary<string, string> _errors = new();
+    private ConfirmDialog? _confirm;
+
+    private string _name = string.Empty;
+    private string _publisher = string.Empty;
+    private string _appId = string.Empty;
+
+    protected override async Task OnInitializedAsync() => _rows = await Modules.ListCatalogAsync();
+
+    private async Task StartPickingAsync()
+    {
+        _picking = true;
+        _error = null;
+        _seen = null;
+        StateHasChanged();
+        _seen = await Modules.ListSeenAppsAsync();
+    }
+
+    private void StartEditing(CatalogModule? row)
+    {
+        _editingId = row?.Id;
+        _name = row?.Name ?? string.Empty;
+        _publisher = row?.Publisher ?? string.Empty;
+        _appId = row?.AppId?.ToString("D") ?? string.Empty;
+        _errors = new();
+        _error = null;
+        _editing = true;
+    }
+
+    private async Task AddSeenAsync(SeenApp app)
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Modules.SaveCatalogModuleAsync(null, new CatalogModuleInput(app.Name, app.Publisher, app.AppId.ToString("D")));
+            _rows = await Modules.ListCatalogAsync();
+            _seen = await Modules.ListSeenAppsAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.Values.FirstOrDefault() ?? "Couldn't add that module.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to add customer module {AppId} from the installed apps.", app.AppId);
+            _error = "Couldn't add that module. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await Modules.SaveCatalogModuleAsync(_editingId, new CatalogModuleInput(_name, _publisher, _appId));
+            _rows = await Modules.ListCatalogAsync();
+            _editing = false;
+        }
+        catch (PlanValidationException ex) { _errors = new(ex.Errors); }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save a customer module.");
+            _error = "Couldn't save the module. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemoveAsync(CatalogModule row)
+    {
+        if (_confirm is null) return;
+        var body = row.Solutions == 0
+            ? "Removes it from the catalogue. No solution has it."
+            : $"Removes it from the catalogue and from the Customer tab of {(row.Solutions == 1 ? "the one solution that has" : $"the {row.Solutions} solutions that have")} it. Any versions typed in by hand are lost.";
+        if (!await _confirm.OpenAsync($"Remove {row.Name}?", body, "Remove module")) return;
+        await Modules.DeleteCatalogModuleAsync(row.Id);
+        _rows = await Modules.ListCatalogAsync();
+    }
+}
