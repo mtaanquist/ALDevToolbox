@@ -483,6 +483,91 @@ asked. `UpgradeFleetRow.CanManage` carries that answer, computed as a subquery o
 `ProjectAccess.ManageProjectPredicate` in the same round trip as `CanAct` — never a
 substitute for the service-side check, which is made on every write regardless.
 
+## Sessions
+
+The classic support call: "posting has been running for an hour and everything is locked."
+Until now the fix meant opening the customer's admin centre, finding the environment,
+opening its Sessions page and cancelling the one that is stuck. Named user: a support
+consultant or an ops engineer who manages the customer's solution, on the phone to the
+customer while they do it. The **Sessions** tab on the environment's own page is that
+errand, and ending a session is the write behind it.
+
+It is one read and one write on Microsoft's documented session endpoints:
+`GET .../environments/{family}/{name}/sessions` and `DELETE .../sessions/{sessionId}`.
+Session ids are integers. The read is gated on managing the solution, like every other read
+that spends the customer's credentials; the write carries the four things every tenant write
+carries — the same gate, a confirm that names the environment and says when it is a
+production one, a line in the environment's Toolbox history (`UpgradeActionKind.CancelSession`,
+a text column, no migration), and a `BcApiException` that reaches the page as a sentence.
+Microsoft documents no error codes of its own for the DELETE, so the one worth telling apart
+is the status: a **404 is a session that ended between the list and the click**, which is the
+likeliest failure of all.
+
+**Nothing about a session is stored.** A user id and what that person is doing in their
+employer's system is personal data with no reason to outlive the screen it is on, so it is
+read live, shown, and forgotten — no cache, no mirror column, no table. Leaving the tab
+drops the list. The one thing that lasts is the history line, and it is written from the
+session rather than from its id: *"Ended ola@cronus.example's web client session, which was
+running Post Sales Documents (code unit 82)."* — because "cancelled session 47" answers
+nothing a week later. That line is also why the service re-reads the live list before it
+deletes: the id alone could not name anybody, and the re-read turns "already gone" into a
+sentence rather than a wire 404.
+
+**This tab is live where Operations is not.** Both are read live rather than cached, but an
+operations list that is two minutes old is still *true* — the entries in it happened. A
+sessions list that is two minutes old is *wrong*: the person it names may have signed out,
+and the one holding the lock may have signed in since. So while the tab is open it keeps
+itself current, and the page says so rather than leaving rows to move unexplained.
+
+- **It reads the moment it is opened**, by a click or by landing on `/environments/{id}/sessions`
+  directly. There is no first-run state with a button on it: a Sessions tab waiting to be
+  told to read is a tab showing a wrong answer. Coming back to it later in the same visit
+  re-reads rather than restoring what was there.
+- **Every 30 seconds, for 10 minutes.** Thirty seconds is short enough that the list matches
+  what the customer is describing and long enough that nobody watches rows flicker. Ten
+  minutes is the length of the phone call it was built for; past that, a browser tab
+  somebody forgot must not read a customer's tenant all night. One request every thirty
+  seconds against one tenant is a fine guest (see "The sweep is a guest on somebody else's
+  API"); an unbounded one is not. When it stops it says so in the card, and **Refresh**
+  starts it again.
+- **The card has its own Refresh**, beside a line saying how old the list is
+  (`RelativeTime`), because the freshness of *this* list is part of the answer. The page's
+  contextual Refresh in the freshness strip works on this tab too; the card's is the obvious
+  one.
+- **A tick never overlaps anything.** It is skipped while a read or a write is in flight and
+  while the confirm dialog is open — the row somebody is about to end must not move or vanish
+  between reading it and pressing the button. It runs through `InvokeAsync`, on the
+  renderer's synchronisation context, so a tick cannot collide with a click on the circuit's
+  one `AppDbContext`; that is the mechanism the Upgrades page already polls with and
+  deliberately not a second one. It stops on leaving the tab and on dispose.
+- **A failed automatic re-read keeps the list**, with a quiet line saying it could not be
+  updated. Replacing a list somebody is reading out to a customer with an error card is the
+  worse answer. A failed *first* read is still the unreadable state.
+
+**"Long-running" is ours, and it is a cue rather than a verdict.** Business Central marks
+nothing, so the row the caller is looking for has to be made findable here: the list is
+ordered by `currentOperationDuration` descending (then by who has been signed in longest),
+and a session that has been in the same operation for **five minutes** is marked. A person
+clicking through the web client finishes an operation in well under a second, so a minute
+already means work rather than somebody thinking; five is where a consultant would start
+looking, and it is a round number to hold in the head. It marks a row and orders the list —
+it never hides one and never decides anything, because a nightly job legitimately runs for
+hours. The rule is written under the table so nobody has to guess what the colour means.
+
+**Two things about the payload are worth knowing.** Microsoft types `currentOperationDuration`
+as a `long` and names no unit, so the parser reads a number as milliseconds and a string as a
+time span, and that is the one field here not checked against a live tenant. And the API
+marks nothing as belonging to an app registration or to the system, so **no row is hidden
+from Cancel** — guessing which sessions are "ours" would be inventing a rule Microsoft has
+not written. Our own admin-centre calls are not Business Central sessions and never appear.
+Client types are worded in `BcSessionDisplay`, which gives every value Microsoft has today a
+phrase a consultant would say out loud ("Web client", "Web service (OData)", "Job queue") and
+spaces out one they add tomorrow rather than showing the wire token — the treatment
+`BcEnvironmentOperationDisplay` gives an operation.
+
+**Deliberately not built.** No history of who was signed in (that is the personal data the
+tab exists not to keep), no ending several sessions at once, and no telemetry.
+
 ## The Environments list, against its designed sheet
 
 `/environments` is the read-only view of the same fleet rows, designed as archetype 2a in
@@ -579,8 +664,9 @@ Where it differs from the sheet, and why:
 | The result of a write beside its control | One result line under the head | The writes are spread down a long page and each re-reads everything; the top is where the eye is afterwards. |
 | Nothing about copying the environment | **Copy this environment...** as a third outline button in the head, and **Copy...** in the Environments list's row menu; both open the same dialog | The sheet draws a page that only reads and adjusts. Copying is the errand this page's reader would otherwise open the admin centre for, and it is the one write here that adds an environment to the customer's tenant; see "Copying an environment" above. Not shown on a deleted environment, which has nothing to copy. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../copy`. **There is no sheet for this; it needs a design pass upstream.** |
 | Nothing about a deleted environment | A danger alert above the meta row, with **Recover this environment** | The sheet draws a live environment. A deleted one changes what every number under it means, and it has a deadline; see "Deleted environments" above. |
-| One long page: Updates, Apps, Environment settings | Four tabs under the meta row - **Overview** (the Updates card, both windows, the three settings), **Apps** (scheduled installs, installed apps, AppSource updates waiting, Upload an app), **Operations**, **Toolbox history** | The page had grown past what the sheet drew (uploads, app updates, the delivery window, history) and the thing looked for was a long scroll away. The head, the freshness strip, the result line and the meta row stay above the tabs because they are true on every one. The tabs are real links (`/environments/{id}/apps`), so one can be bookmarked and Back works; the page reads the environment once per id, and a change of tab reads only what that tab shows - Overview and Apps share the one cached panel, Operations has its own read, History asks Business Central nothing. Refresh re-reads the open tab. Maintainer's decision, 2026-09-20; needs a design pass upstream. |
+| One long page: Updates, Apps, Environment settings | Five tabs under the meta row - **Overview** (the Updates card, both windows, the three settings), **Apps** (scheduled installs, installed apps, AppSource updates waiting, Upload an app), **Operations**, **Sessions**, **Toolbox history** | The page had grown past what the sheet drew (uploads, app updates, the delivery window, history) and the thing looked for was a long scroll away. The head, the freshness strip, the result line and the meta row stay above the tabs because they are true on every one. The tabs are real links (`/environments/{id}/apps`), so one can be bookmarked and Back works; the page reads the environment once per id, and a change of tab reads only what that tab shows - Overview and Apps share the one cached panel, Operations has its own read, History asks Business Central nothing. Refresh re-reads the open tab - and Sessions, the one live tab, keeps itself current besides; see "Sessions" above. Maintainer's decision, 2026-09-20; needs a design pass upstream. |
 | No operations list | **Operations**: Business Central's own record for the environment (`GET .../environments/{name}/operations`) - app installs, updates and uninstalls, platform updates, restarts, renames, setting changes - newest first, each as a sentence with a status, who started it, when (the solution's time zone) and how long it took; a failure carries Business Central's message | Toolbox history is what *we* did from here (named so at the tab strip, where the choice between the two is made); an update started in the admin centre, or one Microsoft ran overnight, is only in Business Central's record. Two tabs rather than one merged timeline until there is real data to judge a merge by. Read live on every visit, never cached: the point is to watch something finish. Manage-gated like the panel, and read-only. Operation types and statuses are worded in `BcEnvironmentOperationDisplay`; one Microsoft adds later is spaced out into words rather than shown as the wire token. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation. |
+| No notion of who is signed in | **Sessions**: who has a session open on the environment right now (`GET .../environments/{name}/sessions`) - who, how they got in, since when, what they are running and for how long - with **Cancel session** per row behind a confirm | The errand this page's reader would otherwise open the admin centre for while a customer is on the phone with everything locked. The one live tab: it reads on arrival, re-reads every 30 seconds for 10 minutes, and says so. Nothing about a session is stored. Manage-gated; the history line names whose session it was and what it was running. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation of the session endpoints, and `currentOperationDuration` is documented as a bare `long` with no unit. See "Sessions" above. **There is no sheet for this; it needs a design pass upstream.** |
 | Scheduled installs drawn only as an empty state | A table with a Cancel install action when there are any | The write exists and a booked install has to be reachable from somewhere. |
 
 ## Deliberately out of scope

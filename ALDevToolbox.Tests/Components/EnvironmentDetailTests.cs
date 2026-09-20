@@ -9,6 +9,7 @@ using AwesomeAssertions;
 using Bunit;
 using Bunit.TestDoubles;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,6 +31,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
     private readonly BcPanelCache _panels = new(TimeProvider.System);
+    private readonly SessionsAdminClient _admin = new();
     private const int OwnerUserId = 9870;
     private const int ColleagueUserId = 9871;
     private static readonly Guid TenantId = Guid.Parse("11111111-2222-3333-4444-555555555555");
@@ -47,10 +49,12 @@ public sealed class EnvironmentDetailTests : IDisposable
         _ctx.Services.AddScoped<UpgradeFleetService>();
         _ctx.Services.AddScoped<UpgradeActionService>();
         _ctx.Services.AddScoped<ProjectConnectionService>();
-        _ctx.Services.AddSingleton<IBcAdminClient>(new UnreachableAdminClient());
+        _ctx.Services.AddSingleton<IBcAdminClient>(_admin);
         _ctx.Services.AddSingleton<IBcAppManagementClient>(new UnreachableAppManagementClient());
+        // A token the Sessions tests can spend. Every other tab is stopped before this by
+        // a solution with no client id, so the doubles still stand in for a live tenant.
         _ctx.Services.AddSingleton(new BcTokenService(
-            new UnreachableHttpClientFactory(), NullLogger<BcTokenService>.Instance));
+            new TokenFactory(), NullLogger<BcTokenService>.Instance));
         _ctx.Services.AddSingleton(_db.DataProtectionProvider);
         _ctx.Services.AddSingleton(_panels);
         _ctx.Services.AddSingleton(TimeProvider.System);
@@ -76,6 +80,54 @@ public sealed class EnvironmentDetailTests : IDisposable
         _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
+    }
+
+    /// <summary>
+    /// The Admin Center as the Sessions tab uses it, and nothing else: every other call
+    /// still throws, so a tab that reached for the customer's tenant would say so.
+    /// </summary>
+    private sealed class SessionsAdminClient : UnreachableAdminClient
+    {
+        public Func<IReadOnlyList<BcSession>> OnSessions { get; set; } = Array.Empty<BcSession>;
+
+        /// <summary>Every read, so a test can show that arriving reads and a tick reads again.</summary>
+        public int Reads;
+
+        /// <summary>Set to make one read fail, as a tenant that stops answering would.</summary>
+        public BcApiException? SessionsThrows;
+
+        public List<int> Cancelled { get; } = new();
+
+        public override Task<IReadOnlyList<BcSession>> ListSessionsAsync(
+            string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref Reads);
+            if (SessionsThrows is { } refusal) throw refusal;
+            return Task.FromResult(OnSessions());
+        }
+
+        public override Task CancelSessionAsync(
+            string accessToken, string? applicationFamily, string environmentName, int sessionId,
+            CancellationToken ct = default)
+        {
+            Cancelled.Add(sessionId);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>A login that answers with a token, so the sessions read gets as far as the client.</summary>
+    private sealed class TokenFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(new Handler(), disposeHandler: false);
+
+        private sealed class Handler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+                Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"access_token":"tok","expires_in":3600}"""),
+                });
+        }
     }
 
     private static User NewUser(int id, string email) => new()
@@ -479,18 +531,21 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     [Fact]
-    public async Task The_page_is_four_tabs_and_each_shows_only_its_own_part()
+    public async Task The_page_is_five_tabs_and_each_shows_only_its_own_part()
     {
         var (projectId, envId) = await SeedAsync();
         _panels.Set(projectId, envId, Panel());
 
         var cut = Render(envId);
 
-        cut.FindAll(".header-tab").Select(t => t.TextContent).Should().Equal("Overview", "Apps", "Operations", "Toolbox history");
+        cut.FindAll(".header-tab").Select(t => t.TextContent).Should().Equal(
+            "Overview", "Apps", "Operations", "Sessions", "Toolbox history");
         cut.Find(".header-tab.is-active").TextContent.Should().Be("Overview");
         cut.FindAll(".header-tab").Select(t => t.GetAttribute("href")).Should().Equal(
             $"/environments/{envId}", $"/environments/{envId}/apps",
-            $"/environments/{envId}/operations", $"/environments/{envId}/history");
+            $"/environments/{envId}/operations", $"/environments/{envId}/sessions",
+            $"/environments/{envId}/history");
+        _admin.Reads.Should().Be(0, "another tab never reads who is signed in");
         cut.FindAll(".setting-list").Should().NotBeEmpty("the settings live on Overview, beside the dates they move");
         cut.FindAll("table.u-compact").Should().BeEmpty("the app lists have their own tab");
         cut.Markup.Should().Contain("Version and update dates", "the numbers above the tabs are on every tab");
@@ -548,6 +603,312 @@ public sealed class EnvironmentDetailTests : IDisposable
         cut.WaitForAssertion(() =>
             cut.Markup.Should().Contain("Operations are for people who manage this solution"));
         cut.Find($"a[href='/environments/{envId}/history']").Should().NotBeNull();
+    }
+
+    // ── Sessions ──────────────────────────────────────────────────────────
+
+    private static BcSession Session(
+        int id, string user, string clientType = "WebClient", TimeSpan? running = null,
+        string currentObject = "") => new(
+        id, user, clientType, new DateTimeOffset(2026, 9, 20, 6, 30, 0, TimeSpan.Zero),
+        "OnRun", "Sales Order", "42", "Page",
+        currentObject, currentObject.Length > 0 ? 82 : null, currentObject.Length > 0 ? "CodeUnit" : string.Empty,
+        running);
+
+    /// <summary>
+    /// Gives the solution a connection the Sessions tab can spend. Everything else on the
+    /// page is deliberately left without one, so a tab that reads the tenant stands out.
+    /// </summary>
+    private async Task SeedCredentialsAsync(int projectId)
+    {
+        await using var ctx = _db.NewContext();
+        var project = await ctx.OeProjects.SingleAsync(p => p.Id == projectId);
+        project.BcClientId = "client-abc";
+        project.BcClientSecretEncrypted = _db.DataProtectionProvider
+            .CreateProtector(ProjectConnectionService.SecretProtectionPurpose).Protect("secret");
+        project.BcClientSecretExpiresAt = DateTime.UtcNow.AddYears(1);
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The tab reads the moment it is opened. A Sessions tab that waits for a button is a
+    /// tab that shows the wrong answer, so there is no first-run state to press.
+    /// </summary>
+    [Fact]
+    public async Task Opening_the_sessions_tab_reads_who_is_signed_in_straight_away()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () =>
+        [
+            Session(47, "ola@cronus.example", running: TimeSpan.FromMinutes(62), currentObject: "Post Sales Documents"),
+        ];
+
+        var cut = Render(envId, "sessions");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".header-tab.is-active").TextContent.Should().Be("Sessions");
+            cut.Find("tbody tr").TextContent.Should().Contain("ola@cronus.example");
+        }, TimeSpan.FromSeconds(5));
+        _admin.Reads.Should().Be(1);
+        cut.Markup.Should().Contain("Who is signed in read from Business Central",
+            "the freshness strip says which half of the page this is");
+    }
+
+    /// <summary>
+    /// A sessions list that is minutes old is wrong in a way an operations list is not,
+    /// so coming back to the tab reads again rather than showing what was there before.
+    /// </summary>
+    [Fact]
+    public async Task Coming_back_to_the_tab_reads_again_rather_than_showing_the_old_list()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
+
+        var cut = Render(envId, "sessions");
+        cut.WaitForAssertion(() => _admin.Reads.Should().Be(1), TimeSpan.FromSeconds(5));
+
+        // Toolbox history asks Business Central nothing, so this leaves the tab without
+        // starting a second read that the next assertion would have to tell apart.
+        cut.Render(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, "history"));
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".header-tab.is-active").TextContent.Should().Be("Toolbox history");
+            cut.Markup.Should().NotContain("ola@cronus.example", "leaving the tab forgets the list");
+        });
+
+        cut.Render(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions"));
+        cut.WaitForAssertion(() => _admin.Reads.Should().Be(2), TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// It keeps itself current while it is open, on the renderer's synchronisation
+    /// context - the same mechanism the Upgrades page polls with.
+    /// </summary>
+    [Fact]
+    public async Task While_the_tab_is_open_it_re_reads_by_itself()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p
+            .Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions")
+            .Add(c => c.SessionsLiveEvery, TimeSpan.FromMilliseconds(60))
+            .Add(c => c.SessionsLiveFor, TimeSpan.FromSeconds(30)));
+
+        cut.WaitForAssertion(() => _admin.Reads.Should().BeGreaterThan(2), TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// A browser tab left open overnight must not read a customer's tenant all night, so
+    /// it gives up - and says so, with the one button that starts it again.
+    /// </summary>
+    [Fact]
+    public async Task It_stops_by_itself_and_refresh_starts_it_again()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p
+            .Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions")
+            .Add(c => c.SessionsLiveEvery, TimeSpan.FromMilliseconds(60))
+            .Add(c => c.SessionsLiveFor, TimeSpan.FromMilliseconds(30)));
+
+        cut.WaitForAssertion(
+            () => cut.Markup.Should().Contain("Stopped updating after").And.Contain("Refresh to carry on"),
+            TimeSpan.FromSeconds(5));
+        var stoppedAfter = _admin.Reads;
+
+        cut.WaitForAssertion(() => cut.FindAll(".card__head button").Single(b => b.TextContent.Contains("Refresh")).Click());
+        cut.WaitForAssertion(() =>
+        {
+            _admin.Reads.Should().BeGreaterThan(stoppedAfter);
+            cut.Markup.Should().NotContain("Stopped updating after");
+        });
+    }
+
+    /// <summary>
+    /// The list somebody is reading out to a customer must not be replaced by an error
+    /// card because one automatic read missed.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_automatic_read_keeps_the_list_and_says_it_is_not_current()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p
+            .Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions")
+            .Add(c => c.SessionsLiveEvery, TimeSpan.FromMilliseconds(60))
+            .Add(c => c.SessionsLiveFor, TimeSpan.FromSeconds(30)));
+
+        cut.WaitForAssertion(() => cut.Find("tbody tr").TextContent.Should().Contain("ola@cronus.example"));
+        _admin.SessionsThrows = new BcApiException(System.Net.HttpStatusCode.BadGateway, "Business Central didn't answer.");
+
+        cut.WaitForAssertion(
+            () =>
+            {
+                cut.Markup.Should().Contain("last one we could read");
+                cut.Find("tbody tr").TextContent.Should().Contain("ola@cronus.example");
+            },
+            TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>A first read that fails has no list to keep, so it is the unreadable state.</summary>
+    [Fact]
+    public async Task A_first_read_that_fails_says_why_and_points_at_the_connection()
+    {
+        var (projectId, envId) = await SeedAsync();
+
+        var cut = Render(envId, "sessions");
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".empty-state__title").TextContent.Should()
+                .Be("Couldn't read who is signed in to this environment"));
+        cut.Find(".empty-state__action a").GetAttribute("href").Should().Be($"/solutions/{projectId}?tab=bc");
+    }
+
+    /// <summary>
+    /// The prerender has nobody to redraw for and waits for everything it does, so a read
+    /// of the customer's tenant there is the click into the page hanging on Microsoft.
+    /// </summary>
+    [Fact]
+    public async Task The_prerender_of_the_sessions_tab_draws_a_loader_and_reads_nothing()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
+        _ctx.SetRendererInfo(new RendererInfo("Static", isInteractive: false));
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions"));
+
+        cut.FindAll(".loading-block").Should().NotBeEmpty();
+        cut.FindAll("tbody tr").Should().BeEmpty();
+        _admin.Reads.Should().Be(0, "the prerender must never reach for the customer's tenant");
+    }
+
+    [Fact]
+    public async Task Someone_who_cannot_manage_the_solution_is_told_who_can()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _db.OrgContext.CurrentUserId = ColleagueUserId;
+
+        var cut = Render(envId, "sessions");
+
+        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should()
+            .Be("Who is signed in is for people who manage this solution"));
+        _admin.Reads.Should().Be(0, "nothing was read with the customer's credentials");
+    }
+
+    /// <summary>
+    /// The tab stays - it is on every environment - but there is nothing to read: Business
+    /// Central ended every session when the environment was deleted.
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_environment_has_the_tab_but_nobody_can_be_signed_in_to_it()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        await using (var ctx = _db.NewContext())
+        {
+            var env = await ctx.OeProjectEnvironments.SingleAsync(e => e.Id == envId);
+            env.SoftDeletedOn = DateTime.UtcNow.AddDays(-2);
+            env.Status = "SoftDeleted";
+            await ctx.SaveChangesAsync();
+        }
+
+        var cut = Render(envId, "sessions");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".header-tab").Select(t => t.TextContent).Should().Contain("Sessions");
+            cut.Markup.Should().Contain("Nobody can be signed in to a deleted environment");
+        });
+        _admin.Reads.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Nobody_signed_in_is_a_plain_empty_state_and_not_a_failure()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+
+        var cut = Render(envId, "sessions");
+
+        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should()
+            .Be("Nobody is signed in to Production"));
+        cut.Markup.Should().NotContain("Couldn't read");
+    }
+
+    /// <summary>
+    /// The confirm has to name the person, what their session is running, the environment
+    /// and that it is a production one, and say plainly what it costs them - it is the one
+    /// write here whose consequence lands on somebody who is not in the room. And the row
+    /// must not move underneath them while they read it.
+    /// </summary>
+    [Fact]
+    public async Task Ending_a_session_is_confirmed_by_name_and_nothing_moves_while_it_is_asked()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () =>
+        [
+            Session(47, "ola@cronus.example", running: TimeSpan.FromMinutes(62), currentObject: "Post Sales Documents"),
+        ];
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p
+            .Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions")
+            .Add(c => c.SessionsLiveEvery, TimeSpan.FromMilliseconds(60))
+            .Add(c => c.SessionsLiveFor, TimeSpan.FromSeconds(30)));
+
+        cut.WaitForAssertion(() => cut.Find(".data-table__actions button").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".confirm-dialog__title").TextContent.Should()
+                .Be("End ola@cronus.example's session on Production, a production environment?");
+            var body = cut.Find(".confirm-dialog__body").TextContent;
+            body.Should().Contain("Production (Production) in CRONUS Denmark")
+                .And.Contain("through the web client")
+                .And.Contain("Post Sales Documents (code unit 82)")
+                .And.Contain("anything they have not saved is lost");
+        });
+
+        // While the question is on screen the list is frozen: the row named in it must
+        // still be the row the button ends.
+        var readsWhileAsking = _admin.Reads;
+        await Task.Delay(300);
+        _admin.Reads.Should().Be(readsWhileAsking, "a tick must not move the row somebody is about to end");
+
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions button")
+            .Single(b => b.TextContent.Contains("End the session")).Click());
+        cut.WaitForAssertion(() =>
+        {
+            _admin.Cancelled.Should().ContainSingle().Which.Should().Be(47);
+            cut.Find(".alert--success").TextContent.Should().Contain("ola@cronus.example's session on Production was ended");
+        });
+    }
+
+    [Fact]
+    public async Task Declining_the_confirm_ends_nothing()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
+
+        var cut = Render(envId, "sessions");
+        cut.WaitForAssertion(() => cut.Find(".data-table__actions button").Click());
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions button")
+            .First(b => b.TextContent.Trim() == "Cancel").Click());
+
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog").Should().BeEmpty());
+        _admin.Cancelled.Should().BeEmpty();
     }
 
     [Fact]

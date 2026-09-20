@@ -796,6 +796,95 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// Who is signed in to the environment right now, longest-running operation first -
+    /// which is the one somebody on the phone about a locked posting run is looking for.
+    /// <para>
+    /// Read live every time and <b>never cached and never stored</b>. A user id and what
+    /// that person is doing is personal data with no reason to outlive the screen it is
+    /// on, and a cached answer would be wrong in a way a cached operations list is not:
+    /// the whole question is who is signed in <em>now</em>. See
+    /// <c>.design/environment-updates.md</c>, "Sessions".
+    /// </para>
+    /// <para>
+    /// Manage-gated like every other read that spends the customer's credentials.
+    /// </para>
+    /// </summary>
+    public async Task<List<BcSession>> ListEnvironmentSessionsAsync(
+        int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        try
+        {
+            var sessions = await _adminClient.ListSessionsAsync(env.Token, env.Family, env.Name, ct);
+            // Longest first, then whoever has been signed in longest: two sessions with
+            // nothing running are ordered by the only other thing that distinguishes them.
+            return sessions
+                .OrderByDescending(s => s.CurrentOperationDuration ?? TimeSpan.Zero)
+                .ThenBy(s => s.LogOnDate ?? DateTimeOffset.MaxValue)
+                .ThenBy(s => s.SessionId)
+                .ToList();
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Sessions", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Ends one session on the customer's environment - the errand behind "posting has
+    /// been running for an hour and everything is locked". Gated on managing the solution
+    /// and confirmed by name at the page, because somebody loses their unsaved work the
+    /// moment it goes through.
+    /// <para>
+    /// The live list is re-read first, for two reasons. It is the only way the history
+    /// line can name whose session it was and what it was running - the id alone answers
+    /// nothing a week later, and the session list is never stored - and it turns "that
+    /// session has already ended" into a sentence here rather than into a wire 404.
+    /// </para>
+    /// <para>
+    /// Changes the customer's tenant and touches no row of ours, so it is recorded in the
+    /// log and in the environment's Toolbox history rather than the audit trail.
+    /// </para>
+    /// </summary>
+    public async Task CancelEnvironmentSessionAsync(
+        int projectId, int environmentId, int sessionId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+
+        IReadOnlyList<BcSession> live;
+        try
+        {
+            live = await _adminClient.ListSessionsAsync(env.Token, env.Family, env.Name, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Sessions", ex.Message);
+        }
+
+        var session = live.FirstOrDefault(s => s.SessionId == sessionId)
+            ?? throw Validation("Sessions",
+                $"That session is no longer signed in to {env.Name}. Refresh the list to see who is.");
+
+        try
+        {
+            await _adminClient.CancelSessionAsync(env.Token, env.Family, env.Name, sessionId, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Sessions", ex.Message);
+        }
+
+        await RecordEnvironmentActionAsync(projectId, env.Id, UpgradeActionKind.CancelSession,
+            BcSessionDisplay.HistoryLine(session), ct);
+
+        // The user id is in the history line, which is the record this action leaves; the
+        // log keeps the ids that identify the call, not a second copy of the person.
+        _logger.LogInformation(
+            "User {UserId} ended session {SessionId} ({ClientType}) on {Environment} (project {ProjectId}).",
+            _orgContext.CurrentUserId, sessionId, session.ClientType, env.Name, projectId);
+    }
+
+    /// <summary>
     /// Reads whether Microsoft 365 licence access is on. Null when Business Central
     /// doesn't say (an environment too old to support it answers nothing useful).
     /// </summary>

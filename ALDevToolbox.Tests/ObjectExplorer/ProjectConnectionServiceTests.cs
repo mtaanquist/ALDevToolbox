@@ -159,6 +159,31 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             return Task.FromResult(new BcEnvironmentCopy("op-1f8f", "scheduled"));
         }
 
+        /// <summary>
+        /// Who is signed in, per environment name, and every session the service asked to
+        /// end - so a test can show that a refusal ended nothing at all.
+        /// </summary>
+        public Func<string, IReadOnlyList<BcSession>> OnSessions { get; set; } = _ => Array.Empty<BcSession>();
+        public List<(string Environment, int SessionId)> Cancelled { get; } = new();
+        public BcApiException? SessionsThrows;
+        public BcApiException? CancelSessionThrows;
+
+        public Task<IReadOnlyList<BcSession>> ListSessionsAsync(
+            string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            if (SessionsThrows is not null) throw SessionsThrows;
+            return Task.FromResult(OnSessions(environmentName));
+        }
+
+        public Task CancelSessionAsync(
+            string accessToken, string? applicationFamily, string environmentName, int sessionId,
+            CancellationToken ct = default)
+        {
+            if (CancelSessionThrows is not null) throw CancelSessionThrows;
+            Cancelled.Add((environmentName, sessionId));
+            return Task.CompletedTask;
+        }
+
         /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
         public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
 
@@ -1163,6 +1188,171 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         await act.Should().ThrowAsync<ProjectAccessDeniedException>();
         admin.Copies.Should().BeEmpty();
+    }
+
+    // ── Sessions ──────────────────────────────────────────────────────────
+
+    private static BcSession Session(
+        int id, string user, string clientType = "WebClient", TimeSpan? running = null,
+        DateTimeOffset? since = null, string currentObject = "") => new(
+        id, user, clientType, since,
+        string.Empty, string.Empty, string.Empty, string.Empty,
+        currentObject, currentObject.Length > 0 ? 82 : null, currentObject.Length > 0 ? "CodeUnit" : string.Empty,
+        running);
+
+    /// <summary>
+    /// The one somebody is phoning about is the one that has been running longest, so it
+    /// is first. Two with nothing running are ordered by who has been in longest.
+    /// </summary>
+    [Fact]
+    public async Task Sessions_come_back_with_the_longest_running_first()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var since = new DateTimeOffset(2026, 9, 20, 6, 0, 0, TimeSpan.Zero);
+        var admin = new FakeAdminClient
+        {
+            OnSessions = _ =>
+            [
+                Session(1, "idle-newer@cronus.example", since: since.AddHours(2)),
+                Session(2, "posting@cronus.example", running: TimeSpan.FromMinutes(62), currentObject: "Post Sales Documents"),
+                Session(3, "idle-older@cronus.example", since: since),
+                Session(4, "saving@cronus.example", running: TimeSpan.FromSeconds(3)),
+            ],
+        };
+
+        await using var ctx = _db.NewContext();
+        var sessions = await Svc(ctx, TokenOk(), admin).ListEnvironmentSessionsAsync(projectId, envId);
+
+        sessions.Select(s => s.SessionId).Should().Equal(2, 4, 3, 1);
+    }
+
+    [Fact]
+    public async Task Nobody_signed_in_is_an_empty_list_and_not_a_refusal()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+
+        await using var ctx = _db.NewContext();
+        (await Svc(ctx, TokenOk(), new FakeAdminClient()).ListEnvironmentSessionsAsync(projectId, envId))
+            .Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Reading the list spends the customer's own credentials and shows who is working in
+    /// their system, so it is gated exactly like the writes beside it - and so is ending one.
+    /// </summary>
+    [Fact]
+    public async Task Someone_who_does_not_manage_the_solution_can_neither_read_nor_end_its_sessions()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9778, "onlooker3@example.com", UserRole.User);
+        _db.OrgContext.CurrentUserId = 9778;
+        var admin = new FakeAdminClient { OnSessions = _ => [Session(47, "ola@cronus.example")] };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), admin);
+
+        await ((Func<Task>)(() => svc.ListEnvironmentSessionsAsync(projectId, envId)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.CancelEnvironmentSessionAsync(projectId, envId, 47)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+        admin.Cancelled.Should().BeEmpty("nothing reached the customer's tenant");
+    }
+
+    /// <summary>
+    /// The history line is written from the session itself, not from its id - "cancelled
+    /// session 47" answers nothing a week later, and the list is never stored, so this
+    /// line is the only lasting record of it.
+    /// </summary>
+    [Fact]
+    public async Task Ending_a_session_names_whose_it_was_and_what_it_was_doing_in_the_history()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnSessions = _ =>
+            [
+                Session(47, "ola@cronus.example", running: TimeSpan.FromMinutes(62), currentObject: "Post Sales Documents"),
+                Session(48, "kari@cronus.example"),
+            ],
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).CancelEnvironmentSessionAsync(projectId, envId, 47);
+
+        admin.Cancelled.Should().ContainSingle().Which.Should().Be(("Production", 47));
+
+        await using var read = _db.NewContext();
+        var entry = await read.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.EnvironmentId == envId);
+        entry.Kind.Should().Be(UpgradeActionKind.CancelSession);
+        entry.Status.Should().Be(UpgradeActionStatus.Sent, "a record, never something for the worker to fire");
+        entry.Outcome.Should().Contain("ola@cronus.example")
+            .And.Contain("web client")
+            .And.Contain("Post Sales Documents");
+        entry.Outcome.Should().NotContain("47", "an id is not what anybody reads this back for");
+        entry.RequestedBy.Should().Contain("owner@example.com");
+    }
+
+    /// <summary>
+    /// The likeliest failure of all: the list is always a little older than the click. It
+    /// is answered here, before anything is sent, so nobody gets a wire 404.
+    /// </summary>
+    [Fact]
+    public async Task A_session_that_has_ended_since_the_list_was_read_is_refused_with_a_sentence()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient { OnSessions = _ => [Session(48, "kari@cronus.example")] };
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).CancelEnvironmentSessionAsync(projectId, envId, 47);
+            var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+            thrown.Which.Errors["Sessions"].Should().Contain("no longer signed in to Production");
+        }
+
+        admin.Cancelled.Should().BeEmpty();
+        await using var read = _db.NewContext();
+        (await read.OeEnvironmentUpgradeActions.AsNoTracking().AnyAsync(a => a.EnvironmentId == envId))
+            .Should().BeFalse("nothing happened, so nothing is recorded");
+    }
+
+    [Fact]
+    public async Task A_refusal_from_business_central_comes_back_as_a_field_keyed_sentence()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnSessions = _ => [Session(47, "ola@cronus.example")],
+            CancelSessionThrows = new BcApiException(
+                HttpStatusCode.NotFound,
+                "That session had already ended. Refresh the list to see who is signed in now."),
+        };
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).CancelEnvironmentSessionAsync(projectId, envId, 47);
+            var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+            thrown.Which.Errors["Sessions"].Should().Contain("already ended");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.OeEnvironmentUpgradeActions.AsNoTracking().AnyAsync(a => a.EnvironmentId == envId))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_read_business_central_refuses_comes_back_as_a_field_keyed_sentence()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            SessionsThrows = new BcApiException(HttpStatusCode.Forbidden, "The Admin Center API returned 403."),
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).ListEnvironmentSessionsAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Sessions");
     }
 
     [Fact]
