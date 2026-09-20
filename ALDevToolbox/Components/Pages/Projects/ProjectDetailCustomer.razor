@@ -318,7 +318,7 @@ else
     internal static string HostingText(ProjectHostingType hosting) => hosting switch
     {
         ProjectHostingType.MicrosoftCloud => "Microsoft (Business Central online)",
-        ProjectHostingType.OurCloud => "Us",
+        ProjectHostingType.OurCloud => "Our hosting",
         ProjectHostingType.HostingPartner => "A hosting partner",
         ProjectHostingType.CustomerHardware => "The customer, on their own hardware",
         _ => hosting.ToString(),

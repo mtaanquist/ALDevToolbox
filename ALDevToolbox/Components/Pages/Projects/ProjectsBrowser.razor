@@ -3,6 +3,9 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject IHttpContextAccessor Http
 @inject CustomerModuleService CustomerModules
+@inject ProjectCustomerInfoService CustomerInfo
+@using ALDevToolbox.Components.Pages.Projects.Customer
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 
 @*
@@ -26,12 +29,12 @@
 
 <PageTitle>Solutions · AL Dev Toolbox</PageTitle>
 
-<ListPage Title="Solutions" SearchForm="true"
+<ListPage Title="Solutions" SearchForm="true" Rail="@(_summary is null ? null : SummaryRail())" RailLabel="Customer info"
           IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(_rows is { Count: 0 })"
           Trail='@([new("Home", "/"), new("Solutions")])'>
     <SubtitleContent>
-        Each solution points at one or more Git repositories and builds them into a set of
-        compiled <code>.app</code> files. Open one to manage its repositories and start a build.
+        One solution per customer: what they run, how to reach them, and the repositories that
+        build their extensions. Customer info shows the access notes, contacts and modules beside the list.
     </SubtitleContent>
     <Actions>
         <a class="btn btn--primary" href="/solutions/new">
@@ -80,13 +83,14 @@
                 <tr>
                     <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                     <th scope="col">Solution</th>
-                    <th scope="col">Owner</th>
-                    <th scope="col">Repositories</th>
+                    <th scope="col">Hosted by</th>
+                    <th scope="col">BC version</th>
                     <th scope="col">Latest build</th>
+                    <th scope="col">Owner</th>
                     <th scope="col" class="data-table__actions">Actions</th>
                 </tr>
             </thead>
-            <tbody><TableSkeletonRows Columns="5" /></tbody>
+            <tbody><TableSkeletonRows Columns="6" /></tbody>
         </table>
         <LoadingBlock Text="Loading solutions..." UnderTable="true" />
     </Loading>
@@ -120,9 +124,10 @@
                 <tr>
                     <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                     <th scope="col">Solution</th>
-                    <th scope="col">Owner</th>
-                    <th scope="col">Repositories</th>
+                    <th scope="col">Hosted by</th>
+                    <th scope="col">BC version</th>
                     <th scope="col">Latest build</th>
+                    <th scope="col">Owner</th>
                     <th scope="col" class="data-table__actions">Actions</th>
                 </tr>
             </thead>
@@ -140,13 +145,14 @@
                                 <Icon Name="lock" Width="14" Height="14" />
                             </td>
                             <td><span>@p.Name</span></td>
-                            <td colspan="3">Private — visible to its team</td>
+                            <td colspan="4">Private — visible to its team</td>
                             <td class="data-table__actions"></td>
                         </tr>
                     }
                     else
                     {
-                    <tr class="@(p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null)">
+                    var rowState = RowClass(p);
+                    <tr class="@rowState">
                         <td class="data-table__col-state">
                             @if (p.Latest is { } b1)
                             {
@@ -154,14 +160,14 @@
                             }
                         </td>
                         <td><a href="@($"/solutions/{p.Id}")"><strong>@p.Name</strong></a></td>
-                        <td class="u-muted">@(p.OwnerName ?? "—")</td>
-                        <td>@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")</td>
+                        <td>@(_facts.GetValueOrDefault(p.Id)?.HostingType is { } hosting ? ShortHosting(hosting) : "—")</td>
+                        <td>@(_facts.GetValueOrDefault(p.Id)?.BcVersion ?? "—")</td>
                         <td>
                             @if (p.Latest is { } b2)
                             {
                                 @if (!string.IsNullOrEmpty(b2.BcVersion))
                                 {
-                                    <span class="code">BC @b2.BcVersion</span>
+                                    <span>Built for <span class="code">BC @b2.BcVersion</span></span>
                                 }
                                 else
                                 {
@@ -173,7 +179,16 @@
                                 <span class="u-muted">No builds yet</span>
                             }
                         </td>
+                        <td class="u-muted">@(p.OwnerName ?? "—")</td>
                         <td class="data-table__actions">
+                            @* The summary is a link, not a click handler: the page stays a plain
+                               GET page, and a list with one customer's summary open is an address
+                               that can be sent to a colleague. *@
+                            <a class="btn btn--sm" href="@SummaryHref(p.Id)" aria-label="@($"Customer info for {p.Name}")"
+                               aria-current="@(p.Id == _selectedId ? "true" : null)">
+                                <Icon Name="eye" Width="14" Height="14" />
+                                <span>Customer info</span>
+                            </a>
                             <a class="btn btn--sm" href="@($"/solutions/{p.Id}")">
                                 <Icon Name="settings" Width="14" Height="14" />
                                 <span>Open</span>
@@ -193,6 +208,12 @@
     private string _search = string.Empty;
     private List<CatalogModule> _modules = new();
     private int? _moduleId;
+    private Dictionary<int, CustomerListFacts> _facts = new();
+    private int? _selectedId;
+    private Summary? _summary;
+
+    /// <summary>What the rail shows for the selected solution. Read only when one is selected.</summary>
+    private sealed record Summary(string Name, CustomerInfoSnapshot Info, SolutionModules Modules);
 
     protected override async Task OnInitializedAsync()
     {
@@ -209,7 +230,150 @@
             var having = await CustomerModules.ListProjectIdsWithModuleAsync(moduleId);
             _rows = _rows.Where(r => having.Contains(r.Id)).ToList();
         }
+
+        _facts = await CustomerInfo.ListFactsAsync(_rows.Where(r => !r.IsLocked).Select(r => r.Id).ToList());
+
+        // Only a row that is on screen and open to this person can be selected; anything
+        // else in the address is ignored rather than answered.
+        if (int.TryParse(Http.HttpContext?.Request.Query["selected"], out var selected)
+            && _rows.FirstOrDefault(r => r.Id == selected && !r.IsLocked) is { } row
+            && await CustomerInfo.GetAllAsync(selected) is { } info)
+        {
+            _selectedId = selected;
+            _summary = new Summary(row.Name, info, await CustomerModules.GetSolutionModulesAsync(selected));
+        }
     }
+
+    /// <summary>
+    /// The factboxes of the AL prototype this model came from: what support needs about
+    /// the selected customer without leaving the list. It summarises and links; the
+    /// Customer tab is the only place any of it is changed.
+    /// </summary>
+    private RenderFragment SummaryRail() => @<div class="sol-rail">
+        <section class="card">
+            <div class="card__head">
+                <h2 class="card__title sol-rail__name">@_summary!.Name</h2>
+                <a class="btn btn--sm btn--ghost" href="@SummaryHref(null)" aria-label="Close customer info">
+                    <Icon Name="x" Width="14" Height="14" />
+                </a>
+            </div>
+            <div class="card__body sol-rail__body">
+                <div class="meta-item"><span class="meta-item__label">Hosted by</span><span class="sol-rail__value">@(_summary.Info.Basics.HostingType is { } h ? ProjectDetailCustomer.HostingText(h) : "Not recorded")</span></div>
+                <div class="meta-item"><span class="meta-item__label">BC version</span><span class="sol-rail__value">@(_summary.Info.Basics.BcVersion ?? "Not recorded")</span></div>
+                @if (_summary.Info.Basics.ClientUrl is { } url)
+                {
+                    <div class="meta-item"><span class="meta-item__label">Business Central address</span><a class="sol-rail__value" href="@url" target="_blank" rel="noopener noreferrer">@url</a></div>
+                }
+                <a class="btn btn--sm" href="@($"/solutions/{_selectedId}")">Open solution</a>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Getting in</h2></div>
+            <div class="card__body sol-rail__body">
+                @if (_summary.Info.Notes.AccessDescription is { } access)
+                {
+                    <p class="sol-rail__text">@access</p>
+                }
+                else
+                {
+                    <p class="u-muted sol-rail__text">Nobody has written down how to get in.</p>
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Contacts</h2></div>
+            <div class="card__body sol-rail__body">
+                @if (_summary.Info.Contacts.Count == 0)
+                {
+                    <p class="u-muted sol-rail__text">No contacts yet.</p>
+                }
+                @foreach (var contact in _summary.Info.Contacts)
+                {
+                    <div class="sol-rail__item">
+                        <span class="sol-rail__strong">@contact.Name</span>
+                        <span class="u-muted">@CustomerContactsSection.TypeText(contact.Type)@(contact.Company is { } company ? $" - {company}" : "")</span>
+                        @if (contact.Phone is { } phone)
+                        {
+                            <a href="@($"tel:{phone.Replace(" ", string.Empty)}")">@phone</a>
+                        }
+                        @if (contact.Email is { } email)
+                        {
+                            <a href="@($"mailto:{email}")">@email</a>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Modules</h2></div>
+            <div class="card__body sol-rail__body">
+                @if (_summary.Modules.Modules.Count == 0)
+                {
+                    <p class="u-muted sol-rail__text">No modules recorded for this customer.</p>
+                }
+                @foreach (var module in _summary.Modules.Modules)
+                {
+                    <div class="sol-rail__item">
+                        <span class="sol-rail__strong">@module.Name</span>
+                        <span class="u-num sol-rail__version">@(module.Version ?? "Version not recorded")</span>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Who knows this customer</h2></div>
+            <div class="card__body sol-rail__body">
+                @if (_summary.Info.People.Count == 0)
+                {
+                    <p class="u-muted sol-rail__text">Nobody is listed yet.</p>
+                }
+                @foreach (var person in _summary.Info.People)
+                {
+                    <div class="sol-rail__item">
+                        <span class="sol-rail__strong">@person.Name</span>
+                        <span class="u-muted">@CustomerPeopleSection.RoleText(person.Role)@(person.Areas is { } areas ? $" - {areas}" : "")</span>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <p class="u-muted sol-rail__foot">
+            Something missing or out of date? It is kept on the solution's
+            <a href="@($"/solutions/{_selectedId}")">Customer tab</a>.
+        </p>
+    </div>;
+
+    private string RowClass(ProjectArtifactsRow p)
+    {
+        var state = p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null;
+        return p.Id == _selectedId ? $"{state} is-selected".Trim() : state ?? string.Empty;
+    }
+
+    /// <summary>The list as it is now - search and module filter kept - with one solution's summary open, or closed.</summary>
+    private string SummaryHref(int? id)
+    {
+        var parts = new List<string>();
+        if (_search.Length > 0) parts.Add($"q={Uri.EscapeDataString(_search)}");
+        if (_moduleId is { } module) parts.Add($"module={module}");
+        if (id is { } selected) parts.Add($"selected={selected}");
+        // No fragment: the rail is beside the list and sticky, and jumping to it scrolls the
+        // page head out of view - the same bump in-page anchors gave the environment page.
+        return parts.Count == 0 ? "/solutions" : "/solutions?" + string.Join("&", parts);
+    }
+
+    /// <summary>The column is narrow, so the hosting in a word or two; the Customer tab has the sentence.</summary>
+    private static string ShortHosting(ProjectHostingType hosting) => hosting switch
+    {
+        ProjectHostingType.MicrosoftCloud => "Microsoft cloud",
+        ProjectHostingType.OurCloud => "Our hosting",
+        ProjectHostingType.HostingPartner => "Hosting partner",
+        ProjectHostingType.CustomerHardware => "Customer's hardware",
+        _ => hosting.ToString(),
+    };
 
     private string NoMatchTitle()
     {

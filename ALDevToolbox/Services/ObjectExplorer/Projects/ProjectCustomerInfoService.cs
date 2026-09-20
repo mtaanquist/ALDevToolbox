@@ -143,6 +143,20 @@ public sealed class ProjectCustomerInfoService
             await ListIntegrationsAsync(projectId, ct));
     }
 
+    /// <summary>
+    /// Hosting and version for the Solutions list's columns, by solution id. The caller
+    /// passes the ids of rows it is already showing in full - never a locked row's, whose
+    /// name is all its viewer may see.
+    /// </summary>
+    public async Task<Dictionary<int, CustomerListFacts>> ListFactsAsync(IReadOnlyCollection<int> projectIds, CancellationToken ct = default)
+    {
+        if (projectIds.Count == 0) return new();
+        return await _db.OeProjects.AsNoTracking()
+            .Where(p => projectIds.Contains(p.Id) && p.DeletedAt == null)
+            .Select(p => new { p.Id, p.HostingType, p.BcVersion })
+            .ToDictionaryAsync(p => p.Id, p => new CustomerListFacts(p.HostingType, p.BcVersion), ct);
+    }
+
     // ── Getting in, and notes ───────────────────────────────────────────
 
     public const int NotesMaxLength = 4000;
@@ -419,3 +433,5 @@ public sealed record CustomerInfoSnapshot(
     List<CustomerContact> Contacts,
     List<CustomerPerson> People,
     List<CustomerIntegration> Integrations);
+
+public sealed record CustomerListFacts(ProjectHostingType? HostingType, string? BcVersion);

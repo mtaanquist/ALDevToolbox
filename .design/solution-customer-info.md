@@ -1,8 +1,8 @@
 # Customer information on a Solution
 
-Status: **part shipped.** Slice 1 (hosting and the basics, #859) and slice 2 (getting in,
-contacts, who knows the customer, integrations, #860) and slice 3 (modules) are built.
-The Solutions list's side panel (slice 4) is planned. Each section is labelled with its
+Status: **shipped.** Slice 1 (hosting and the basics, #859) and slice 2 (getting in,
+contacts, who knows the customer, integrations, #860), slice 3 (modules, #861) and slice 4
+(the Solutions list's summary) are built. Each section is labelled with its
 slice.
 
 ## Why
@@ -162,26 +162,35 @@ With modules in, **Customer is the first tab and the one an existing Solution op
 Links that mean another tab say so (`?tab=repositories`, `pipelines`, `bc`, `general`,
 `access`).
 
-### The Solutions list and its side panel (slice 4)
+### The Solutions list and its customer info (slice 4)
 
-The list stays narrow - Solution, hosting, version, owner, latest build - and the rest
-follows the selected row in a panel on the right, as the factboxes did in the AL
-prototype this model comes from. It is the support consultant's view: on a call they are
-scanning customers, not editing one, and the answer should not be a page load away.
+The list stays narrow - Solution, hosted by, BC version, latest build, owner - and the rest
+follows the chosen row in a rail on the right, as the factboxes did in the AL prototype
+this model came from. It is the support consultant's view: on a call they are scanning
+customers, not editing one, and the answer should not be a page load away.
 
-- Selecting a row (a click anywhere on it that is not a link, or the arrow keys) fills the
-  panel: **Getting in**, **Contacts**, **Modules**, **Who knows this customer**, with
-  **Open solution** at the top. The Solution's name in the row stays an ordinary link.
-- The panel reads on selection, in one query; the list does not carry the data for every
-  row.
-- It is the design system's 280px reference rail (the one the settings and detail frames
-  have), on a list page. Below the width where those rails collapse it drops under the
-  list rather than squeezing it.
-- It summarises and links; it never edits. The Customer tab is the only place customer
-  information is changed.
+- Each row has **Customer info** beside **Open**. It is a link, not a click handler:
+  `/solutions?selected={id}`, keeping whatever search and module filter are in the address.
+  The page therefore stays the plain GET page it was - no circuit, nothing to reconnect -
+  and a list with one customer's summary open is an address that can be sent to a
+  colleague. The Solution's name in the row still opens the Solution.
+- The rail shows the name with **Open solution** and a close link, then hosted by,
+  version and the Business Central address; **Getting in**; **Contacts** with `tel:` and
+  `mailto:` links; **Modules**; **Who knows this customer**. It summarises and links; it
+  never edits. The Customer tab is the only place any of it is changed.
+- It is read only for the selected Solution, through the same view-gated reads the
+  Customer tab uses. Only a row that is on screen and open to the viewer can be selected:
+  a locked row's id in the address is ignored, not answered.
+- `ListPage` gained a `Rail` slot for it, which is the detail frames' `.detail-body`
+  reference rail beside a list: sticky, 280px, under the list below the width where those
+  collapse. A page passes it per render, so no column is reserved while nothing is
+  selected. Everything in the rail wraps in full - a phone number cut off with an ellipsis
+  is no use on a call.
 
-`ListPage` has no rail slot today. It gets one in this slice rather than the page writing
-round the frame, and the pattern needs a design pass upstream - there is no sheet for it.
+The Repositories column gave way to Hosted by and BC version; the count is on the Solution.
+The build's own version reads "Built for BC 26.0" so that two bare versions never sit side
+by side - the customer's is the one that gets read out on a call.
+There is no sheet for a list with a rail, so this needs a design pass upstream.
 
 ## Deliberately out of scope
 
