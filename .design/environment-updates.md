@@ -89,7 +89,8 @@ can do is be unhurried and do as we are told.
 
 - *One request at a time.* One worker drains the queue, and a solution's calls - a token,
   the environment list, then the update window, the next update and the installed apps for
-  each environment (two plus three per environment) - go out one after another. A customer
+  each environment, and the tenant's storage (four plus three per environment) - go out one
+  after another. A customer
   is its own Microsoft tenant, so each sees a handful of requests a night.
 - *A breath between customers.* The worker waits a second before the next solution. Nobody
   is waiting on the sweep; a hundred customers cost under two minutes.
@@ -104,6 +105,22 @@ can do is be unhurried and do as we are told.
   the same per-tenant reason and would shorten the run, but it means a degree-of-parallelism
   knob on `QueueDrainWorker`, which every worker inherits. The worker now logs each run -
   solutions, requests, elapsed - so that decision can be made on a measurement.
+
+**Storage.** The same refresh reads the tenant's storage in two calls per customer
+(`/environments/usedstorage` and `/environments/quotas`), not per environment: every
+environment's database size, and the one allowance they share. That shape decides the
+display. The Environments list shows each environment's own size, and under it a bar for
+the *customer's whole tenant* against its allowance - repeated on each of the customer's
+rows - because the tenant is what runs out. The bar is amber from 80% and red at or over
+100%; Business Central lets a tenant go over, so red is a state rather than a ceiling, the
+bar stops at full and the words carry the rest ("Customer at 115% of 80 GB - over its
+allowance"). A customer at or over their allowance counts under **Needs attention**; one
+that is merely filling up does not. The environment page shows the size in its meta row and
+the same sentence as an alert, which also says that deleting a sandbox frees room. A size
+Business Central could not work out (it reports -1) is left blank, and an allowance of zero
+or none is "not read", never "full". Stored as `oe_project_environments.bc_database_kb`
+and `oe_projects.bc_storage_quota_kb` / `bc_storage_fetched_at`; a failed read keeps the
+last figures. That makes the sweep four requests per solution plus three per environment.
 
 The queue holds 256 solutions and **waits** when full rather than dropping, so nothing is
 lost past that size; the scheduler restarts its heartbeat's active clock on every job it
