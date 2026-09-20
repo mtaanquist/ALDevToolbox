@@ -93,6 +93,37 @@ public class OeProject
     // (cross-tenant app registrations are being deprecated), so the secret is
     // first-class and short-lived. See .design/saas-delivery.md.
 
+    // ── Customer information. See .design/solution-customer-info.md. All optional. ──
+
+    /// <summary>
+    /// Where the customer's Business Central runs. Null means nobody has said, and
+    /// reads as online - see <see cref="IsOnPremises"/>.
+    /// </summary>
+    public ProjectHostingType? HostingType { get; set; }
+
+    /// <summary>
+    /// True when there is no Business Central admin API to call for this customer, which
+    /// turns off the connection, environments, upgrades and release pipelines. Derived
+    /// from <see cref="HostingType"/> so the two can never disagree.
+    /// </summary>
+    public bool IsOnPremises => HostingType is not (null or ProjectHostingType.MicrosoftCloud);
+
+    /// <summary>What they run, as people say it ("BC 25.3", "NAV 2018 CU12"). For reading, never compared.</summary>
+    public string? BcVersion { get; set; }
+
+    public ProjectLicenseType? LicenseType { get; set; }
+
+    public ProjectUserExperience? UserExperience { get; set; }
+
+    /// <summary>Where a person opens the client.</summary>
+    public string? ClientUrl { get; set; }
+
+    /// <summary>
+    /// Microsoft's Voice account number ("Voice ID" in a licence file): the customer's
+    /// account for on-premises licence registration. Not the partner's MPN id.
+    /// </summary>
+    public string? VoiceAccountNumber { get; set; }
+
     /// <summary>The customer's Entra (AAD) tenant GUID — used for the OAuth token endpoint and to scope the admin API. Null until the connection is configured.</summary>
     public Guid? BcTenantId { get; set; }
 

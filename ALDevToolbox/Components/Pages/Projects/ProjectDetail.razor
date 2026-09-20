@@ -182,7 +182,11 @@
                                                RepoErrors="_repoErrors"
                                                OnDirty="MarkDirty" />
                 }
-                else if (_section == Section.Bc && Id is not null && _canManage)
+                else if (_section == Section.Customer && Id is not null)
+                {
+                    <ProjectDetailCustomer Id="Id.Value" CanManage="_canManage" OnSaved="OnCustomerSavedAsync" />
+                }
+                else if (_section == Section.Bc && Id is not null && _canManage && !IsOnPremises)
                 {
                     <ProjectDetailBc Id="Id.Value" />
                 }
@@ -215,7 +219,7 @@
     /// </summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? OpenTab { get; set; }
 
-    private enum Section { General, Repos, Bc, Pipelines, Access }
+    private enum Section { General, Repos, Customer, Bc, Pipelines, Access }
     private Section _section = Section.General;
 
     /// <summary>
@@ -239,9 +243,13 @@
                 Tab("Repositories", Section.Repos),
             };
 
+            // For everyone who can see the solution: it is what support reads.
+            if (Id is not null) tabs.Add(Tab("Customer", Section.Customer));
+
             if (Id is not null && _canManage)
             {
-                tabs.Add(Tab("Business Central", Section.Bc));
+                // Nothing on it works without Business Central online.
+                if (!IsOnPremises) tabs.Add(Tab("Business Central", Section.Bc));
                 tabs.Add(Tab("Pipelines", Section.Pipelines));
                 tabs.Add(Tab("Access", Section.Access));
                 }
@@ -314,6 +322,7 @@
     protected override async Task OnInitializedAsync()
     {
         if (string.Equals(OpenTab, "bc", StringComparison.OrdinalIgnoreCase)) _section = Section.Bc;
+        else if (string.Equals(OpenTab, "customer", StringComparison.OrdinalIgnoreCase)) _section = Section.Customer;
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
 
         if (Id is null)
@@ -381,6 +390,16 @@
     }
 
     private OeProject? _loadedProject;
+
+    /// <summary>Hosted anywhere but Business Central online. See .design/solution-customer-info.md.</summary>
+    private bool IsOnPremises => _loadedProject?.IsOnPremises == true;
+
+    /// <summary>The hosting may have changed, and with it which tabs there are.</summary>
+    private async Task OnCustomerSavedAsync()
+    {
+        if (Id is null) return;
+        _loadedProject = await Projects.GetProjectAsync(Id.Value) ?? _loadedProject;
+    }
 
     private void HydrateEdit()
     {

@@ -1,0 +1,5 @@
+/* Three across, not the sheet's six: a tenant id and a hosting sentence are read and
+   copied here, so they wrap in full rather than ending in an ellipsis. */
+.cust__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--space-4); }
+.cust__grid .meta-item__value { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.cust__url { margin: var(--space-4) 0 0; overflow-wrap: anywhere; }

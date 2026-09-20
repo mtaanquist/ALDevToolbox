@@ -19,6 +19,7 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `bcquality.md` | Mirroring Microsoft's BCQuality knowledge base into Postgres, and the MCP tools over it. |
 | `saas-delivery.md` | Publishing a build to a Business Central SaaS environment: connection, release pipelines, deliveries, update windows. |
 | `environment-updates.md` | The Upgrades fleet page: the team-scoped grant, the mirrored next platform update, the two date writes, the action-and-history table. |
+| `solution-customer-info.md` | Customer information on a Solution: hosting and on-premises Solutions, the Customer tab (getting in, contacts, modules, who knows the customer), the Solutions list's side panel. |
 | `completed-milestones.md` | The record of what each shipped milestone added (M1–M21). |
 | `roadmap.md` | Uncommitted forward-looking ideas (successor to the retired `milestones.md`). |
 | `migration-history.md` | Where to find the EF migration history. |
