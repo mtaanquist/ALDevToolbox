@@ -342,3 +342,15 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .env-detail__warn {
     margin: var(--space-4) var(--space-4) 0;
 }
+
+/* The modal scrim in the dark theme. The hand-off's recipe mixes --ink into
+   transparent, which dims a light page and does the opposite to a dark one: --ink is
+   near-white there, so the page behind a dialog went pale grey and the dialog lost
+   the contrast it was opened for. In dark the scrim is mixed from --bg, the darkest
+   surface the theme has, so it darkens like the light one does. Both of tokens.css's
+   dark selectors, because either can be what put the page in dark. To go upstream
+   to the design project with the next hand-off; this is the stopgap, in our own sheet. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .modal-backdrop { background: color-mix(in oklab, var(--bg) 72%, transparent); }
+}
+[data-theme="dark"] .modal-backdrop { background: color-mix(in oklab, var(--bg) 72%, transparent); }
