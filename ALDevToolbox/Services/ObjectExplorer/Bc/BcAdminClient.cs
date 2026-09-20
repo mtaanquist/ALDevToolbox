@@ -61,6 +61,19 @@ public sealed class BcAdminClient : IBcAdminClient
         return body is null ? Array.Empty<BcEnvironmentUpdate>() : ParseEnvironmentUpdates(body);
     }
 
+    public async Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        var url = BcConstants.EnvironmentOperationsUrl(applicationFamily, environmentName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.UseBearer(accessToken);
+
+        var body = await SendAsync(
+                request, "reading what Business Central has done to the environment", environmentName, NotFoundPolicy.Absent, ct)
+            .ConfigureAwait(false);
+        return body is null ? Array.Empty<BcEnvironmentOperation>() : ParseEnvironmentOperations(body);
+    }
+
     public async Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminTimezonesUrl);
@@ -446,6 +459,67 @@ public sealed class BcAdminClient : IBcAdminClient
                     RolloutStatus: hasSchedule ? Text(schedule, "rolloutStatus") ?? string.Empty : string.Empty,
                     ExpectedMonth: hasExpected ? Number(expected, "month") : null,
                     ExpectedYear: hasExpected ? Number(expected, "year") : null));
+            }
+            return result;
+        }
+    }
+
+    internal static IReadOnlyList<BcEnvironmentOperation> ParseEnvironmentOperations(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<BcEnvironmentOperation>();
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new BcApiException(null, "Business Central returned an operations list we couldn't read.", ex);
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("value", out var value)
+                || value.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<BcEnvironmentOperation>();
+            }
+
+            var result = new List<BcEnvironmentOperation>();
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var type = Text(item, "type");
+                if (string.IsNullOrWhiteSpace(type)) continue;
+
+                // The parameters differ for every kind of operation, so they are kept
+                // as flat text and the display picks out the ones it knows.
+                var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (item.TryGetProperty("parameters", out var bag) && bag.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var p in bag.EnumerateObject())
+                    {
+                        var text = p.Value.ValueKind switch
+                        {
+                            JsonValueKind.String => p.Value.GetString(),
+                            JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => p.Value.GetRawText(),
+                            _ => null,
+                        };
+                        if (!string.IsNullOrWhiteSpace(text)) parameters[p.Name] = text;
+                    }
+                }
+
+                result.Add(new BcEnvironmentOperation(
+                    Id: Text(item, "id") ?? string.Empty,
+                    Type: type,
+                    Status: Text(item, "status") ?? string.Empty,
+                    CreatedOn: Moment(item, "createdOn"),
+                    StartedOn: Moment(item, "startedOn"),
+                    CompletedOn: Moment(item, "completedOn"),
+                    CreatedBy: Text(item, "createdBy") ?? string.Empty,
+                    ErrorMessage: Text(item, "errorMessage") ?? string.Empty,
+                    Parameters: parameters));
             }
             return result;
         }

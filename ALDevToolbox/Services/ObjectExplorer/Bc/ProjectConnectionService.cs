@@ -726,6 +726,26 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// What Business Central has done, or is doing, to the environment, newest first -
+    /// whoever asked for it. Read live each time: the point of the list is to watch
+    /// something finish, which a cache would hide.
+    /// </summary>
+    public async Task<List<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
+        int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        try
+        {
+            var operations = await _adminClient.ListEnvironmentOperationsAsync(env.Token, env.Family, env.Name, ct);
+            return operations.OrderByDescending(o => o.CreatedOn ?? DateTimeOffset.MinValue).ToList();
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Operations", ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Reads whether Microsoft 365 licence access is on. Null when Business Central
     /// doesn't say (an environment too old to support it answers nothing useful).
     /// </summary>

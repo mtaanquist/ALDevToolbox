@@ -100,6 +100,13 @@ internal static class BcConstants
     public static string EnvironmentUpdatesUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/updates";
 
+    /// <summary>
+    /// What Business Central has done, or is doing, to one environment: app installs and
+    /// updates, platform updates, renames, restarts, setting changes.
+    /// </summary>
+    public static string EnvironmentOperationsUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/operations";
+
     /// <summary>The tenant-wide list of time zones the update-window write accepts.</summary>
     public const string AdminTimezonesUrl =
         $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/settings/timezones";

@@ -219,3 +219,91 @@ public static class BcAppUpdateCadence
         _ => $"The way AppSource apps update on {environmentName} will change.",
     };
 }
+
+/// <summary>
+/// One thing Business Central did, or is doing, to an environment - an app install or
+/// update, a platform update, a rename, a restart, a setting change. Whoever did it:
+/// this toolbox, the admin centre, or Microsoft.
+/// </summary>
+public sealed record BcEnvironmentOperation(
+    string Id,
+    string Type,
+    string Status,
+    DateTimeOffset? CreatedOn,
+    DateTimeOffset? StartedOn,
+    DateTimeOffset? CompletedOn,
+    string CreatedBy,
+    string ErrorMessage,
+    IReadOnlyDictionary<string, string> Parameters)
+{
+    public string? Parameter(string name) => Parameters.TryGetValue(name, out var v) ? v : null;
+}
+
+/// <summary>
+/// How an operation reads on screen. Every known type gets a plain phrase, and an
+/// unknown one is spaced out rather than shown as the wire token.
+/// </summary>
+public static class BcEnvironmentOperationDisplay
+{
+    /// <summary>
+    /// What happened, in a line. <paramref name="appName"/> resolves an app id to a name
+    /// when the caller knows it; the operations list itself carries only the id.
+    /// </summary>
+    public static string Headline(BcEnvironmentOperation op, Func<Guid, string?>? appName = null)
+    {
+        var app = AppLabel(op, appName);
+        var version = op.Parameter("targetAppVersion") ?? op.Parameter("targetVersion") ?? op.Parameter("applicationVersion");
+        var to = string.IsNullOrWhiteSpace(version) ? string.Empty : $" to {version}";
+        return op.Type.ToLowerInvariant() switch
+        {
+            "environmentappinstall" => $"Installed {app}{(string.IsNullOrWhiteSpace(version) ? string.Empty : $" {version}")}",
+            "environmentappupdate" => $"Updated {app}{to}",
+            "environmentapphotfix" => $"Hotfixed {app}{to}",
+            "environmentappuninstall" => $"Uninstalled {app}",
+            "update" => $"Business Central update{to}",
+            "modify" => "Environment settings changed",
+            "restart" => "Environment restarted",
+            "environmentrename" => op.Parameter("newEnvironmentName") is { } renamed
+                ? $"Renamed to {renamed}" : "Environment renamed",
+            "copy" => op.Parameter("sourceEnvironmentName") is { Length: > 0 } source
+                ? $"Copied from {source}" : "Environment copied",
+            "create" => "Environment created",
+            "softdelete" => "Environment deleted (recoverable)",
+            "delete" => "Environment deleted",
+            "recover" => "Environment recovered",
+            "pitrestore" => "Restored from a backup",
+            "movetoanotheraadtenant" => "Moved to another Microsoft Entra organisation",
+            _ => SpaceOut(op.Type),
+        };
+    }
+
+    /// <summary>The status as a word, and the pill tone that goes with it.</summary>
+    public static (string Word, string Tone) Status(BcEnvironmentOperation op) => op.Status.ToLowerInvariant() switch
+    {
+        "succeeded" => ("Succeeded", "success"),
+        "failed" => ("Failed", "danger"),
+        "running" => ("Running", "running"),
+        "queued" => ("Queued", "queued"),
+        "scheduled" => ("Scheduled", "queued"),
+        "canceled" or "cancelled" => ("Cancelled", "muted"),
+        "skipped" => ("Skipped", "muted"),
+        _ => (string.IsNullOrWhiteSpace(op.Status) ? "Unknown" : SpaceOut(op.Status), "muted"),
+    };
+
+    /// <summary>True while Business Central has not finished with it.</summary>
+    public static bool IsOpen(BcEnvironmentOperation op) =>
+        op.Status.ToLowerInvariant() is "running" or "queued" or "scheduled";
+
+    private static string AppLabel(BcEnvironmentOperation op, Func<Guid, string?>? appName)
+    {
+        if (op.Parameter("appName") is { Length: > 0 } named) return named;
+        if (Guid.TryParse(op.Parameter("appId"), out var id) && appName?.Invoke(id) is { Length: > 0 } known) return known;
+        return "an app";
+    }
+
+    private static string SpaceOut(string token)
+    {
+        var spaced = System.Text.RegularExpressions.Regex.Replace(token, "(?<=[a-z])(?=[A-Z])", " ").ToLowerInvariant();
+        return spaced.Length == 0 ? spaced : char.ToUpperInvariant(spaced[0]) + spaced[1..];
+    }
+}
