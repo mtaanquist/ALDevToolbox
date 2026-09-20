@@ -201,6 +201,35 @@ public sealed class BcAdminClient : IBcAdminClient
         _logger.LogInformation("Set Microsoft 365 licence access on {Environment} to {Enabled}.", environmentName, enabled);
     }
 
+    public async Task RecoverEnvironmentAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        // No body: the environment is named by the route, and everything else about the
+        // recovery is Microsoft's to decide.
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, BcConstants.EnvironmentRecoverUrl(applicationFamily, environmentName));
+        request.UseBearer(accessToken);
+
+        await SendAsync(request, "recovering the environment", environmentName, NotFoundPolicy.Error, ct,
+            DescribeRecoverFailure).ConfigureAwait(false);
+        _logger.LogInformation("Asked Business Central to recover {Environment}.", environmentName);
+    }
+
+    /// <summary>
+    /// Turns a refused recovery into a sentence. The two codes Microsoft documents for
+    /// this endpoint are different situations with different next steps, so they are told
+    /// apart here rather than both reaching a consultant as "the API refused it"; anything
+    /// else falls through to the shared settings wording.
+    /// </summary>
+    internal static string DescribeRecoverFailure(HttpStatusCode status, string body) => ErrorCode(body) switch
+    {
+        "deletedEnvironmentRecoveryInProgress" =>
+            "Business Central is already bringing this environment back. Refresh in a few minutes to see it return.",
+        "invalidStatusCannotRecoverDeletedEnvironment" =>
+            "Business Central won't bring this environment back in the state it is in now. Check it in the admin centre, then try again.",
+        _ => DescribeSettingsFailure(status, body, "recovering the environment"),
+    };
+
     public async Task SelectTargetVersionAsync(
         string accessToken, string? applicationFamily, string environmentName,
         string targetVersion, string? targetVersionType,
@@ -767,23 +796,55 @@ public sealed class BcAdminClient : IBcAdminClient
     /// <summary>The version lives under <c>versionDetails</c>, which can be absent or null.</summary>
     private static string? ReadVersion(JsonElement item)
     {
-        if (!item.TryGetProperty("versionDetails", out var details) || details.ValueKind != JsonValueKind.Object)
+        if (!TryProperty(item, "versionDetails", out var details) || details.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
         return Text(details, "version") ?? Text(details, "applicationVersion");
     }
 
+    /// <summary>
+    /// One property of a JSON object by name, tolerating Microsoft's casing. The exact
+    /// spelling is tried first and a case-insensitive scan only when that misses, so the
+    /// common path costs nothing.
+    /// <para>
+    /// Needed because this payload mixes the two: the environments response returns
+    /// <c>SoftDeletedOn</c>, <c>HardDeletePendingOn</c> and <c>DeleteReason</c> in
+    /// PascalCase beside camelCase neighbours, and a case-sensitive lookup read every
+    /// deleted environment as one with no deletion dates at all. The same reason every
+    /// enum-ish value here is compared case-insensitively — see <see cref="BcEnvironment"/>.
+    /// </para>
+    /// </summary>
+    private static bool TryProperty(JsonElement item, string property, out JsonElement value)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            value = default;
+            return false;
+        }
+        if (item.TryGetProperty(property, out value)) return true;
+
+        foreach (var candidate in item.EnumerateObject())
+        {
+            if (string.Equals(candidate.Name, property, StringComparison.OrdinalIgnoreCase))
+            {
+                value = candidate.Value;
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static string? Text(JsonElement item, string property)
     {
-        if (!item.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.String) return null;
+        if (!TryProperty(item, property, out var value) || value.ValueKind != JsonValueKind.String) return null;
         var text = value.GetString();
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     private static DateTime? Timestamp(JsonElement item, string property)
     {
-        if (!item.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.String) return null;
+        if (!TryProperty(item, property, out var value) || value.ValueKind != JsonValueKind.String) return null;
         return value.TryGetDateTime(out var when)
             ? DateTime.SpecifyKind(when.ToUniversalTime(), DateTimeKind.Utc)
             : null;

@@ -107,6 +107,21 @@ public interface IBcAdminClient
         CancellationToken ct = default);
 
     /// <summary>
+    /// Brings back an environment the customer deleted, while Business Central is still
+    /// keeping it. A write to the customer's tenant, and the one that can't be repeated:
+    /// once Microsoft has hard-deleted the environment there is nothing to recover.
+    /// <para>
+    /// Business Central answers with a scheduled operation rather than a finished one, so
+    /// the environment moves through <c>Recovering</c> before it is <c>Active</c> again;
+    /// callers re-read it rather than assuming. A refusal comes back as a
+    /// <see cref="BcApiException"/> whose message is already a sentence — an environment
+    /// that is already being recovered and one whose state forbids it are told apart.
+    /// </para>
+    /// </summary>
+    Task RecoverEnvironmentAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
+    /// <summary>
     /// Reads the environment's <em>Microsoft platform-update window</em>
     /// (<c>settings/upgrade</c>) — mirrored as context beside the toolbox's own delivery
     /// slot, never as a source for it. Returns <c>null</c> when the environment has no

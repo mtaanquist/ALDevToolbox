@@ -281,6 +281,8 @@ internal sealed class UpgradeActionTestFixture : IDisposable
             => throw new NotSupportedException();
         public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task RecoverEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class UnusedAppManagementClient : IBcAppManagementClient

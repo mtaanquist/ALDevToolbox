@@ -123,3 +123,10 @@
     font-size: var(--text-sm);
     color: var(--ink-2);
 }
+
+/* The Recover button inside the deleted-environment alert. On its own line so the
+   sentence above it reads as a sentence rather than wrapping around a control. */
+.env-detail__recover {
+    display: block;
+    margin-top: var(--space-3);
+}

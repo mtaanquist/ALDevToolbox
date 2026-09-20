@@ -342,6 +342,87 @@ row writes nothing: nothing changed. For a booked action the audit row is writte
 by the worker, so the log records what actually reached Microsoft while the activity feed records
 the whole request-and-cancel story.
 
+## Deleted environments, and bringing one back
+
+A customer who deletes a Business Central environment does not lose it at once. Microsoft
+soft-deletes it: the environment still answers from the admin center API, carrying the day
+it was deleted, the day it stops being recoverable, and the customer's stated reason, and
+until that second day it can be brought back with everything it held. Business Central also
+renames it on the way out, which is what the fold in `UpsertEnvironmentsAsync` is for — see
+"soft_deleted_on and missing_since" in [`saas-delivery.md`](./saas-delivery.md).
+
+**It is not one more row with a red state.** Nothing can be published to it, updated on it
+or rescheduled for it, so listing it beside the live environments makes a fleet look both
+bigger and sicker than it is; and "needs attention" is a list of things somebody has to go
+and do, which a deletion somebody already decided on is not. So:
+
+- The **Environments list** hides deleted environments from All, Update scheduled and Needs
+  attention, and gives them a **Deleted** view of their own with its count. That view is
+  offered only when there is something in it — a view that is always empty is one people
+  learn to ignore, which is exactly the view that has to be noticed on the fortnight it
+  isn't. In it, the Next update column becomes **Gone for good** and carries the deadline in
+  the line the version would have had ("Gone for good on 4 Oct 2026", or plainly that
+  Business Central hasn't given a date), with how long is left under it ("3 days left to
+  bring it back") — a date alone makes somebody scanning a hundred rows do the arithmetic per
+  row to find the customer who needs a call today, which is the question the view exists to
+  answer. Recover leads the row menu, in place of Upload an app, and a line above the table
+  says these can be brought back: the pill's tooltip says the same, but a tooltip does not
+  exist on touch and never appears on a keyboard, so it can never be the only place the
+  meaning lives.
+- The **Upgrades page** doesn't list them at all. They are dropped in
+  `UpgradeFleetService.ListFleetAsync`, not in the page, so the counts, the checkbox
+  selection and both bulk actions agree without each having to remember. The Environments
+  list asks for them back with `includeSoftDeleted`.
+- The **environment's own page** keeps working — the links from the Deleted view have to
+  land somewhere — and leads with a danger alert saying when it was deleted, when it is gone
+  for good *in the list's exact words* (the two are read in the same minute, and on a
+  fortnight's window a day either way is a customer's data), how long is left, and that
+  Business Central refuses an install, an update or a settings change until it is back.
+  Someone who may act gets Recover; someone who may not is told who to ask, as every other
+  locked part of that page does. The alert is first because it changes what everything under
+  it means: the version, the two windows and the app lists are all the state the environment
+  was in on the day it was deleted.
+- The **Modules card** on a solution's Customer tab reads the installed apps from the
+  customer's production environment, and never picks a deleted one — its app list is what
+  was installed the day it was deleted, which is not what the customer runs now. The
+  Solutions list's module filter reads the same environments, so the two cannot disagree
+  about who has a module.
+
+**The mirror.** `soft_deleted_on`, `hard_delete_pending_on` and `delete_reason` sit on
+`oe_project_environments` beside the rest of the fetched detail, written by the same refresh
+and **cleared by it** when the environment is live again: "no longer deleted" is a fact the
+mirror has to be able to state, or a recovered environment would sit in the Deleted view for
+ever. Microsoft returns those three PascalCase beside camelCase neighbours, so the admin
+client reads every property case-insensitively — a case-sensitive lookup read each deleted
+environment as one with no dates at all, silently. `BcEnvironmentStatus.IsSoftDeleted` is the
+one place the status is compared, and `EnvironmentQueries.NotSoftDeleted` the one place the
+same question is asked in SQL.
+
+**Recover** is `POST .../environments/{family}/{name}/recover` with no body. It is a write to
+the customer's tenant and carries the four things every such write does: it is gated on
+managing the solution (`ResolveEnvironmentAsync`), it sits behind a confirm that names the
+environment and its customer and says out loud when it is a production one, it records
+"Recovered the environment" in that environment's Toolbox history, and a `BcApiException`
+reaches the page as a sentence — the two codes Microsoft documents here, an environment
+already being recovered and one whose state forbids it, are told apart rather than both
+arriving as "the API refused it". An environment that was never deleted is refused before
+anything is sent.
+
+One verb, everywhere: the menu item, the dialog's title and its button all say **recover**,
+which is what the admin centre calls it. Never *restore* — in Business Central that is the
+point-in-time restore of a live environment, and somebody would reasonably ask which point
+in time.
+
+Business Central *schedules* the recovery rather than doing it there and then, so the write
+is followed by a re-read of the customer's environments: the row moves to `Recovering` and
+then out of the Deleted view on its own. A failed re-read costs the freshness, never the
+write.
+
+**Deliberately not built.** Deleting an environment, copying one, renaming one and restoring
+one to a point in time all stay in the admin centre. Recover is here because it is the one
+of them with a deadline — a fortnight, after which nobody can do it at all — and because the
+toolbox is where a deleted environment is noticed.
+
 ## The Environments list, against its designed sheet
 
 `/environments` is the read-only view of the same fleet rows, designed as archetype 2a in
@@ -357,7 +438,8 @@ Where it still differs, and why:
 | The sheet has | We have | Why |
 | --- | --- | --- |
 | "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
-| A row menu: Open environment, Open in Business Central, Refresh this environment | The first two | A refresh is per solution, not per environment, and the freshness strip already does it. |
+| A row menu: Open environment, Open in Business Central, Refresh this environment | The first two, plus Upload an app or - on a deleted environment - Recover | A refresh is per solution, not per environment, and the freshness strip already does it. The other two are writes the sheet does not draw; see "Deleted environments". |
+| Three views | A fourth, **Deleted**, when there is one | The sheet has no notion of an environment that is deleted but recoverable. See "Deleted environments" above. |
 | Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
 | Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
 
@@ -435,6 +517,7 @@ Where it differs from the sheet, and why:
 | Nothing after Environment settings | Update history | Who moved this environment's dates and what is still booked; the same feed the Upgrades page shows. |
 | A read-only list of waiting AppSource updates | An **Update** button on the rows that are ready | What #809's report asked for, and the maintainer's decision on #841 to build it without a sheet. Ready rows only: a waiting row names its prerequisites instead, which is the next step. The confirm names the app, both versions, the environment and whether it is production, and asks when - the environment's next update window by default, or now. `ProjectConnectionService.UpdateAppAsync` re-reads the waiting list before it writes and refuses an app that is not on it, a version Business Central is not offering, or an app that still waits for another; dependencies are never pulled along. Manage-gated; logged, not audited, as it touches no row of ours. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../apps/{appId}/update`. Needs a design pass upstream. |
 | The result of a write beside its control | One result line under the head | The writes are spread down a long page and each re-reads everything; the top is where the eye is afterwards. |
+| Nothing about a deleted environment | A danger alert above the meta row, with **Recover this environment** | The sheet draws a live environment. A deleted one changes what every number under it means, and it has a deadline; see "Deleted environments" above. |
 | One long page: Updates, Apps, Environment settings | Four tabs under the meta row - **Overview** (the Updates card, both windows, the three settings), **Apps** (scheduled installs, installed apps, AppSource updates waiting, Upload an app), **Operations**, **Toolbox history** | The page had grown past what the sheet drew (uploads, app updates, the delivery window, history) and the thing looked for was a long scroll away. The head, the freshness strip, the result line and the meta row stay above the tabs because they are true on every one. The tabs are real links (`/environments/{id}/apps`), so one can be bookmarked and Back works; the page reads the environment once per id, and a change of tab reads only what that tab shows - Overview and Apps share the one cached panel, Operations has its own read, History asks Business Central nothing. Refresh re-reads the open tab. Maintainer's decision, 2026-09-20; needs a design pass upstream. |
 | No operations list | **Operations**: Business Central's own record for the environment (`GET .../environments/{name}/operations`) - app installs, updates and uninstalls, platform updates, restarts, renames, setting changes - newest first, each as a sentence with a status, who started it, when (the solution's time zone) and how long it took; a failure carries Business Central's message | Toolbox history is what *we* did from here (named so at the tab strip, where the choice between the two is made); an update started in the admin centre, or one Microsoft ran overnight, is only in Business Central's record. Two tabs rather than one merged timeline until there is real data to judge a merge by. Read live on every visit, never cached: the point is to watch something finish. Manage-gated like the panel, and read-only. Operation types and statuses are worded in `BcEnvironmentOperationDisplay`; one Microsoft adds later is spaced out into words rather than shown as the wire token. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation. |
 | Scheduled installs drawn only as an empty state | A table with a Cancel install action when there are any | The write exists and a booked install has to be reachable from somewhere. |

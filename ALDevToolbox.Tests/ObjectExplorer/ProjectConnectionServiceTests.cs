@@ -129,6 +129,20 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// What was asked to be recovered, and what Business Central answered. The hook is
+        /// a Func so a test can make one environment refuse while another succeeds.
+        /// </summary>
+        public List<string> Recovered { get; } = new();
+        public Func<string, BcApiException?> OnRecover = _ => null;
+
+        public Task RecoverEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            if (OnRecover(environmentName) is { } refusal) throw refusal;
+            Recovered.Add(environmentName);
+            return Task.CompletedTask;
+        }
+
         /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
         public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
 
@@ -744,6 +758,196 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     [InlineData(null, null)]
     public void The_deletion_stamp_is_only_stripped_from_a_name_that_carries_one(string? name, string? expected)
         => ProjectConnectionService.SoftDeleteStampedBaseName(name).Should().Be(expected);
+
+    // ── The deletion mirror, and bringing an environment back ─────────────
+
+    /// <summary>
+    /// The three deletion fields are mirrored onto the row, because the pages that split
+    /// deleted environments off from live ones read them without calling Business Central.
+    /// </summary>
+    [Fact]
+    public async Task A_refresh_mirrors_when_the_environment_was_deleted_and_when_it_goes_for_good()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[]
+            {
+                new BcEnvironment("Sandbox", "Sandbox")
+                {
+                    Status = "SoftDeleted",
+                    SoftDeletedOn = new DateTime(2026, 9, 20, 9, 0, 0, DateTimeKind.Utc),
+                    HardDeletePendingOn = new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc),
+                    DeleteReason = "Deleted by the customer",
+                },
+            },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id);
+        row.SoftDeletedOn.Should().Be(new DateTime(2026, 9, 20, 9, 0, 0, DateTimeKind.Utc));
+        row.HardDeletePendingOn.Should().Be(new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+        row.DeleteReason.Should().Be("Deleted by the customer");
+    }
+
+    /// <summary>
+    /// And cleared again once the environment is back. A stale deletion date would keep
+    /// a live environment in the Deleted view and out of everything else - the mirror has
+    /// to be able to say "no longer deleted", not only "deleted".
+    /// </summary>
+    [Fact]
+    public async Task A_refresh_clears_the_deletion_dates_when_the_environment_is_live_again()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var deleted = new FakeAdminClient
+        {
+            OnList = () => new[]
+            {
+                new BcEnvironment("Sandbox", "Sandbox")
+                {
+                    Status = "SoftDeleted",
+                    SoftDeletedOn = new DateTime(2026, 9, 20, 9, 0, 0, DateTimeKind.Utc),
+                    HardDeletePendingOn = new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc),
+                    DeleteReason = "Deleted by the customer",
+                },
+            },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), deleted).RefreshEnvironmentsAsync(id);
+
+        var recovered = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Sandbox", "Sandbox") { Status = "Active" } },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), recovered).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id);
+        row.Status.Should().Be("Active");
+        row.SoftDeletedOn.Should().BeNull();
+        row.HardDeletePendingOn.Should().BeNull();
+        row.DeleteReason.Should().BeNull();
+    }
+
+    /// <summary>Seeds a project with one deleted environment and returns both ids.</summary>
+    private async Task<(int ProjectId, int EnvironmentId)> SeedDeletedEnvironmentAsync()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync("JLE-260911110359");
+        await using var ctx = _db.NewContext();
+        var row = await ctx.OeProjectEnvironments.SingleAsync(e => e.Id == envId);
+        row.Status = "SoftDeleted";
+        row.SoftDeletedOn = new DateTime(2026, 9, 20, 9, 0, 0, DateTimeKind.Utc);
+        row.HardDeletePendingOn = new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc);
+        await ctx.SaveChangesAsync();
+        return (projectId, envId);
+    }
+
+    [Fact]
+    public async Task Recovering_a_deleted_environment_asks_business_central_and_re_reads_the_list()
+    {
+        var (projectId, envId) = await SeedDeletedEnvironmentAsync();
+        // The re-read afterwards is what moves the row on; Business Central reports the
+        // environment as recovering by then.
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("JLE-260911110359", "Production") { Status = "Recovering" } },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RecoverEnvironmentAsync(projectId, envId);
+
+        admin.Recovered.Should().ContainSingle().Which.Should().Be("JLE-260911110359");
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.Status.Should().Be("Recovering", "the write is followed by a re-read, so the row moves on");
+        row.SoftDeletedOn.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Recovering_puts_a_line_in_the_environments_toolbox_history()
+    {
+        var (projectId, envId) = await SeedDeletedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("JLE-260911110359", "Production") { Status = "Recovering" } },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RecoverEnvironmentAsync(projectId, envId);
+
+        await using var read = _db.NewContext();
+        var entry = await read.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.EnvironmentId == envId);
+        entry.Kind.Should().Be(UpgradeActionKind.RecoverEnvironment);
+        entry.Status.Should().Be(UpgradeActionStatus.Sent, "a record, never something for the worker to fire");
+        entry.Outcome.Should().Contain("JLE-260911110359");
+        entry.RequestedBy.Should().Contain("owner@example.com");
+    }
+
+    [Fact]
+    public async Task An_environment_that_was_never_deleted_cannot_be_recovered()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).RecoverEnvironmentAsync(projectId, envId);
+
+        var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+        thrown.Which.Errors["Environment"].Should().Contain("nothing to bring back");
+        admin.Recovered.Should().BeEmpty("nothing was sent to the customer's tenant");
+    }
+
+    /// <summary>
+    /// Business Central's two documented refusals reach the caller as sentences, not as
+    /// error codes - and neither leaves a history line, since nothing happened.
+    /// </summary>
+    [Fact]
+    public async Task A_recovery_business_central_refuses_comes_back_as_a_sentence()
+    {
+        var (projectId, envId) = await SeedDeletedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnRecover = _ => new BcApiException(
+                HttpStatusCode.BadRequest,
+                "Business Central is already bringing this environment back. Refresh in a few minutes to see it return."),
+        };
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).RecoverEnvironmentAsync(projectId, envId);
+            var thrown = await act.Should().ThrowAsync<PlanValidationException>();
+            thrown.Which.Errors["Environment"].Should().Contain("already bringing this environment back");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.OeEnvironmentUpgradeActions.AsNoTracking().AnyAsync(a => a.EnvironmentId == envId))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Someone_who_does_not_manage_the_solution_cannot_recover_its_environments()
+    {
+        var (projectId, envId) = await SeedDeletedEnvironmentAsync();
+        await SeedUserAsync(9776, "onlooker@example.com", UserRole.User);
+        _db.OrgContext.CurrentUserId = 9776;
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).RecoverEnvironmentAsync(projectId, envId);
+
+        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        admin.Recovered.Should().BeEmpty();
+    }
 
     [Fact]
     public async Task Refresh_updates_the_fetched_detail_and_leaves_the_users_own_settings_alone()

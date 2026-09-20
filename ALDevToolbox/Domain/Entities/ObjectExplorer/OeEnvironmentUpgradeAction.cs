@@ -110,6 +110,14 @@ public enum UpgradeActionKind
 
     /// <summary>An extension package somebody was handed was uploaded to the environment. Recorded like <see cref="UpdateApp"/>.</summary>
     UploadApp,
+
+    /// <summary>
+    /// A deleted environment was asked to come back, while Business Central was still
+    /// keeping it. Recorded like <see cref="UpdateApp"/> — never booked, written already
+    /// <c>Sent</c>. Worth a line of its own because it is the one action that undoes
+    /// somebody else's deletion, and the history is where that is answered for.
+    /// </summary>
+    RecoverEnvironment,
 }
 
 /// <summary>

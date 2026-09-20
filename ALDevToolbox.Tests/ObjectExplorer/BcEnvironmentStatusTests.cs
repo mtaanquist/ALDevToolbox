@@ -81,4 +81,24 @@ public sealed class BcEnvironmentStatusTests
         // Both call sites branch on this to show "Not checked yet" rather than a blank.
         BcEnvironmentStatus.Humanise(status).Should().BeEmpty();
     }
+
+    /// <summary>
+    /// The one lifecycle state the toolbox splits out rather than merely describes:
+    /// nothing can be published, updated or rescheduled on a deleted environment, so
+    /// every list has to be able to ask this question the same way.
+    /// </summary>
+    [Theory]
+    [InlineData("SoftDeleted", true)]
+    [InlineData("softdeleted", true)]
+    [InlineData("  SoftDeleted  ", true)]
+    [InlineData("SoftDeleting", false)]
+    [InlineData("SoftDeletingFailed", false)]
+    [InlineData("Recovering", false)]
+    [InlineData("Active", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsSoftDeleted_reads_the_status_whatever_its_casing(string? status, bool expected)
+    {
+        BcEnvironmentStatus.IsSoftDeleted(status).Should().Be(expected);
+    }
 }
