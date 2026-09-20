@@ -652,7 +652,7 @@ public sealed class EnvironmentDetailTests : IDisposable
             cut.Find("tbody tr").TextContent.Should().Contain("ola@cronus.example");
         }, TimeSpan.FromSeconds(5));
         _admin.Reads.Should().Be(1);
-        cut.Markup.Should().Contain("Who is signed in read from Business Central",
+        cut.Markup.Should().Contain("Sessions read from Business Central",
             "the freshness strip says which half of the page this is");
     }
 
@@ -719,16 +719,26 @@ public sealed class EnvironmentDetailTests : IDisposable
             .Add(c => c.SessionsLiveFor, TimeSpan.FromMilliseconds(30)));
 
         cut.WaitForAssertion(
-            () => cut.Markup.Should().Contain("Stopped updating after").And.Contain("Refresh to carry on"),
+            () => cut.Markup.Should().Contain("Stopped updating after"),
             TimeSpan.FromSeconds(5));
         var stoppedAfter = _admin.Reads;
 
-        cut.WaitForAssertion(() => cut.FindAll(".card__head button").Single(b => b.TextContent.Contains("Refresh")).Click());
-        cut.WaitForAssertion(() =>
-        {
-            _admin.Reads.Should().BeGreaterThan(stoppedAfter);
-            cut.Markup.Should().NotContain("Stopped updating after");
-        });
+        // Widen the window before restarting, or the restarted loop would stop again
+        // within a tick and the assertion below would be racing it rather than the code.
+        cut.Render(p => p
+            .Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions")
+            .Add(c => c.SessionsLiveEvery, TimeSpan.FromMilliseconds(60))
+            .Add(c => c.SessionsLiveFor, TimeSpan.FromSeconds(30)));
+
+        cut.WaitForAssertion(() => cut.FindAll(".env-sessions__note button")
+            .Single(b => b.TextContent.Contains("Keep updating")).Click());
+        cut.WaitForAssertion(
+            () =>
+            {
+                _admin.Reads.Should().BeGreaterThan(stoppedAfter);
+                cut.Markup.Should().NotContain("Stopped updating after");
+            },
+            TimeSpan.FromSeconds(5));
     }
 
     /// <summary>
@@ -802,7 +812,7 @@ public sealed class EnvironmentDetailTests : IDisposable
         var cut = Render(envId, "sessions");
 
         cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should()
-            .Be("Who is signed in is for people who manage this solution"));
+            .Be("Only people who manage this solution can see who is signed in"));
         _admin.Reads.Should().Be(0, "nothing was read with the customer's credentials");
     }
 

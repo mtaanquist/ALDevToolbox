@@ -302,7 +302,7 @@ public sealed class BcSessionsClientTests
         BcSessionDisplay.Doing(entryOnly).Should().Be("Job Queue Dispatcher (code unit 448)");
 
         var bare = BcAdminClient.ParseSessions("""{"value":[{"sessionId":4}]}""").Single();
-        BcSessionDisplay.Doing(bare).Should().Be("Nothing in particular");
+        BcSessionDisplay.Doing(bare).Should().Be("Idle");
         BcSessionDisplay.HistoryLine(bare).Should().Be("Ended Somebody's Business Central session.");
     }
 

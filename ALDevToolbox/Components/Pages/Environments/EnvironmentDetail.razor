@@ -116,7 +116,7 @@
                 }
                 @if (_tab == Section.Sessions && _sessionsFetchedAt is { } sessionsRead)
                 {
-                    <text>Who is signed in read from Business Central <span class="freshness__age">@RelativeTime.Ago(sessionsRead)</span>. </text>
+                    <text>Sessions read from Business Central <span class="freshness__age">@RelativeTime.Ago(sessionsRead)</span>. </text>
                 }
                 @if (Row.EnvironmentFetchedAt is { } mirrored)
                 {
@@ -765,11 +765,11 @@
             else if (!_canManage)
             {
                 <div class="card">
-                    <EmptyState Icon="lock" Title="Who is signed in is for people who manage this solution" Quiet="true">
+                    <EmptyState Icon="lock" Title="Only people who manage this solution can see who is signed in" Quiet="true">
                         <Text>
-                            Reading it uses the customer's own connection, and ending a session
-                            signs somebody out of their Business Central. Ask the solution's
-                            owner or an administrator to add you to one of its teams.
+                            This list comes from the customer's own Business Central, and ending
+                            a session signs somebody out of it. Ask the solution's owner or an
+                            administrator to add you to one of its teams.
                         </Text>
                     </EmptyState>
                 </div>
@@ -801,6 +801,7 @@
                                          UpdateFailed="@_sessionsStaleNote"
                                          UpdateEverySeconds="@((int)SessionsLiveEvery.TotalSeconds)"
                                          CanCancel="true"
+                                         OperationsHref="@TabHref(Section.Operations)"
                                          OnCancel="CancelSessionAsync"
                                          OnRefresh="RefreshSessionsAsync"
                                          TimeZone="UpdateWindow.ResolveTimeZone(Row.TimeZone)"
@@ -1311,7 +1312,7 @@
 
         var who = string.IsNullOrWhiteSpace(session.UserId) ? "an unnamed user" : session.UserId;
         var doing = BcSessionDisplay.Doing(session);
-        var running = string.Equals(doing, "Nothing in particular", StringComparison.Ordinal)
+        var running = string.Equals(doing, BcSessionDisplay.Idle, StringComparison.Ordinal)
             ? string.Empty
             : $" and is running {doing}";
 

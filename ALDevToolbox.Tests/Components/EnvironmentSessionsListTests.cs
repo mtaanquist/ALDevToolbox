@@ -55,7 +55,8 @@ public sealed class EnvironmentSessionsListTests : IDisposable
         ]);
 
         cut.FindAll("thead th").Select(h => h.TextContent.Trim()).Should().Equal(
-            "Long-running", "Who", "Signed in through", "Signed in since", "Running now", "For", "Actions");
+            "Long-running", "Who", "Signed in through", "Signed in since", "Running now",
+            "For how long", "Actions");
 
         var rows = cut.FindAll("tbody tr");
         rows[0].Children[1].TextContent.Should().Be("ola@cronus.example");
@@ -90,8 +91,7 @@ public sealed class EnvironmentSessionsListTests : IDisposable
 
         // The footer wraps in the markup, so the rule is read as words rather than bytes.
         var footer = string.Join(' ', cut.Find(".card__foot").TextContent.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        footer.Should().Contain("long-running once it has been in the same operation for 5 minutes")
-            .And.Contain("Times are in Copenhagen time");
+        footer.Should().Contain("marked long-running when it has spent 5 minutes or more on the same operation");
     }
 
     [Fact]
@@ -101,7 +101,8 @@ public sealed class EnvironmentSessionsListTests : IDisposable
 
         cut.FindAll("table").Should().BeEmpty();
         cut.Find(".empty-state__title").TextContent.Should().Be("Nobody is signed in to Production");
-        cut.Markup.Should().Contain("Nothing is holding a record");
+        string.Join(' ', cut.Find(".empty-state").TextContent.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .Should().Contain("no job queue sessions are open, so nothing here is holding a record");
     }
 
     [Fact]
@@ -113,19 +114,20 @@ public sealed class EnvironmentSessionsListTests : IDisposable
             .Add(c => c.OnRefresh, () => pressed++));
 
         cut.Find(".env-sessions__fresh").TextContent.Should().Be("Read just now");
-        cut.Find(".card__sub").TextContent.Should().Contain("Updates every 30 seconds");
+        cut.Find(".card__sub").TextContent.Should().Contain("Updates every 30 seconds")
+            .And.Contain("Times are in Copenhagen time", "the zone is said before the times, not under them");
 
         cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Contains("Refresh")).Click());
         cut.WaitForAssertion(() => pressed.Should().Be(1));
     }
 
     [Fact]
-    public void While_it_is_reading_the_refresh_button_says_so_and_cannot_be_pressed_again()
+    public void While_it_is_refreshing_the_button_says_so_and_cannot_be_pressed_again()
     {
         var cut = Render([Session(47, "ola@cronus.example")], extra: p => p.Add(c => c.Refreshing, true));
 
         var button = cut.FindAll("button").Single(b => b.ClassList.Contains("btn--loading"));
-        button.TextContent.Should().Contain("Reading");
+        button.TextContent.Should().Contain("Refreshing");
         button.HasAttribute("disabled").Should().BeTrue();
     }
 
@@ -140,8 +142,9 @@ public sealed class EnvironmentSessionsListTests : IDisposable
             .Add(c => c.Stopped, true)
             .Add(c => c.StoppedAfterText, "10 minutes"));
 
-        cut.Find(".env-sessions__note").TextContent.Should()
-            .Contain("Stopped updating after 10 minutes").And.Contain("Refresh to carry on");
+        // The fact in the sentence, the instruction in a button beside it.
+        cut.Find(".env-sessions__note").TextContent.Should().Contain("Stopped updating after 10 minutes");
+        cut.Find(".env-sessions__note button").TextContent.Trim().Should().Be("Keep updating");
         cut.FindAll("tbody tr").Should().ContainSingle("the list somebody is reading out stays on screen");
         cut.Find(".card__sub").TextContent.Should().NotContain("Updates every",
             "a card that has stopped must not go on promising that it updates");
@@ -167,10 +170,10 @@ public sealed class EnvironmentSessionsListTests : IDisposable
 
         var buttons = cut.FindAll(".data-table__actions button");
         buttons.Should().HaveCount(2);
-        buttons[0].TextContent.Trim().Should().Be("Cancel session");
+        buttons[0].TextContent.Trim().Should().Be("End session");
         buttons[0].ClassList.Should().Contain("btn--danger");
         cut.FindAll(".btn--primary").Should().BeEmpty();
-        buttons[0].GetAttribute("aria-label").Should().Be("Cancel the session of ola@cronus.example");
+        buttons[0].GetAttribute("aria-label").Should().Be("End the session of ola@cronus.example");
 
         cut.WaitForAssertion(() => cut.FindAll(".data-table__actions button")[1].Click());
         cut.WaitForAssertion(() => asked!.SessionId.Should().Be(48));
@@ -205,6 +208,6 @@ public sealed class EnvironmentSessionsListTests : IDisposable
         row.Children[4].TextContent.Should().Be("Sales Order (page 42)", "it falls back to where the session came in");
         row.Children[5].TextContent.Should().Be("—");
         cut.Find(".data-table__actions button").GetAttribute("aria-label")
-            .Should().Be("Cancel the session of an unnamed user");
+            .Should().Be("End the session of an unnamed user");
     }
 }

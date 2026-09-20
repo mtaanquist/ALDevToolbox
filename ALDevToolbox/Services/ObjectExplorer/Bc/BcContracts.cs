@@ -502,6 +502,9 @@ public static class BcSessionDisplay
     /// found in Business Central. Falls back to what the session came in through, and
     /// then to a plain phrase; never to an empty cell.
     /// </summary>
+    /// <summary>A session doing nothing nameable. Compared by the callers that word a sentence around <see cref="Doing"/>.</summary>
+    public const string Idle = "Idle";
+
     public static string Doing(BcSession session)
     {
         if (Describe(session.CurrentObjectName, session.CurrentObjectType, session.CurrentObjectId?.ToString()) is { } now)
@@ -512,7 +515,8 @@ public static class BcSessionDisplay
         {
             return entry;
         }
-        return string.IsNullOrWhiteSpace(session.EntryPointOperation) ? "Nothing in particular" : session.EntryPointOperation;
+        // One word, because this column is eye-scanned for the row that is busy.
+        return string.IsNullOrWhiteSpace(session.EntryPointOperation) ? Idle : session.EntryPointOperation;
     }
 
     /// <summary>
@@ -525,7 +529,7 @@ public static class BcSessionDisplay
     {
         var who = string.IsNullOrWhiteSpace(session.UserId) ? "Somebody's" : $"{session.UserId}'s";
         var doing = Doing(session);
-        var running = string.Equals(doing, "Nothing in particular", StringComparison.Ordinal)
+        var running = string.Equals(doing, Idle, StringComparison.Ordinal)
             ? string.Empty
             : $", which was running {doing}";
         return $"Ended {who} {ClientTypePhrase(session.ClientType)} session{running}.";

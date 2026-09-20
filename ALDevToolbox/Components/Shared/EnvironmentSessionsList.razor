@@ -28,7 +28,7 @@
                 {
                     <text>Updates every @UpdateEverySeconds seconds while this tab is open.</text>
                 }
-                Nothing on this list is stored.
+                Times are in @TimeZoneLabel time, and nothing on this list is stored.
             </p>
         </div>
         <span class="u-row env-sessions__tools">
@@ -36,7 +36,7 @@
             <button type="button" class="btn btn--sm @(Refreshing ? "btn--loading" : "")"
                     @onclick="OnRefresh" disabled="@Refreshing">
                 <Icon Name="refresh-cw" Width="14" Height="14" />
-                <span class="btn__label">@(Refreshing ? "Reading" : "Refresh")</span>
+                <span class="btn__label">@(Refreshing ? "Refreshing" : "Refresh")</span>
             </button>
         </span>
     </div>
@@ -44,11 +44,14 @@
     @* Two quiet lines rather than an error card: the list on screen is still useful,
        and replacing it with a red box would take away the thing the person is reading
        out to the customer. *@
+    @* The sentence states the fact and the button beside it is the instruction: a
+       caption that tells somebody which control to press is a missing affordance. *@
     @if (Stopped)
     {
         <div class="card__body env-sessions__note">
             <Icon Name="clock" Width="14" Height="14" />
-            <span>Stopped updating after @StoppedAfterText. Refresh to carry on.</span>
+            <span>Stopped updating after @StoppedAfterText.</span>
+            <button type="button" class="btn btn--sm" @onclick="OnRefresh" disabled="@Refreshing">Keep updating</button>
         </div>
     }
     else if (!string.IsNullOrWhiteSpace(UpdateFailed))
@@ -61,11 +64,25 @@
 
     @if (Sessions.Count == 0)
     {
-        <EmptyState Icon="users" Title="@($"Nobody is signed in to {EnvironmentName}")" Quiet="true">
+        @* The state where the answer contradicts what the customer is saying on the
+           phone - "everything is locked" against nobody signed in - so it offers the
+           next place to look rather than stopping at the good news. And it never
+           claims the present tense on a list that could not be updated. *@
+        <EmptyState Icon="users"
+                    Title="@(string.IsNullOrWhiteSpace(UpdateFailed)
+                        ? $"Nobody is signed in to {EnvironmentName}"
+                        : $"Nobody was signed in to {EnvironmentName} when we last looked")"
+                    Quiet="true">
             <Text>
-                Business Central answered, and no one has a session open - no people, no web
-                services and no background work. Nothing is holding a record.
+                No people, no web services and no job queue sessions are open, so nothing
+                here is holding a record.
             </Text>
+            <Action>
+                @if (OperationsHref is { } operations)
+                {
+                    <a class="btn btn--sm" href="@operations">See what Business Central is doing</a>
+                }
+            </Action>
         </EmptyState>
     }
     else
@@ -78,7 +95,7 @@
                     <th scope="col">Signed in through</th>
                     <th scope="col">Signed in since</th>
                     <th scope="col">Running now</th>
-                    <th scope="col">For</th>
+                    <th scope="col">For how long</th>
                     @if (CanCancel)
                     {
                         <th scope="col" class="data-table__actions">Actions</th>
@@ -105,11 +122,17 @@
                         @if (CanCancel)
                         {
                             <td class="data-table__actions">
+                                @* One verb for this, everywhere: the row, the question
+                                   and the answer. "Cancel session" on a row whose
+                                   dialog then says "End" makes somebody stop and
+                                   wonder whether they are the same thing - and the
+                                   dialog cannot say "Cancel", because its other
+                                   button already does. *@
                                 <button type="button" class="btn btn--sm btn--danger"
                                         disabled="@Busy"
                                         @onclick="() => OnCancel.InvokeAsync(session)"
-                                        aria-label="@($"Cancel the session of {(string.IsNullOrWhiteSpace(session.UserId) ? "an unnamed user" : session.UserId)}")">
-                                    Cancel session
+                                        aria-label="@($"End the session of {(string.IsNullOrWhiteSpace(session.UserId) ? "an unnamed user" : session.UserId)}")">
+                                    End session
                                 </button>
                             </td>
                         }
@@ -119,9 +142,9 @@
         </table>
         <div class="card__foot">
             <span class="u-muted env-sessions__count">
-                A session is marked long-running once it has been in the same operation for
-                @LongRunningText - which a nightly job may well be, so it is a place to look
-                rather than a fault. Times are in @TimeZoneLabel time.
+                A session is marked long-running when it has spent @LongRunningText or more on
+                the same operation. A job queue task often has, so treat it as a place to look
+                rather than a fault.
             </span>
         </div>
     }
@@ -162,6 +185,12 @@
 
     /// <summary>Raised when somebody presses Refresh in the card's head.</summary>
     [Parameter] public EventCallback OnRefresh { get; set; }
+
+    /// <summary>
+    /// Where Business Central's own record of the environment is. The next place to look
+    /// when nobody is signed in and the customer says everything is locked.
+    /// </summary>
+    [Parameter] public string? OperationsHref { get; set; }
 
     [Parameter] public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Utc;
     [Parameter] public string TimeZoneLabel { get; set; } = "UTC";
