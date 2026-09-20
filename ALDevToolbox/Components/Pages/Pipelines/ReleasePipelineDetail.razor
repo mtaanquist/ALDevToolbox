@@ -11,6 +11,7 @@
 @inject ILogger<ReleasePipelineDetail> Log
 @inject IServiceScopeFactory ScopeFactory
 @using Microsoft.Extensions.DependencyInjection
+@using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -98,6 +99,18 @@
                 <span>
                     This release pipeline's target environment is no longer present in Business Central. Refresh the
                     environments on <a href="@($"/solutions/{_rp!.ProjectId}")">the solution's Business Central page</a> before releasing.
+                </span>
+            </Alert>
+        }
+        else if (BcEnvironmentStatus.Classify(_rp.ProjectEnvironment.Status) is BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed)
+        {
+            @* Not Busy: an environment that is mid-update takes releases again on its
+               own. One that is being removed or has failed never will, so the pipeline
+               says it is broken now rather than when the next release is refused. *@
+            <Alert Tone="AlertTone.Danger">
+                <span>
+                    @BcEnvironmentStatus.RefusalMessage(_rp.ProjectEnvironment.Name, _rp.ProjectEnvironment.Status)
+                    Releases through this pipeline are refused until it points at a different environment.
                 </span>
             </Alert>
         }

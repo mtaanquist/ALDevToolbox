@@ -89,7 +89,8 @@ public sealed class ReleasePipelineService
                 r.SchemaSyncMode,
                 r.ArtifactSource,
                 r.GithubReleaseRepositoryId,
-                r.GithubReleaseRepository != null ? r.GithubReleaseRepository.DisplayName : null))
+                r.GithubReleaseRepository != null ? r.GithubReleaseRepository.DisplayName : null,
+                r.ProjectEnvironment.Status))
             .ToListAsync(ct);
     }
 
@@ -423,4 +424,23 @@ public sealed record ReleasePipelineRow(
     /// <summary>The repository whose GitHub Releases it draws from, when that is the source.</summary>
     int? GithubReleaseRepositoryId = null,
     /// <summary>That repository's display name, for the list and the editor.</summary>
-    string? GithubReleaseRepositoryName = null);
+    string? GithubReleaseRepositoryName = null,
+    /// <summary>The environment's status as Business Central last reported it, verbatim.</summary>
+    string? EnvironmentStatus = null)
+{
+    /// <summary>
+    /// Why nothing can be released through this pipeline at all, in a few words, or null
+    /// when it can. Not a busy environment: that passes on its own. An environment that
+    /// is gone, being removed, or failed does not, and a pipeline aimed at one is broken
+    /// until somebody re-points it - so the list says so instead of looking healthy
+    /// until the next release is refused.
+    /// </summary>
+    public string? EnvironmentProblem => EnvironmentMissing
+        ? "no longer present"
+        : BcEnvironmentStatus.Classify(EnvironmentStatus) switch
+        {
+            BcEnvironmentReadiness.Deleting => "being removed",
+            BcEnvironmentReadiness.Failed => "failed in Business Central",
+            _ => null,
+        };
+}

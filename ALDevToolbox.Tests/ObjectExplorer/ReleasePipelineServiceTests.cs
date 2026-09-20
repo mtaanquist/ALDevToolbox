@@ -267,6 +267,28 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         row.EnvironmentMissing.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("Active", null)]
+    [InlineData("Upgrading", null)]
+    [InlineData("SoftDeleted", "being removed")]
+    [InlineData("Failed", "failed in Business Central")]
+    public async Task A_pipeline_says_so_when_its_environment_will_never_take_a_release(string status, string? problem)
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId, name: "Nightly");
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "JLE");
+        await NewService(ctx).CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "CRONUS App -> JLE", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+        await ctx.OeProjectEnvironments.Where(e => e.Id == envId)
+            .ExecuteUpdateAsync(u => u.SetProperty(e => e.Status, status));
+
+        var row = (await NewService(_db.NewContext()).ListReleasePipelinesAsync(projectId)).Single();
+
+        row.EnvironmentProblem.Should().Be(problem,
+            "a busy environment passes on its own; one that is being removed or has failed does not");
+    }
+
     // ── Artifact source (#632) ───────────────────────────────────────────────
 
     [Fact]

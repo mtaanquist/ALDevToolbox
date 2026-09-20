@@ -558,6 +558,74 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             SoftDeletedOn = new DateTime(2026, 9, 11, 11, 3, 59, DateTimeKind.Utc),
         };
 
+    /// <summary>
+    /// The pair a solution is left with when it met the renamed environment before the
+    /// fold existed: the old name stuck on "no longer present", the stamped name beside
+    /// it. The fold only ever ran on first sight, so nothing put these back together.
+    /// </summary>
+    [Fact]
+    public async Task A_pair_already_split_by_a_soft_delete_is_merged_and_keeps_what_the_old_row_carried()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var oldId = await SeedLiveEnvironmentAsync(id, "JLE");
+        var stampedId = await SeedLiveEnvironmentAsync(id, "JLE-260911110359");
+        int releasePipelineId;
+        await using (var seed = _db.NewContext())
+        {
+            var old = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == oldId);
+            old.MissingSince = DateTime.UtcNow.AddDays(-8);
+            old.UpdateWindowStart = new TimeOnly(20, 0);
+            old.UpdateWindowEnd = new TimeOnly(6, 0);
+            var build = new OePipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Build", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            seed.OePipelines.Add(build);
+            await seed.SaveChangesAsync();
+            var release = new OeReleasePipeline
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "CRONUS App -> JLE",
+                BuildPipelineId = build.Id, ProjectEnvironmentId = oldId,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            seed.OeReleasePipelines.Add(release);
+            await seed.SaveChangesAsync();
+            releasePipelineId = release.Id;
+        }
+
+        var admin = new FakeAdminClient { OnList = () => new[] { SoftDeleted("JLE-260911110359") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = (await verify.OeProjectEnvironments.AsNoTracking().Where(e => e.ProjectId == id).ToListAsync())
+            .Should().ContainSingle("one deletion is one environment, not two").Subject;
+        row.Id.Should().Be(stampedId, "the row whose name the API answers to is the one that stays");
+        row.SoftDeletedOn.Should().NotBeNull();
+        row.UpdateWindowStart.Should().Be(new TimeOnly(20, 0), "the delivery window somebody agreed with the customer comes across");
+        (await verify.OeReleasePipelines.AsNoTracking().SingleAsync(r => r.Id == releasePipelineId))
+            .ProjectEnvironmentId.Should().Be(stampedId, "a release pipeline must never be left pointing at a deleted row");
+    }
+
+    [Fact]
+    public async Task A_recreated_environment_beside_its_deleted_namesake_is_never_merged_away()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        await SeedLiveEnvironmentAsync(id, "JLE");
+        await SeedLiveEnvironmentAsync(id, "JLE-260911110359");
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("JLE", "Sandbox") { Status = "Active" }, SoftDeleted("JLE-260911110359") },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        (await verify.OeProjectEnvironments.AsNoTracking().CountAsync(e => e.ProjectId == id)).Should().Be(2);
+    }
+
     [Fact]
     public async Task A_soft_delete_renamed_by_business_central_folds_onto_the_row_it_came_from()
     {

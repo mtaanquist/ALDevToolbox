@@ -113,12 +113,15 @@
             <tbody>
                 @foreach (var r in _rows ?? new())
                 {
-                    <tr class="@(r.EnvironmentMissing ? "is-failed" : null)">
+                    <tr class="@(r.EnvironmentProblem is not null ? "is-failed" : null)">
                         <td class="data-table__col-state">
-                            @if (r.EnvironmentMissing)
+                            @if (r.EnvironmentProblem is not null)
                             {
                                 <span class="data-table__state data-table__state--icon" role="img"
-                                      aria-label="Environment not found" title="This environment wasn't found the last time we checked Business Central">
+                                      aria-label="@($"Can't release: the environment is {r.EnvironmentProblem}")"
+                                      title="@(r.EnvironmentMissing
+                                          ? "This environment wasn't found the last time we checked Business Central"
+                                          : $"Releases are refused: the last time we checked Business Central, this environment was {r.EnvironmentProblem}")">
                                     <Icon Name="circle-x" Width="15" Height="15" />
                                 </span>
                             }
@@ -140,9 +143,9 @@
                             <span class="rp-env">
                                 <StatusPill Tone="@(IsProduction(r) ? "danger" : "muted")">@r.EnvironmentType</StatusPill>
                                 <span>@r.EnvironmentName</span>
-                                @if (r.EnvironmentMissing)
+                                @if (r.EnvironmentProblem is { } problem)
                                 {
-                                    <span class="u-muted">no longer present</span>
+                                    <span class="u-muted">@problem</span>
                                 }
                             </span>
                         </td>
