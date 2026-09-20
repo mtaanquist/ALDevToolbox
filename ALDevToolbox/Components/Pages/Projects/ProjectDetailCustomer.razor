@@ -1,0 +1,281 @@
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@inject ProjectCustomerInfoService CustomerInfo
+@inject ILogger<ProjectDetailCustomer> Log
+
+@*
+    The Customer tab of a solution: what support looks up about the customer. See
+    .design/solution-customer-info.md.
+
+    Named user: a support consultant on a call with a customer they have never worked
+    with, who needs to know what the customer runs and where, and reads far more often
+    than anyone edits. So this is a read view with an Edit action, not a settings form;
+    the editor is the consultant who owns the customer, changing a field or two.
+
+    Its own Save, unlike General and Repositories: it is a different write, by a
+    different service, and the page's "Save solution" is not on screen for this tab.
+*@
+
+<div class="form-sec__head">
+    <h2 class="card__title">Customer</h2>
+    @if (CanManage && _basics is not null && !_editing && !_basics.IsEmpty)
+    {
+        <button type="button" class="btn btn--sm" @onclick="StartEditing">
+            <Icon Name="pencil" Width="14" Height="14" />
+            <span>Edit customer details</span>
+        </button>
+    }
+</div>
+<p class="form-sec__cap">What the customer runs and where, for whoever picks up the phone.</p>
+
+@if (_done is { } done)
+{
+    <Alert Tone="AlertTone.Success"><span>@done</span></Alert>
+}
+
+@if (_basics is null)
+{
+    <LoadingBlock Text="Loading customer details..." />
+}
+else if (_editing)
+{
+    <div class="card">
+        <div class="card__body">
+            <div class="form-grid">
+                <section class="field">
+                    <label class="field__label" for="cust-hosting">Hosting</label>
+                    <SelectBox style="max-width: 320px">
+                        <select id="cust-hosting" class="select" @bind="_edit.Hosting" disabled="@_saving">
+                            <option value="">Not said yet</option>
+                            @foreach (var option in Enum.GetValues<ProjectHostingType>())
+                            {
+                                <option value="@option">@HostingText(option)</option>
+                            }
+                        </select>
+                    </SelectBox>
+                    <FieldError Field="HostingType" Errors="_errors" />
+                    <small class="field__hint">Anything other than Business Central online is on-premises here: the solution keeps its repositories and builds, and loses the Business Central tab, environments, upgrades and releases, which only work online.</small>
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-version">Version</label>
+                    <input id="cust-version" type="text" class="input" style="max-width: 320px"
+                           maxlength="@ProjectCustomerInfoService.VersionMaxLength"
+                           @bind="_edit.Version" disabled="@_saving" placeholder="e.g. BC 25.3 or NAV 2018 CU12" />
+                    <FieldError Field="BcVersion" Errors="_errors" />
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-licence">Licence</label>
+                    <SelectBox style="max-width: 320px">
+                        <select id="cust-licence" class="select" @bind="_edit.Licence" disabled="@_saving">
+                            <option value="">Not said yet</option>
+                            @foreach (var option in Enum.GetValues<ProjectLicenseType>())
+                            {
+                                <option value="@option">@LicenceText(option)</option>
+                            }
+                        </select>
+                    </SelectBox>
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-experience">User experience</label>
+                    <SelectBox style="max-width: 320px">
+                        <select id="cust-experience" class="select" @bind="_edit.Experience" disabled="@_saving">
+                            <option value="">Not said yet</option>
+                            @foreach (var option in Enum.GetValues<ProjectUserExperience>())
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </SelectBox>
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-url">Address</label>
+                    <input id="cust-url" type="url" class="input" maxlength="@ProjectCustomerInfoService.ClientUrlMaxLength"
+                           @bind="_edit.Url" disabled="@_saving" placeholder="e.g. https://bc.cronus.example/BC250" />
+                    <FieldError Field="ClientUrl" Errors="_errors" />
+                    <small class="field__hint">Where a person opens Business Central.</small>
+                </section>
+                <section class="field">
+                    <label class="field__label" for="cust-voice">Voice account number</label>
+                    <input id="cust-voice" type="text" class="input" style="max-width: 320px"
+                           maxlength="@ProjectCustomerInfoService.VoiceAccountNumberMaxLength"
+                           @bind="_edit.Voice" disabled="@_saving" placeholder="e.g. 5123456" />
+                    <FieldError Field="VoiceAccountNumber" Errors="_errors" />
+                    <small class="field__hint">Microsoft's number for the customer's on-premises licence, shown as Voice ID in the licence file. Worth keeping after a move online.</small>
+                </section>
+                @if (EditIsOnPremises)
+                {
+                    <section class="field">
+                        <label class="field__label" for="cust-tenant">Microsoft tenant ID</label>
+                        @* pattern mirrors the Guid.TryParse in ProjectCustomerInfoService. *@
+                        <input id="cust-tenant" type="text" class="input" style="max-width: 420px"
+                               pattern="[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
+                               @bind="_edit.Tenant" disabled="@_saving" placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
+                        <FieldError Field="TenantId" Errors="_errors" />
+                        <small class="field__hint">Optional. The customer's Microsoft 365 tenant, if they have one.</small>
+                    </section>
+                }
+            </div>
+            @if (_error is { } error)
+            {
+                <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+            }
+        </div>
+        <div class="card__foot">
+            <button type="button" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving" @onclick="SaveAsync">
+                <span class="btn__label">Save customer details</span>
+            </button>
+            <button type="button" class="btn" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+        </div>
+    </div>
+}
+else if (_basics.IsEmpty)
+{
+    <div class="card">
+        <EmptyState Icon="users" Title="Nothing about this customer yet">
+            <Text>
+                @if (CanManage)
+                {
+                    <text>Say what they run and where it is hosted, so whoever takes their next call doesn't have to ask.</text>
+                }
+                else
+                {
+                    <text>Nobody has filled this in. The solution's owner or an administrator can.</text>
+                }
+            </Text>
+            <Action>
+                @if (CanManage)
+                {
+                    <button type="button" class="btn" @onclick="StartEditing">Add customer details</button>
+                }
+            </Action>
+        </EmptyState>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="card__body">
+            <div class="kv-grid cust__grid">
+                <span class="meta-item"><span class="meta-item__label">Hosting</span><span class="meta-item__value">@(_basics.HostingType is { } h ? HostingText(h) : "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Version</span><span class="meta-item__value">@(_basics.BcVersion ?? "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Licence</span><span class="meta-item__value">@(_basics.LicenseType is { } l ? LicenceText(l) : "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">User experience</span><span class="meta-item__value">@(_basics.UserExperience?.ToString() ?? "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Voice account number</span><span class="meta-item__value meta-item__value--mono">@(_basics.VoiceAccountNumber ?? "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Microsoft tenant ID</span><span class="meta-item__value meta-item__value--mono">@(_basics.TenantId?.ToString("D") ?? "—")</span></span>
+            </div>
+            @if (_basics.ClientUrl is { } url)
+            {
+                <p class="meta-item cust__url">
+                    <span class="meta-item__label">Address</span>
+                    <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
+                </p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    /// <summary>Raised after a save, so the page can show or hide the tabs that only work online.</summary>
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private CustomerBasics? _basics;
+    private bool _editing;
+    private bool _saving;
+    private string? _error;
+    private string? _done;
+    private Dictionary<string, string> _errors = new();
+    private readonly EditModel _edit = new();
+
+    private sealed class EditModel
+    {
+        public string Hosting { get; set; } = string.Empty;
+        public string Version { get; set; } = string.Empty;
+        public string Licence { get; set; } = string.Empty;
+        public string Experience { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public string Voice { get; set; } = string.Empty;
+        public string Tenant { get; set; } = string.Empty;
+    }
+
+    private bool EditIsOnPremises =>
+        Enum.TryParse<ProjectHostingType>(_edit.Hosting, out var chosen) && chosen != ProjectHostingType.MicrosoftCloud;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_basics is null) _basics = await CustomerInfo.GetBasicsAsync(Id) ?? new(null, null, null, null, null, null, null);
+    }
+
+    private void StartEditing()
+    {
+        var b = _basics!;
+        _edit.Hosting = b.HostingType?.ToString() ?? string.Empty;
+        _edit.Version = b.BcVersion ?? string.Empty;
+        _edit.Licence = b.LicenseType?.ToString() ?? string.Empty;
+        _edit.Experience = b.UserExperience?.ToString() ?? string.Empty;
+        _edit.Url = b.ClientUrl ?? string.Empty;
+        _edit.Voice = b.VoiceAccountNumber ?? string.Empty;
+        _edit.Tenant = b.TenantId?.ToString("D") ?? string.Empty;
+        _errors = new();
+        _error = null;
+        _done = null;
+        _editing = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await CustomerInfo.SaveBasicsAsync(Id, new CustomerBasicsInput(
+                Enum.TryParse<ProjectHostingType>(_edit.Hosting, out var hosting) ? hosting : null,
+                _edit.Version,
+                Enum.TryParse<ProjectLicenseType>(_edit.Licence, out var licence) ? licence : null,
+                Enum.TryParse<ProjectUserExperience>(_edit.Experience, out var experience) ? experience : null,
+                _edit.Url, _edit.Voice, _edit.Tenant));
+            _basics = await CustomerInfo.GetBasicsAsync(Id) ?? _basics;
+            _editing = false;
+            _done = "Customer details saved.";
+            await OnSaved.InvokeAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save customer details for project {ProjectId}.", Id);
+            _error = "Couldn't save the customer details. Try again in a moment.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    internal static string HostingText(ProjectHostingType hosting) => hosting switch
+    {
+        ProjectHostingType.MicrosoftCloud => "Business Central online",
+        ProjectHostingType.OurCloud => "Our hosting",
+        ProjectHostingType.HostingPartner => "A hosting partner",
+        ProjectHostingType.CustomerHardware => "The customer's own hardware",
+        _ => hosting.ToString(),
+    };
+
+    private static string LicenceText(ProjectLicenseType licence) => licence switch
+    {
+        ProjectLicenseType.Purchased => "Purchased",
+        ProjectLicenseType.Leased => "Leased",
+        ProjectLicenseType.Cloud => "Business Central online subscription",
+        _ => licence.ToString(),
+    };
+}

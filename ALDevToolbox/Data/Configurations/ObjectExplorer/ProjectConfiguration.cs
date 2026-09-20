@@ -36,6 +36,16 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<OeProject>
         entity.Property(e => e.DiscoveredAt).HasColumnName("discovered_at");
         entity.Property(e => e.DiscoveryError).HasColumnName("discovery_error");
 
+        // Customer information. See .design/solution-customer-info.md. The three enums
+        // are text for the reason visibility is; all of it is optional.
+        entity.Property(e => e.HostingType).HasColumnName("hosting_type").HasConversion<string>().HasMaxLength(30);
+        entity.Property(e => e.BcVersion).HasColumnName("bc_version").HasMaxLength(50);
+        entity.Property(e => e.LicenseType).HasColumnName("license_type").HasConversion<string>().HasMaxLength(20);
+        entity.Property(e => e.UserExperience).HasColumnName("user_experience").HasConversion<string>().HasMaxLength(20);
+        entity.Property(e => e.ClientUrl).HasColumnName("client_url").HasMaxLength(500);
+        entity.Property(e => e.VoiceAccountNumber).HasColumnName("voice_account_number").HasMaxLength(30);
+        entity.Ignore(e => e.IsOnPremises);
+
         // Business Central SaaS connection (delivery). See .design/saas-delivery.md.
         entity.Property(e => e.BcTenantId).HasColumnName("bc_tenant_id");
         entity.Property(e => e.BcClientId).HasColumnName("bc_client_id");
