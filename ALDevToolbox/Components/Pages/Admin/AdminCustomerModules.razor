@@ -24,8 +24,8 @@
           LoadingText="Loading the module catalogue..."
           IsEmpty="@(_rows is { Count: 0 } && !_editing && !_picking)">
     <SubtitleContent>
-        The add-ons your support team asks about. Each solution's Customer tab shows which of
-        these the customer has, and the Solutions list can be filtered by them.
+        The modules worth tracking per customer, so "do they have it, and which version?" can be
+        answered from a solution's Customer tab - and the Solutions list filtered by it.
     </SubtitleContent>
     <Actions>
         <button type="button" class="btn" disabled="@(_editing || _picking)" @onclick="StartPickingAsync">
@@ -52,6 +52,7 @@
                 </Text>
                 <Action>
                     <button type="button" class="btn" @onclick="StartPickingAsync">Add from installed apps</button>
+                    <button type="button" class="btn" @onclick="() => StartEditing(null)">Add by hand</button>
                 </Action>
             </EmptyState>
         </div>
@@ -63,7 +64,7 @@
                 <div class="card__head">
                     <div>
                         <h2 class="card__title">Apps your customers have installed</h2>
-                        <p class="card__sub">Everything Business Central has reported that isn't in the catalogue yet, the most widespread first. Microsoft's own apps are left out.</p>
+                        <p class="card__sub">Everything Business Central has reported that isn't in the catalogue yet, the ones most customers have first. Microsoft's own apps are left out.</p>
                     </div>
                     <button type="button" class="btn btn--sm" @onclick="() => _picking = false">Done</button>
                 </div>
@@ -74,14 +75,17 @@
                 else if (_seen.Count == 0)
                 {
                     <EmptyState Icon="cloud-download" Title="Nothing to pick from yet" Quiet="true">
-                        <Text>Installed apps are read overnight from each connected solution's environments. Until then, add modules by hand.</Text>
+                        <Text>Installed apps are read overnight from each connected solution's environments.</Text>
+                        <Action>
+                            <button type="button" class="btn btn--sm" @onclick="() => { _picking = false; StartEditing(null); }">Add by hand instead</button>
+                        </Action>
                     </EmptyState>
                 }
                 else
                 {
                     <table class="data-table u-compact">
                         <thead>
-                            <tr><th scope="col">App</th><th scope="col">Publisher</th><th scope="col">Solutions</th><th scope="col" class="data-table__actions">Actions</th></tr>
+                            <tr><th scope="col">App</th><th scope="col">Publisher</th><th scope="col">Seen in</th><th scope="col" class="data-table__actions">Actions</th></tr>
                         </thead>
                         <tbody>
                             @foreach (var app in _seen)
@@ -89,7 +93,7 @@
                                 <tr @key="app.AppId">
                                     <td>@app.Name</td>
                                     <td>@app.Publisher</td>
-                                    <td class="u-num">@app.Solutions</td>
+                                    <td>@(app.Solutions == 1 ? "1 solution" : $"{app.Solutions} solutions")</td>
                                     <td class="data-table__actions">
                                         <button type="button" class="btn btn--sm" disabled="@_saving" @onclick="() => AddSeenAsync(app)"
                                                 aria-label="@($"Add {app.Name} to the catalogue")">Add</button>
@@ -118,13 +122,13 @@
                             <FieldError Field="Publisher" Errors="_errors" />
                         </section>
                         <section class="field">
-                            <label class="field__label" for="cm-appid">App ID</label>
+                            <label class="field__label" for="cm-appid">Business Central app ID</label>
                             @* pattern mirrors the Guid.TryParse in CustomerModuleService. *@
                             <input id="cm-appid" type="text" class="input" @bind="_appId" disabled="@_saving"
                                    pattern="[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}" title="An app ID looks like 11111111-2222-3333-4444-555555555555"
                                    placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
                             <FieldError Field="AppId" Errors="_errors" />
-                            <small class="field__hint">Optional. With it, customers on Business Central online show this module automatically. Leave it empty for an add-on that isn't an app - it can still be recorded by hand on a solution.</small>
+                            <small class="field__hint">Leave this empty for an older add-on that isn't a Business Central app - you can still add it to each customer yourself. If it is an app and you know its ID, paste it here and it will be found automatically for customers on Business Central online.</small>
                         </section>
                     </div>
                 </div>
@@ -150,7 +154,7 @@
                             <tr @key="row.Id">
                                 <td>@row.Name</td>
                                 <td>@(row.Publisher ?? "—")</td>
-                                <td>@(row.AppId is null ? "No - recorded by hand" : "Yes")</td>
+                                <td>@(row.AppId is null ? "No - add it to each customer" : "Yes, for customers online")</td>
                                 <td class="u-num">@row.Solutions</td>
                                 <td class="data-table__actions">
                                     <button type="button" class="btn btn--sm btn--ghost" disabled="@(_editing || _picking)" @onclick="() => StartEditing(row)"
@@ -252,8 +256,8 @@
     {
         if (_confirm is null) return;
         var body = row.Solutions == 0
-            ? "It comes off the catalogue. No solution has it recorded."
-            : $"It comes off the catalogue, and off the Customer tab of {(row.Solutions == 1 ? "the one solution that has" : $"the {row.Solutions} solutions that have")} it - including any version typed in by hand, which can't be brought back.";
+            ? "Removes it from the catalogue. No solution has it."
+            : $"Removes it from the catalogue and from the Customer tab of {(row.Solutions == 1 ? "the one solution that has" : $"the {row.Solutions} solutions that have")} it. Any versions typed in by hand are lost.";
         if (!await _confirm.OpenAsync($"Remove {row.Name}?", body, "Remove module")) return;
         await Modules.DeleteCatalogModuleAsync(row.Id);
         _rows = await Modules.ListCatalogAsync();

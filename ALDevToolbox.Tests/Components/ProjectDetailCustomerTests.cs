@@ -8,6 +8,7 @@ using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Bunit;
+using Bunit.TestDoubles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,6 +28,8 @@ public sealed class ProjectDetailCustomerTests : IDisposable
 
     public ProjectDetailCustomerTests()
     {
+        // The Modules card offers editors and admins a way to the catalogue.
+        _ctx.AddAuthorization().SetAuthorized("owner@example.com");
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));

@@ -96,7 +96,22 @@
         <EmptyState Icon="package" Title="@EmptyTitle()" Quiet="true">
             <Text>@EmptyText()</Text>
             <Action>
-                @if (CanEdit && _modules.CatalogCount > 0)
+                @* Each reason for an empty card has a different next step, and gets its door. *@
+                @if (_modules.CatalogCount == 0)
+                {
+                    <AuthorizeView Roles="Admin,Editor">
+                        <a class="btn btn--sm" href="/admin/customer-modules">Set up the catalogue</a>
+                    </AuthorizeView>
+                }
+                else if (_modules.ReadFromEnvironment && _modules.EnvironmentId is null && CanManage)
+                {
+                    <a class="btn btn--sm" href="@($"/solutions/{Id}?tab=bc")">Open the Business Central tab</a>
+                }
+                else if (_modules.ReadFromEnvironment && _modules.EnvironmentId is { } envId && CanManage)
+                {
+                    <a class="btn btn--sm" href="@($"/environments/{envId}/apps")">@(_modules.FetchedAt is null ? "Read them now" : $"Open {_modules.EnvironmentName}")</a>
+                }
+                else if (CanEdit)
                 {
                     <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">Add module</button>
                 }
@@ -184,18 +199,20 @@
     private string EmptyTitle() => _modules switch
     {
         { CatalogCount: 0 } => "Your organisation hasn't listed any modules yet",
-        { ReadFromEnvironment: true, EnvironmentName: null } => "No environment has been read yet",
+        { ReadFromEnvironment: true, EnvironmentName: null } => "No environments yet",
         { ReadFromEnvironment: true, FetchedAt: null } => "Installed apps haven't been read yet",
-        { ReadFromEnvironment: true } => "None of the catalogue's modules is installed",
+        { ReadFromEnvironment: true } => "None of the modules you track is installed here",
         _ => "No modules recorded",
     };
 
     private string EmptyText() => _modules switch
     {
         { CatalogCount: 0 } => "An editor or administrator chooses which add-ons are worth tracking under Admin → Customer modules. Once they have, this fills in.",
-        { ReadFromEnvironment: true, EnvironmentName: null } => "Connect the solution on its Business Central tab and its environments, and what is installed in them, are read overnight.",
-        { ReadFromEnvironment: true, FetchedAt: null } => "They are read overnight, or straight away when someone who manages the solution opens the environment's Apps tab.",
-        { ReadFromEnvironment: true } => $"Business Central reports other apps in {_modules.EnvironmentName}; open the environment to see them all.",
+        { ReadFromEnvironment: true, EnvironmentName: null } => "Connect this solution to Business Central on its Business Central tab. Its environments, and the apps installed in them, are read overnight after that.",
+        { ReadFromEnvironment: true, FetchedAt: null } => CanManage
+            ? $"The apps installed in {_modules.EnvironmentName} are read overnight. To fetch them now, open the environment's Apps tab."
+            : $"The apps installed in {_modules.EnvironmentName} are read overnight.",
+        { ReadFromEnvironment: true } => $"Business Central reports other apps in {_modules.EnvironmentName}.",
         _ => CanManage ? "Pick the add-ons they run from the catalogue and note the version of each." : "The solution's owner or an administrator can add them.",
     };
 
@@ -237,7 +254,7 @@
     private async Task RemoveAsync(SolutionModule row)
     {
         if (_confirm is null) return;
-        if (!await _confirm.OpenAsync($"Remove {row.Name}?", "It comes off this solution's modules. The catalogue keeps it.", "Remove module")) return;
+        if (!await _confirm.OpenAsync($"Remove {row.Name}?", "Removes it from this solution. It stays in your organisation's catalogue.", "Remove module")) return;
         try
         {
             await Modules.DeleteSolutionModuleAsync(Id, row.RowId);

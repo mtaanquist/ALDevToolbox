@@ -64,8 +64,8 @@
         @if (_modules.Count > 0)
         {
             <SelectBox style="width: 240px">
-                <select class="select" name="module" aria-label="Show solutions that have a module" onchange="this.form.requestSubmit()">
-                    <option value="">Any modules</option>
+                <select class="select" name="module" aria-label="Filter by module" onchange="this.form.requestSubmit()">
+                    <option value="">All solutions</option>
                     @foreach (var module in _modules)
                     {
                         <option value="@module.Id" selected="@(module.Id == _moduleId)">Has @module.Name</option>
@@ -217,8 +217,8 @@
         return (module, _search) switch
         {
             (null, _) => $"No solutions match \"{_search}\"",
-            (_, "") => $"No solution has {module} recorded",
-            _ => $"No solution matching \"{_search}\" has {module} recorded",
+            (_, "") => $"No solution has {module}",
+            _ => $"No solution matching \"{_search}\" has {module}",
         };
     }
 
