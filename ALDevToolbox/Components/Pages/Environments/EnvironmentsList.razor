@@ -98,6 +98,19 @@
         {
             <p class="note note--info"><span class="note__body">@note</span></p>
         }
+
+        @* What this view is, in the view itself. The pill's tooltip says the same, but a
+           tooltip does not exist on touch and never appears on a keyboard - so it can
+           never be the only place the meaning lives. *@
+        @if (_tab == Tab.Deleted && _rows is { Count: > 0 })
+        {
+            <p class="note note--info">
+                <span class="note__body">
+                    These have been deleted in Business Central. Each one can be brought
+                    back until the date below - after that it is gone, with its data.
+                </span>
+            </p>
+        }
     </Notices>
     <Loading>
         @* Skeleton rows under the real header, as the design has it, so the column
@@ -199,9 +212,12 @@
                    reader standing in it sees when a refresh brings the last one back. *@
                 <EmptyState Icon="circle-check" Title="Nothing has been deleted">
                     <Text>
-                        Business Central isn't holding a deleted environment for any of
-                        these customers.
+                        None of these solutions has a deleted environment waiting to be
+                        brought back.
                     </Text>
+                    <Action>
+                        <button type="button" class="btn" @onclick="() => _tab = Tab.All">Show all environments</button>
+                    </Action>
                 </EmptyState>
             }
             else if (_tab == Tab.UpdatingSoon && NoOtherFilters())
@@ -232,7 +248,10 @@
                     <th scope="col">Environment</th>
                     <th scope="col">Solution</th>
                     <th scope="col">Now on</th>
-                    <th scope="col">Next update</th>
+                    @* In the Deleted view this column carries the deadline, not an
+                       update, and a header saying otherwise is the wrong label on the
+                       one fact somebody came for. *@
+                    <th scope="col">@(_tab == Tab.Deleted ? "Gone for good" : "Next update")</th>
                     <th scope="col">Storage</th>
                     <th scope="col">Last checked</th>
                     <th scope="col" class="data-table__actions">Actions</th>
@@ -265,9 +284,12 @@
                         <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
                         <td class="u-num">@(row.Version ?? "—")</td>
                         <td>
+                            @* For a deleted environment the deadline takes the bold line
+                               the version would have had: it is the fact the row is here
+                               for, and a dash in bold over it in grey reads backwards. *@
                             <span class="cell-stack">
-                                <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@NextVersion(row)</span>
-                                <span class="cell-stack__sub">@NextWhen(row)</span>
+                                <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@(row.IsSoftDeleted ? GoneForGood(row) : NextVersion(row))</span>
+                                <span class="cell-stack__sub">@(row.IsSoftDeleted ? RecoverWindow(row) : NextWhen(row))</span>
                             </span>
                         </td>
                         <td>
@@ -299,22 +321,23 @@
                                is per solution, not per environment, and the strip above
                                already does it. *@
                             <RowActions Label="@($"Actions for {row.ProjectName} {row.EnvironmentName}")">
+                                @* Offered on every row and refused by the service for someone
+                                   who doesn't manage the solution: the rows don't carry that
+                                   answer, and the refusal says who may. Recover leads the menu
+                                   on a deleted row - it is the only thing left to do to one,
+                                   and the only one with a deadline. *@
+                                @if (row.IsSoftDeleted)
+                                {
+                                    <button type="button" class="menu__item" role="menuitem"
+                                            disabled="@_busy" @onclick="() => RecoverAsync(row)">Recover this environment...</button>
+                                }
                                 <a class="menu__item" role="menuitem" href="@($"/environments/{row.EnvironmentId}")">Open environment</a>
                                 @if (row.BusinessCentralUrl is { } bcUrl)
                                 {
                                     <a class="menu__item" role="menuitem" href="@bcUrl"
                                        target="_blank" rel="noopener">Open in Business Central</a>
                                 }
-                                @* Offered on every row and refused by the service for someone
-                                   who doesn't manage the solution: the rows don't carry that
-                                   answer, and the refusal says who to ask. The same reading
-                                   applies to Recover below. *@
-                                @if (row.IsSoftDeleted)
-                                {
-                                    <button type="button" class="menu__item" role="menuitem"
-                                            disabled="@_busy" @onclick="() => RecoverAsync(row)">Recover this environment...</button>
-                                }
-                                else
+                                @if (!row.IsSoftDeleted)
                                 {
                                     <button type="button" class="menu__item" role="menuitem"
                                             disabled="@_busy" @onclick="() => UploadAppAsync(row)">Upload an app...</button>
@@ -415,8 +438,8 @@
             + "or that returned something unexpected - and those of a customer at or "
             + "over their storage allowance",
         Tab.Deleted =>
-            "Environments the customer has deleted. Business Central keeps them for a "
-            + "fortnight, and until then they can be brought back",
+            "Environments that have been deleted in Business Central. It keeps each one "
+            + "for about 14 days, and until then it can be brought back",
         _ => "Every environment you can reach",
     };
 
@@ -607,9 +630,6 @@
     /// </summary>
     private static string NextWhen(UpgradeFleetRow row)
     {
-        // A deleted environment has no next update and never will. What its reader wants
-        // instead is the deadline: after that day Business Central cannot bring it back.
-        if (row.IsSoftDeleted) return GoneForGood(row);
         if (row.NextUpdateDate is { } date) return date.ToString("dd MMM yyyy, HH:mm") + " UTC";
         if (row.NextUpdateVersion is not null) return "Date not announced yet";
         // With nothing scheduled, this line is where the design names a state that is
@@ -629,6 +649,28 @@
         row.HardDeletePendingOn is { } gone
             ? $"Gone for good on {gone:dd MMM yyyy}"
             : "Business Central hasn't said when it goes for good";
+
+    /// <summary>
+    /// How long is left, under the date. A date alone makes somebody scanning a list do
+    /// the arithmetic per row to find the customer who needs a call today, which is the
+    /// question this view exists to answer - and the column beside it is already
+    /// relative. A date already past is not dressed up as urgency: the mirror may simply
+    /// be older than the deadline it is repeating.
+    /// </summary>
+    private static string RecoverWindow(UpgradeFleetRow row)
+    {
+        if (row.HardDeletePendingOn is not { } gone)
+        {
+            return row.SoftDeletedOn is { } deleted ? $"Deleted {deleted:dd MMM yyyy}" : "Deleted";
+        }
+        return (gone.Date - DateTime.UtcNow.Date).Days switch
+        {
+            < 0 => "Past the date Business Central gave",
+            0 => "Today is the last day to bring it back",
+            1 => "1 day left to bring it back",
+            var days => $"{days} days left to bring it back",
+        };
+    }
 
     // fetched_at is NOT NULL on the row, so this always has a real answer; the
     // fallback is only for a projection that somehow didn't carry it.
@@ -708,14 +750,18 @@
     private async Task RecoverAsync(UpgradeFleetRow row)
     {
         if (_confirm is null) return;
+        // One verb throughout - the control, the title and the button all say recover,
+        // which is also what the admin centre calls it. Never "restore": in Business
+        // Central that is the point-in-time restore of a live environment, and somebody
+        // would reasonably ask which point in time.
         var confirmed = await _confirm.OpenAsync(
             row.IsProduction
-                ? $"Bring back {row.EnvironmentName}, a production environment?"
-                : $"Bring back {row.EnvironmentName}?",
+                ? $"Recover {row.EnvironmentName}, a production environment?"
+                : $"Recover {row.EnvironmentName}?",
             $"{row.EnvironmentName} ({row.EnvironmentType}) belongs to {row.ProjectName}. "
-            + "Business Central will restore it with the data it held when it was deleted, "
+            + "Business Central brings it back with the data it held when it was deleted, "
             + "and people will be able to sign in to it again. It takes a few minutes.",
-            "Bring it back", confirmButtonClass: "btn--primary", confirmIcon: "archive-restore");
+            "Recover it", confirmButtonClass: "btn--primary", confirmIcon: "archive-restore");
         if (!confirmed) return;
 
         _busy = true;
@@ -725,7 +771,7 @@
         try
         {
             await Connection.RecoverEnvironmentAsync(row.ProjectId, row.EnvironmentId);
-            _done = $"Business Central is bringing {row.EnvironmentName} back. It moves out of Deleted once it has.";
+            _done = $"Business Central is bringing {row.EnvironmentName} back. It takes a few minutes - use Refresh above to see when it is done.";
             await LoadAsync();
             // Recovering the last one takes the view away with it; standing in a view
             // that is no longer offered would look like the page had lost the rows.

@@ -298,13 +298,25 @@ public sealed class EnvironmentsListTests : IDisposable
         {
             var row = cut.FindAll(".data-table tbody tr").Should().ContainSingle().Subject;
             row.TextContent.Should().Contain("JLE-260911110359");
-            row.QuerySelectorAll(".cell-stack__sub").Last().TextContent
+            // The deadline takes the bold line, not the grey one under a dash.
+            row.QuerySelectorAll(".cell-stack__main").Last().TextContent
                 .Should().Be("Gone for good on 04 Oct 2026");
+            row.QuerySelectorAll(".cell-stack__sub").Last().TextContent
+                .Should().EndWith("to bring it back", "a date alone leaves the reader doing the arithmetic");
         });
 
-        cut.FindAll("button.menu__item").Select(b => b.TextContent.Trim())
-            .Should().Contain("Recover this environment...")
+        // The column header says what the column now holds.
+        cut.FindAll(".data-table thead th").Select(h => h.TextContent.Trim())
+            .Should().Contain("Gone for good").And.NotContain("Next update");
+
+        // And the view itself says these can be brought back - not only the pill's tooltip.
+        System.Text.RegularExpressions.Regex.Replace(cut.Find(".note--info").TextContent, @"\s+", " ")
+            .Should().Contain("Each one can be brought back until the date below");
+
+        var menu = cut.FindAll("button.menu__item, a.menu__item").Select(b => b.TextContent.Trim()).ToList();
+        menu.Should().Contain("Recover this environment...")
             .And.NotContain("Upload an app...", "nothing can be installed on a deleted environment");
+        menu[0].Should().Be("Recover this environment...", "it is the only thing left to do, and the only one with a deadline");
     }
 
     /// <summary>
@@ -325,7 +337,7 @@ public sealed class EnvironmentsListTests : IDisposable
             cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Deleted")).Click());
 
         cut.WaitForAssertion(() =>
-            cut.FindAll(".data-table tbody tr .cell-stack__sub").Last().TextContent
+            cut.FindAll(".data-table tbody tr .cell-stack__main").Last().TextContent
                 .Should().Be("Business Central hasn't said when it goes for good"));
     }
 
@@ -350,7 +362,7 @@ public sealed class EnvironmentsListTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Bring back JLE-260911110359, a production environment?");
+            cut.Markup.Should().Contain("Recover JLE-260911110359, a production environment?");
             cut.Markup.Should().Contain("CRONUS Denmark");
         });
     }

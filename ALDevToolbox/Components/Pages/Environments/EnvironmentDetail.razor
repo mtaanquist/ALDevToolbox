@@ -141,16 +141,19 @@
         {
             <Alert Tone="AlertTone.Danger" Block="true">
                 <span>
-                    <b>@Row.EnvironmentName has been deleted@(Row.SoftDeletedOn is { } deletedOn ? $" on {deletedOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}" : "").</b>
+                    <b>@DeletedSentence()</b>
+                    @* The same reading as the Environments list, word for word: the two
+                       are looked at in the same minute, and on a fortnight's window a day
+                       either way is a customer's data. *@
                     @if (Row.HardDeletePendingOn is { } goneOn)
                     {
-                        <text> Business Central is keeping it until @goneOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture), and after that it is gone for good.</text>
+                        <text> It is gone for good on @goneOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) - @RecoverWindowText(goneOn).</text>
                     }
                     else
                     {
-                        <text> Business Central keeps a deleted environment for a fortnight and hasn't said when this one goes for good.</text>
+                        <text> Business Central usually keeps a deleted environment for about 14 days, but hasn't said when this one goes for good.</text>
                     }
-                    <text> Nothing can be installed on it or updated until it is back.</text>
+                    <text> Until it is back, Business Central refuses an install, an update or a change of settings on it.</text>
                     @if (_canManage)
                     {
                         <span class="env-detail__recover">
@@ -160,6 +163,10 @@
                                 <span class="btn__label">Recover this environment</span>
                             </button>
                         </span>
+                    }
+                    else
+                    {
+                        <text> Only people who manage this solution can bring it back - ask its owner or an administrator.</text>
                     }
                 </span>
             </Alert>
@@ -1431,6 +1438,29 @@
     }
 
     /// <summary>
+    /// The alert's opening line. Written as two whole sentences rather than one with a
+    /// date glued on, because "has been deleted on 20 Sep" is not a sentence - and this
+    /// is the boldest line on the page.
+    /// </summary>
+    private string DeletedSentence() => Row.SoftDeletedOn is { } deleted
+        ? $"{Row.EnvironmentName} was deleted on {deleted.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}."
+        : $"{Row.EnvironmentName} has been deleted.";
+
+    /// <summary>
+    /// How long is left, in the same words the Environments list uses under its date. A
+    /// date already past is not dressed up as urgency - the mirror may simply be older
+    /// than the deadline it is repeating.
+    /// </summary>
+    private static string RecoverWindowText(DateTime goneForGood) =>
+        (goneForGood.Date - DateTime.UtcNow.Date).Days switch
+        {
+            < 0 => "that date has passed",
+            0 => "today is the last day to bring it back",
+            1 => "1 day left to bring it back",
+            var days => $"{days} days left to bring it back",
+        };
+
+    /// <summary>
     /// Brings the environment back while Business Central is still keeping it. Confirmed
     /// by name, and louder when it is a production environment: recovering one puts a
     /// customer's live data back in front of their users.
@@ -1439,14 +1469,16 @@
     {
         if (_confirm is null) return;
 
+        // The same one verb the Environments list uses, and never "restore" - in Business
+        // Central that is the point-in-time restore of a live environment.
         var confirmed = await _confirm.OpenAsync(
             Row.IsProduction
-                ? $"Bring back {Row.EnvironmentName}, a production environment?"
-                : $"Bring back {Row.EnvironmentName}?",
+                ? $"Recover {Row.EnvironmentName}, a production environment?"
+                : $"Recover {Row.EnvironmentName}?",
             $"{Row.EnvironmentName} ({Row.EnvironmentType}) belongs to {Row.ProjectName}. "
-            + "Business Central will restore it with the data it held when it was deleted, "
+            + "Business Central brings it back with the data it held when it was deleted, "
             + "and people will be able to sign in to it again. It takes a few minutes.",
-            "Bring it back", confirmButtonClass: "btn--primary", confirmIcon: "archive-restore");
+            "Recover it", confirmButtonClass: "btn--primary", confirmIcon: "archive-restore");
         if (!confirmed) return;
 
         await RunSettingWriteAsync("recover",

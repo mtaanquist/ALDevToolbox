@@ -360,18 +360,28 @@ and do, which a deletion somebody already decided on is not. So:
   attention, and gives them a **Deleted** view of their own with its count. That view is
   offered only when there is something in it — a view that is always empty is one people
   learn to ignore, which is exactly the view that has to be noticed on the fortnight it
-  isn't. Each row there says when it goes for good ("Gone for good on 4 Oct 2026"), or says
-  plainly that Business Central hasn't given a date, and its menu offers Recover in place of
-  Upload an app.
+  isn't. In it, the Next update column becomes **Gone for good** and carries the deadline in
+  the line the version would have had ("Gone for good on 4 Oct 2026", or plainly that
+  Business Central hasn't given a date), with how long is left under it ("3 days left to
+  bring it back") — a date alone makes somebody scanning a hundred rows do the arithmetic per
+  row to find the customer who needs a call today, which is the question the view exists to
+  answer. Recover leads the row menu, in place of Upload an app, and a line above the table
+  says these can be brought back: the pill's tooltip says the same, but a tooltip does not
+  exist on touch and never appears on a keyboard, so it can never be the only place the
+  meaning lives.
 - The **Upgrades page** doesn't list them at all. They are dropped in
   `UpgradeFleetService.ListFleetAsync`, not in the page, so the counts, the checkbox
   selection and both bulk actions agree without each having to remember. The Environments
   list asks for them back with `includeSoftDeleted`.
 - The **environment's own page** keeps working — the links from the Deleted view have to
   land somewhere — and leads with a danger alert saying when it was deleted, when it is gone
-  for good, and offering Recover. The alert is first because it changes what everything
-  under it means: the version, the two windows and the app lists are all the state the
-  environment was in on the day it was deleted.
+  for good *in the list's exact words* (the two are read in the same minute, and on a
+  fortnight's window a day either way is a customer's data), how long is left, and that
+  Business Central refuses an install, an update or a settings change until it is back.
+  Someone who may act gets Recover; someone who may not is told who to ask, as every other
+  locked part of that page does. The alert is first because it changes what everything under
+  it means: the version, the two windows and the app lists are all the state the environment
+  was in on the day it was deleted.
 - The **Modules card** on a solution's Customer tab reads the installed apps from the
   customer's production environment, and never picks a deleted one — its app list is what
   was installed the day it was deleted, which is not what the customer runs now. The
@@ -397,6 +407,11 @@ reaches the page as a sentence — the two codes Microsoft documents here, an en
 already being recovered and one whose state forbids it, are told apart rather than both
 arriving as "the API refused it". An environment that was never deleted is refused before
 anything is sent.
+
+One verb, everywhere: the menu item, the dialog's title and its button all say **recover**,
+which is what the admin centre calls it. Never *restore* — in Business Central that is the
+point-in-time restore of a live environment, and somebody would reasonably ask which point
+in time.
 
 Business Central *schedules* the recovery rather than doing it there and then, so the write
 is followed by a re-read of the customer's environments: the row moves to `Recovering` and

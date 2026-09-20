@@ -226,8 +226,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         var cut = Render(envId);
 
         var alert = cut.FindAll(".alert--danger").Should().ContainSingle().Subject;
-        alert.TextContent.Should().Contain("Production has been deleted on 20 Sep 2026");
-        alert.TextContent.Should().Contain("keeping it until 04 Oct 2026");
+        alert.TextContent.Should().Contain("Production was deleted on 20 Sep 2026.");
+        alert.TextContent.Should().Contain("It is gone for good on 04 Oct 2026");
         alert.QuerySelector("button")!.TextContent.Should().Contain("Recover this environment");
     }
 
@@ -241,7 +241,7 @@ public sealed class EnvironmentDetailTests : IDisposable
         var cut = Render(envId);
 
         cut.Find(".alert--danger").TextContent.Should()
-            .Contain("keeps a deleted environment for a fortnight and hasn't said when this one goes for good");
+            .Contain("usually keeps a deleted environment for about 14 days, but hasn't said when this one goes for good");
     }
 
     /// <summary>A live environment gets none of it - the alert is not a permanent fixture.</summary>
@@ -275,7 +275,7 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Bring back Production, a production environment?");
+            cut.Markup.Should().Contain("Recover Production, a production environment?");
             cut.Markup.Should().Contain("CRONUS Denmark");
         });
     }
