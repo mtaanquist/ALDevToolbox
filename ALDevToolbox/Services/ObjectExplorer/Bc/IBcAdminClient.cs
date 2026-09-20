@@ -41,6 +41,15 @@ public interface IBcAdminClient
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>
+    /// The operations Business Central has recorded against one environment, in the
+    /// order it returns them. An environment that is gone answers with an empty list,
+    /// as <see cref="ListEnvironmentUpdatesAsync"/> does. Throws
+    /// <see cref="BcApiException"/> on any other non-success status.
+    /// </summary>
+    Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
+    /// <summary>
     /// The time zones Business Central accepts for an update window. Tenant-wide, so it
     /// takes no environment. Its ids are the only values
     /// <see cref="SetUpdateSettingsAsync"/> will take.

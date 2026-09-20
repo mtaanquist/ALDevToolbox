@@ -132,6 +132,9 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
         public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
 
+        public Func<string, IReadOnlyList<BcEnvironmentOperation>> OnOperations { get; set; } = _ => Array.Empty<BcEnvironmentOperation>();
+        public Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnOperations(environmentName));
         public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => Task.FromResult(OnEnvironmentUpdates(environmentName));
     }
@@ -925,6 +928,47 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             "10.0 is newer than 9.9, and an unavailable version has no date to schedule");
         row.BcNextUpdateFetchedAt.Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task Operations_come_back_newest_first_whatever_order_business_central_used()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnOperations = _ => new[] { Operation("restart", 1), Operation("update", 3), Operation("modify", 2) },
+        };
+        var env = await RefreshAndReadRowAsync(id, admin);
+
+        await using var read = _db.NewContext();
+        var operations = await Svc(read, TokenOk(), admin).ListEnvironmentOperationsAsync(id, env.Id);
+
+        operations.Select(o => o.Type).Should().Equal("update", "modify", "restart");
+    }
+
+    [Fact]
+    public async Task Operations_business_central_refuses_come_back_as_a_sentence_for_the_page()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient { OnList = () => new[] { new BcEnvironment("Production", "Production") } };
+        var env = await RefreshAndReadRowAsync(id, admin);
+        admin.OnOperations = _ => throw new BcApiException(HttpStatusCode.Forbidden, "Business Central refused: no admin access.");
+
+        await using var read = _db.NewContext();
+        var act = () => Svc(read, TokenOk(), admin).ListEnvironmentOperationsAsync(id, env.Id);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Values.Should().Contain("Business Central refused: no admin access.");
+    }
+
+    private static BcEnvironmentOperation Operation(string type, int day) => new(
+        Guid.NewGuid().ToString(), type, "succeeded",
+        new DateTimeOffset(2026, 9, day, 8, 0, 0, TimeSpan.Zero), null, null,
+        string.Empty, string.Empty, new Dictionary<string, string>());
 
     [Fact]
     public async Task Refresh_clears_the_mirror_and_stamps_it_when_there_is_no_update()

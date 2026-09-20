@@ -1,0 +1,119 @@
+@using System.Globalization
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+
+@*
+    What Business Central has recorded against one environment, newest first. Its
+    record and not ours: an update started from the admin centre, or one Microsoft ran
+    overnight, is here and nowhere else. Read-only - nothing in the list can be acted on.
+*@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title env-ops__counted">Operations<span class="badge">@Operations.Count</span></h2>
+            <p class="card__sub">
+                What Business Central has done on @EnvironmentName, whoever asked for it - this
+                toolbox, the admin centre, or Microsoft. Times are in @TimeZoneLabel time.
+                @if (HistoryHref is { } history)
+                {
+                    <text>What was done from AL Dev Toolbox, including updates still booked, is under <a href="@history">Toolbox history</a>.</text>
+                }
+            </p>
+        </div>
+    </div>
+    @if (Operations.Count == 0)
+    {
+        <EmptyState Icon="history" Title="Business Central has nothing recorded for this environment" Quiet="true">
+            <Text>App installs and updates, Business Central updates, restarts and setting changes show up here.</Text>
+        </EmptyState>
+    }
+    else
+    {
+        var shown = _showAll ? Operations : Operations.Take(Preview).ToList();
+        <table class="data-table data-table--edge u-compact">
+            <thead>
+                <tr>
+                    <th class="data-table__col-state" scope="col"><span class="u-sr">Status</span></th>
+                    <th scope="col">What happened</th>
+                    <th scope="col">Started by</th>
+                    <th scope="col">When</th>
+                    <th scope="col">Took</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var op in shown)
+                {
+                    var status = BcEnvironmentOperationDisplay.Status(op);
+                    var rowState = RowClass(op);
+                    <tr class="@rowState">
+                        <td class="data-table__col-state"><StatusPill Tone="@status.Tone">@status.Word</StatusPill></td>
+                        <td>
+                            @BcEnvironmentOperationDisplay.Headline(op, AppName)
+                            @if (!string.IsNullOrWhiteSpace(op.ErrorMessage))
+                            {
+                                <span class="env-ops__error">@op.ErrorMessage</span>
+                            }
+                        </td>
+                        <td>@(string.IsNullOrWhiteSpace(op.CreatedBy) ? "—" : op.CreatedBy)</td>
+                        <td class="env-ops__when">@When(op)</td>
+                        <td class="u-num">@Took(op)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (shown.Count < Operations.Count)
+        {
+            <div class="card__foot">
+                <span class="u-muted">Showing the latest @shown.Count of @Operations.Count.</span>
+                <button type="button" class="btn btn--sm" @onclick="() => _showAll = true">Show all @Operations.Count</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Rows shown before "Show all".</summary>
+    private const int Preview = 25;
+
+    [Parameter, EditorRequired] public IReadOnlyList<BcEnvironmentOperation> Operations { get; set; } = Array.Empty<BcEnvironmentOperation>();
+    [Parameter, EditorRequired] public string EnvironmentName { get; set; } = string.Empty;
+
+    /// <summary>Resolves an app id to a name when the page knows it; the list carries only the id.</summary>
+    [Parameter] public Func<Guid, string?>? AppName { get; set; }
+
+    /// <summary>Where our own record of the environment is, so the list can point at it.</summary>
+    [Parameter] public string? HistoryHref { get; set; }
+
+    [Parameter] public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Utc;
+    [Parameter] public string TimeZoneLabel { get; set; } = "UTC";
+
+    private bool _showAll;
+
+    private static string RowClass(BcEnvironmentOperation op) => BcEnvironmentOperationDisplay.Status(op).Tone switch
+    {
+        "success" => "is-published",
+        "danger" => "is-failed",
+        "running" => "is-running",
+        "queued" => "is-queued",
+        _ => string.Empty,
+    };
+
+    private string When(BcEnvironmentOperation op)
+    {
+        if ((op.StartedOn ?? op.CreatedOn) is not { } at) return "—";
+        var local = TimeZoneInfo.ConvertTimeFromUtc(at.UtcDateTime, TimeZone);
+        return local.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private static string Took(BcEnvironmentOperation op)
+    {
+        if (BcEnvironmentOperationDisplay.IsOpen(op))
+        {
+            return string.Equals(op.Status, "running", StringComparison.OrdinalIgnoreCase) ? "Still running" : "Not started";
+        }
+        if (op.StartedOn is not { } start || op.CompletedOn is not { } end || end < start) return "—";
+        var took = end - start;
+        if (took.TotalMinutes < 1) return "Under a minute";
+        return took.TotalHours < 1 ? $"{(int)took.TotalMinutes} min" : $"{(int)took.TotalHours} h {took.Minutes} min";
+    }
+}

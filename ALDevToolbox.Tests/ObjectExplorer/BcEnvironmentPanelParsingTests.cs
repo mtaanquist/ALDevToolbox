@@ -76,6 +76,63 @@ public sealed class BcEnvironmentPanelParsingTests
     }
 
     [Fact]
+    public void ParseEnvironmentOperations_reads_microsofts_documented_shape()
+    {
+        // The example from the admin center API's "Get all environment operations".
+        const string json = """
+            {
+              "value": [
+                {
+                  "id": "552d3cb2-144e-4195-9a92-1043c4f483e9",
+                  "type": "environmentAppInstall",
+                  "status": "succeeded",
+                  "aadTenantId": "aaaabbbb-0000-cccc-1111-dddd2222eeee",
+                  "createdOn": "2021-03-22T15:45:46.537Z",
+                  "errorMessage": "",
+                  "parameters": {
+                    "appId": "44445555-eeee-6666-ffff-7777aaaa8888",
+                    "targetAppVersion": "17.0.3.0",
+                    "allowPreviewVersion": true,
+                    "nested": { "ignored": 1 }
+                  }
+                },
+                {
+                  "id": "5fe4ac38-a523-4c1f-80db-acd2cf848c09",
+                  "type": "environmentRename",
+                  "status": "succeeded",
+                  "createdOn": "2021-03-16T18:57:36.223Z",
+                  "startedOn": "2021-03-16T18:57:39.053Z",
+                  "completedOn": "2021-03-16T18:57:47.867Z",
+                  "createdBy": "",
+                  "errorMessage": "",
+                  "parameters": { "oldEnvironmentName": "Production", "newEnvironmentName": "Production-deprecated" }
+                },
+                { "status": "succeeded" }
+              ]
+            }
+            """;
+
+        var operations = BcAdminClient.ParseEnvironmentOperations(json);
+
+        operations.Should().HaveCount(2, "a row with no type says nothing a person could read");
+        operations[0].Type.Should().Be("environmentAppInstall");
+        operations[0].StartedOn.Should().BeNull();
+        operations[0].Parameter("APPID").Should().Be("44445555-eeee-6666-ffff-7777aaaa8888");
+        operations[0].Parameter("allowPreviewVersion").Should().Be("true");
+        operations[0].Parameter("nested").Should().BeNull();
+        operations[1].CompletedOn.Should().Be(new DateTimeOffset(2021, 3, 16, 18, 57, 47, 867, TimeSpan.Zero));
+        BcEnvironmentOperationDisplay.Headline(operations[1]).Should().Be("Renamed to Production-deprecated");
+        BcEnvironmentOperationDisplay.Headline(operations[0]).Should().Be("Installed an app 17.0.3.0");
+    }
+
+    [Fact]
+    public void ParseEnvironmentOperations_reads_an_answer_with_no_list_as_empty()
+    {
+        BcAdminClient.ParseEnvironmentOperations("{}").Should().BeEmpty();
+        BcAdminClient.ParseEnvironmentOperations("").Should().BeEmpty();
+    }
+
+    [Fact]
     public void ParseEnvironmentUpdates_reads_flags_whatever_their_casing()
     {
         // This host has answered with string booleans before, so neither form may throw.

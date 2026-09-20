@@ -8,6 +8,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Bunit;
 using Bunit.TestDoubles;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -60,7 +61,7 @@ public sealed class EnvironmentDetailTests : IDisposable
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // The page reads Business Central only once it is live; see the prerender test.
-        _ctx.SetRendererInfo(new Microsoft.AspNetCore.Components.RendererInfo("Server", isInteractive: true));
+        _ctx.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
         using var seed = _db.NewContext();
         seed.Users.AddRange(
@@ -158,9 +159,9 @@ public sealed class EnvironmentDetailTests : IDisposable
         null,
         DateTime.UtcNow);
 
-    private IRenderedComponent<EnvironmentDetail> Render(int environmentId)
+    private IRenderedComponent<EnvironmentDetail> Render(int environmentId, string? tab = null)
     {
-        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, environmentId));
+        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, environmentId).Add(c => c.OpenTab, tab));
         cut.WaitForAssertion(() => cut.FindAll(".loading-block").Should().BeEmpty());
         return cut;
     }
@@ -204,7 +205,7 @@ public sealed class EnvironmentDetailTests : IDisposable
         var (projectId, envId) = await SeedAsync();
         _panels.Set(projectId, envId, Panel());
 
-        var cut = Render(envId);
+        var cut = Render(envId, "apps");
 
         var rows = cut.FindAll("table.u-compact tbody tr");
         rows.Should().HaveCount(2);
@@ -227,7 +228,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     {
         var (projectId, envId) = await SeedAsync();
         _panels.Set(projectId, envId, Panel());
-        var cut = Render(envId);
+        var cut = Render(envId, "apps");
 
         // The page is still settling its own reads when it first renders, and a click
         // on an element found before a re-render lands on a handler that is gone.
@@ -245,7 +246,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     {
         var (projectId, envId) = await SeedAsync();
         _panels.Set(projectId, envId, Panel());
-        var cut = Render(envId);
+        var cut = Render(envId, "apps");
 
         cut.WaitForAssertion(() =>
             cut.FindAll("button").Single(b => b.TextContent.Trim() == "Upload an app").Click());
@@ -281,7 +282,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     {
         var (projectId, envId) = await SeedAsync();
         _panels.Set(projectId, envId, Panel());
-        _ctx.SetRendererInfo(new Microsoft.AspNetCore.Components.RendererInfo("Static", isInteractive: false));
+        _ctx.SetRendererInfo(new RendererInfo("Static", isInteractive: false));
 
         var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, envId));
 
@@ -301,7 +302,7 @@ public sealed class EnvironmentDetailTests : IDisposable
         var updating = panel.InstalledApps.Select(a => a.AppId == CoreId ? a with { State = "Updating" } : a).ToList();
         _panels.Set(projectId, envId, panel with { InstalledApps = updating });
 
-        var cut = Render(envId);
+        var cut = Render(envId, "apps");
 
         var core = cut.FindAll("table.u-compact tbody tr").Single(r => r.Children[1].TextContent == "Continia Core");
         core.QuerySelector(".status-pill")!.TextContent.Should().Be("Updating");
@@ -316,7 +317,7 @@ public sealed class EnvironmentDetailTests : IDisposable
         var (projectId, envId) = await SeedAsync();
         _panels.Set(projectId, envId, Panel());
 
-        var cut = Render(envId);
+        var cut = Render(envId, "apps");
 
         string[] Sources() => cut.FindAll("table.data-table:not(.u-compact) tbody tr")
             .Select(r => r.Children[0].TextContent.Trim() + " / " + r.Children[3].TextContent.Trim()).ToArray();
@@ -328,6 +329,78 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         // The filter re-renders on its own turn, so the narrowed list is waited for.
         cut.WaitForAssertion(() => Sources().Should().Equal("Continia Core / AppSource"));
+    }
+
+    [Fact]
+    public async Task The_page_is_four_tabs_and_each_shows_only_its_own_part()
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+
+        var cut = Render(envId);
+
+        cut.FindAll(".header-tab").Select(t => t.TextContent).Should().Equal("Overview", "Apps", "Operations", "Toolbox history");
+        cut.Find(".header-tab.is-active").TextContent.Should().Be("Overview");
+        cut.FindAll(".header-tab").Select(t => t.GetAttribute("href")).Should().Equal(
+            $"/environments/{envId}", $"/environments/{envId}/apps",
+            $"/environments/{envId}/operations", $"/environments/{envId}/history");
+        cut.FindAll(".setting-list").Should().NotBeEmpty("the settings live on Overview, beside the dates they move");
+        cut.FindAll("table.u-compact").Should().BeEmpty("the app lists have their own tab");
+        cut.Markup.Should().Contain("Version and update dates", "the numbers above the tabs are on every tab");
+    }
+
+    [Theory]
+    [InlineData("whatever")]
+    [InlineData("overview")]
+    [InlineData("2")]
+    public async Task A_segment_that_names_no_tab_is_stripped_back_to_the_overview(string segment)
+    {
+        var (_, envId) = await SeedAsync();
+
+        _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, segment));
+
+        var nav = _ctx.Services.GetRequiredService<NavigationManager>();
+        nav.Uri.Should().EndWith($"/environments/{envId}");
+    }
+
+    [Fact]
+    public async Task History_is_our_own_record_and_asks_business_central_nothing()
+    {
+        // No panel cached and the doubles throw: if this tab reached for the tenant it would say so.
+        var (_, envId) = await SeedAsync();
+
+        var cut = Render(envId, "history");
+
+        cut.Find(".header-tab.is-active").TextContent.Should().Be("Toolbox history");
+        cut.FindAll(".setting-list, table.u-compact").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Couldn't read");
+    }
+
+    [Fact]
+    public async Task Operations_that_cannot_be_read_say_why_and_point_at_the_connection()
+    {
+        // The seeded solution has a tenant and no credentials, so the read is refused.
+        var (projectId, envId) = await SeedAsync();
+
+        var cut = Render(envId, "operations");
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().Contain("Couldn't read the operations from Business Central"));
+        cut.Find(".empty a.btn, .empty-state a.btn, a.btn[href$='tab=bc']").GetAttribute("href")
+            .Should().Be($"/solutions/{projectId}?tab=bc");
+    }
+
+    [Fact]
+    public async Task Someone_who_cannot_manage_the_solution_is_sent_from_operations_to_history()
+    {
+        var (_, envId) = await SeedAsync();
+        _db.OrgContext.CurrentUserId = ColleagueUserId;
+
+        var cut = Render(envId, "operations");
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().Contain("Operations are for people who manage this solution"));
+        cut.Find($"a[href='/environments/{envId}/history']").Should().NotBeNull();
     }
 
     [Fact]
