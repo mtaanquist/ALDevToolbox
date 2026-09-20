@@ -6,6 +6,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService Actions
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @inject ILogger<UpgradesPage> Log
 @using ALDevToolbox.Components.Shared
 @using static ALDevToolbox.Components.Shared.FleetRowState
@@ -226,13 +227,16 @@
                                 <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
                             </span>
                         </td>
-                        <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
-                        <td>
+                        @* The environment leads: the page is a list of environments, so the
+                           first link in a row opens the environment. The solution sits
+                           beside it and both stay put when the table scrolls sideways. *@
+                        <td class="upg-env">
                             <span class="cell-stack">
-                                <a class="cell-stack__main" href="@($"/environments/{row.EnvironmentId}")">@row.EnvironmentName</a>
+                                <a class="cell-stack__main" href="@($"/environments/{row.EnvironmentId}")" title="@row.EnvironmentName">@row.EnvironmentName</a>
                                 <span class="cell-stack__sub">@row.EnvironmentType</span>
                             </span>
                         </td>
+                        <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
                         @* Major.minor in both version columns so "27.5" and "27.6" can be
                            compared at a glance; the full build is on hover. *@
                         <td class="u-num" title="@row.Version">@ShortVersion(row.Version)</td>
@@ -334,8 +338,8 @@
                         @* The row's own classes, so its state bar and its ticked tint run
                            through the result: the two read as one block. *@
                         <tr class="is-subrow upg-result-row @RowClass(row, picked)" @key="@($"result-{row.EnvironmentId}")">
-                            <td colspan="3"></td>
-                            <td colspan="6">
+                            <td colspan="2"></td>
+                            <td colspan="7">
                                 <div class="upg-result">
                                     <div class="@result.CssClass">
                                         @if (result.Tone == "busy")
@@ -587,10 +591,60 @@
     /// </summary>
     private static string ViewValue(string type, bool waiting) => (waiting ? "1" : "0") + type;
 
-    private void OnViewChanged(ChangeEventArgs e)
+    private async Task OnViewChanged(ChangeEventArgs e)
     {
         var value = e.Value?.ToString() ?? string.Empty;
+        await RememberViewAsync(value);
         GoToFilters(type: value.Length > 1 ? value[1..] : string.Empty, waiting: value.StartsWith('1'));
+    }
+
+    // ── The view, remembered ────────────────────────────────────────────
+
+    /// <summary>
+    /// Where this browser keeps the last view picked. Whoever runs the upgrades looks at
+    /// the same slice every morning (production, usually), and picking it again each
+    /// visit is a chore. Kept in the browser rather than on the account: it is a habit
+    /// of the desk somebody works at, and it costs no table. The search box is not part
+    /// of it - a search is a question, not a habit.
+    /// </summary>
+    private const string ViewStorageKey = "aldt-upgrades-view";
+
+    private bool _viewRestored;
+
+    /// <summary>
+    /// A bare /upgrades opens on the remembered view. An address that already names a
+    /// filter is left alone: a link somebody sent shows what they meant it to show.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_viewRestored || _denied) return;
+        _viewRestored = true;
+        if (Query is not null || TypeFilter is not null || WaitingFilter is not null) return;
+
+        string? saved;
+        try
+        {
+            saved = await JS.InvokeAsync<string?>("localStorage.getItem", ViewStorageKey);
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException or TaskCanceledException)
+        {
+            return; // no storage, or no browser yet: the page simply opens on everything
+        }
+
+        if (string.IsNullOrEmpty(saved) || saved == ViewValue(string.Empty, false)) return;
+        GoToFilters(type: saved.Length > 1 ? saved[1..] : string.Empty, waiting: saved.StartsWith('1'));
+    }
+
+    private async Task RememberViewAsync(string view)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", ViewStorageKey, view);
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException or TaskCanceledException)
+        {
+            // Private window, blocked storage: the view still applies, it just isn't kept.
+        }
     }
 
     private void OnSearchInput(ChangeEventArgs e)
@@ -1273,8 +1327,8 @@
             }
         </th>
         <th class="data-table__col-state"><span class="u-sr">State</span></th>
+        <th scope="col" class="upg-env">Environment</th>
         <th scope="col" class="upg-customer">Solution</th>
-        <th scope="col">Environment</th>
         <th scope="col">Now on</th>
         <th scope="col">Next update</th>
         <th scope="col">Latest possible date</th>

@@ -503,6 +503,13 @@ that names the environment and says what the click does there:
   for those. The service reads the waiting list again first and refuses if Business Central
   now asks for an app that was not on the list the person agreed to. Business Central takes
   each prerequisite to the newest version the environment supports, not the minimum.
+  Both this and an upload leave a line in the environment's update history
+  (`oe_environment_upgrade_actions`, kinds `UpdateApp` and `UploadApp`, written already
+  `Sent` so the worker that fires booked actions never sees them): who asked, when, and
+  what moved alongside. While an update is on its way the row's button is disabled and
+  says so - from Business Central's own state on the installed app (`Updating`,
+  `UpdatePending`), and, for the minutes before it reports anything, from what the page
+  itself just asked for.
 - **Uploading an app** - one `.app` file another company built, for which there is no
   pipeline here. It goes straight to `pteInstall` and is never stored. Only "right away" and
   "in the update window" are offered (the two schedules Business Central allows for an app

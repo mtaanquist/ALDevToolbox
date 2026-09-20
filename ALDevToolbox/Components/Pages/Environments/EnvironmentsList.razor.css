@@ -1,0 +1,8 @@
+
+/* The environment is what the row is and what its first link opens, so it reads as
+   the link: the stacked cell's main line is ink by default, which left the solution
+   beside it looking like the only thing to click. */
+a.cell-stack__main {
+    color: var(--primary-ink);
+    font-weight: var(--fw-semibold);
+}

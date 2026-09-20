@@ -293,6 +293,24 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     [Fact]
+    public async Task An_app_business_central_is_already_updating_says_so_and_cannot_be_asked_for_again()
+    {
+        var (projectId, envId) = await SeedAsync();
+        var panel = Panel();
+        // Business Central's own word on the installed app is what survives a reload.
+        var updating = panel.InstalledApps.Select(a => a.AppId == CoreId ? a with { State = "Updating" } : a).ToList();
+        _panels.Set(projectId, envId, panel with { InstalledApps = updating });
+
+        var cut = Render(envId);
+
+        var core = cut.FindAll("table.u-compact tbody tr").Single(r => r.Children[1].TextContent == "Continia Core");
+        core.QuerySelector(".status-pill")!.TextContent.Should().Be("Updating");
+        var button = core.QuerySelector(".data-table__actions button")!;
+        button.TextContent.Trim().Should().Be("Updating...");
+        button.HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Installed_apps_say_where_each_came_from_and_the_filter_narrows_them()
     {
         var (projectId, envId) = await SeedAsync();

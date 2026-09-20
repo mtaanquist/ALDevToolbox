@@ -100,6 +100,16 @@ public enum UpgradeActionKind
 
     /// <summary>Start the update as soon as Business Central will take it, ignoring the environment's update window.</summary>
     RunNow,
+
+    /// <summary>
+    /// An AppSource app was updated from the environment's page. Never booked and never
+    /// swept by the worker: it is written already <c>Sent</c>, as a record that it was
+    /// asked for, by whom, and what moved with it (in <c>Outcome</c>).
+    /// </summary>
+    UpdateApp,
+
+    /// <summary>An extension package somebody was handed was uploaded to the environment. Recorded like <see cref="UpdateApp"/>.</summary>
+    UploadApp,
 }
 
 /// <summary>

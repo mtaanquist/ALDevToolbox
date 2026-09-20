@@ -1162,6 +1162,12 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
             operation = await _apps.UpdateAppAsync(env.Token, env.Family, env.Name, appId, offered.Version, useUpdateWindow,
                 installOrUpdateNeededDependencies: offered.Requirements.Count > 0, ct);
+
+            var alongside = offered.Requirements.Count == 0
+                ? string.Empty
+                : $" Along with {string.Join(", ", offered.Requirements.Select(r => r.Name))}.";
+            await RecordEnvironmentActionAsync(projectId, env.Id, UpgradeActionKind.UpdateApp,
+                $"{offered.Name} to {offered.Version}, {(useUpdateWindow ? "in the BC update window" : "right away")}.{alongside}", ct);
         }
         catch (BcApiException ex)
         {
@@ -1232,6 +1238,9 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             throw Validation("App", "Business Central didn't accept the app. " + ex.Message);
         }
 
+        await RecordEnvironmentActionAsync(projectId, env.Id, UpgradeActionKind.UploadApp,
+            $"{name}{(string.IsNullOrWhiteSpace(operation.TargetAppVersion) ? "" : $" (version {operation.TargetAppVersion})")}, {(useUpdateWindow ? "in the BC update window" : "right away")}.", ct);
+
         _panelCache.Invalidate(projectId, environmentId);
 
         _logger.LogInformation(
@@ -1239,6 +1248,41 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             _orgContext.CurrentUserId, name, appBytes.Length, env.Name, projectId, useUpdateWindow,
             operation.AppId, operation.TargetAppVersion, operation.Id);
         return operation;
+    }
+
+    /// <summary>
+    /// Puts a line in the environment's update history for something that was sent to
+    /// the customer's tenant there and then. Written already <c>Sent</c>, so the worker
+    /// that fires booked actions never sees it. The write to Business Central has
+    /// happened by now and cannot be taken back, so a failure to record it is logged and
+    /// swallowed: reporting the update as failed would be the bigger lie.
+    /// </summary>
+    private async Task RecordEnvironmentActionAsync(
+        int projectId, int environmentId, UpgradeActionKind kind, string outcome, CancellationToken ct)
+    {
+        try
+        {
+            var now = _clock.GetUtcNow().UtcDateTime;
+            _db.OeEnvironmentUpgradeActions.Add(new OeEnvironmentUpgradeAction
+            {
+                OrganizationId = RequireOrganizationId(),
+                ProjectId = projectId,
+                EnvironmentId = environmentId,
+                Kind = kind,
+                Status = UpgradeActionStatus.Sent,
+                RequestedByUserId = _orgContext.CurrentUserId,
+                RequestedBy = await AuditActor.ResolveAsync(_db, _orgContext.CurrentUserId, ct),
+                RequestedAt = now,
+                ExecuteAfter = now,
+                SentAt = now,
+                Outcome = outcome,
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Couldn't record {Kind} in the update history of environment {EnvironmentId}.", kind, environmentId);
+        }
     }
 
     /// <summary>

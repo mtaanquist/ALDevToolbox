@@ -120,6 +120,8 @@ else
     /// </summary>
     private static string Headline(UpgradeActionRow entry)
     {
+        if (entry.Kind == UpgradeActionKind.UpdateApp) return "Updated an AppSource app";
+        if (entry.Kind == UpgradeActionKind.UploadApp) return "Uploaded an app";
         if (entry.Kind == UpgradeActionKind.PushDateToLatest)
         {
             return entry.IsBooking

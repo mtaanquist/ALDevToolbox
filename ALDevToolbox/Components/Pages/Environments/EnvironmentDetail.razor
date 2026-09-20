@@ -448,10 +448,15 @@
                                 @foreach (var up in updatesShown)
                                 {
                                     var ready = up.Requirements.Count == 0;
-                                    var rowState = UpdateRowClass(up);
+                                    var progress = UpdateProgress(panel, up);
+                                    var rowState = progress is not null ? "is-running" : UpdateRowClass(up);
                                     <tr class="@rowState">
                                         <td class="data-table__col-state">
-                                            @if (ready)
+                                            @if (progress is not null)
+                                            {
+                                                <StatusPill Tone="@(progress == "Updating" ? "running" : "queued")">@progress</StatusPill>
+                                            }
+                                            else if (ready)
                                             {
                                                 <StatusPill Tone="success">Ready</StatusPill>
                                             }
@@ -482,12 +487,21 @@
                                             @* A waiting row updates too: Business Central brings
                                                the apps it waits for along, and the dialog lists
                                                them first so nothing moves that nobody agreed to. *@
+                                            @* Once an update is on its way the button says so and
+                                               stops working, for the app that was asked for and for
+                                               every app that moves with it - pressing it again would
+                                               only ask Business Central for the same thing twice. *@
                                             <button type="button" class="btn btn--sm"
-                                                    disabled="@_settingSaving" @onclick="() => UpdateAppAsync(up)"
+                                                    disabled="@(_settingSaving || progress is not null)" @onclick="() => UpdateAppAsync(up)"
                                                     aria-label="@(ready
                                                         ? $"Update {up.Name} to {up.Version}"
                                                         : $"Update {up.Name} to {up.Version}, along with the {up.Requirements.Count} it waits for")">
-                                                <span class="btn__label">@(ready ? "Update" : $"Update + {up.Requirements.Count}")</span>
+                                                <span class="btn__label">@(progress switch
+                                                {
+                                                    "Updating" => "Updating...",
+                                                    "Scheduled" => "Scheduled",
+                                                    _ => ready ? "Update" : $"Update + {up.Requirements.Count}",
+                                                })</span>
                                             </button>
                                         </td>
                                     </tr>
@@ -721,6 +735,7 @@
         _loaded = false;
         _panel = null;
         _panelError = null;
+        _startedUpdates.Clear(); // the page is reused from one environment to the next
         await LoadEnvironmentAsync();
         _loaded = true;
         if (_env is null) return;
@@ -943,6 +958,25 @@
         .ToList();
 
     /// <summary>The edge bar: green for an update that can go now, grey for one that waits on another.</summary>
+    /// <summary>
+    /// Apps this page has asked Business Central to update since it was opened, and
+    /// whether that was for the update window. Business Central's own word on an app
+    /// (below) is the better source and outlives the page; this covers the minutes
+    /// before it reports anything, which is exactly when a second press would happen.
+    /// </summary>
+    private readonly Dictionary<Guid, bool> _startedUpdates = new();
+
+    /// <summary>"Updating", "Scheduled", or null when nothing is on its way for this app.</summary>
+    private string? UpdateProgress(BcEnvironmentPanel panel, BcAvailableAppUpdate update)
+    {
+        var state = panel.InstalledApps.FirstOrDefault(a => a.AppId == update.AppId)?.State;
+        if (string.Equals(state, "Updating", StringComparison.OrdinalIgnoreCase)) return "Updating";
+        if (string.Equals(state, "UpdatePending", StringComparison.OrdinalIgnoreCase)) return "Scheduled";
+        return _startedUpdates.TryGetValue(update.AppId, out var inWindow)
+            ? (inWindow ? "Scheduled" : "Updating")
+            : null;
+    }
+
     private static string UpdateRowClass(BcAvailableAppUpdate update) =>
         update.Requirements.Count == 0 ? "is-published" : "is-queued";
 
@@ -1013,12 +1047,17 @@
 
         var inWindow = _updateInWindow;
         var alongside = update.Requirements.Where(r => r.AppId is not null).Select(r => r.AppId!.Value).ToList();
-        await RunSettingWriteAsync(UpdateBusyKey(update),
+        var started = await RunSettingWriteAsync(UpdateBusyKey(update),
             () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow, alongside),
             $"Couldn't update {update.Name}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
             () => inWindow
                 ? $"Business Central will update {what} in {Row.EnvironmentName}'s BC update window."
                 : $"Business Central has started updating {what}. Use Refresh in a few minutes to see it finish.");
+        if (started)
+        {
+            _startedUpdates[update.AppId] = inWindow;
+            foreach (var id in alongside) _startedUpdates[id] = inWindow;
+        }
     }
 
     /// <summary>The window's hours when Business Central reported them, so "when" is a time and not just a name.</summary>

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using ALDevToolbox.Components.Pages.Upgrades;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
@@ -37,6 +38,8 @@ public sealed class UpgradesPageTests : IDisposable
         var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("upgrades@example.com");
 
+        // The page asks the browser for the last view picked; by default it has none.
+        _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
@@ -131,6 +134,46 @@ public sealed class UpgradesPageTests : IDisposable
         // record twice (#807).
         headers.Should().Contain("Solution");
         headers.Should().NotContain("Customer");
+    }
+
+    [Fact]
+    public async Task The_environment_leads_the_row_and_the_first_link_opens_it()
+    {
+        await SeedOneEnvironmentAsync();
+
+        var cut = RenderWithOneRow();
+
+        var headers = cut.FindAll(".data-table thead th").Select(h => h.TextContent.Trim()).Where(h => h.Length > 0).ToList();
+        headers.IndexOf("Environment").Should().BeLessThan(headers.IndexOf("Solution"));
+        cut.Find(".data-table tbody tr a").GetAttribute("href").Should().StartWith("/environments/",
+            "a row in a list of environments opens the environment first");
+    }
+
+    [Fact]
+    public async Task A_bare_visit_opens_on_the_view_this_browser_picked_last()
+    {
+        await SeedOneEnvironmentAsync();
+        _ctx.JSInterop.Setup<string?>("localStorage.getItem", "aldt-upgrades-view").SetResult("0Production");
+        var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+
+        var cut = _ctx.Render<UpgradesPage>();
+
+        cut.WaitForAssertion(() => nav.Uri.Should().EndWith("/upgrades?type=Production"));
+    }
+
+    [Fact]
+    public async Task An_address_that_names_a_filter_outranks_the_remembered_view()
+    {
+        await SeedOneEnvironmentAsync();
+        _ctx.JSInterop.Setup<string?>("localStorage.getItem", "aldt-upgrades-view").SetResult("0Production");
+        var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameter("waiting", "1"));
+        var before = nav.Uri;
+
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table").Should().NotBeEmpty());
+
+        nav.Uri.Should().Be(before, "a link somebody sent shows what they meant it to show");
     }
 
     [Fact]
