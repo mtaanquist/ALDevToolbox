@@ -124,6 +124,15 @@ public class OeProject
     /// </summary>
     public string? VoiceAccountNumber { get; set; }
 
+    /// <summary>How to get in: VPN, jump host, who to ask. Prose, never credentials.</summary>
+    public string? AccessDescription { get; set; }
+
+    /// <summary>Where and how it is hosted, beyond the hosting type.</summary>
+    public string? HostingNotes { get; set; }
+
+    /// <summary>Whatever support should know that fits nowhere else.</summary>
+    public string? KnowledgeNotes { get; set; }
+
     /// <summary>The customer's Entra (AAD) tenant GUID — used for the OAuth token endpoint and to scope the admin API. Null until the connection is configured.</summary>
     public Guid? BcTenantId { get; set; }
 

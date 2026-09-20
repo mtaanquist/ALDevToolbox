@@ -1,8 +1,9 @@
 # Customer information on a Solution
 
-Status: **planned.** Nothing here is built yet. Slice 1 lands with this document; each
-section is labelled with the slice that will land it, and is rewritten to the present
-tense when it does.
+Status: **part shipped.** Slice 1 (hosting and the basics, #859) and slice 2 (getting in,
+contacts, who knows the customer, integrations) are built. Modules (slice 3) and the
+Solutions list's side panel (slice 4) are planned. Each section is labelled with its
+slice.
 
 ## Why
 
@@ -67,7 +68,7 @@ on-premises customers have one too. It stays the one `bc_tenant_id` column: the 
 Central tab owns it for an online Solution (changing it there resets the connection), and
 the Customer tab edits it for an on-premises one, where that tab is gone.
 
-### The Customer tab (slices 1-4)
+### The Customer tab (slices 1-3)
 
 One new tab on the Solution page, **Customer**, shown to everyone who can see the
 Solution, and opened directly with `?tab=customer`. In slice 1 it sits after Repositories
@@ -93,13 +94,28 @@ Sections, top to bottom:
    type (`Customer`, `HostingPartner`, `MicrosoftPartner`, `Internal`). A short list,
    one row each, edited in place with an **Add contact** button - not a grid.
 4. **Modules** (slice 3) - see below.
-5. **Who knows this customer** (slice 4) - `oe_project_people`: one of our users, a role
+5. **Who knows this customer** (slice 2) - `oe_project_people`: one of our users, a role
    (`Consultant`, `Developer`, `ProjectLeader`, `Architect`) and free-text areas
    ("finance, warehouse"). Separate from Teams on purpose: a team says who *may* change
    the Solution, this says who to *ask*.
-6. **Integrations** (slice 4) - `oe_project_integrations`: a name and a direction
+6. **Integrations** (slice 2) - `oe_project_integrations`: a name and a direction
    (`Inbound`, `Outbound`, `Both`).
-7. **Notes** (slice 2) - `knowledge_notes`, plain text, for what does not fit above.
+7. **Good to know** (slice 2) - `knowledge_notes`, plain text, for what does not fit
+   above. Shown and edited with Getting in: the same person writes all three at once.
+
+Contacts, people and integrations landed together as one slice rather than two: they are
+the same pattern three times (a short list, one editor open at a time, an Add button, a
+confirm on Remove), styled once in `app.css` as `.cust-list`.
+
+**One read for the tab.** The sections are sibling components on one circuit, so they
+share a `DbContext`, which allows one operation at a time. `GetAllAsync` reads the whole
+tab in sequence and each section is handed its part; a section reads for itself only
+after its own write. Letting five sections each load on first render is how "a second
+operation was started" happens (#741).
+
+**First run is one empty state, not five.** Until anything has been entered the tab shows
+only "Nothing about this customer yet" and its one button; the sections arrive with the
+first thing anyone saves.
 
 ### Modules (slice 3)
 
@@ -123,7 +139,7 @@ The Solutions list gains a module filter ("who has Document Capture?") in the sa
 slice; for online Solutions that needs a stored snapshot, refreshed by the nightly
 environment sweep, and the slice decides its shape then.
 
-### The Solutions list and its side panel (slice 5)
+### The Solutions list and its side panel (slice 4)
 
 The list stays narrow - Solution, hosting, version, owner, latest build - and the rest
 follows the selected row in a panel on the right, as the factboxes did in the AL

@@ -1,0 +1,189 @@
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@inject ProjectCustomerInfoService CustomerInfo
+@inject ILogger<CustomerIntegrationsSection> Log
+
+@* The other systems the customer's Business Central talks to - the first thing to rule
+   in or out when something stops arriving. *@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title">Integrations</h2>
+            <p class="card__sub">Other systems their Business Central exchanges data with.</p>
+        </div>
+        @if (CanManage && !_editing && _rows is { Count: > 0 })
+        {
+            <button type="button" class="btn btn--sm" @onclick="() => StartEditing(null)">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>Add integration</span>
+            </button>
+        }
+    </div>
+    @if (_rows is null)
+    {
+        <LoadingBlock Text="Loading integrations..." />
+    }
+    else
+    {
+        @if (_editing)
+        {
+            <form @onsubmit="SaveAsync">
+                <div class="card__body">
+                    <div class="form-grid">
+                        <section class="field">
+                            <label class="field__label" for="integration-name">Integrated with</label>
+                            <input id="integration-name" type="text" class="input" maxlength="100" required @ref="_firstField"
+                                   @bind="_name" disabled="@_saving" placeholder="e.g. Webshop orders, or the bank's payment files" />
+                            <FieldError Field="Name" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="integration-direction">Data goes</label>
+                            <SelectBox>
+                                <select id="integration-direction" class="select" @bind="_direction" disabled="@_saving">
+                                    @foreach (var option in Enum.GetValues<ProjectIntegrationDirection>())
+                                    {
+                                        <option value="@option">@DirectionText(option)</option>
+                                    }
+                                </select>
+                            </SelectBox>
+                        </section>
+                    </div>
+                    @if (_error is { } error)
+                    {
+                        <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+                    }
+                </div>
+                <div class="card__foot">
+                    <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
+                        <span class="btn__label">@(_editingId is null ? "Add integration" : "Save integration")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+                </div>
+            </form>
+        }
+        @if (!_editing && _error is { } listError)
+        {
+            <div class="card__body"><Alert Tone="AlertTone.Danger"><span>@listError</span></Alert></div>
+        }
+        @if (_rows.Count == 0 && !_editing)
+        {
+            <EmptyState Icon="plug" Title="No integrations listed" Quiet="true">
+                <Text>@(CanManage ? "List what their Business Central sends to or receives from, if anything." : "The solution's owner or an administrator can add them.")</Text>
+                <Action>
+                    @if (CanManage)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="() => StartEditing(null)">Add integration</button>
+                    }
+                </Action>
+            </EmptyState>
+        }
+        else if (_rows.Count > 0)
+        {
+            <ul class="cust-list">
+                @foreach (var row in _rows)
+                {
+                    <li class="cust-list__row" @key="row.Id">
+                        <span class="cust-list__main"><span class="cust-list__name">@row.Name</span></span>
+                        <span class="cust-list__detail"><span>@DirectionText(row.Direction)</span></span>
+                        @if (CanManage)
+                        {
+                            <span class="cust-list__actions">
+                                <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => StartEditing(row)"
+                                        aria-label="@($"Edit {row.Name}")">Edit</button>
+                                <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => RemoveAsync(row)"
+                                        aria-label="@($"Remove {row.Name}")">Remove</button>
+                            </span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    private List<CustomerIntegration>? _rows;
+    private bool _editing;
+    private int? _editingId;
+    private bool _saving;
+    private string? _error;
+    private Dictionary<string, string> _errors = new();
+    private ConfirmDialog? _confirm;
+    private ElementReference _firstField;
+    private bool _focusPending;
+
+    private string _name = string.Empty;
+    private ProjectIntegrationDirection _direction = ProjectIntegrationDirection.Both;
+
+    /// <summary>What the tab read for this section. The section re-reads for itself only after its own writes.</summary>
+    [Parameter, EditorRequired] public List<CustomerIntegration> Initial { get; set; } = default!;
+
+    protected override void OnParametersSet() => _rows ??= Initial;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending || !_editing) return;
+        _focusPending = false;
+        try { await _firstField.FocusAsync(); }
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException or Microsoft.JSInterop.JSDisconnectedException) { }
+    }
+
+    private void StartEditing(CustomerIntegration? row)
+    {
+        _editingId = row?.Id;
+        _name = row?.Name ?? string.Empty;
+        _direction = row?.Direction ?? ProjectIntegrationDirection.Both;
+        _errors = new();
+        _error = null;
+        _editing = true;
+        _focusPending = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await CustomerInfo.SaveIntegrationAsync(Id, _editingId, new CustomerIntegrationInput(_name, _direction));
+            _rows = await CustomerInfo.ListIntegrationsAsync(Id);
+            _editing = false;
+        }
+        catch (PlanValidationException ex) { _errors = new(ex.Errors); }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save an integration for project {ProjectId}.", Id);
+            _error = "Couldn't save the integration. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemoveAsync(CustomerIntegration row)
+    {
+        if (_confirm is null) return;
+        if (!await _confirm.OpenAsync($"Remove {row.Name}?", "It comes off this solution's list of integrations. Nothing in Business Central changes.", "Remove integration")) return;
+        try
+        {
+            await CustomerInfo.DeleteIntegrationAsync(Id, row.Id);
+            _rows = await CustomerInfo.ListIntegrationsAsync(Id);
+        }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+    }
+
+    internal static string DirectionText(ProjectIntegrationDirection direction) => direction switch
+    {
+        ProjectIntegrationDirection.Inbound => "Into Business Central",
+        ProjectIntegrationDirection.Outbound => "Out of Business Central",
+        ProjectIntegrationDirection.Both => "Both ways",
+        _ => direction.ToString(),
+    };
+}

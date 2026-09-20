@@ -1,0 +1,203 @@
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+@inject ProjectCustomerInfoService CustomerInfo
+@inject ILogger<CustomerPeopleSection> Log
+
+@* Which of us knows this customer, and what about. Not a team: a team says who may
+   change the solution, this says who to ask. *@
+
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title">Who knows this customer</h2>
+            <p class="card__sub">Colleagues to ask, and what each of them knows. This doesn't change who can open or edit the solution - that is the Access tab.</p>
+        </div>
+        @if (CanManage && !_editing && _rows is { Count: > 0 })
+        {
+            <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>Add a colleague</span>
+            </button>
+        }
+    </div>
+    @if (_rows is null)
+    {
+        <LoadingBlock Text="Loading colleagues..." />
+    }
+    else
+    {
+        @if (_editing)
+        {
+            <form @onsubmit="SaveAsync">
+                <div class="card__body">
+                    <div class="form-grid">
+                        <section class="field">
+                            <label class="field__label" for="person-user">Colleague</label>
+                            <SelectBox>
+                                <select id="person-user" class="select" @bind="_userId" disabled="@(_saving || _editingId is not null)">
+                                    <option value="">Choose a colleague...</option>
+                                    @foreach (var option in _users)
+                                    {
+                                        <option value="@option.UserId">@option.Name</option>
+                                    }
+                                </select>
+                            </SelectBox>
+                            <FieldError Field="UserId" Errors="_errors" />
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="person-role">Their role here</label>
+                            <SelectBox>
+                                <select id="person-role" class="select" @bind="_role" disabled="@_saving">
+                                    @foreach (var option in Enum.GetValues<ProjectPersonRole>())
+                                    {
+                                        <option value="@option">@RoleText(option)</option>
+                                    }
+                                </select>
+                            </SelectBox>
+                        </section>
+                        <section class="field">
+                            <label class="field__label" for="person-areas">What they know</label>
+                            <input id="person-areas" type="text" class="input" maxlength="250"
+                                   @bind="_areas" disabled="@_saving" placeholder="e.g. finance, warehouse, the EDI integration" />
+                            <FieldError Field="Areas" Errors="_errors" />
+                        </section>
+                    </div>
+                    @if (_error is { } error)
+                    {
+                        <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+                    }
+                </div>
+                <div class="card__foot">
+                    <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
+                        <span class="btn__label">@(_editingId is null ? "Add colleague" : "Save colleague")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+                </div>
+            </form>
+        }
+        @if (!_editing && _error is { } listError)
+        {
+            <div class="card__body"><Alert Tone="AlertTone.Danger"><span>@listError</span></Alert></div>
+        }
+        @if (_rows.Count == 0 && !_editing)
+        {
+            <EmptyState Icon="users" Title="Nobody is listed yet" Quiet="true">
+                <Text>@(CanManage ? "Add whoever knows this customer best, so support knows who to ask." : "The solution's owner or an administrator can add them.")</Text>
+                <Action>
+                    @if (CanManage)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="() => StartEditingAsync(null)">Add a colleague</button>
+                    }
+                </Action>
+            </EmptyState>
+        }
+        else if (_rows.Count > 0)
+        {
+            <ul class="cust-list">
+                @foreach (var row in _rows)
+                {
+                    <li class="cust-list__row" @key="row.Id">
+                        <span class="cust-list__main">
+                            <span class="cust-list__name">@row.Name</span>
+                            <span class="tag">@RoleText(row.Role)</span>
+                        </span>
+                        <span class="cust-list__detail">
+                            @if (row.Areas is { } areas)
+                            {
+                                <span>@areas</span>
+                            }
+                            <a href="@($"mailto:{row.Email}")">@row.Email</a>
+                        </span>
+                        @if (CanManage)
+                        {
+                            <span class="cust-list__actions">
+                                <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => StartEditingAsync(row)"
+                                        aria-label="@($"Edit {row.Name}")">Edit</button>
+                                <button type="button" class="btn btn--sm btn--ghost" disabled="@_editing" @onclick="() => RemoveAsync(row)"
+                                        aria-label="@($"Remove {row.Name}")">Remove</button>
+                            </span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+
+    private List<CustomerPerson>? _rows;
+    private List<CustomerPersonOption> _users = new();
+    private bool _editing;
+    private int? _editingId;
+    private bool _saving;
+    private string? _error;
+    private Dictionary<string, string> _errors = new();
+    private ConfirmDialog? _confirm;
+
+    private string _userId = string.Empty;
+    private ProjectPersonRole _role = ProjectPersonRole.Consultant;
+    private string _areas = string.Empty;
+
+    /// <summary>What the tab read for this section. The section re-reads for itself only after its own writes.</summary>
+    [Parameter, EditorRequired] public List<CustomerPerson> Initial { get; set; } = default!;
+
+    protected override void OnParametersSet() => _rows ??= Initial;
+
+    private async Task StartEditingAsync(CustomerPerson? row)
+    {
+        if (_users.Count == 0) _users = await CustomerInfo.ListAssignableUsersAsync();
+        _editingId = row?.Id;
+        _userId = row?.UserId.ToString() ?? string.Empty;
+        _role = row?.Role ?? ProjectPersonRole.Consultant;
+        _areas = row?.Areas ?? string.Empty;
+        _errors = new();
+        _error = null;
+        _editing = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _errors = new();
+        _error = null;
+        try
+        {
+            await CustomerInfo.SavePersonAsync(Id, _editingId,
+                new CustomerPersonInput(int.TryParse(_userId, out var userId) ? userId : null, _role, _areas));
+            _rows = await CustomerInfo.ListPeopleAsync(Id);
+            _editing = false;
+        }
+        catch (PlanValidationException ex) { _errors = new(ex.Errors); }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save a colleague for project {ProjectId}.", Id);
+            _error = "Couldn't save that. Try again in a moment.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemoveAsync(CustomerPerson row)
+    {
+        if (_confirm is null) return;
+        if (!await _confirm.OpenAsync($"Remove {row.Name}?", "They come off this list. Their access to the solution doesn't change.", "Remove from the list")) return;
+        try
+        {
+            await CustomerInfo.DeletePersonAsync(Id, row.Id);
+            _rows = await CustomerInfo.ListPeopleAsync(Id);
+        }
+        catch (ProjectAccessDeniedException ex) { _error = ex.Message; }
+    }
+
+    internal static string RoleText(ProjectPersonRole role) => role switch
+    {
+        ProjectPersonRole.ProjectLeader => "Project leader",
+        _ => role.ToString(),
+    };
+}

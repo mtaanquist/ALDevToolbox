@@ -44,6 +44,9 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<OeProject>
         entity.Property(e => e.UserExperience).HasColumnName("user_experience").HasConversion<string>().HasMaxLength(20);
         entity.Property(e => e.ClientUrl).HasColumnName("client_url").HasMaxLength(500);
         entity.Property(e => e.VoiceAccountNumber).HasColumnName("voice_account_number").HasMaxLength(30);
+        entity.Property(e => e.AccessDescription).HasColumnName("access_description").HasMaxLength(4000);
+        entity.Property(e => e.HostingNotes).HasColumnName("hosting_notes").HasMaxLength(4000);
+        entity.Property(e => e.KnowledgeNotes).HasColumnName("knowledge_notes").HasMaxLength(4000);
         entity.Ignore(e => e.IsOnPremises);
 
         // Business Central SaaS connection (delivery). See .design/saas-delivery.md.

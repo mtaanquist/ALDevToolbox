@@ -205,6 +205,10 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectSymbol> OeProjectSymbols => Set<OeProjectSymbol>();
     // Teams assigned to a project — the visibility grant. See .design/teams-and-visibility.md.
     public DbSet<OeProjectTeam> OeProjectTeams => Set<OeProjectTeam>();
+    // The Customer tab's hand-kept lists. See .design/solution-customer-info.md.
+    public DbSet<OeProjectContact> OeProjectContacts => Set<OeProjectContact>();
+    public DbSet<OeProjectPerson> OeProjectPeople => Set<OeProjectPerson>();
+    public DbSet<OeProjectIntegration> OeProjectIntegrations => Set<OeProjectIntegration>();
     // Artifacts tool — first-class builds split off Release (see .design/artifacts.md).
     public DbSet<OeProjectBuild> OeProjectBuilds => Set<OeProjectBuild>();
     public DbSet<OeProjectBuildRepoCommit> OeProjectBuildRepoCommits => Set<OeProjectBuildRepoCommit>();
@@ -327,6 +331,9 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectBuildResult>(modelBuilder);
         ScopeToOrganization<OeProjectSymbol>(modelBuilder);
         ScopeToOrganization<OeProjectTeam>(modelBuilder);
+        ScopeToOrganization<OeProjectContact>(modelBuilder);
+        ScopeToOrganization<OeProjectPerson>(modelBuilder);
+        ScopeToOrganization<OeProjectIntegration>(modelBuilder);
         ScopeToOrganization<OeProjectBuild>(modelBuilder);
         ScopeToOrganization<OeProjectBuildRepoCommit>(modelBuilder);
         ScopeToOrganization<OeProjectBuildCommit>(modelBuilder);
