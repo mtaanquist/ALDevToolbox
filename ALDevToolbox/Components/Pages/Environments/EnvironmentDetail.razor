@@ -1,4 +1,5 @@
 @page "/environments/{Id:int}"
+@page "/environments/{Id:int}/{OpenTab}"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
@@ -780,8 +781,8 @@
     private string? _settingError;
     private string? _settingDone;
 
-    /// <summary>Which tab to open on: "apps", "operations" or "history". Anything else is Overview.</summary>
-    [SupplyParameterFromQuery(Name = "tab")] public string? OpenTab { get; set; }
+    /// <summary>The tab in the address: "apps", "operations" or "history". Absent, or anything else, is Overview.</summary>
+    [Parameter] public string? OpenTab { get; set; }
 
     private enum Section { Overview, Apps, Operations, History }
     private Section _tab = Section.Overview;
@@ -807,7 +808,7 @@
 
     private string TabHref(Section section) => section == Section.Overview
         ? $"/environments/{Id}"
-        : $"/environments/{Id}?tab={section.ToString().ToLowerInvariant()}";
+        : $"/environments/{Id}/{section.ToString().ToLowerInvariant()}";
 
     /// <summary>The live panel when there is one to draw, else null and <see cref="LiveUnavailable"/> says why.</summary>
     private BcEnvironmentPanel? LivePanel => _canManage && _panelError is null ? _panel : null;

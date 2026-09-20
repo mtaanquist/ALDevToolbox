@@ -161,12 +161,7 @@ public sealed class EnvironmentDetailTests : IDisposable
 
     private IRenderedComponent<EnvironmentDetail> Render(int environmentId, string? tab = null)
     {
-        if (tab is not null)
-        {
-            var nav = _ctx.Services.GetRequiredService<NavigationManager>();
-            nav.NavigateTo(nav.GetUriWithQueryParameter("tab", tab));
-        }
-        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, environmentId));
+        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, environmentId).Add(c => c.OpenTab, tab));
         cut.WaitForAssertion(() => cut.FindAll(".loading-block").Should().BeEmpty());
         return cut;
     }
@@ -347,8 +342,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         cut.FindAll(".header-tab").Select(t => t.TextContent).Should().Equal("Overview", "Apps", "Operations", "Toolbox history");
         cut.Find(".header-tab.is-active").TextContent.Should().Be("Overview");
         cut.FindAll(".header-tab").Select(t => t.GetAttribute("href")).Should().Equal(
-            $"/environments/{envId}", $"/environments/{envId}?tab=apps",
-            $"/environments/{envId}?tab=operations", $"/environments/{envId}?tab=history");
+            $"/environments/{envId}", $"/environments/{envId}/apps",
+            $"/environments/{envId}/operations", $"/environments/{envId}/history");
         cut.FindAll(".setting-list").Should().NotBeEmpty("the settings live on Overview, beside the dates they move");
         cut.FindAll("table.u-compact").Should().BeEmpty("the app lists have their own tab");
         cut.Markup.Should().Contain("Version and update dates", "the numbers above the tabs are on every tab");
@@ -391,7 +386,7 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         cut.WaitForAssertion(() =>
             cut.Markup.Should().Contain("Operations are for people who manage this solution"));
-        cut.Find($"a[href='/environments/{envId}?tab=history']").Should().NotBeNull();
+        cut.Find($"a[href='/environments/{envId}/history']").Should().NotBeNull();
     }
 
     [Fact]
