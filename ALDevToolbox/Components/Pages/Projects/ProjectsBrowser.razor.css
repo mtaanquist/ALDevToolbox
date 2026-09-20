@@ -12,3 +12,15 @@
    there is nothing behind it for this viewer. */
 .projects__locked td { color: var(--ink-3); }
 .projects__locked td:first-child { color: var(--ink-4); }
+
+/* The customer summary beside the list. 280px wide, so everything wraps in full - a
+   phone number or an address cut off with an ellipsis is no use on a call. */
+.sol-rail { display: grid; gap: var(--space-3); }
+.sol-rail__name { overflow-wrap: anywhere; }
+.sol-rail__body { display: grid; gap: var(--space-3); }
+.sol-rail__value { overflow-wrap: anywhere; }
+.sol-rail__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sol-rail__item { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.sol-rail__strong { font-weight: var(--fw-semibold); color: var(--ink); }
+.sol-rail__version { font-family: var(--font-mono); font-size: var(--text-sm); }
+.sol-rail__foot { margin: 0; font-size: var(--text-sm); }

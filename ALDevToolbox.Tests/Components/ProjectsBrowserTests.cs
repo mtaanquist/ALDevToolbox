@@ -25,6 +25,14 @@ public sealed class ProjectsBrowserTests : IDisposable
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
 
+    private readonly Microsoft.AspNetCore.Http.HttpContextAccessor _http = new();
+
+    /// <summary>The page is a plain GET page and reads its address from the request.</summary>
+    private void RequestWith(string query) => _http.HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+    {
+        Request = { QueryString = new Microsoft.AspNetCore.Http.QueryString(query) },
+    };
+
     public ProjectsBrowserTests()
     {
         var auth = _ctx.AddAuthorization();
@@ -37,8 +45,8 @@ public sealed class ProjectsBrowserTests : IDisposable
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddScoped<CustomerModuleService>();
-        _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
-            new Microsoft.AspNetCore.Http.HttpContextAccessor());
+        _ctx.Services.AddScoped<ProjectCustomerInfoService>();
+        _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(_http);
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
@@ -178,5 +186,85 @@ public sealed class ProjectsBrowserTests : IDisposable
             });
             await db.SaveChangesAsync();
         }
+    }
+
+    // ── The customer summary beside the list (.design/solution-customer-info.md) ──
+
+    private async Task<int> DescribeAsync(string name)
+    {
+        await using var ctx = _db.NewContext();
+        var project = await ctx.OeProjects.SingleAsync(p => p.Name == name);
+        project.HostingType = ProjectHostingType.CustomerHardware;
+        project.BcVersion = "NAV 2018 CU12";
+        project.AccessDescription = "VPN, then remote desktop to CRONUS-BC01.";
+        ctx.OeProjectContacts.Add(new OeProjectContact
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Type = ProjectContactType.Customer,
+            Name = "Annette Hill", Phone = "+45 12 34 56 78", CreatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+        return project.Id;
+    }
+
+    [Fact]
+    public async Task The_list_says_where_each_customer_runs_and_keeps_the_rest_for_the_summary()
+    {
+        await SeedProjectAsync("CRONUS Norway", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        await DescribeAsync("CRONUS Norway");
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("thead th").Select(h => h.TextContent.Trim()).Should().Equal(
+                "Latest build", "Solution", "Hosted by", "BC version", "Latest build", "Owner", "Actions");
+            var cells = cut.Find("tbody tr").Children;
+            cells[2].TextContent.Should().Be("Customer's hardware");
+            cells[3].TextContent.Should().Be("NAV 2018 CU12");
+            cells[4].TextContent.Trim().Should().Be("Built for BC 26.0", "two bare versions side by side get read out wrong on a call");
+            cut.FindAll(".detail-body__aside").Should().BeEmpty("no column is reserved until a customer is chosen");
+            cut.Markup.Should().NotContain("Annette Hill");
+        });
+    }
+
+    [Fact]
+    public async Task Choosing_summary_opens_that_customers_essentials_beside_the_list_as_an_address()
+    {
+        await SeedProjectAsync("CRONUS Norway", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        var id = await DescribeAsync("CRONUS Norway");
+        RequestWith($"?q=cronus&selected={id}");
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tbody tr").ClassList.Should().Contain("is-selected");
+            var rail = cut.Find(".detail-body__aside");
+            rail.TextContent.Should().Contain("CRONUS Norway").And.Contain("VPN, then remote desktop")
+                .And.Contain("Annette Hill").And.Contain("The customer, on their own hardware");
+            rail.QuerySelector("a[href^='tel:']")!.GetAttribute("href").Should().Be("tel:+4512345678");
+            rail.QuerySelector("a[aria-label='Close customer info']")!.GetAttribute("href").Should().Be("/solutions?q=cronus",
+                "closing keeps the search the person had");
+            cut.Find($"a[aria-label='Customer info for CRONUS Norway']").GetAttribute("href").Should().Be($"/solutions?q=cronus&selected={id}");
+            rail.QuerySelectorAll("input, select, textarea").Should().BeEmpty("the summary never edits; the Customer tab does");
+        });
+    }
+
+    [Fact]
+    public async Task A_private_solution_the_viewer_is_not_on_cannot_be_summarised_by_putting_its_id_in_the_address()
+    {
+        await SeedProjectAsync("CRONUS Norway", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        var id = await DescribeAsync("CRONUS Norway");
+        await MakePrivateAsync("CRONUS Norway");
+        RequestWith($"?selected={id}");
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tbody tr.projects__locked").Should().NotBeNull();
+            cut.FindAll(".detail-body__aside").Should().BeEmpty();
+            cut.Markup.Should().NotContain("Annette Hill").And.NotContain("NAV 2018");
+        });
     }
 }

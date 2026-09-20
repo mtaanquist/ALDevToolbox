@@ -65,8 +65,26 @@
     }
     else
     {
-        @ChildContent
-        @Footer
+        @if (Rail is null)
+        {
+            @ChildContent
+            @Footer
+        }
+        else
+        {
+            @* The reference rail the detail frames have (.detail-body), beside a list:
+               sticky, 280px, and under the list below the width where those collapse.
+               A page opts in per render, so no column is reserved for nothing. *@
+            <div class="detail-body">
+                <div class="detail-body__main">
+                    @ChildContent
+                    @Footer
+                </div>
+                <aside class="detail-body__aside" aria-label="@RailLabel">
+                    @Rail
+                </aside>
+            </div>
+        }
     }
 
     @After
@@ -146,6 +164,13 @@
 
     /// <summary>Counts and the pager, under the populated list only.</summary>
     [Parameter] public RenderFragment? Footer { get; set; }
+
+    /// <summary>
+    /// Reference for whatever the list has selected, beside it. Null - the default, and
+    /// what a page passes when nothing is selected - keeps the list at full width.
+    /// </summary>
+    [Parameter] public RenderFragment? Rail { get; set; }
+    [Parameter] public string RailLabel { get; set; } = "Details";
 
     /// <summary>
     /// Sections that follow the list whatever state it is in - the admin Cookbook's
