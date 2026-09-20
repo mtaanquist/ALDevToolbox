@@ -221,4 +221,84 @@ public sealed class EnvironmentsListTests : IDisposable
         running.QuerySelectorAll(".cell-stack__sub").Last().TextContent.Should().Be("Nothing scheduled");
         running.TextContent.Should().NotContain("Running", "a healthy row spends no words on its state");
     }
+
+    // ── Storage: the environment's size, the customer's tenant against its allowance ──
+
+    private async Task SetStorageAsync(int projectId, long quotaKb, params (string Environment, long Kb)[] sizes)
+    {
+        await using var ctx = _db.NewContext();
+        var project = await ctx.OeProjects.SingleAsync(p => p.Id == projectId);
+        project.BcStorageQuotaKb = quotaKb;
+        project.BcStorageFetchedAt = DateTime.UtcNow;
+        foreach (var (environment, kb) in sizes)
+        {
+            (await ctx.OeProjectEnvironments.SingleAsync(e => e.ProjectId == projectId && e.Name == environment)).BcDatabaseKb = kb;
+        }
+        await ctx.SaveChangesAsync();
+    }
+
+    private const long Gb = 1024 * 1024;
+
+    [Fact]
+    public async Task Each_row_shows_its_own_size_and_the_customers_tenant_against_its_allowance()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", DateTime.UtcNow, DateTime.UtcNow);
+        await SeedEnvironmentAsync(id, "Sandbox", "Sandbox", "Active", DateTime.UtcNow, DateTime.UtcNow);
+        await SetStorageAsync(id, 80 * Gb, ("Production", 50 * Gb), ("Sandbox", 18 * Gb));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var cells = cut.FindAll(".env-storage");
+            cells.Select(c => c.QuerySelector(".cell-stack__main")!.TextContent).Should().BeEquivalentTo(["50.0 GB", "18.0 GB"]);
+            cells.Should().AllSatisfy(c =>
+            {
+                c.QuerySelector(".cell-stack__sub")!.TextContent.Should().Be("Customer at 85% of 80.0 GB",
+                    "the allowance is the tenant's, so both rows carry the same 68 of 80");
+                c.QuerySelector("progress")!.ClassList.Should().Contain("env-storage__bar--warn");
+            });
+        });
+    }
+
+    [Fact]
+    public async Task A_customer_over_their_allowance_gets_a_full_red_bar_and_is_told_so_in_words()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", DateTime.UtcNow, DateTime.UtcNow);
+        await SetStorageAsync(id, 80 * Gb, ("Production", 92 * Gb));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var cell = cut.Find(".env-storage");
+            cell.QuerySelector(".cell-stack__sub")!.TextContent.Should().Be("Customer at 115% of 80.0 GB - over its allowance");
+            var bar = cell.QuerySelector("progress")!;
+            bar.ClassList.Should().Contain("env-storage__bar--danger");
+            bar.GetAttribute("value").Should().Be("1", "a bar cannot be more than full; the words carry the rest");
+        });
+        cut.FindAll(".pill-tab, .seg__btn, [role=tab]").Single(t => t.TextContent.Contains("Needs attention"))
+            .TextContent.Should().Contain("1", "over the allowance is a conversation somebody has to have");
+    }
+
+    [Fact]
+    public async Task Storage_nobody_has_read_yet_is_a_dash_and_a_roomy_tenant_gets_no_colour()
+    {
+        var unread = await SeedSolutionAsync("CRONUS Norway");
+        await SeedEnvironmentAsync(unread, "Production", "Production", "Active", DateTime.UtcNow, DateTime.UtcNow);
+        var roomy = await SeedSolutionAsync("CRONUS Sweden");
+        await SeedEnvironmentAsync(roomy, "Production", "Production", "Active", DateTime.UtcNow, DateTime.UtcNow);
+        await SetStorageAsync(roomy, 80 * Gb, ("Production", 800 * 1024));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var cell = cut.FindAll(".env-storage").Should().ContainSingle().Subject;
+            cell.QuerySelector(".cell-stack__main")!.TextContent.Should().Be("800 MB");
+            cell.QuerySelector("progress")!.ClassList.Should().NotContain(c => c.StartsWith("env-storage__bar--"));
+        });
+    }
 }

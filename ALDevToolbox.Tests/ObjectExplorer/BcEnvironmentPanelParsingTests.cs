@@ -126,6 +126,41 @@ public sealed class BcEnvironmentPanelParsingTests
     }
 
     [Fact]
+    public void ParseTenantStorage_reads_each_size_and_the_tenants_total_and_skips_a_size_bc_could_not_work_out()
+    {
+        const string used = """
+            { "value": [
+              { "environmentType": "Production", "environmentName": "Production", "applicationFamily": "BusinessCentral", "databaseStorageInKilobytes": 52428800 },
+              { "environmentType": "Sandbox", "environmentName": "Sandbox", "applicationFamily": "BusinessCentral", "databaseStorageInKilobytes": -1 },
+              { "environmentType": "Sandbox", "environmentName": "Big", "applicationFamily": "BusinessCentral", "databaseStorageInKilobytes": 5000000000 }
+            ] }
+            """;
+        const string quotas = """
+            { "environmentsCount": { "production": 1, "sandbox": 3 },
+              "storageInKilobytes": { "default": 83886080, "userLicenses": 0, "additionalCapacity": 0, "total": 83886080 } }
+            """;
+
+        var storage = BcAdminClient.ParseTenantStorage(used, quotas);
+
+        storage.AllowedKilobytes.Should().Be(83886080);
+        storage.DatabaseKilobytesByEnvironment.Should().BeEquivalentTo(new Dictionary<string, long>
+        {
+            ["Production"] = 52428800,
+            ["Big"] = 5000000000, // past 32 bits: the API moved this to 64 in v2.26
+        });
+        storage.DatabaseKilobytesByEnvironment.ContainsKey("production").Should().BeTrue("environment names are matched without regard to case");
+    }
+
+    [Fact]
+    public void ParseTenantStorage_reads_nothing_useful_as_nothing_rather_than_as_zero()
+    {
+        var storage = BcAdminClient.ParseTenantStorage("{}", "{}");
+
+        storage.AllowedKilobytes.Should().BeNull("an allowance of zero would paint every customer red");
+        storage.DatabaseKilobytesByEnvironment.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ParseEnvironmentOperations_reads_an_answer_with_no_list_as_empty()
     {
         BcAdminClient.ParseEnvironmentOperations("{}").Should().BeEmpty();

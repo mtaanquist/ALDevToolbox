@@ -725,6 +725,8 @@ public sealed class DeliveryServiceTests : IDisposable
             => throw new NotSupportedException();
         public Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default)
+            => throw new NotSupportedException();
         public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default) => throw new NotSupportedException();

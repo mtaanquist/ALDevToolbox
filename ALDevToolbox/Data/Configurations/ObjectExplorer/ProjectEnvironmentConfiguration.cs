@@ -31,6 +31,7 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.BcNextUpdateLatestDate).HasColumnName("bc_next_update_latest_date");
         entity.Property(e => e.BcNextUpdateIgnoresWindow).HasColumnName("bc_next_update_ignores_window");
         entity.Property(e => e.BcNextUpdateFetchedAt).HasColumnName("bc_next_update_fetched_at");
+        entity.Property(e => e.BcDatabaseKb).HasColumnName("bc_database_kb");
 
         // Fetched detail from the Admin Center API — all nullable, all refreshed by a
         // Refresh, none of them user config. Lengths are generous because the values

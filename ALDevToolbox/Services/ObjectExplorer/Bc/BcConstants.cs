@@ -107,6 +107,14 @@ internal static class BcConstants
     public static string EnvironmentOperationsUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/operations";
 
+    /// <summary>Database size of every environment in the tenant, in one call.</summary>
+    public const string AdminUsedStorageUrl =
+        $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/environments/usedstorage";
+
+    /// <summary>What the tenant is allowed: storage and environment counts.</summary>
+    public const string AdminQuotasUrl =
+        $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/environments/quotas";
+
     /// <summary>The tenant-wide list of time zones the update-window write accepts.</summary>
     public const string AdminTimezonesUrl =
         $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/settings/timezones";

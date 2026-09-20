@@ -6,3 +6,15 @@ a.cell-stack__main {
     color: var(--primary-ink);
     font-weight: var(--fw-semibold);
 }
+
+/* Storage: the environment's size, then the customer's whole tenant against its allowance.
+   The bar is the design system's .progress, toned amber from 80% and red at or over the
+   allowance - Business Central lets a tenant go over, so red is a state, not a ceiling. */
+.env-storage { min-width: 11rem; }
+.env-storage__bar { height: 6px; margin: 2px 0; }
+.env-storage__bar--warn::-webkit-progress-value { background: var(--warning); }
+.env-storage__bar--warn::-moz-progress-bar { background: var(--warning); }
+.env-storage__bar--danger::-webkit-progress-value { background: var(--danger); }
+.env-storage__bar--danger::-moz-progress-bar { background: var(--danger); }
+.env-storage__note--warn { color: var(--warning-text); }
+.env-storage__note--danger { color: var(--danger-text); font-weight: var(--fw-semibold); }

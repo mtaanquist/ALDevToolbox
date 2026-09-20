@@ -135,6 +135,9 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public Func<string, IReadOnlyList<BcEnvironmentOperation>> OnOperations { get; set; } = _ => Array.Empty<BcEnvironmentOperation>();
         public Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => Task.FromResult(OnOperations(environmentName));
+        public Func<BcTenantStorage> OnStorage { get; set; } = () => new BcTenantStorage(new Dictionary<string, long>(), null);
+        public Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default)
+            => Task.FromResult(OnStorage());
         public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => Task.FromResult(OnEnvironmentUpdates(environmentName));
     }
@@ -927,6 +930,48 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         row.BcNextUpdateVersion.Should().Be("10.0",
             "10.0 is newer than 9.9, and an unavailable version has no date to schedule");
         row.BcNextUpdateFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_refresh_mirrors_each_environments_size_and_the_tenants_allowance()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnStorage = () => new BcTenantStorage(new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["production"] = 52428800 }, 83886080),
+        };
+
+        var row = await RefreshAndReadRowAsync(id, admin);
+
+        row.BcDatabaseKb.Should().Be(52428800);
+        await using var verify = _db.NewContext();
+        var project = await verify.OeProjects.AsNoTracking().SingleAsync(p => p.Id == id);
+        project.BcStorageQuotaKb.Should().Be(83886080);
+        project.BcStorageFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Storage_business_central_refuses_to_report_leaves_the_last_figures_and_the_rest_of_the_refresh_alone()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnStorage = () => new BcTenantStorage(new Dictionary<string, long> { ["Production"] = 1000 }, 5000),
+            OnEnvironmentUpdates = _ => new[] { Update("27.6", selected: true, selectedAt: DateTimeOffset.UtcNow) },
+        };
+        await RefreshAndReadRowAsync(id, admin);
+
+        admin.OnStorage = () => throw new BcApiException(HttpStatusCode.Forbidden, "denied");
+        var row = await RefreshAndReadRowAsync(id, admin);
+
+        row.BcDatabaseKb.Should().Be(1000, "a failed read costs the freshness, never the figures");
+        row.BcNextUpdateVersion.Should().Be("27.6", "and it does not take the other mirrors down with it");
     }
 
     [Fact]

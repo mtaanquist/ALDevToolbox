@@ -248,6 +248,8 @@ internal sealed class UpgradeActionTestFixture : IDisposable
 
         public Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default)
+            => throw new NotSupportedException();
         public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
             string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => Task.FromResult(OnUpdates());
