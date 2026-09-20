@@ -2,6 +2,7 @@
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @inject ProjectCustomerInfoService CustomerInfo
+@using Microsoft.JSInterop
 @inject ILogger<ProjectDetailCustomer> Log
 
 @*
@@ -40,14 +41,14 @@
 }
 else if (_editing)
 {
-    <div class="card">
+    <form class="card" @onsubmit="SaveAsync">
         <div class="card__body">
             <div class="form-grid">
                 <section class="field">
-                    <label class="field__label" for="cust-hosting">Hosting</label>
+                    <label class="field__label" for="cust-hosting">Hosted by</label>
                     <SelectBox style="max-width: 320px">
-                        <select id="cust-hosting" class="select" @bind="_edit.Hosting" disabled="@_saving">
-                            <option value="">Not said yet</option>
+                        <select id="cust-hosting" class="select" @ref="_firstField" @bind="_edit.Hosting" disabled="@_saving">
+                            <option value="">Not recorded</option>
                             @foreach (var option in Enum.GetValues<ProjectHostingType>())
                             {
                                 <option value="@option">@HostingText(option)</option>
@@ -55,7 +56,10 @@ else if (_editing)
                         </select>
                     </SelectBox>
                     <FieldError Field="HostingType" Errors="_errors" />
-                    <small class="field__hint">Anything other than Business Central online is on-premises here: the solution keeps its repositories and builds, and loses the Business Central tab, environments, upgrades and releases, which only work online.</small>
+                    @if (EditIsOnPremises)
+                    {
+                        <small class="field__hint">On-premises. Environments, upgrades and releases only work with Business Central online, so this solution won't have them. Repositories and builds are unaffected.</small>
+                    }
                 </section>
                 <section class="field">
                     <label class="field__label" for="cust-version">Version</label>
@@ -68,7 +72,7 @@ else if (_editing)
                     <label class="field__label" for="cust-licence">Licence</label>
                     <SelectBox style="max-width: 320px">
                         <select id="cust-licence" class="select" @bind="_edit.Licence" disabled="@_saving">
-                            <option value="">Not said yet</option>
+                            <option value="">Not recorded</option>
                             @foreach (var option in Enum.GetValues<ProjectLicenseType>())
                             {
                                 <option value="@option">@LicenceText(option)</option>
@@ -77,19 +81,20 @@ else if (_editing)
                     </SelectBox>
                 </section>
                 <section class="field">
-                    <label class="field__label" for="cust-experience">User experience</label>
+                    <label class="field__label" for="cust-experience">Experience</label>
                     <SelectBox style="max-width: 320px">
                         <select id="cust-experience" class="select" @bind="_edit.Experience" disabled="@_saving">
-                            <option value="">Not said yet</option>
+                            <option value="">Not recorded</option>
                             @foreach (var option in Enum.GetValues<ProjectUserExperience>())
                             {
                                 <option value="@option">@option</option>
                             }
                         </select>
                     </SelectBox>
+                    <small class="field__hint">Essential or Premium, as on the customer's Company Information page.</small>
                 </section>
                 <section class="field">
-                    <label class="field__label" for="cust-url">Address</label>
+                    <label class="field__label" for="cust-url">Business Central address</label>
                     <input id="cust-url" type="url" class="input" maxlength="@ProjectCustomerInfoService.ClientUrlMaxLength"
                            @bind="_edit.Url" disabled="@_saving" placeholder="e.g. https://bc.cronus.example/BC250" />
                     <FieldError Field="ClientUrl" Errors="_errors" />
@@ -103,18 +108,24 @@ else if (_editing)
                     <FieldError Field="VoiceAccountNumber" Errors="_errors" />
                     <small class="field__hint">Microsoft's number for the customer's on-premises licence, shown as Voice ID in the licence file. Worth keeping after a move online.</small>
                 </section>
-                @if (EditIsOnPremises)
-                {
-                    <section class="field">
-                        <label class="field__label" for="cust-tenant">Microsoft tenant ID</label>
-                        @* pattern mirrors the Guid.TryParse in ProjectCustomerInfoService. *@
-                        <input id="cust-tenant" type="text" class="input" style="max-width: 420px"
-                               pattern="[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
-                               @bind="_edit.Tenant" disabled="@_saving" placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
-                        <FieldError Field="TenantId" Errors="_errors" />
-                        <small class="field__hint">Optional. The customer's Microsoft 365 tenant, if they have one.</small>
-                    </section>
-                }
+                <section class="field">
+                    <label class="field__label" for="cust-tenant">Microsoft tenant ID</label>
+                    @* pattern mirrors the Guid.TryParse in ProjectCustomerInfoService. *@
+                    <input id="cust-tenant" type="text" class="input" style="max-width: 420px"
+                           pattern="[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}" title="A tenant ID looks like 11111111-2222-3333-4444-555555555555"
+                           @bind="_edit.Tenant" disabled="@(_saving || !EditIsOnPremises)" placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
+                    <FieldError Field="TenantId" Errors="_errors" />
+                    <small class="field__hint">
+                        @if (EditIsOnPremises)
+                        {
+                            <text>Optional. The customer's Microsoft 365 tenant, if they have one.</text>
+                        }
+                        else
+                        {
+                            <text>For a customer on Business Central online this is set on the solution's Business Central tab.</text>
+                        }
+                    </small>
+                </section>
             </div>
             @if (_error is { } error)
             {
@@ -122,12 +133,12 @@ else if (_editing)
             }
         </div>
         <div class="card__foot">
-            <button type="button" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving" @onclick="SaveAsync">
+            <button type="submit" class="btn @(_saving ? "btn--loading" : "")" disabled="@_saving">
                 <span class="btn__label">Save customer details</span>
             </button>
-            <button type="button" class="btn" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
+            <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="() => _editing = false">Cancel</button>
         </div>
-    </div>
+    </form>
 }
 else if (_basics.IsEmpty)
 {
@@ -157,17 +168,17 @@ else
     <div class="card">
         <div class="card__body">
             <div class="kv-grid cust__grid">
-                <span class="meta-item"><span class="meta-item__label">Hosting</span><span class="meta-item__value">@(_basics.HostingType is { } h ? HostingText(h) : "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Hosted by</span><span class="meta-item__value">@(_basics.HostingType is { } h ? HostingText(h) : "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Version</span><span class="meta-item__value">@(_basics.BcVersion ?? "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Licence</span><span class="meta-item__value">@(_basics.LicenseType is { } l ? LicenceText(l) : "—")</span></span>
-                <span class="meta-item"><span class="meta-item__label">User experience</span><span class="meta-item__value">@(_basics.UserExperience?.ToString() ?? "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Experience</span><span class="meta-item__value">@(_basics.UserExperience?.ToString() ?? "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Voice account number</span><span class="meta-item__value meta-item__value--mono">@(_basics.VoiceAccountNumber ?? "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Microsoft tenant ID</span><span class="meta-item__value meta-item__value--mono">@(_basics.TenantId?.ToString("D") ?? "—")</span></span>
             </div>
             @if (_basics.ClientUrl is { } url)
             {
                 <p class="meta-item cust__url">
-                    <span class="meta-item__label">Address</span>
+                    <span class="meta-item__label">Business Central address</span>
                     <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
                 </p>
             }
@@ -189,6 +200,18 @@ else
     private string? _done;
     private Dictionary<string, string> _errors = new();
     private readonly EditModel _edit = new();
+
+    /// <summary>Focused when the editor opens: at rollout somebody types in a hundred of these.</summary>
+    private ElementReference _firstField;
+    private bool _focusPending;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending || !_editing) return;
+        _focusPending = false;
+        try { await _firstField.FocusAsync(); }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException) { }
+    }
 
     private sealed class EditModel
     {
@@ -223,6 +246,7 @@ else
         _error = null;
         _done = null;
         _editing = true;
+        _focusPending = true;
     }
 
     private async Task SaveAsync()
@@ -264,10 +288,10 @@ else
 
     internal static string HostingText(ProjectHostingType hosting) => hosting switch
     {
-        ProjectHostingType.MicrosoftCloud => "Business Central online",
-        ProjectHostingType.OurCloud => "Our hosting",
+        ProjectHostingType.MicrosoftCloud => "Microsoft (Business Central online)",
+        ProjectHostingType.OurCloud => "Us",
         ProjectHostingType.HostingPartner => "A hosting partner",
-        ProjectHostingType.CustomerHardware => "The customer's own hardware",
+        ProjectHostingType.CustomerHardware => "The customer, on their own hardware",
         _ => hosting.ToString(),
     };
 

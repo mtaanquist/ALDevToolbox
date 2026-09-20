@@ -94,23 +94,28 @@ public sealed class ProjectDetailCustomerTests : IDisposable
 
         var cut = Render(id, canManage: false);
 
-        cut.Markup.Should().Contain("The customer's own hardware").And.Contain("NAV 2018 CU12");
+        cut.Markup.Should().Contain("The customer, on their own hardware").And.Contain("NAV 2018 CU12");
         cut.FindAll("button").Should().BeEmpty();
     }
 
     [Fact]
-    public async Task The_tenant_id_is_only_asked_for_once_the_hosting_is_on_premises()
+    public async Task The_tenant_id_is_only_editable_once_the_hosting_is_on_premises()
     {
         var id = await SeedAsync();
         var cut = Render(id);
         cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Add customer details").Click());
 
         cut.WaitForAssertion(() => cut.Find("#cust-hosting").Should().NotBeNull());
-        cut.FindAll("#cust-tenant").Should().BeEmpty("an online solution's tenant is set on the Business Central tab");
+        cut.Find("#cust-tenant").HasAttribute("disabled").Should().BeTrue("an online solution's tenant is set on the Business Central tab");
+        cut.Markup.Should().NotContain("On-premises.", "the consequence is only said once it applies");
 
         cut.WaitForAssertion(() => cut.Find("#cust-hosting").Change(ProjectHostingType.OurCloud.ToString()));
 
-        cut.WaitForAssertion(() => cut.FindAll("#cust-tenant").Should().HaveCount(1));
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#cust-tenant").HasAttribute("disabled").Should().BeFalse();
+            cut.Markup.Should().Contain("On-premises.");
+        });
     }
 
     [Fact]
@@ -124,12 +129,12 @@ public sealed class ProjectDetailCustomerTests : IDisposable
         cut.WaitForAssertion(() => cut.Find("#cust-version").Change("BC 25.3"));
         cut.WaitForAssertion(() => cut.Find("#cust-hosting").Change(ProjectHostingType.MicrosoftCloud.ToString()));
 
-        cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save customer details").Click());
+        cut.WaitForAssertion(() => cut.Find("form").Submit());
 
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("input, select").Should().BeEmpty();
-            cut.Markup.Should().Contain("BC 25.3").And.Contain("Business Central online").And.Contain("Customer details saved.");
+            cut.Markup.Should().Contain("BC 25.3").And.Contain("Microsoft (Business Central online)").And.Contain("Customer details saved.");
         });
         saved.Should().BeTrue("the page decides which tabs exist from the hosting");
     }
@@ -142,7 +147,7 @@ public sealed class ProjectDetailCustomerTests : IDisposable
         cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Add customer details").Click());
         cut.WaitForAssertion(() => cut.Find("#cust-url").Change("bc.cronus.example"));
 
-        cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save customer details").Click());
+        cut.WaitForAssertion(() => cut.Find("form").Submit());
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("starting with https://"));
         cut.FindAll("#cust-url").Should().HaveCount(1);
