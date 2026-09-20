@@ -386,6 +386,7 @@
 
 .upg-scroll .data-table__col-check,
 .upg-scroll .data-table__col-state,
+.upg-scroll .upg-env,
 .upg-scroll .upg-customer {
     position: sticky;
     z-index: 1;
@@ -395,8 +396,25 @@
 .upg-scroll .data-table__col-check { left: 0; }
 .upg-scroll .data-table__col-state { left: 2.25rem; }
 
-.upg-scroll .upg-customer {
+/* The environment leads and the solution follows it, both pinned. The environment
+   column has a fixed width because the solution's offset has to be a number; a name
+   longer than that is cut with an ellipsis and is whole on hover and on its own page. */
+.upg-scroll .upg-env {
     left: 4.5rem;
+    width: 11rem;
+    min-width: 11rem;
+    max-width: 11rem;
+}
+
+.upg-scroll .upg-env .cell-stack__main {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.upg-scroll .upg-customer {
+    left: 15.5rem;
     white-space: nowrap;
     border-right: 1px solid var(--border);
 }
@@ -405,6 +423,7 @@
    end of a ticked row white while the rest of it is tinted. */
 .upg-scroll tr.is-selected .data-table__col-check,
 .upg-scroll tr.is-selected .data-table__col-state,
+.upg-scroll tr.is-selected .upg-env,
 .upg-scroll tr.is-selected .upg-customer {
     background: var(--primary-weak);
 }
@@ -413,6 +432,7 @@
    otherwise paint it as a body cell - and outranks the body cells it passes. */
 .upg-scroll thead .data-table__col-check,
 .upg-scroll thead .data-table__col-state,
+.upg-scroll thead .upg-env,
 .upg-scroll thead .upg-customer {
     background: var(--surface-sunken);
     z-index: 2;
@@ -478,4 +498,12 @@
 
 .upg-scroll tr:has(+ tr.upg-result-row) td {
     border-bottom: 0;
+}
+
+/* The environment is what the row is and what its first link opens, so it reads as
+   the link: the stacked cell's main line is ink by default, which left the solution
+   beside it looking like the only thing to click. */
+a.cell-stack__main {
+    color: var(--primary-ink);
+    font-weight: var(--fw-semibold);
 }

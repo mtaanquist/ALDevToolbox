@@ -1223,6 +1223,14 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         apps.Updated.Should().Be((WaitingAppId, "28.5.0.1", true));
         apps.UpdatedWithDependencies.Should().BeTrue();
+
+        // And it is on the environment's update history, with what moved alongside.
+        await using var read = _db.NewContext();
+        var entry = await read.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.EnvironmentId == envId);
+        entry.Kind.Should().Be(UpgradeActionKind.UpdateApp);
+        entry.Status.Should().Be(UpgradeActionStatus.Sent, "a record, never something for the worker to fire");
+        entry.Outcome.Should().Contain("Continia Core to 28.5.0.1").And.Contain("BC update window")
+            .And.Contain("Continia System Application").And.Contain("Continia Connector App");
     }
 
     [Fact]
@@ -1261,6 +1269,10 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         apps.Installed.Should().Be(("Partner_Thing_1.0.0.0.app", 3, schedule, BcSyncMode.Add, false),
             "the path is dropped, the sync mode is never Force sync, and dependencies are never pulled along");
+        await using var read = _db.NewContext();
+        var entry = await read.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.EnvironmentId == envId);
+        entry.Kind.Should().Be(UpgradeActionKind.UploadApp);
+        entry.Outcome.Should().Contain("Partner_Thing_1.0.0.0.app");
         _panelCache.Get(projectId, envId).Should().BeNull();
     }
 

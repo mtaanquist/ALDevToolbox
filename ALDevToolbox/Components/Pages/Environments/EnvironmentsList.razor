@@ -105,7 +105,7 @@
             <thead>
                 <tr>
                     <th class="data-table__col-state"><span class="u-sr">State</span></th>
-                    <th>Solution</th><th>Environment</th><th>Now on</th><th>Next update</th><th>Last checked</th><th class="data-table__actions">Actions</th>
+                    <th>Environment</th><th>Solution</th><th>Now on</th><th>Next update</th><th>Last checked</th><th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
             <tbody><TableSkeletonRows Columns="6" StateColumn="true" /></tbody>
@@ -217,8 +217,8 @@
             <thead>
                 <tr>
                     <th class="data-table__col-state" scope="col"><span class="u-sr">State</span></th>
-                    <th scope="col">Solution</th>
                     <th scope="col">Environment</th>
+                    <th scope="col">Solution</th>
                     <th scope="col">Now on</th>
                     <th scope="col">Next update</th>
                     <th scope="col">Last checked</th>
@@ -241,13 +241,15 @@
                                 <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
                             </span>
                         </td>
-                        <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
+                        @* The environment leads: this is a list of environments, so the
+                           first link in a row opens the environment, not its solution. *@
                         <td>
                             <span class="cell-stack">
                                 <a class="cell-stack__main" href="@($"/environments/{row.EnvironmentId}")">@row.EnvironmentName</a>
                                 <span class="cell-stack__sub">@row.EnvironmentType</span>
                             </span>
                         </td>
+                        <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
                         <td class="u-num">@(row.Version ?? "—")</td>
                         <td>
                             <span class="cell-stack">
