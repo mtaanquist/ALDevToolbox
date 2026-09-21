@@ -135,6 +135,13 @@ its own markup (its groups collapse, nest and carry active states) and a test fa
 the two ever disagree about which pages exist. For the same reason Go to is **not capped**:
 it is the browsable list of tools, which the empty query already shows whole.
 
+Go to also breaks ties by **sidebar order, not by name**, which is the one place it
+departs from the ranking below. Alphabetically, `trans` puts "Translation memory" above
+"Translator" - so the three letters a consultant types for the tool in their sidebar land
+them on the admin page that curates it. The sidebar's order is editorial (tools first,
+then the pages that administer them) and it gets that pair, and the four like it
+(Templates, Cookbook, Object Explorer, Audit log), right by construction.
+
 Releases and Recipes search **names and titles only**, never objects, source or recipe
 bodies - those tables are large and Object Explorer already has a search built for them.
 A later version may add a "Search for '...' in Object Explorer" row that carries the
@@ -214,13 +221,14 @@ storage is unavailable the palette simply shows Go to.
 ## States
 
 The list pane always shows exactly one of: recents and Go to (empty query), results,
-"Nothing matches '...'" with a line pointing at the Solutions list, or "Search is not
-available right now" when the request fails. The last two never stack - a failed request
+"No search results for '...'" when the search came back with nothing, or "Search is not
+available right now" when the request failed. The last two never stack - a failed request
 has already explained the silence, so saying nothing matched on top of it would be a
-second sentence about the same thing. Either way the closest tool is still offered as a
-row, so the palette never ends on a dead end. While a request is in flight the previous
-results stay put - no spinner flicker on every keystroke, and the selected row keeps its
-place when the new ones arrive.
+second sentence about the same thing. Either way the closest page is still offered as a
+row under Go to, so the palette never ends on a dead end - which is also why the sentence
+says "no search results" rather than "nothing matches": something below it plainly did.
+While a request is in flight the previous results stay put - no spinner flicker on every
+keystroke, and the selected row keeps its place when the new ones arrive.
 
 Keyboard: Up/Down move, Enter opens, Ctrl/Cmd+Enter opens in a new tab, Esc closes. The
 dialog is a labelled `role="dialog"` with a combobox/listbox pattern, focus is trapped

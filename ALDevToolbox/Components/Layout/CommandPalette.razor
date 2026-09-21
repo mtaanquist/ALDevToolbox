@@ -45,10 +45,19 @@
                                autocomplete="off" autocapitalize="off" spellcheck="false"
                                aria-autocomplete="list" aria-expanded="false" aria-controls="cmdp-list"
                                placeholder="Search or jump to..." />
-                        <kbd class="kbd">Esc</kbd>
+                        @* A real button, not a decorative key cap. It sits where a
+                           close control belongs and looks pressable, and at phone
+                           width - where the keyboard hints below are hidden and
+                           there is no Esc key to press - it is the way out. *@
+                        <button type="button" class="cmdp__close" data-cmdp-close aria-label="Close">
+                            <span class="kbd cmdp__close-key" aria-hidden="true">Esc</span>
+                            <span class="cmdp__close-x" aria-hidden="true"><Icon Name="x" Width="16" Height="16" /></span>
+                        </button>
                     </div>
 
-                    <div id="cmdp-list" class="cmdp__list" role="listbox" aria-label="Results"></div>
+                    @* Not "Results": with nothing typed this list is the app's
+                       page index, and that is what a screen reader should hear. *@
+                    <div id="cmdp-list" class="cmdp__list" role="listbox" aria-label="Search results and pages"></div>
 
                     <div class="cmdp__foot">
                         <span class="kbd-hint"><kbd class="kbd">&uarr;</kbd><kbd class="kbd">&darr;</kbd>
@@ -126,16 +135,19 @@
             @* The two things the list says when it has nothing to show. The
                script fills the <span> with what was typed; it never builds a
                sentence of its own. *@
+            @* "No search results", not "nothing matches": a page from the list
+               below is offered right underneath, and a flat "nothing matches"
+               above something that plainly did match reads as a bug. *@
             <template data-palette-state="no-results">
                 <div class="cmdp__state">
-                    <p class="cmdp__state-title">Nothing matches "<span data-cmdp-query></span>".</p>
-                    <p class="cmdp__state-text">Try a customer's short name, or open a tool below.</p>
+                    <p class="cmdp__state-title">No search results for "<span data-cmdp-query></span>".</p>
+                    <p class="cmdp__state-text">Check the spelling, or go to a page instead.</p>
                 </div>
             </template>
             <template data-palette-state="unavailable">
                 <div class="cmdp__state">
                     <p class="cmdp__state-title">Search is not available right now.</p>
-                    <p class="cmdp__state-text">You can still jump to a tool below. Try searching again in a moment.</p>
+                    <p class="cmdp__state-text">You can still go to any page below. Try searching again in a moment.</p>
                 </div>
             </template>
 

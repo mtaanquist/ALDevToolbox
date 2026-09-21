@@ -147,8 +147,13 @@
 
     /**
      * The destinations matching `query`, best tier first and ties broken by
-     * name. An empty query keeps the sidebar's own order instead - that list is
-     * something to read, not something that was ranked.
+     * sidebar order. Alphabetical would be the obvious tie-break and is wrong
+     * here: "trans" is a prefix of both "Translation memory" and "Translator",
+     * and by name the admin page wins, so typing three letters and pressing
+     * Enter lands a consultant on a page they did not want. The sidebar's order
+     * is a real editorial order - tools first, then the authoring pages - and
+     * respecting it puts the tool above the page that administers it every
+     * time. An empty query keeps that order too.
      * @param {string} query @returns {HTMLAnchorElement[]}
      */
     function matchDestinations(query) {
@@ -160,9 +165,9 @@
         for (let i = 0; i < source.length; i++) {
             const row = source[i];
             const points = score(fold(attr(row, "data-search")), fold(attr(row, "data-title")), termList);
-            if (points > 0) hits.push({ row: row, points: points, title: attr(row, "data-title") });
+            if (points > 0) hits.push({ row: row, points: points, order: i });
         }
-        hits.sort(function (a, b) { return b.points - a.points || a.title.localeCompare(b.title); });
+        hits.sort(function (a, b) { return b.points - a.points || a.order - b.order; });
         return hits.map(function (hit) { return clone(hit.row); });
     }
 

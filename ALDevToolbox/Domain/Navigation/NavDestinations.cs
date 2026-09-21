@@ -193,7 +193,10 @@ public static class NavDestinations
 
         // ---- Reachable from the shell, but not from the sidebar ----
         new("Account", "/account", "user", "Account", Gate: NavGate.SignedIn),
-        new("Connect an assistant", "/docs/mcp", "book-open", "Docs"),
+        // "How to" rather than "Connect an assistant": the sidebar already has an
+        // MCP entry that is where you connect one, and two rows carrying the same
+        // three words in a different order say nothing about which is which.
+        new("How to connect an assistant", "/docs/mcp", "book-open", "Docs"),
     ];
 
     /// <summary>
