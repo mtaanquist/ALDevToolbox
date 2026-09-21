@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -157,11 +158,7 @@ public sealed class DiffToolInlineTests
 
     private static string Root()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = RepoRoot.Directory;
         return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 }

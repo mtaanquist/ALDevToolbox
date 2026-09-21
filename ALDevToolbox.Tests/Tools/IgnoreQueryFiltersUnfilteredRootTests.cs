@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Tools;
 
@@ -202,11 +203,7 @@ public sealed class IgnoreQueryFiltersUnfilteredRootTests
 
     private static string RepoRoot()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = ALDevToolbox.Tests.Infrastructure.RepoRoot.Directory;
         return dir?.FullName ?? throw new InvalidOperationException("Could not locate the repository root.");
     }
 }

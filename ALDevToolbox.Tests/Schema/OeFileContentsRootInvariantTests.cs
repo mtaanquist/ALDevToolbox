@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Schema;
 
@@ -73,17 +74,5 @@ public sealed class OeFileContentsRootInvariantTests
         string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.Ordinal);
 
     /// <summary>Walks up from the test binaries to the repo root (the folder holding the .slnx).</summary>
-    private static string? FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-            {
-                return dir.FullName;
-            }
-            dir = dir.Parent;
-        }
-        return null;
-    }
+    private static string? FindRepoRoot() => RepoRoot.Directory.FullName;
 }

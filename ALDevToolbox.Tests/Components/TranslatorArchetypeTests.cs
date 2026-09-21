@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Components.Shared;
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Components;
 
@@ -361,13 +362,9 @@ public sealed class TranslatorArchetypeTests
 
     private static string Read(string relative)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = RepoRoot.Directory;
 
-        dir.Should().NotBeNull("could not locate repo root (looking for ALDevToolbox.slnx)");
+        dir.Should().NotBeNull("could not locate repo root");
         return File.ReadAllText(Path.Combine(dir!.FullName, relative.Replace('/', Path.DirectorySeparatorChar)));
     }
 }

@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using ALDevToolbox.Services;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Icons;
 
@@ -108,13 +109,9 @@ public sealed class IconCatalogTests
         // Walk up from the test binary until we find the repo root marker, then
         // descend into the app's Components folder. Works for both `dotnet test`
         // (bin/Debug/net10.0) and IDE runners.
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = RepoRoot.Directory;
 
-        dir.Should().NotBeNull("could not locate repo root (looking for ALDevToolbox.slnx)");
+        dir.Should().NotBeNull("could not locate repo root");
         var components = Path.Combine(dir!.FullName, "ALDevToolbox", "Components");
         Directory.Exists(components).Should().BeTrue("expected Components folder at {0}", components);
         return components;

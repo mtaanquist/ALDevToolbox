@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -95,13 +96,9 @@ public sealed class StylesheetLoadOrderTests
 
     private static string Root()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = RepoRoot.Directory;
 
-        dir.Should().NotBeNull("could not locate repo root (looking for ALDevToolbox.slnx)");
+        dir.Should().NotBeNull("could not locate repo root");
         return dir!.FullName;
     }
 }
