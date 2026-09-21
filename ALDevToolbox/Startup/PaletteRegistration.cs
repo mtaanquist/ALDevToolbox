@@ -26,6 +26,7 @@ public static class PaletteRegistration
         services.AddScoped<PaletteSearchService>();
         services.AddScoped<IPaletteSource, SolutionPaletteSource>();
         services.AddScoped<IPaletteSource, EnvironmentPaletteSource>();
+        services.AddScoped<IPaletteSource, RecipePaletteSource>();
         return services;
     }
 }

@@ -115,6 +115,22 @@ public abstract class PaletteSourceVisibilityTestBase : IDisposable
     protected virtual string VisibleQuery => VisibleName;
 
     /// <summary>
+    /// Whether this source's rows belong to a solution. Almost all of them do,
+    /// and for those the Private-solution case below is the whole point of the
+    /// harness.
+    ///
+    /// <para>A source whose rows hang off no solution at all - recipes are
+    /// org-scoped and belong to the organisation, not to a customer - has
+    /// nothing for that case to assert: the row the harness seeds under the
+    /// Private solution's name is one every member of the organisation may open,
+    /// so "it did not come back" would be a false claim about the fence. Such a
+    /// source says so here and the case reports as skipped, which is visible in
+    /// the run; the cross-organisation case and the gate case still apply and
+    /// still have to pass.</para>
+    /// </summary>
+    protected virtual bool RowsBelongToSolutions => true;
+
+    /// <summary>
     /// Callers this source must answer nothing for. An anonymous principal is
     /// always in the list - a request with no cookie has no organisation, so a
     /// source that answers one is reading across every tenant at once. A source
@@ -157,6 +173,9 @@ public abstract class PaletteSourceVisibilityTestBase : IDisposable
     [Fact]
     public async Task A_private_solution_the_caller_is_not_on_never_leaks()
     {
+        Assert.SkipUnless(RowsBelongToSolutions,
+            "this source's rows hang off no solution, so no solution's visibility can leak through them");
+
         await SeedWorldAsync();
 
         // Searched by its exact name and by its short name, because those are
