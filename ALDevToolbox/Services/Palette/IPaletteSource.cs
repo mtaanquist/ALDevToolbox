@@ -87,10 +87,10 @@ public static class PaletteGroupOrder
 /// <summary>
 /// One row a source offers, before ranking has decided whether it matched.
 ///
-/// <para>The searched fields are <see cref="Title"/>, <see cref="ShortName"/>
-/// and <see cref="Subtitle"/> — matching runs across all three, so an
-/// environment whose subtitle is its solution's name is found by typing the
-/// customer and the environment together (<c>con prod</c>).</para>
+/// <para>The searched fields are <see cref="Title"/>, <see cref="ShortName"/>,
+/// <see cref="Subtitle"/> and <see cref="SearchOnly"/> — matching runs across
+/// all four, so an environment whose subtitle is its solution's name is found by
+/// typing the customer and the environment together (<c>con prod</c>).</para>
 /// </summary>
 /// <param name="Kind">
 /// Which <c>&lt;template data-palette-row="..."&gt;</c> the browser clones for
@@ -112,9 +112,26 @@ public static class PaletteGroupOrder
 /// short name). Searched, and an <em>exact</em> match on it is what lifts a row
 /// above every group as the palette's single top hit.
 /// </param>
+/// <param name="SearchOnly">
+/// Text this row can be <em>found</em> by but that is never shown and never
+/// leaves the server: <see cref="PaletteResultItem"/> does not carry it, so it
+/// cannot reach the browser even by accident.
+///
+/// <para>It exists for the fields support types mid-call that a result must not
+/// print back — a customer's Voice account number, their Business Central tenant
+/// id. Ranking only matches what is in a searched field, so without this the
+/// subtitle would have to carry the value to be findable by it. The row still
+/// says <em>which</em> field matched in its subtitle, so nothing arrives
+/// unexplained.</para>
+///
+/// <para><b>Not a place to put personal data.</b> A contact's name or company
+/// may be matched on and named; a phone number or an email address is neither
+/// searched nor stored here. See <c>.design/command-palette.md</c>.</para>
+/// </param>
 public sealed record PaletteCandidate(
     string Kind,
     string Title,
     string? Subtitle,
     string Href,
-    string? ShortName = null);
+    string? ShortName = null,
+    string? SearchOnly = null);
