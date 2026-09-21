@@ -28,7 +28,7 @@ public sealed class BuildInfoTests
 
         info.Should().NotBeNull();
         info!.Version.Should().Be("6.1.0");
-        info.ReleaseUrl.Should().Be("https://github.com/mtaanquist/aldevtoolbox/releases/tag/v6.1.0");
+        info.ReleaseUrl.Should().Be("https://github.com/mtaanquist/al-workbench/releases/tag/v6.1.0");
         info.ReleaseDateDisplay.Should().Be("24 August 2026");
         info.HoverTitle.Should().Be("Released 24 August 2026 - release notes");
     }
