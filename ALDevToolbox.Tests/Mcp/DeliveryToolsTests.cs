@@ -113,7 +113,16 @@ public sealed class DeliveryToolsTests : IDisposable
             seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
         }
 
-        // A non-owner, non-admin user can't release this ownerless project's builds.
+        // A non-owner, non-admin user can't release this ownerless project's builds -
+        // once the project is narrowed. A Public solution is managed by everyone in the
+        // organisation, so there is nobody it would refuse.
+        await using (var narrow = _db.NewContext())
+        {
+            var project = await narrow.OeProjects.SingleAsync(p => p.Id == seed.ProjectId);
+            project.Visibility = ProjectVisibility.ReadOnly;
+            await narrow.SaveChangesAsync();
+        }
+
         _db.OrgContext.IsSiteAdmin = false;
         _db.OrgContext.CurrentUserId = 999;
 

@@ -21,10 +21,14 @@ namespace ALDevToolbox.Tests.Components;
 /// user is an ops engineer who would otherwise open the customer's admin centre.
 ///
 /// <para>Two readings share the page and the tests keep them apart. The head, the meta
-/// row and the Updates card are our own mirror: anyone who can see the solution gets
-/// them. Apps and Environment settings are live, with the customer's credentials, and
-/// are for people who manage the solution. The live half is served here from the panel
-/// cache, so Business Central is never reached - the doubles throw if it is.</para>
+/// row and the Updates card are our own mirror; Apps, Operations, Sessions and the
+/// settings' values are live, with the customer's credentials. Both halves are reads,
+/// so both follow the solution's visibility, and what acts on the customer's tenant
+/// needs managing it. The colleague in these tests reads a <b>Read-only</b> solution,
+/// which is the level where those two answers differ: a Public solution is managed by
+/// everyone in the organisation, so nobody is a reader-only on one.
+/// The live half is served here from the panel cache, so Business Central is never
+/// reached - the doubles throw if it is.</para>
 /// </summary>
 public sealed class EnvironmentDetailTests : IDisposable
 {
@@ -355,7 +359,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     [Fact]
     public async Task Someone_who_can_see_the_solution_but_not_manage_it_is_not_offered_a_copy()
     {
-        var (_, envId) = await SeedAsync();
+        var (_, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 
         var cut = Render(envId);
@@ -592,17 +596,27 @@ public sealed class EnvironmentDetailTests : IDisposable
             .Should().Be($"/solutions/{projectId}?tab=bc");
     }
 
+    /// <summary>
+    /// What Business Central has been doing to the environment is a read, so a colleague
+    /// who cannot manage the solution gets it too - they reach the same connection error
+    /// the owner does rather than a card telling them to join a team. The way out of that error is
+    /// the solution's Business Central tab, which is a manager's, so they are told who to
+    /// ask instead of handed a button that goes nowhere they can follow.
+    /// </summary>
     [Fact]
-    public async Task Someone_who_cannot_manage_the_solution_is_sent_from_operations_to_history()
+    public async Task A_colleague_reads_the_operations_of_a_solution_they_cannot_manage()
     {
-        var (_, envId) = await SeedAsync();
+        var (_, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 
         var cut = Render(envId, "operations");
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Operations are for people who manage this solution"));
-        cut.Find($"a[href='/environments/{envId}/history']").Should().NotBeNull();
+            cut.Markup.Should().Contain("Couldn't read the operations from Business Central"));
+        cut.Markup.Should().NotContain("add you to one of its teams");
+        cut.FindAll("a.btn[href$='tab=bc']").Should().BeEmpty();
+        cut.Find(".empty-state__text").TextContent.Should()
+            .Contain("Ask the solution's owner or an administrator to check its Business Central connection.");
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────
@@ -802,18 +816,24 @@ public sealed class EnvironmentDetailTests : IDisposable
         _admin.Reads.Should().Be(0, "the prerender must never reach for the customer's tenant");
     }
 
+    /// <summary>
+    /// Who is signed in is a read, so a colleague who only reads the solution sees it.
+    /// Ending one of those sessions signs somebody out of the customer's system, so the
+    /// column of buttons is not there for them.
+    /// </summary>
     [Fact]
-    public async Task Someone_who_cannot_manage_the_solution_is_told_who_can()
+    public async Task A_colleague_sees_who_is_signed_in_but_gets_no_way_to_end_a_session()
     {
-        var (projectId, envId) = await SeedAsync();
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         await SeedCredentialsAsync(projectId);
         _db.OrgContext.CurrentUserId = ColleagueUserId;
+        _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
 
         var cut = Render(envId, "sessions");
 
-        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should()
-            .Be("Only people who manage this solution can see who is signed in"));
-        _admin.Reads.Should().Be(0, "nothing was read with the customer's credentials");
+        cut.WaitForAssertion(() => cut.Find("tbody tr").TextContent.Should().Contain("ola@cronus.example"));
+        cut.FindAll("tbody .data-table__actions").Should().BeEmpty("ending a session is a write");
+        cut.FindAll("button.btn--danger").Should().BeEmpty();
     }
 
     /// <summary>
@@ -939,21 +959,70 @@ public sealed class EnvironmentDetailTests : IDisposable
             "nothing on this page is the one thing to do; every action is an outline button");
     }
 
+    /// <summary>
+    /// A colleague who only reads the solution reads everything the owner reads, and changes
+    /// none of it: the settings are values rather than controls, the warning that they
+    /// write to the customer's tenant is for the people who can, the version row is a
+    /// control and nothing else so it goes, and Refresh - the one read that makes the
+    /// tenant answer again - is not offered.
+    /// </summary>
     [Fact]
-    public async Task Someone_who_can_see_the_solution_but_not_manage_it_gets_the_mirror_and_not_the_live_half()
+    public async Task A_colleague_reads_the_live_half_and_gets_no_control_over_it()
     {
-        var (_, envId) = await SeedAsync();
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
+        _panels.Set(projectId, envId, Panel());
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 
         var cut = Render(envId);
 
         cut.Find("h1.detail-head__title").TextContent.Should().Be("Production");
-        cut.FindAll(".kv-grid").Should().HaveCount(1);
-        cut.Find(".empty-state__title").TextContent.Should()
-            .Be("Apps and settings are for people who manage this solution");
-        cut.FindAll(".setting-list").Should().BeEmpty();
+        cut.FindAll(".setting-list .setting__name").Select(n => n.TextContent).Should().Equal(
+            "AppSource apps update cadence", "Access with Microsoft 365 licences");
+        cut.FindAll(".setting-list select").Should().BeEmpty("a colleague reads the settings, not writes them");
+        cut.FindAll(".setting--danger").Should().BeEmpty();
+        cut.FindAll(".alert--warn").Should().BeEmpty();
         cut.FindAll(".freshness button").Should().BeEmpty(
-            "Refresh reads the customer's tenant, which this person may not do");
+            "a forced re-read spends the customer's connection, which this person may not do");
+    }
+
+    /// <summary>
+    /// The Updates card says "None announced" when nothing is coming, which is a fact.
+    /// When Business Central refused to say what is coming, it is a guess - and it is the
+    /// guess somebody reads out to a colleague. A manager meets that refusal on the
+    /// setting row the card links down to; a reader has no such row, so the card says it.
+    /// </summary>
+    [Fact]
+    public async Task A_colleague_is_told_when_business_central_would_not_name_the_versions()
+    {
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
+        _panels.Set(projectId, envId, Panel() with
+        {
+            EnvironmentUpdates = [],
+            EnvironmentUpdatesError = "Business Central refused: no admin access.",
+        });
+        _db.OrgContext.CurrentUserId = ColleagueUserId;
+
+        var cut = Render(envId);
+
+        cut.Find(".kv-grid").Should().NotBeNull();
+        cut.Markup.Should().Contain("Couldn't read the versions this environment is being offered");
+        cut.Markup.Should().Contain("Business Central refused: no admin access.");
+    }
+
+    /// <summary>Apps is a read like the rest; the buttons that act on them are not.</summary>
+    [Fact]
+    public async Task A_colleague_reads_the_apps_tab_without_its_actions()
+    {
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
+        _panels.Set(projectId, envId, Panel());
+        _db.OrgContext.CurrentUserId = ColleagueUserId;
+
+        var cut = Render(envId, "apps");
+
+        cut.Markup.Should().Contain("CRONUS Sales Extension");
+        cut.Markup.Should().Contain("Continia Core");
+        cut.FindAll(".data-table__actions").Should().BeEmpty("every action on an app writes to the customer's tenant");
+        cut.Markup.Should().NotContain("Upload an app");
     }
 
     [Fact]

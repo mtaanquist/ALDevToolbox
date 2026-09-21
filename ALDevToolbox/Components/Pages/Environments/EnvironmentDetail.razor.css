@@ -32,6 +32,16 @@
 }
 
 
+/* A setting somebody may read but not change. It sits where the control would be,
+   so it has to read as a stated value rather than as an input that failed to draw:
+   the label's own weight and ink, not body text. */
+.env-detail__value {
+    font-size: var(--text-base);
+    font-weight: var(--fw-medium);
+    color: var(--ink);
+}
+
+
 /* The UTC equivalent of a local scheduled time, as a second line under it. */
 .env-detail__utc {
     display: block;

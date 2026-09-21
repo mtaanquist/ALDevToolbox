@@ -346,13 +346,65 @@ public sealed class ProjectAccessTests : IDisposable
         (await CanManageAsAsync(projectId, OwnerUserId)).Should().BeTrue("the owner always manages");
         (await CanManageAsAsync(projectId, AdminUserId)).Should().BeTrue("an org Admin always manages");
         (await CanManageAsAsync(projectId, PlainUserId, siteAdmin: true)).Should().BeTrue("a SiteAdmin always manages");
-        (await CanManageAsAsync(projectId, PlainUserId)).Should().BeFalse("a plain user never manages");
-        (await CanManageAsAsync(projectId, OtherTeamUserId)).Should().BeFalse("a team that isn't assigned grants nothing");
 
-        // The one row the visibility level moves: an assigned team grants manage
-        // only once the project is actually assigned to that team.
-        (await CanManageAsAsync(projectId, TeamMemberUserId))
-            .Should().Be(visibility != ProjectVisibility.Public);
+        // Public is open both ways, so everyone manages it; the two narrower levels
+        // reserve writing for the teams, and being on an unassigned team is the same
+        // as being on none.
+        var openToEveryone = visibility == ProjectVisibility.Public;
+        (await CanManageAsAsync(projectId, PlainUserId)).Should().Be(openToEveryone);
+        (await CanManageAsAsync(projectId, OtherTeamUserId)).Should().Be(openToEveryone);
+
+        // An assigned team grants manage at the levels where manage is not already
+        // everyone's - which is what a team is for.
+        (await CanManageAsAsync(projectId, TeamMemberUserId)).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The two carve-outs that keep "Public means everyone manages it" from being a
+    /// blanket grant: ending the solution, and acting on the customer's own tenant.
+    /// Neither follows from managing it, at any level.
+    /// </summary>
+    [Fact]
+    public async Task A_colleague_manages_a_public_project_but_cannot_delete_it_or_schedule_its_updates()
+    {
+        var projectId = await SeedProjectAsync();
+        ActAs(PlainUserId);
+
+        await using (var ctx = _db.NewContext())
+        {
+            (await Svc(ctx).CanManageAsync(projectId)).Should().BeTrue("Public is open both ways");
+            (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId))
+                .Should().BeFalse("the update flag comes through an assigned team, never from manage");
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx).SoftDeleteProjectAsync(projectId);
+            await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        }
+
+        await using (var verify = _db.NewContext())
+        {
+            (await verify.OeProjects.AsNoTracking().FirstAsync(p => p.Id == projectId))
+                .DeletedAt.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// The level that closes writing is Read-only, and it has to actually close it -
+    /// otherwise the ladder has no middle rung.
+    /// </summary>
+    [Fact]
+    public async Task A_colleague_does_not_manage_a_read_only_project()
+    {
+        var projectId = await SeedProjectAsync();
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.ReadOnly, teamId);
+
+        ActAs(PlainUserId);
+        await using var ctx = _db.NewContext();
+        (await Svc(ctx).CanManageAsync(projectId)).Should().BeFalse();
+        (await Access(ctx).CanViewAsync(projectId)).Should().BeTrue("Read-only still reads to everyone");
     }
 
     [Fact]

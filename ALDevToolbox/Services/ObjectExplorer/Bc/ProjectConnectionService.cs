@@ -472,7 +472,9 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// <summary>
     /// Everything the environment panel shows, fetched live: installed apps, available
     /// Marketplace app updates, scheduled per-tenant installs, and the platform updates
-    /// coming to the environment. Access-gated.
+    /// coming to the environment. Readable by anyone who may see the solution; a
+    /// <paramref name="forceRefresh"/> is a manager's call, because it is the one that
+    /// makes the customer's tenant answer again.
     /// <para>
     /// <b>Cached for <see cref="BcPanelCache.Ttl"/>.</b> These are four reads against
     /// Business Central, and re-issuing them every time a consultant expands a row is
@@ -498,7 +500,10 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("Environment", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+        // Looking is the view axis; making the customer's tenant answer again is not.
+        await EnsureGateAsync(
+            forceRefresh ? EnvironmentGate.Manage : EnvironmentGate.View,
+            projectId, project.CreatedByUserId, ct);
 
         // Only now, with the organisation and access checks passed, may we look at the
         // cache: it is keyed by ids alone and knows nothing about who is allowed to read
@@ -680,6 +685,14 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         /// <summary>Owner / org Admin / assigned-team manager — everything on the BC tab.</summary>
         Manage,
 
+        /// <summary>
+        /// Anyone who may see the solution — which on a Public or Read-only solution is
+        /// everyone in the organisation, and on a Private one its teams. For the reads
+        /// that only look: what is installed, what Business Central has been doing, who
+        /// is signed in. See <c>.design/teams-and-visibility.md</c>.
+        /// </summary>
+        View,
+
         /// <summary>The environment-updates flag only — the fleet actions from issue #657.</summary>
         UpdateOps,
 
@@ -727,7 +740,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
-    /// Runs one of the three access checks. The "either" case tries the project-manage
+    /// Runs one of the four access checks. The "either" case tries the project-manage
     /// axis first and falls back to the update-ops flag, so a refusal names both ways in.
     /// </summary>
     private async Task EnsureGateAsync(EnvironmentGate gate, int projectId, int? createdByUserId, CancellationToken ct)
@@ -739,6 +752,9 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 break;
             case EnvironmentGate.UpdateOps:
                 await _access.EnsureCanManageEnvironmentUpdatesAsync(projectId, ct);
+                break;
+            case EnvironmentGate.View:
+                await _access.EnsureCanViewAsync(projectId, ct);
                 break;
             default:
                 if (await _access.CanManageAsync(projectId, createdByUserId, ct)) break;
@@ -779,11 +795,16 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// What Business Central has done, or is doing, to the environment, newest first -
     /// whoever asked for it. Read live each time: the point of the list is to watch
     /// something finish, which a cache would hide.
+    /// <para>
+    /// Gated on seeing the solution, not on managing it: it only looks, and a consultant
+    /// on a Public solution needs to know whether the install finished as much as its
+    /// owner does. Anything that acts on the environment stays manage-gated.
+    /// </para>
     /// </summary>
     public async Task<List<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
         int projectId, int environmentId, CancellationToken ct = default)
     {
-        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.View);
         try
         {
             var operations = await _adminClient.ListEnvironmentOperationsAsync(env.Token, env.Family, env.Name, ct);
@@ -806,13 +827,16 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// <c>.design/environment-updates.md</c>, "Sessions".
     /// </para>
     /// <para>
-    /// Manage-gated like every other read that spends the customer's credentials.
+    /// Gated on seeing the solution, like the other reads on the page: whoever the
+    /// solution is open to is who may ask who is signed in. Ending one of those sessions
+    /// is a different question and stays with the people who manage the solution - see
+    /// <see cref="CancelEnvironmentSessionAsync"/>.
     /// </para>
     /// </summary>
     public async Task<List<BcSession>> ListEnvironmentSessionsAsync(
         int projectId, int environmentId, CancellationToken ct = default)
     {
-        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.View);
         try
         {
             var sessions = await _adminClient.ListSessionsAsync(env.Token, env.Family, env.Name, ct);
@@ -888,10 +912,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// <summary>
     /// Reads whether Microsoft 365 licence access is on. Null when Business Central
     /// doesn't say (an environment too old to support it answers nothing useful).
+    /// A read, so it follows the view axis; <see cref="SetM365AccessAsync"/> does not.
     /// </summary>
     public async Task<bool?> GetM365AccessAsync(int projectId, int environmentId, CancellationToken ct = default)
     {
-        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.View);
         try
         {
             return await _adminClient.GetM365AccessAsync(env.Token, env.Family, env.Name, ct);

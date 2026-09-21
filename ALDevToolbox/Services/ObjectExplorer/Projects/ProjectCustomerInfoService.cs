@@ -7,8 +7,10 @@ namespace ALDevToolbox.Services.ObjectExplorer.Projects;
 
 /// <summary>
 /// What support looks up about a customer: where their Business Central runs, how to
-/// get in, who to call. Reading follows the solution's visibility; so does writing, bar a
-/// Read-only solution and the hosting type - see <c>ProjectAccess.CanEditCustomerInfoAsync</c>. See <c>.design/solution-customer-info.md</c>.
+/// get in, who to call. Reading follows the solution's visibility, and so does writing -
+/// a Public solution is everyone's to correct, a Read-only or Private one its teams'.
+/// The hosting type is the exception and stays a manager's call. See
+/// <c>.design/solution-customer-info.md</c>.
 /// </summary>
 public sealed class ProjectCustomerInfoService
 {
@@ -88,13 +90,11 @@ public sealed class ProjectCustomerInfoService
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["HostingType"] = "This solution no longer exists." });
-        await _access.EnsureCanEditCustomerInfoAsync(project.Id, project.CreatedByUserId, project.Visibility, ct);
-        // Where it is hosted decides which tabs the solution has, so changing it stays
-        // with the people who manage the solution; everything else here is anyone's to fix.
-        if (input.HostingType != project.HostingType)
-        {
-            await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
-        }
+        // Where it is hosted decides which tabs the solution has, and used to be checked
+        // separately because editing the rest of this page was deliberately wider than
+        // managing the solution. It is the same set now - managing a Public solution is
+        // everyone in the organisation - so one check covers the page and the field.
+        await EnsureCanEditAsync(project, ct);
 
         var onPremises = input.HostingType is not (null or ProjectHostingType.MicrosoftCloud);
         Guid? tenantId = null;
@@ -381,8 +381,22 @@ public sealed class ProjectCustomerInfoService
             ?? throw new InvalidOperationException("Changing customer information needs an authenticated request.");
         var project = await _db.OeProjects.FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw Gone("Name", "This solution no longer exists.");
-        await _access.EnsureCanEditCustomerInfoAsync(project.Id, project.CreatedByUserId, project.Visibility, ct);
+        await EnsureCanEditAsync(project, ct);
         return project;
+    }
+
+    /// <summary>
+    /// Managing the solution, with a sentence that says which solution refused and why.
+    /// The generic refusal names the owner and the admins, which stopped being the whole
+    /// answer once teams could manage - and a person who has just been told "no" on a
+    /// phone number needs to know whether to ask somebody or to change the level.
+    /// </summary>
+    private async Task EnsureCanEditAsync(OeProject project, CancellationToken ct)
+    {
+        if (await _access.CanManageAsync(project.Id, project.CreatedByUserId, ct)) return;
+        throw new ProjectAccessDeniedException(project.Visibility == ProjectVisibility.ReadOnly
+            ? "This solution is read-only for people outside its teams. Ask one of them, or its owner or an administrator, to make the change."
+            : "Only this solution's teams, its owner and your administrators can change it.");
     }
 
     private static PlanValidationException Gone(string field, string message) =>
