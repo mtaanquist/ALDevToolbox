@@ -150,8 +150,17 @@ public sealed class ProjectCustomerInfoServiceTests : IDisposable
             .Which.Errors.Keys.Should().BeEquivalentTo("BcVersion", "ClientUrl", "VoiceAccountNumber", "TenantId");
     }
 
+    /// <summary>
+    /// Where a solution is hosted decides which tabs it has, so it was once narrower than
+    /// the rest of this page: everything else was anyone's to correct, that field was the
+    /// managers'. On a Public solution the two are now the same set - managing one is
+    /// everyone in the organisation - so the carve-out has nobody left to exclude here.
+    /// It still bites at the levels where managing means something narrower, which
+    /// <see cref="A_read_only_solution_keeps_its_word_and_is_edited_by_its_managers_only"/>
+    /// is the other half of.
+    /// </summary>
     [Fact]
-    public async Task Anyone_who_can_see_a_public_solution_may_correct_its_customer_details_but_not_where_it_is_hosted()
+    public async Task Anyone_in_the_org_may_correct_a_public_solutions_details_including_where_it_is_hosted()
     {
         var id = await SeedAsync();
         _db.OrgContext.CurrentUserId = OtherUserId;
@@ -162,9 +171,9 @@ public sealed class ProjectCustomerInfoServiceTests : IDisposable
         (await svc.GetBasicsAsync(id))!.BcVersion.Should().Be("BC 25.3",
             "the people who learn a detail has changed are the ones answering the phone");
 
-        var hosting = () => svc.SaveBasicsAsync(id, Input(ProjectHostingType.CustomerHardware, version: "BC 25.3"));
-        await hosting.Should().ThrowAsync<ProjectAccessDeniedException>(
-            "where it is hosted decides which tabs the solution has, so it stays a manager's call");
+        await svc.SaveBasicsAsync(id, Input(ProjectHostingType.CustomerHardware, version: "BC 25.3"));
+        (await svc.GetBasicsAsync(id))!.HostingType.Should().Be(ProjectHostingType.CustomerHardware,
+            "a Public solution is managed by everyone, and hosting is a manage-level field");
     }
 
     [Fact]

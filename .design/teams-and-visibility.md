@@ -21,7 +21,8 @@ Two things are needed and they are separable, which is why this doc covers both:
 - a way to say **how visible a project is** to people outside that group.
 
 Being on a team confers view and manage rights on the projects that team is
-assigned to.
+assigned to. On a Public project it confers nothing extra, because everyone already
+has both — see "Public is open both ways" below.
 
 ### Named users
 
@@ -84,13 +85,74 @@ assigned. Migration `20260905000000_AddProjectVisibility`.
 
 | Level | Who can view | Who can manage |
 |---|---|---|
-| **Public** (default) | Everyone in the org | Owner, org Admin, SiteAdmin |
+| **Public** (default) | Everyone in the org | **Everyone in the org** |
 | **Read-only** | Everyone in the org | Owner, org Admin, SiteAdmin, **assigned-team members** |
 | **Private** | Owner, org Admin, SiteAdmin, **assigned-team members** | Same set |
+
+### Public is open both ways
+
+The three levels are one ladder: Public is open in both directions, Read-only narrows
+*writing* to the assigned teams, Private narrows *reading* to them as well. Each step
+down takes something away, and the name of the middle one finally says what it does.
+
+It did not start there. Public originally meant "everyone reads it; the owner and the
+admins write it", which made the ladder bend: the level whose whole statement is "this
+solution is open to the organisation" was also the level that reserved every write to two
+people, and there was no way to say "anyone may look after this" at all. The symptom that
+surfaced it was an environment page that showed four of its five tabs only to a solution's
+owner — but the same shape was everywhere manage is checked, and widening those reads was
+only half the answer.
+
+Two consequences worth stating, because they are what keep this from being a blanket
+loosening:
+
+- **Delete is still the carve-out.** Managing a Public solution does not include deleting
+  it; that stays with the owner, org Admin and SiteAdmin, exactly as a team grant never
+  included it. Ending the thing is a different act from doing the work on it.
+- **So is changing the access level itself.** `SetAccessAsync` moved from the manage axis
+  to the delete axis in the same change, and the page's Access tab with it
+  (`ProjectService.CanChangeAccessAsync`). Leaving governance on manage would have meant
+  that anybody who can manage a Public solution could re-govern it - lock a shared
+  solution to a team of their own, or open a narrowed one back up - which is the one
+  grant a level must never hand to the people it governs. This also tightens Read-only
+  and Private, where an assigned team could previously change the level; nothing relied
+  on that, and "a team grant is about doing the work" covers this as squarely as it
+  covers delete.
+- **Environment updates do not follow.** `CanManageEnvironmentUpdatesAsync` is a separate
+  axis and still needs `ManagesUpdates` on a team *assigned to the project*. A Public
+  project has no teams by the invariant below, so scheduling a customer's platform update
+  remains admin-only there — which is the practical reason a real customer engagement
+  belongs on Read-only with its caretaker teams, not on Public.
+
+**What manage actually grants is wide**, and it is worth reading the list before leaving a
+customer solution on the default: the Business Central connection (tenant id, client id
+and the client secret), publishing builds to a customer environment, uploading and
+installing apps, copying and recovering environments, ending sessions, pipelines and
+repositories. `/solutions` carries only `[Authorize]`, with no role requirement, so
+"everyone in the org" includes the `User` role. Public is the right level for a solution
+the whole company genuinely shares; it is not the right level for a customer under NDA,
+and it is still the level a new solution is created at.
+
+**Why not a "caretaker team" on a Public project instead.** Because a team on a Public
+project would confer manage — `CanManageAsync` grants it to any assigned team member —
+and Public-plus-teams would then be indistinguishable from Read-only. The alternative, a
+team that labels without granting, would make every manage check read the project's
+visibility to decide whether the team counts, which is a fail-open shape on the hottest
+authorization path. Read-only *is* the caretaker level; it wanted a better name, not a
+new mechanism.
 
 - **Delete is carved out.** Assigned-team members get everything management covers
   *except* deleting the project — soft-delete stays with the owner, org Admin, and
   SiteAdmin. A team grant is about doing the work, not about ending it.
+- **Reading is the view axis, even when the read costs something.** A read that spends
+  the customer's Business Central credentials — what is installed on an environment,
+  what Business Central has been doing to it, who is signed in right now — is still a
+  read, so it is gated on view and not on manage. Gating those on manage looks careful
+  and isn't: a Public project has no teams by construction, so it hides from the whole
+  organisation exactly the data the org was told it could see, while a Private project's
+  teams are already the view answer. `ProjectConnectionService`'s
+  `EnvironmentGate.View` is that rule; what *acts* on the customer's tenant stays on
+  manage. See `environment-updates.md`, "The environment's own page".
 - **Org Admins and SiteAdmins bypass visibility entirely.** This cannot live in an
   EF query filter (the membership set is not a scalar and the bypass is not a model
   fact), which is why enforcement is explicit predicates rather than a second global
@@ -107,6 +169,20 @@ assigned. Migration `20260905000000_AddProjectVisibility`.
 Enforced atomically by a single `ProjectService.SetAccessAsync(projectId, visibility,
 teamIds)` — never by two independent writes that could interleave into a Private
 project nobody can see.
+
+**The level is chosen on the create form, not corrected afterwards.**
+`CreateProjectAsync` takes an optional `ProjectAccessSettings` and writes it in the same
+`SaveChanges` as the solution, its repositories and its teams; both it and
+`SetAccessAsync` run the invariant through one `ValidateAccessAsync`, so the two cannot
+drift. This matters more since Public became open both ways: a create that landed Public
+and was narrowed a moment later would put a customer's Business Central connection in
+front of the whole organisation for that moment, and a create-then-set pair can
+half-succeed and leave it there for good. Defaulting new solutions to Read-only instead
+is not available — the invariant needs a team, and a fresh organisation has none — which
+is the other reason the question belongs on the form, where the team is picked in the
+same breath. The Access tab renders on `/solutions/new` with no save of its own; the
+page's Create solution writes the answer with the rest. A caller that says nothing about
+the level (the GitHub import paths) still gets Public with no teams.
 
 Its consequence for teams: **deleting a team is refused while it is the last team on
 any non-Public project**, listing the projects that block it. The refusal is

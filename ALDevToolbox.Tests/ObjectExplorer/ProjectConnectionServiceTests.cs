@@ -980,6 +980,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     {
         var (projectId, envId) = await SeedDeletedEnvironmentAsync();
         await SeedUserAsync(9776, "onlooker@example.com", UserRole.User);
+        await NarrowAsync(projectId);
         _db.OrgContext.CurrentUserId = 9776;
         var admin = new FakeAdminClient();
 
@@ -1179,6 +1180,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     {
         var (projectId, envId) = await SeedEnvironmentAsync("Production");
         await SeedUserAsync(9777, "onlooker2@example.com", UserRole.User);
+        await NarrowAsync(projectId);
         _db.OrgContext.CurrentUserId = 9777;
         var admin = new FakeAdminClient();
 
@@ -1237,15 +1239,43 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Reading the list spends the customer's own credentials and shows who is working in
-    /// their system, so it is gated exactly like the writes beside it - and so is ending one.
+    /// Reading who is signed in is a read, so it follows the solution's visibility: a
+    /// Read-only solution is seen by the whole organisation, so its environments are
+    /// read by all of them. Ending one of those sessions signs somebody out, so that
+    /// stays with the people who manage it - which on this level is its teams, not
+    /// everyone. See <c>.design/teams-and-visibility.md</c>.
     /// </summary>
     [Fact]
-    public async Task Someone_who_does_not_manage_the_solution_can_neither_read_nor_end_its_sessions()
+    public async Task A_colleague_reads_a_read_only_solutions_sessions_but_cannot_end_one()
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         await SeedUserAsync(9778, "onlooker3@example.com", UserRole.User);
+        await NarrowAsync(projectId);
         _db.OrgContext.CurrentUserId = 9778;
+        var admin = new FakeAdminClient { OnSessions = _ => [Session(47, "ola@cronus.example")] };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), admin);
+
+        (await svc.ListEnvironmentSessionsAsync(projectId, envId))
+            .Select(x => x.SessionId).Should().Equal(47);
+        await ((Func<Task>)(() => svc.CancelEnvironmentSessionAsync(projectId, envId, 47)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+        admin.Cancelled.Should().BeEmpty("nothing reached the customer's tenant");
+    }
+
+    /// <summary>
+    /// The other half of the same rule: on a Private solution the teams are the whole
+    /// answer, and somebody outside them reads nothing - not the sessions, not the
+    /// operations, not the panel.
+    /// </summary>
+    [Fact]
+    public async Task Someone_outside_a_private_solutions_teams_reads_none_of_its_environment()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9779, "outsider@example.com", UserRole.User);
+        await NarrowAsync(projectId, ProjectVisibility.Private);
+        _db.OrgContext.CurrentUserId = 9779;
         var admin = new FakeAdminClient { OnSessions = _ => [Session(47, "ola@cronus.example")] };
 
         await using var ctx = _db.NewContext();
@@ -1253,9 +1283,77 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         await ((Func<Task>)(() => svc.ListEnvironmentSessionsAsync(projectId, envId)))
             .Should().ThrowAsync<ProjectAccessDeniedException>();
-        await ((Func<Task>)(() => svc.CancelEnvironmentSessionAsync(projectId, envId, 47)))
+        await ((Func<Task>)(() => svc.ListEnvironmentOperationsAsync(projectId, envId)))
             .Should().ThrowAsync<ProjectAccessDeniedException>();
-        admin.Cancelled.Should().BeEmpty("nothing reached the customer's tenant");
+        await ((Func<Task>)(() => svc.GetEnvironmentPanelAsync(projectId, envId)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+    }
+
+    /// <summary>
+    /// A colleague who may see the solution but not manage it sees what is installed;
+    /// making the customer's tenant answer again is the one part of the panel that stays
+    /// a manager's call, because it is the only one that costs the customer anything.
+    /// </summary>
+    [Fact]
+    public async Task A_colleague_reads_a_read_only_solutions_panel_but_cannot_force_a_refresh()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9780, "colleague-reader@example.com", UserRole.User);
+        await NarrowAsync(projectId);
+        _db.OrgContext.CurrentUserId = 9780;
+        var admin = new FakeAdminClient();
+        var apps = new FakeAppManagementClient { OnInstalled = () => [App("CRONUS Toolbox")] };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), admin, apps);
+
+        (await svc.GetEnvironmentPanelAsync(projectId, envId))
+            .InstalledApps.Select(a => a.Name).Should().Equal("CRONUS Toolbox");
+        await ((Func<Task>)(() => svc.GetEnvironmentPanelAsync(projectId, envId, forceRefresh: true)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+    }
+
+    /// <summary>
+    /// Business Central's own record of what happened to the environment is a read like
+    /// the others, so it follows the solution rather than the manage axis.
+    /// </summary>
+    [Fact]
+    public async Task A_colleague_reads_a_read_only_solutions_operations()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9781, "operations-reader@example.com", UserRole.User);
+        await NarrowAsync(projectId);
+        _db.OrgContext.CurrentUserId = 9781;
+        var admin = new FakeAdminClient { OnOperations = _ => [Operation("update", 3)] };
+
+        await using var ctx = _db.NewContext();
+        (await Svc(ctx, TokenOk(), admin).ListEnvironmentOperationsAsync(projectId, envId))
+            .Select(o => o.Type).Should().Equal("update");
+    }
+
+    /// <summary>
+    /// Narrows the solution to <paramref name="visibility"/> with one team the test's
+    /// outsiders are not on. A Public solution is managed by everyone in the
+    /// organisation, so it is not a test bed for "somebody who cannot manage this":
+    /// Read-only is the level where seeing and managing part company, and Private is
+    /// where seeing stops too.
+    /// </summary>
+    private async Task NarrowAsync(int projectId, ProjectVisibility visibility = ProjectVisibility.ReadOnly)
+    {
+        await using var ctx = _db.NewContext();
+        var team = new Team
+        {
+            OrganizationId = TestDb.DefaultOrgId, Name = $"Keepers {projectId}", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.Teams.Add(team);
+        await ctx.SaveChangesAsync();
+        ctx.OeProjectTeams.Add(new OeProjectTeam
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, TeamId = team.Id, CreatedAt = DateTime.UtcNow,
+        });
+        var project = await ctx.OeProjects.SingleAsync(p => p.Id == projectId);
+        project.Visibility = visibility;
+        await ctx.SaveChangesAsync();
     }
 
     /// <summary>
@@ -2060,6 +2158,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         await SeedUserAsync(9778, "uploader@example.com", UserRole.User);
+        await NarrowAsync(projectId);
         _db.OrgContext.CurrentUserId = 9778;
         var apps = new FakeAppManagementClient();
 
@@ -2076,6 +2175,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         await SeedUserAsync(9777, "stranger@example.com", UserRole.User);
+        await NarrowAsync(projectId);
         _db.OrgContext.CurrentUserId = 9777;
         var apps = AppsWithWaiting();
 
@@ -2825,6 +2925,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         await SeedUserAsync(9604, "outsider@example.com", UserRole.User);
+        await NarrowAsync(projectId);
         _db.OrgContext.CurrentUserId = 9604;
 
         await using var ctx = _db.NewContext();
@@ -2882,6 +2983,9 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     public async Task Mutations_are_blocked_for_a_non_owner_non_admin()
     {
         var id = await SeedProjectAsync();
+        // Read-only: a Public solution is managed by everyone in the organisation, so
+        // there is no stranger to it. The customer's credentials are what this guards.
+        await NarrowAsync(id);
 
         const int strangerId = 9500;
         await using (var seed = _db.NewContext())

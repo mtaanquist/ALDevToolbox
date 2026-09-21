@@ -78,12 +78,19 @@ action, not a settings form: the named reader outnumbers the named editor many t
 over, and a page of inputs is a poor way to read a phone number.
 
 Reading follows the Solution's visibility, unchanged: whoever can see the Solution sees
-all of this. **Editing is wider than managing the Solution, on purpose** (maintainer's
+all of this. **Editing was once deliberately wider than managing the Solution** (maintainer's
 decision, 2026-09-21): the people who learn that a contact has changed are the ones
-answering the phone, not the Solution's owner. `ProjectAccess.CanEditCustomerInfoAsync`
-decides - anyone who can see a **Public** Solution may edit its customer information; a
-**Read-only** Solution keeps its word and is edited by its managers only; a **Private** one
-is only ever seen by its managers. One field is excepted: **Hosted by** decides which tabs
+answering the phone, not the Solution's owner, so anyone who could see a **Public** Solution
+could correct it, through a `ProjectAccess.CanEditCustomerInfoAsync` that widened the
+ordinary rule.
+
+That method is gone, and nothing about who may edit has changed. Managing a **Public**
+Solution is now everyone in the organisation (see `teams-and-visibility.md`, "Public is
+open both ways"), which is exactly the set the wider rule reached for, so the two rules
+became one set and the pass-through was removed rather than left to imply a distinction it
+no longer made. `EnsureCanManageAsync` is what the three call sites use. A **Read-only**
+Solution still keeps its word and is edited by its teams only; a **Private** one is only
+ever seen by them. One field is excepted: **Hosted by** decides which tabs
 the Solution has, so changing it stays with the people who manage the Solution, and the
 editor says so beside the locked field. None of these edits is in the audit trail - a
 contact corrected or a version typed in is too frequent and too small to be worth the noise

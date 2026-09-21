@@ -97,7 +97,7 @@
         }
         else
         {
-            <text>Name the solution and add its repositories, then save.</text>
+            <text>Name the solution, add its repositories, and choose who can see it.</text>
         }
 
     </SubtitleContent>
@@ -109,7 +109,8 @@
         @* Save solution applies to General + Repositories. The Business Central and
            Pipelines sections have their own save/actions, so the header primary is
            hidden there to avoid implying it would save those edits. *@
-        @if (_canManage && _section is Section.General or Section.Repos)
+        @if (_canManage && (_section is Section.General or Section.Repos
+                            || (Id is null && _section == Section.Access)))
         {
             @if (_dirty)
             {
@@ -171,6 +172,20 @@
                                           SolutionName="@_header?.Name"
                                           OnDirty="MarkDirty"
                                           OnDelete="ConfirmDeleteAsync" />
+                    @* Creating, the level has a default and a consequence, and the tab
+                       that sets it is one somebody may never open. So it is stated here,
+                       on the tab the form opens on, with the way to change it. *@
+                    @if (Id is null)
+                    {
+                        <p class="form-sec__cap">@NewAccessSummary</p>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn--ghost btn--sm"
+                                    @onclick="() => _section = Section.Access">
+                                <Icon Name="users" Width="14" Height="14" />
+                                <span>Choose who can see it</span>
+                            </button>
+                        </div>
+                    }
                 }
                 else if (_section == Section.Repos)
                 {
@@ -197,12 +212,20 @@
                                             Pipelines="_pipelines"
                                             Saving="_saving" />
                 }
-                else if (_section == Section.Access && Id is not null && _canManage)
+                else if (_section == Section.Access && Id is not null && _canChangeAccess)
                 {
                     <ProjectDetailAccess Id="Id.Value"
                                          AllTeams="_allTeams"
                                          Baseline="_accessBaseline"
                                          OnSaved="OnAccessSavedAsync" />
+                }
+                else if (_section == Section.Access && Id is null)
+                {
+                    @* No id to save against yet: the tab collects the answer and Create
+                       solution writes it with the rest, in one go. *@
+                    <ProjectDetailAccess AllTeams="_allTeams"
+                                         Baseline="_newAccess"
+                                         OnChanged="OnNewAccessChanged" />
                 }
             </div>
         </div>
@@ -250,8 +273,15 @@
                 // Nothing on it works without Business Central online.
                 if (!IsOnPremises) tabs.Add(Tab("Business Central", Section.Bc));
                 tabs.Add(Tab("Pipelines", Section.Pipelines));
-                tabs.Add(Tab("Access", Section.Access));
-                }
+                // Who may see the solution is the owner's and the admins' to set, not
+                // every manager's - on a Public solution that is everybody.
+                if (_canChangeAccess) tabs.Add(Tab("Access", Section.Access));
+            }
+            // Creating: the level is picked here rather than left at Public and fixed
+            // afterwards. A Public solution is managed by everyone in the organisation,
+            // so "we'll set that later" is a customer's Business Central connection
+            // open to the whole company in the meantime.
+            else if (Id is null) tabs.Add(Tab("Access", Section.Access));
 
             return tabs;
         }
@@ -266,11 +296,26 @@
     /// solution so a viewer who can't manage it still sees why the page looks the
     /// way it does.
     /// </summary>
-    private string? VisibilityBadge => _loadedProject?.Visibility switch
+    private string? VisibilityBadge => Id is null
+        ? LevelName(_newAccess.Visibility)
+        : _loadedProject?.Visibility switch
+        {
+            ProjectVisibility.Private => "Private",
+            ProjectVisibility.ReadOnly => "Read-only",
+            _ => null,
+        };
+
+    /// <summary>
+    /// A level in one word for the badge. Public is named while creating and not
+    /// afterwards, on purpose: a badge on every solution in the list would stop meaning
+    /// anything, but on the form where the level is being chosen the default is exactly
+    /// what needs saying out loud.
+    /// </summary>
+    private static string LevelName(ProjectVisibility visibility) => visibility switch
     {
         ProjectVisibility.Private => "Private",
         ProjectVisibility.ReadOnly => "Read-only",
-        _ => null,
+        _ => "Public",
     };
 
     private bool _loading = true;
@@ -278,6 +323,40 @@
     private bool _saving;
     private bool _dirty;
     private bool _canManage;
+
+    /// <summary>
+    /// Owner, org Admin or SiteAdmin: who may change the solution's visibility and its
+    /// teams. Narrower than <see cref="_canManage"/> on purpose - a Public solution is
+    /// managed by everyone in the organisation, and re-governing it is not theirs.
+    /// </summary>
+    private bool _canChangeAccess;
+
+    /// <summary>
+    /// The level and teams picked on the create form, held here until there is a
+    /// solution to put them on. Public with no teams until somebody says otherwise,
+    /// which is what the tab starts on.
+    /// </summary>
+    private ProjectAccessSettings _newAccess = new(ProjectVisibility.Public, Array.Empty<int>());
+
+    private void OnNewAccessChanged(ProjectAccessSettings access)
+    {
+        _newAccess = access;
+        // The form says "Unsaved changes" for a typed character; it would be a strange
+        // silence for this one.
+        MarkDirty();
+    }
+
+    /// <summary>
+    /// What the create form's General tab says about the level, so the decision is
+    /// stated on the tab people actually open rather than only on the one they might
+    /// not. Public is the default and the widest, which is the sentence worth carrying.
+    /// </summary>
+    private string NewAccessSummary => _newAccess.Visibility switch
+    {
+        ProjectVisibility.Private => "Only the teams you picked can see this solution.",
+        ProjectVisibility.ReadOnly => "Anyone in your organisation can see this solution; only the teams you picked can change it.",
+        _ => "Anyone in your organisation will be able to see and change this solution.",
+    };
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
@@ -340,6 +419,9 @@
             // state and the "Add repository" button, which is what a first-time
             // user needs. A seeded row hid both and made the "0 added" pill lie.
             _edit = new EditModel();
+            // The Access tab needs the org's teams to offer them, and there is no
+            // solution to read a baseline from yet.
+            _allTeams = await Teams.ListTeamsAsync();
         }
         else
         {
@@ -347,8 +429,9 @@
             if (!_notFound)
             {
                 _canManage = await Projects.CanManageAsync(Id.Value);
+                _canChangeAccess = await Projects.CanChangeAccessAsync(Id.Value);
                 HydrateEdit();
-                if (_canManage)
+                if (_canChangeAccess)
                 {
                     await LoadAccessAsync();
                 }
@@ -399,11 +482,12 @@
     private OeProject? _loadedProject;
 
     /// <summary>
-    /// Customer information is wider than the rest of the page: anyone who can see a
-    /// Public solution may correct it. Mirrors ProjectAccess.CanEditCustomerInfoAsync,
-    /// which is what actually decides.
+    /// Customer information used to be wider than the rest of the page, so that anyone
+    /// who could see a Public solution could correct a phone number. Managing a Public
+    /// solution is now everyone in the organisation, so the wider rule and the ordinary
+    /// one are the same set and there is only this. See .design/solution-customer-info.md.
     /// </summary>
-    private bool CanEditCustomer => _canManage || _loadedProject?.Visibility == ProjectVisibility.Public;
+    private bool CanEditCustomer => _canManage;
 
     /// <summary>Hosted anywhere but Business Central online. See .design/solution-customer-info.md.</summary>
     private bool IsOnPremises => _loadedProject?.IsOnPremises == true;
@@ -497,7 +581,7 @@
 
             if (Id is null)
             {
-                var newId = await Projects.CreateProjectAsync(input);
+                var newId = await Projects.CreateProjectAsync(input, _newAccess);
                 Nav.NavigateTo($"/solutions/{newId}");
                 return;
             }
