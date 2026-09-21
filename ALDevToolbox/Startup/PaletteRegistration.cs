@@ -1,4 +1,5 @@
 using ALDevToolbox.Services.Palette;
+using ALDevToolbox.Services.Palette.Sources;
 
 namespace ALDevToolbox.Startup;
 
@@ -17,13 +18,14 @@ public static class PaletteRegistration
     /// what a user sees. Scoped, because a source reads through the request's
     /// <c>DbContext</c> and the caller's organisation context.</para>
     ///
-    /// <para>No sources are registered yet: the endpoint works and answers empty
+    /// <para>The sources are registered below: the endpoint works and answers empty
     /// groups. Solutions, Environments, Releases and Recipes land next.</para>
     /// </summary>
     public static IServiceCollection AddPalette(this IServiceCollection services)
     {
         services.AddScoped<PaletteSearchService>();
-        services.AddScoped<IPaletteSource, ALDevToolbox.Services.Palette.Sources.ReleasePaletteSource>();
+        services.AddScoped<IPaletteSource, RecipePaletteSource>();
+        services.AddScoped<IPaletteSource, ReleasePaletteSource>();
         return services;
     }
 }
