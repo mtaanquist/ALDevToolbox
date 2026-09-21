@@ -874,11 +874,12 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             throw Validation("Sessions", ex.Message);
         }
 
+        // The session's number and where - not whose it was or what it was running. Who
+        // is signed in to a customer's system is shown and forgotten; the record of this
+        // action is that we ended one, and which.
         await RecordEnvironmentActionAsync(projectId, env.Id, UpgradeActionKind.CancelSession,
-            BcSessionDisplay.HistoryLine(session), ct);
+            $"Ended session {session.SessionId} on {env.Name}.", ct);
 
-        // The user id is in the history line, which is the record this action leaves; the
-        // log keeps the ids that identify the call, not a second copy of the person.
         _logger.LogInformation(
             "User {UserId} ended session {SessionId} ({ClientType}) on {Environment} (project {ProjectId}).",
             _orgContext.CurrentUserId, sessionId, session.ClientType, env.Name, projectId);

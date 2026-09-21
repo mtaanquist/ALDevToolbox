@@ -172,17 +172,16 @@ public sealed class CustomerModuleServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Typing_in_a_module_is_for_people_who_manage_the_solution_and_reading_is_for_anyone_who_sees_it()
+    public async Task Anyone_who_can_see_a_public_solution_may_keep_its_typed_modules_up_to_date()
     {
         var capture = await AddToCatalogAsync("Continia Document Capture", null, CaptureAppId);
         var id = await SeedSolutionAsync("CRONUS Norway", ProjectHostingType.OurCloud);
         _db.OrgContext.CurrentUserId = OtherUserId;
         await using var ctx = _db.NewContext();
 
-        var act = () => Svc(ctx).SaveSolutionModuleAsync(id, null, new SolutionModuleInput(capture, "1.0", null));
+        await Svc(ctx).SaveSolutionModuleAsync(id, null, new SolutionModuleInput(capture, "1.0", null));
 
-        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
-        (await Svc(ctx).GetSolutionModulesAsync(id)).Modules.Should().BeEmpty();
+        (await Svc(ctx).GetSolutionModulesAsync(id)).Modules.Should().ContainSingle().Which.Version.Should().Be("1.0");
     }
 
     [Fact]

@@ -1285,10 +1285,9 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var entry = await read.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.EnvironmentId == envId);
         entry.Kind.Should().Be(UpgradeActionKind.CancelSession);
         entry.Status.Should().Be(UpgradeActionStatus.Sent, "a record, never something for the worker to fire");
-        entry.Outcome.Should().Contain("ola@cronus.example")
-            .And.Contain("web client")
-            .And.Contain("Post Sales Documents");
-        entry.Outcome.Should().NotContain("47", "an id is not what anybody reads this back for");
+        entry.Outcome.Should().Be("Ended session 47 on Production.");
+        entry.Outcome.Should().NotContain("ola@cronus.example",
+            "who was signed in to a customer's system is shown and forgotten; the record is that we ended one, and which");
         entry.RequestedBy.Should().Contain("owner@example.com");
     }
 

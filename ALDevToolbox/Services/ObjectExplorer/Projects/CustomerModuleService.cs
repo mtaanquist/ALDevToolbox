@@ -269,7 +269,7 @@ public sealed class CustomerModuleService
             ?? throw new InvalidOperationException("Changing a solution's modules needs an authenticated request.");
         var project = await _db.OeProjects.FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw Invalid("ModuleId", "This solution no longer exists.");
-        await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
+        await _access.EnsureCanEditCustomerInfoAsync(project.Id, project.CreatedByUserId, project.Visibility, ct);
         return project;
     }
 

@@ -506,12 +506,12 @@ likeliest failure of all.
 **Nothing about a session is stored.** A user id and what that person is doing in their
 employer's system is personal data with no reason to outlive the screen it is on, so it is
 read live, shown, and forgotten — no cache, no mirror column, no table. Leaving the tab
-drops the list. The one thing that lasts is the history line, and it is written from the
-session rather than from its id: *"Ended ola@cronus.example's web client session, which was
-running Post Sales Documents (code unit 82)."* — because "cancelled session 47" answers
-nothing a week later. That line is also why the service re-reads the live list before it
-deletes: the id alone could not name anybody, and the re-read turns "already gone" into a
-sentence rather than a wire 404.
+drops the list. The one thing that lasts is the history line, and it keeps to the same
+rule: *"Ended session 47 on Production."* - the session's number and where, with who asked
+for it beside it as on every history line, and nothing about whose session it was or what
+it was running (maintainer's decision, 2026-09-21; the first version named both). The
+service still re-reads the live list before it deletes, because that turns "already gone"
+into a sentence rather than a wire 404.
 
 **This tab is live where Operations is not.** Both are read live rather than cached, but an
 operations list that is two minutes old is still *true* — the entries in it happened. A
