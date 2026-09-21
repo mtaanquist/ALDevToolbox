@@ -3,6 +3,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs ImportJobs
 @inject IHttpContextAccessor Http
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Import
 
@@ -82,7 +83,7 @@
                                class="input" />
                         <small class="field__hint">Who owns this extension - handy when you've taken over an app someone else built.</small>
                     </label>
-                    @if (_release.Kind == "solution")
+                    @if (_release.Kind == OeRelease.ProjectBuildKind)
                     {
                         <label class="field">
                             <span class="field__label">Solution</span>
@@ -131,7 +132,7 @@
             </div>
         </section>
 
-        @if (_release.Kind == "solution" && _buildResults.Count > 0)
+        @if (_release.Kind == OeRelease.ProjectBuildKind && _buildResults.Count > 0)
         {
             <section class="card">
                 <div class="card__head">
@@ -182,7 +183,7 @@
             </section>
         }
 
-        @if (_release.Kind == "solution" && _release.DeletedAt is null
+        @if (_release.Kind == OeRelease.ProjectBuildKind && _release.DeletedAt is null
              && (_release.Status == "ready" || _release.Status == "failed")
              && _buildResults.Any(r => r.Status == "failed"))
         {
@@ -217,7 +218,7 @@
             </section>
         }
 
-        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == "solution")
+        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == OeRelease.ProjectBuildKind)
         {
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Retry build</h2></div>
@@ -248,7 +249,7 @@
             </section>
         }
 
-        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "solution")
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != OeRelease.ProjectBuildKind)
         {
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Retry import</h2></div>
@@ -407,7 +408,7 @@
         }
         // Solution releases carry a per-app build report; a "ready" release with
         // a failed row is a partial build.
-        if (_release is { Kind: "solution" })
+        if (_release is { Kind: OeRelease.ProjectBuildKind })
         {
             _buildResults = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
@@ -451,14 +452,14 @@
         "first_party" => "First-party",
         "third_party" => "Third-party",
         "cal"         => "C/AL",
-        "solution"     => "Pipeline build",
+        OeRelease.ProjectBuildKind     => "Pipeline build",
         _             => kind,
     };
 
     private static string FormatStatus(string s, string kind) => s switch
     {
         "ready"                             => "Ready",
-        "ingesting" when kind == "solution" => "Building...",
+        "ingesting" when kind == OeRelease.ProjectBuildKind => "Building...",
         "ingesting"                         => "Ingesting...",
         "failed"                            => "Failed",
         _                                   => s,
