@@ -131,9 +131,9 @@ Three of those are frozen for reasons worth stating, because they look like left
 - **The image path follows the repo, not a literal.** `release.yml` and `staging.yml` build
   it from `ghcr.io/${{ github.repository }}`, so renaming the GitHub repository moves the
   image on its own with no workflow edit. GHCR packages do not follow a repository rename:
-  the old package keeps serving its existing tags and never receives new ones. That is what
-  `release.yml`'s mirror step covers since the rename to `al-workbench`; `PROJECT.md` has the
-  account, including the order the move had to happen in.
+  the old package keeps serving its existing tags and never receives new ones. The rename to
+  `al-workbench` was bridged by mirroring one release (v11.9.1) to the old path until the
+  deployments had moved; `PROJECT.md` has the account, including the order it had to happen in.
 
 So when you write something a user reads, write AL Workbench; when you name a directory, a
 service, a volume or a namespace, leave it alone; and don't "fix" one side to match the

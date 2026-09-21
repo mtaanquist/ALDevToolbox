@@ -206,10 +206,10 @@ old package, `ghcr.io/mtaanquist/aldevtoolbox`, keeps serving the tags it alread
 would never receive a new one, so anything still pulling it would silently stop updating.
 Two things cover the move:
 
-- `release.yml` has a **mirror step** that tags each release at the old path as well. It
-  copies the manifest rather than building twice, and it is `continue-on-error`, so a refusal
-  from the old package can never fail a release. Delete the step once every deployment has
-  moved; it says so in its own comment.
+- For one release, v11.9.1, `release.yml` had a **mirror step** that also tagged the image at
+  the old path, so the production server kept updating until its compose file had moved. It
+  was deleted once that deploy was confirmed healthy on the new path. The old package holds
+  every version up to and including v11.9.1 and will never receive another.
 - `compose.yaml` pulls the new path, and its tag variable is `ALWORKBENCH_TAG` with
   `ALDEVTOOLBOX_TAG` as a permanent fallback, so an `.env` written before the rename keeps
   pinning what it pinned.
@@ -222,8 +222,8 @@ the old path, check the new package can be pulled without signing in, then flip 
 line.
 
 The new path only holds releases cut after the rename (v11.9.1 onwards). A deployment
-pinned to an older version must keep the old image path until it upgrades - `latest` and
-anything newer are at both.
+pinned to an older version must keep the old image path until it upgrades; v11.9.1 is the
+one version at both.
 
 The new package came up **public**, inheriting the repository's visibility - not private, as
 this document and the rename PR had both predicted. Check rather than assume:
