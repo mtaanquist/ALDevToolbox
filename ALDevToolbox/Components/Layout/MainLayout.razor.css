@@ -81,3 +81,41 @@
     flex: 1 1 auto;
     min-height: 0;
 }
+
+/* The brand carries the organisation as a second line. shell.css's .app__brand
+   is a flex row of mark + name, so the two text lines need a column between
+   them; .brand__name keeps its own rule untouched, including the display: none
+   that hides it at rail width. 64px of --top-h holds 16px + 12px comfortably. */
+.brand__text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.brand__org {
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Rail width: shell.css hides .brand__name and centres the mark on its own, so
+   the subtitle has to go with it or the rail grows a stray caption. Same
+   container and breakpoint as that rule. */
+@container (max-width: 1080px) {
+    .brand__org {
+        display: none;
+    }
+}
+
+/* ...and come back with it when the drawer is open. A 700px-wide container
+   matches the rule above too, so this has to out-specify it, the way
+   shell.css's own `display: revert` rules do for .brand__name. */
+@container (max-width: 700px) {
+    .app.is-drawer-open .brand__org {
+        display: revert;
+    }
+}
