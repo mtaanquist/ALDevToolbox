@@ -164,7 +164,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         await OpenAccessTabAsync(cut);
 
         var labels = cut.FindAll(".module-card__title").Select(t => t.TextContent.Trim()).ToList();
-        labels.Should().Contain(new[] { "Public", "Read-only for others", "Private" });
+        labels.Should().Contain(new[] { "Public", "View-only for everyone else", "Private" });
         // Only ever the one outline save on this tab - Generate stays the app's primary.
         cut.FindAll(".settings__body .btn--primary").Should().BeEmpty();
     }
@@ -260,13 +260,13 @@ public sealed class ProjectDetailAccessTests : IDisposable
         var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
-        foreach (var label in new[] { "Read-only for others", "Private" })
+        foreach (var label in new[] { "View-only for everyone else", "Private" })
         {
             var card = cut.FindAll("label.module-card")
                 .First(c => c.QuerySelector(".module-card__title")!.TextContent.Trim() == label);
             card.QuerySelector("input[type=radio]")!.HasAttribute("disabled")
                 .Should().BeTrue($"{label} can't be saved without a team");
-            card.TextContent.Should().Contain("Needs a team");
+            card.TextContent.Should().Contain("Create a team first");
         }
 
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Contains("Save access"));
@@ -307,7 +307,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
 
         await PickAsync(cut, "Private");
         cut.FindAll("input[type=checkbox]").Should().ContainSingle("the list is the affordance");
-        cut.Markup.Should().Contain("Teams that keep access");
+        cut.Markup.Should().Contain("Teams with access");
     }
 
     [Fact]
@@ -390,7 +390,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         await OpenAccessTabAsync(cut);
 
         cut.FindAll(".module-card__title").Select(t => t.TextContent.Trim())
-            .Should().Contain(new[] { "Public", "Read-only for others", "Private" });
+            .Should().Contain(new[] { "Public", "View-only for everyone else", "Private" });
         cut.FindAll("button").Select(b => b.TextContent.Trim())
             .Should().NotContain("Save access", "Create solution writes the level with the rest");
         cut.FindAll("button").Select(b => b.TextContent.Trim())
@@ -434,6 +434,39 @@ public sealed class ProjectDetailAccessTests : IDisposable
         (await verify.OeProjectTeams.AsNoTracking()
             .Where(t => t.ProjectId == created.Id).Select(t => t.TeamId).ToListAsync())
             .Should().Equal(teamId);
+    }
+
+    /// <summary>
+    /// The tab is rebuilt whenever somebody switches away and back, so the answer has to
+    /// live on the page rather than in the tab. Somebody filling this form in will move
+    /// between General and Access more than once; a pick that quietly reverted to Public
+    /// in between is the whole failure this form exists to prevent.
+    /// </summary>
+    [Fact]
+    public async Task A_level_picked_while_creating_survives_leaving_the_tab_and_coming_back()
+    {
+        await SeedAsync();
+
+        var cut = _ctx.Render<ProjectDetail>();
+        await OpenAccessTabAsync(cut);
+        await PickAsync(cut, "Private");
+        cut.WaitForState(() => cut.FindAll("input[type=checkbox]").Count > 0);
+        await cut.InvokeAsync(() => cut.FindAll("input[type=checkbox]")[0].Change(true));
+
+        var general = cut.FindAll(".settings__tabs button").First(t => t.TextContent.Trim() == "General");
+        await cut.InvokeAsync(() => general.Click());
+        cut.WaitForState(() => cut.FindAll("input#proj-name").Count > 0);
+        // The tab they are on says what is currently chosen, so the decision is visible
+        // without going back for it.
+        cut.Markup.Should().Contain("Only the teams you picked can see this solution.");
+
+        await OpenAccessTabAsync(cut);
+
+        var privateCard = cut.FindAll("label.module-card")
+            .First(c => c.QuerySelector(".module-card__title")!.TextContent.Trim() == "Private");
+        privateCard.QuerySelector("input[type=radio]")!.HasAttribute("checked").Should().BeTrue();
+        cut.FindAll("input[type=checkbox]")[0].HasAttribute("checked")
+            .Should().BeTrue("the team ticked before the detour is still ticked");
     }
 
     private static async Task OpenAccessTabAsync(IRenderedComponent<ProjectDetail> cut)

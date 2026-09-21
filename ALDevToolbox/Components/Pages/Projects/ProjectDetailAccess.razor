@@ -27,7 +27,7 @@
 *@
 
 <div class="form-sec__head">
-    <h2 class="card__title">Who can see this solution</h2>
+    <h2 class="card__title">Who can see and change this solution</h2>
 </div>
 <p class="form-sec__cap">Customer work is often under an NDA. Limit this solution to the people working on that account.</p>
 @* Tab-local confirmation, the same place and shape the Business
@@ -40,7 +40,10 @@
 <div class="card">
     <div class="card__body">
         <section class="field">
-            <div class="check-list pd-choice">
+            @* The radios are visually hidden, so the group needs a name a screen
+               reader can hear before three long labels. *@
+            <fieldset class="check-list pd-choice">
+                <legend class="u-sr">Who can see and change this solution</legend>
                 @foreach (var choice in VisibilityChoices)
                 {
                     @* Neither of the restricted levels can be saved without a
@@ -56,12 +59,12 @@
                         <span class="module-card__text">@choice.Caption</span>
                         @if (needsTeam)
                         {
-                            <span class="module-card__text pd-choice__blocked">Needs a team - none exist yet.</span>
+                            <span class="module-card__text pd-choice__blocked">Create a team first - see below.</span>
                         }
                         <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
                     </label>
                 }
-            </div>
+            </fieldset>
             <FieldError Field="Visibility" Errors="_accessErrors" />
             @if (AllTeams.Count == 0)
             {
@@ -86,7 +89,7 @@ else
     @* With no teams in the org the section stays put even under
        Public - it is what explains why the other two levels are
        unavailable, and hiding it would leave that note unexplained. *@
-    <div class="form-sec__head"><span class="section-label">Teams that keep access</span></div>
+    <div class="form-sec__head"><span class="section-label">Teams with access</span></div>
     <div class="card">
         <div class="card__body">
             @if (AllTeams.Count == 0)
@@ -95,15 +98,30 @@ else
                     <span class="empty-state__title">No teams yet</span>
                     <AuthorizeView Roles="Admin">
                         <Authorized>
-                            <span class="empty-state__text">
-                                A team is the group of people who keep access when a solution
-                                isn't public. <a href="/admin/administration/teams">Create one</a>,
-                                then come back here.
-                            </span>
+                            @* Creating, that link would leave with the half-filled form:
+                               the name, the country and the repository rows go with it,
+                               and "come back here" lands on an empty form. So the way
+                               out of this state is to finish first and narrow after. *@
+                            @if (Creating)
+                            {
+                                <span class="empty-state__text">
+                                    A team is the group of people who can change a solution that
+                                    isn't public. Create this solution as public for now, then set
+                                    up a team and come back to restrict it.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="empty-state__text">
+                                    A team is the group of people who can change a solution when it
+                                    isn't public. <a href="/admin/administration/teams">Create one</a>,
+                                    then come back here.
+                                </span>
+                            }
                         </Authorized>
                         <NotAuthorized>
                             <span class="empty-state__text">
-                                A team is the group of people who keep access when a solution isn't
+                                A team is the group of people who can change a solution when it isn't
                                 public. Teams are set up by an admin - you can see your teams and
                                 their managers on the <a href="/teams">Teams page</a>.
                             </span>
@@ -113,7 +131,7 @@ else
             }
             else
             {
-                <p class="form-sec__cap">Pick at least one team. Everyone in the teams you pick keeps full access - you and your admins always do.</p>
+                <p class="form-sec__cap">Pick at least one team. Everyone in those teams can change this solution. You and your organisation's admins always can.</p>
                 <div class="check-list">
                     @foreach (var team in AllTeams)
                     {
@@ -138,6 +156,10 @@ else
    whole tab, not the team list. Sized like the Business Central
    tab's own save - the header's primary is hidden on any tab that
    owns its actions, and this page keeps one primary at a time. *@
+@if (Creating)
+{
+    <p class="form-sec__cap">Create solution saves this along with the name and repositories.</p>
+}
 @if (AllTeams.Count > 0 && !Creating)
 {
     <div class="form-actions">
@@ -226,11 +248,11 @@ else
     private static readonly (ProjectVisibility Value, string Label, string Caption)[] VisibilityChoices =
     {
         (ProjectVisibility.Public, "Public",
-            "Anyone in your organisation can see it, download its builds, and change it - including its Business Central connection. Only you and the admins can delete it."),
-        (ProjectVisibility.ReadOnly, "Read-only for others",
+            "Anyone in your organisation can change it, including its Business Central connection. They can also see it and download its builds. Only you and the admins can delete it."),
+        (ProjectVisibility.ReadOnly, "View-only for everyone else",
             "Anyone can see it and download builds. Only the teams you pick below, you, and the admins can change it or run builds."),
         (ProjectVisibility.Private, "Private",
-            "Only the teams you pick below, you, and the admins can see it. Everyone else sees just the name in the solution list."),
+            "Only the teams you pick below, you, and the admins can see or change it. Everyone else sees just the name in the solution list."),
     };
 
     /// <summary>
@@ -247,6 +269,12 @@ else
     /// reference on purpose: the page builds a fresh instance per read, and a
     /// value comparison would miss a re-read that happened to land on the same
     /// answer, leaving a half-edited form claiming to be saved.
+    ///
+    /// <para>Creating, the page replaces its held answer on every pick, so each pick
+    /// round-trips through here and re-hydrates from what this tab just reported. That
+    /// is deliberate rather than incidental: it is what carries the answer back when
+    /// somebody switches to General and returns, since the tab itself is rebuilt each
+    /// time. <c>ProjectDetailAccessTests</c> pins the round trip.</para>
     /// </summary>
     protected override void OnParametersSet()
     {

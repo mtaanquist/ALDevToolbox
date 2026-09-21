@@ -97,7 +97,7 @@
         }
         else
         {
-            <text>Name the solution and add its repositories, then save.</text>
+            <text>Name the solution, add its repositories, and choose who can see it.</text>
         }
 
     </SubtitleContent>
@@ -172,6 +172,20 @@
                                           SolutionName="@_header?.Name"
                                           OnDirty="MarkDirty"
                                           OnDelete="ConfirmDeleteAsync" />
+                    @* Creating, the level has a default and a consequence, and the tab
+                       that sets it is one somebody may never open. So it is stated here,
+                       on the tab the form opens on, with the way to change it. *@
+                    @if (Id is null)
+                    {
+                        <p class="form-sec__cap">@NewAccessSummary</p>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn--ghost btn--sm"
+                                    @onclick="() => _section = Section.Access">
+                                <Icon Name="users" Width="14" Height="14" />
+                                <span>Choose who can see it</span>
+                            </button>
+                        </div>
+                    }
                 }
                 else if (_section == Section.Repos)
                 {
@@ -282,11 +296,26 @@
     /// solution so a viewer who can't manage it still sees why the page looks the
     /// way it does.
     /// </summary>
-    private string? VisibilityBadge => _loadedProject?.Visibility switch
+    private string? VisibilityBadge => Id is null
+        ? LevelName(_newAccess.Visibility)
+        : _loadedProject?.Visibility switch
+        {
+            ProjectVisibility.Private => "Private",
+            ProjectVisibility.ReadOnly => "Read-only",
+            _ => null,
+        };
+
+    /// <summary>
+    /// A level in one word for the badge. Public is named while creating and not
+    /// afterwards, on purpose: a badge on every solution in the list would stop meaning
+    /// anything, but on the form where the level is being chosen the default is exactly
+    /// what needs saying out loud.
+    /// </summary>
+    private static string LevelName(ProjectVisibility visibility) => visibility switch
     {
         ProjectVisibility.Private => "Private",
         ProjectVisibility.ReadOnly => "Read-only",
-        _ => null,
+        _ => "Public",
     };
 
     private bool _loading = true;
@@ -309,7 +338,25 @@
     /// </summary>
     private ProjectAccessSettings _newAccess = new(ProjectVisibility.Public, Array.Empty<int>());
 
-    private void OnNewAccessChanged(ProjectAccessSettings access) => _newAccess = access;
+    private void OnNewAccessChanged(ProjectAccessSettings access)
+    {
+        _newAccess = access;
+        // The form says "Unsaved changes" for a typed character; it would be a strange
+        // silence for this one.
+        MarkDirty();
+    }
+
+    /// <summary>
+    /// What the create form's General tab says about the level, so the decision is
+    /// stated on the tab people actually open rather than only on the one they might
+    /// not. Public is the default and the widest, which is the sentence worth carrying.
+    /// </summary>
+    private string NewAccessSummary => _newAccess.Visibility switch
+    {
+        ProjectVisibility.Private => "Only the teams you picked can see this solution.",
+        ProjectVisibility.ReadOnly => "Anyone in your organisation can see this solution; only the teams you picked can change it.",
+        _ => "Anyone in your organisation will be able to see and change this solution.",
+    };
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
