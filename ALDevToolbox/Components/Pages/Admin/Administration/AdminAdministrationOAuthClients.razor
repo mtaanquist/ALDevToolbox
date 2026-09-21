@@ -13,7 +13,7 @@
     are immediate.
 *@
 
-<PageTitle>OAuth clients · Administration · AL Dev Toolbox</PageTitle>
+<PageTitle>OAuth clients · Administration · AL Workbench</PageTitle>
 
 <AdministrationHeader ActiveTab="AdministrationHeader.Tab.OAuthClients">
     <Body>
@@ -35,7 +35,7 @@
             <div class="card__body form-sec">
                 <p class="form-sec__cap">
                     Every AI assistant (Claude, Cursor, agent) that someone in your organisation
-                    has authorised to use AL Dev Toolbox. Each row is one user's consent - the same
+                    has authorised to use AL Workbench. Each row is one user's consent - the same
                     assistant can appear multiple times when several users have connected it.
                     Revoking here signs that user's assistant out and forces it to ask for
                     permission again next time. Access tokens - the desktop and command-line
@@ -52,7 +52,7 @@
             {
                 <EmptyState Icon="plug" Title="No assistants connected yet">
                     <Text>
-                        When someone adds AL Dev Toolbox as a connector in Claude (or another
+                        When someone adds AL Workbench as a connector in Claude (or another
                         supported assistant) and clicks <strong>Allow</strong>, their connection
                         appears here.
                     </Text>
@@ -137,7 +137,7 @@
         var parts = scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var labels = parts.Select(s => s switch
         {
-            "mcp" => "use AL Dev Toolbox tools",
+            "mcp" => "use AL Workbench tools",
             "offline_access" => "stay signed in",
             _ => s,
         });

@@ -1,6 +1,6 @@
 # Operator runbook
 
-What you need to run AL Dev Toolbox for paying users. Each section is a flow,
+What you need to run AL Workbench for paying users. Each section is a flow,
 not a tour of the codebase. Treat the bullet at the end of each section as the
 acceptance check.
 

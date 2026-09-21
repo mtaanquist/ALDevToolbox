@@ -1,4 +1,4 @@
-# AL Dev Toolbox — Design System Brief & Claude Design Prompts
+# AL Workbench — Design System Brief & Claude Design Prompts
 
 Purpose: hand off to a **Claude Design agent** to produce a Business-Central-inspired
 design system (tokens, components, page layouts) that we then translate to Blazor per
@@ -98,7 +98,7 @@ Because the output becomes Blazor, the prompts require the agent to:
 ### Prompt 0 — Shared brief (paste once, or at the top of each turn)
 
 ```
-You are designing a cohesive, production-grade design system for "AL Dev Toolbox," an
+You are designing a cohesive, production-grade design system for "AL Workbench," an
 internal web tool used by Microsoft Dynamics 365 Business Central (BC) developers and
 consultants. It generates AL/BC project workspaces and extensions, and bundles ~11 tools:
 a workspace/extension generator, a template browser, a Cookbook (AL recipe library), an
@@ -160,7 +160,7 @@ classes introduced. Import the shared tokens.css produced in step 1.
 ### Prompt 1 — Foundations (tokens)
 
 ```
-STEP 1 of the AL Dev Toolbox design system: the FOUNDATION token layer. Output a
+STEP 1 of the AL Workbench design system: the FOUNDATION token layer. Output a
 self-contained "foundations.html" plus the tokens.css it embeds, rendering the full system
 in both light and dark, side by side.
 
@@ -392,7 +392,7 @@ that pins the sidebar and top bar and scrolls only the content (so sticky elemen
 pages work).
 
 Sidebar:
-- A brand row at top (hammer icon + "AL Dev Toolbox"), aligned to the top bar height so the
+- A brand row at top (hammer icon + "AL Workbench"), aligned to the top bar height so the
   two share one continuous top rule.
 - A primary nav list of TOOLS, each an icon + label link with a clear active state (teal
   accent bar / teal text + tint). Include grouped items with an expandable sub-list (e.g.
@@ -427,7 +427,7 @@ and dark.
 
 1. TOOL LAUNCHER / HOME: a responsive grid of tool tiles (icon + title + one-line caption,
    whole tile is a link, teal hover). Include a "locked" tile variant (a lock badge for a
-   tool the user must sign in / be granted to use). Header: "AL Dev Toolbox" + "Pick a tool
+   tool the user must sign in / be granted to use). Header: "AL Workbench" + "Pick a tool
    to get started."
 
 2. LIST / BROWSER (the workhorse — Templates, Cookbook, Releases, Projects, Pipelines all

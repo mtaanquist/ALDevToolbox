@@ -17,7 +17,7 @@
 @inject PersonalAccessTokenService Pats
 @inject ALDevToolbox.Services.OAuth.OAuthConsentService Consents
 
-<PageTitle>MCP · AL Dev Toolbox</PageTitle>
+<PageTitle>MCP · AL Workbench</PageTitle>
 
 @*
     Page archetype 13 (setup steps): `.steps` / `.step` from pages-content.css,
@@ -214,7 +214,7 @@
 
             <SetupStep Number="3" Title="Try it">
                 <Text>
-                    Reload your assistant, then ask it something only the toolbox can
+                    Reload your assistant, then ask it something only the workbench can
                     answer. If it comes back with a real answer, you're connected.
                 </Text>
                 <ChildContent>
@@ -285,7 +285,7 @@
             <div class="card__body">
                 <div class="note note--info">
                     <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
-                    <span class="note__title">My assistant doesn't see the toolbox</span>
+                    <span class="note__title">My assistant doesn't see the workbench</span>
                     <span class="note__body">
                         Check the URL is reachable from your machine and that the config
                         file is saved where your client looks for it. VS Code needs Copilot

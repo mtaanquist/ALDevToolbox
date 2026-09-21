@@ -26,7 +26,7 @@ namespace ALDevToolbox.Tests.Components;
 /// The two editors GitHub Releases changed (issue #632), rendered.
 ///
 /// <para>Named user: a consultant whose customer wants every shipped <c>.app</c> on the
-/// repository's Releases page, and who sometimes has to redeploy a version the toolbox
+/// repository's Releases page, and who sometimes has to redeploy a version the workbench
 /// did not build. What is pinned here is that neither editor shows them any GitHub
 /// machinery until it can act - an organisation on Azure DevOps, or one that has not
 /// connected GitHub, sees the dialogs exactly as they were - and that when the choice
@@ -218,7 +218,7 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

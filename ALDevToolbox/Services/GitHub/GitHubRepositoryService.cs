@@ -38,7 +38,7 @@ public sealed record GitHubRepositoryAccess(GitHubRepositoryReadiness Readiness,
 
 /// <summary>
 /// The repositories of the connected GitHub organisation, as one person may
-/// see them - the read half every GitHub feature in the toolbox shares.
+/// see them - the read half every GitHub feature in the workbench shares.
 ///
 /// <para><strong>This is the gate.</strong> Two credentials meet here, and the
 /// split is the security decision from <c>.design/github-integration.md</c>:
@@ -150,7 +150,7 @@ public sealed class GitHubRepositoryService
     /// refusals rather than errors:</para>
     /// <list type="number">
     /// <item><description>The repository belongs to the GitHub organisation
-    /// this toolbox organisation connected - the picker offers nothing else,
+    /// this workbench organisation connected - the picker offers nothing else,
     /// so neither does this.</description></item>
     /// <item><description>The acting user can open it on GitHub themselves,
     /// asked with their own token. An answer we could not get is a no.</description></item>

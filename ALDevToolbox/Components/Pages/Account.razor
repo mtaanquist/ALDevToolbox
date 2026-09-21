@@ -50,7 +50,7 @@
     for. See their doc comments.
 *@
 
-<PageTitle>Your account · AL Dev Toolbox</PageTitle>
+<PageTitle>Your account · AL Workbench</PageTitle>
 
 @if (_user is null)
 {
@@ -134,7 +134,7 @@ else
                         <AntiforgeryToken />
                         <div class="setting-list">
                             <SettingRow Name="Full name"
-                                        Hint="Shown on your activity and anywhere your account appears in the toolbox.">
+                                        Hint="Shown on your activity and anywhere your account appears in the workbench.">
                                 <input class="input" type="text" name="DisplayName" value="@_user.DisplayName"
                                        required minlength="2" maxlength="80" aria-label="Full name" />
                             </SettingRow>
@@ -483,7 +483,7 @@ else
             else if (_section == Section.Ai)
             {
                 <p class="u-muted">
-                    Let AI coding assistants work in AL Dev Toolbox on your behalf. Desktop and
+                    Let AI coding assistants work in AL Workbench on your behalf. Desktop and
                     command-line tools (Claude Desktop, Cursor, Claude Code) sign in with an access
                     token you paste in once; Claude on the web and mobile connect through a
                     permission screen, with nothing to paste.
@@ -655,7 +655,7 @@ else
                             <div class="empty-state empty-state--quiet">
                                 <span class="empty-state__title">No assistants connected yet</span>
                                 <span class="empty-state__text">
-                                    Adding AL Dev Toolbox as a connector in Claude opens a permission
+                                    Adding AL Workbench as a connector in Claude opens a permission
                                     screen; once you click <strong>Allow</strong>, the connection shows up here.
                                 </span>
                             </div>
@@ -702,7 +702,7 @@ else
                                 <summary>Show @inactiveClients.Count revoked @(inactiveClients.Count == 1 ? "connection" : "connections")</summary>
                                 <p class="u-muted">
                                     Kept so audit log entries still resolve. The assistant cannot reach
-                                    AL Dev Toolbox unless it reconnects.
+                                    AL Workbench unless it reconnects.
                                 </p>
                                 <table class="data-table data-table--edge">
                                     <thead>
@@ -795,7 +795,7 @@ else
                         <div>
                             <h2 class="card__title">Your GitHub account</h2>
                             <p class="card__sub">
-                                Lets the toolbox work with GitHub <em>as you</em>: create repositories,
+                                Lets the workbench work with GitHub <em>as you</em>: create repositories,
                                 save your work into them, and show you the ones you can already open.
                                 It is not what runs your builds - that is the token below.
                             </p>
@@ -813,7 +813,7 @@ else
                         <div class="empty-state empty-state--quiet">
                             <span class="empty-state__title">GitHub is not set up on this server yet</span>
                             <span class="empty-state__text">
-                                Ask whoever runs AL Dev Toolbox to set it up. Once they have, you can
+                                Ask whoever runs AL Workbench to set it up. Once they have, you can
                                 connect your GitHub account here.
                             </span>
                         </div>
@@ -867,7 +867,7 @@ else
                                     <span>
                                         Your account is connected, but GitHub does not list you in the
                                         <strong>@_githubOrgLogin</strong> organisation - so none of its
-                                        repositories will appear in the toolbox. Ask an owner of
+                                        repositories will appear in the workbench. Ask an owner of
                                         <a href="@GitHubOrgPeopleUrl" target="_blank" rel="noopener">@_githubOrgLogin</a>
                                         to add you, then choose Check again below.
                                     </span>
@@ -879,7 +879,7 @@ else
                             <div class="card__body">
                                 <Alert Tone="AlertTone.Info" Role="status">
                                     <span>
-                                        Nobody has told the toolbox which GitHub organisation your company
+                                        Nobody has told the workbench which GitHub organisation your company
                                         works in yet, so there is nothing for it to show you. An
                                         administrator picks one under Administration &#8594; Repositories.
                                     </span>
@@ -893,7 +893,7 @@ else
                            to a customer months later. *@
                         <div class="card__body">
                             <details>
-                                <summary>What the toolbox does with this</summary>
+                                <summary>What the workbench does with this</summary>
                                 <ul>
                                     <li>It shows you the repositories you can already open on GitHub - and no others.</li>
                                     <li>It saves work to a repository only where you could save it yourself, with
@@ -909,7 +909,7 @@ else
                         @if (_github.NeedsRelink)
                         {
                             <div class="card__foot">
-                                <span class="form-actions__note">Disconnecting only stops the toolbox using GitHub as you.</span>
+                                <span class="form-actions__note">Disconnecting only stops the workbench using GitHub as you.</span>
                                 <form method="post" action="/account/github/link">
                                     <AntiforgeryToken />
                                     @if (CameFromRepositoriesTab)
@@ -939,7 +939,7 @@ else
                         else
                         {
                             <div class="card__foot">
-                                <span class="form-actions__note">Disconnecting only stops the toolbox using GitHub as you.</span>
+                                <span class="form-actions__note">Disconnecting only stops the workbench using GitHub as you.</span>
                             </div>
                         }
                     }
@@ -948,7 +948,7 @@ else
                         <div class="card__body">
                             <p>
                                 Connecting sends you to GitHub to sign in as yourself. After that the
-                                toolbox can:
+                                workbench can:
                             </p>
                             <ul>
                                 <li>show you the repositories you can already open on GitHub - and no others;</li>
@@ -994,7 +994,7 @@ else
                                 {
                                     <text>When</text>
                                 }
-                                one of your solutions builds, the toolbox fetches a copy of the
+                                one of your solutions builds, the workbench fetches a copy of the
                                 repository as you, using a token you paste here. Tokens are stored
                                 encrypted, are only ever used to fetch a copy, and a build fails if one
                                 of them has expired or been removed.
@@ -1218,7 +1218,7 @@ else
         if (_confirmDelete is null || _githubBusy) return;
         var confirmed = await _confirmDelete.OpenAsync(
             title: "Disconnect GitHub?",
-            message: "The toolbox will stop working with GitHub as you. Nothing on GitHub changes, and you can connect again whenever you like.",
+            message: "The workbench will stop working with GitHub as you. Nothing on GitHub changes, and you can connect again whenever you like.",
             confirmLabel: "Disconnect",
             confirmButtonClass: "btn--danger");
         if (!confirmed) return;
@@ -1260,7 +1260,7 @@ else
             }
             else if (member.Value)
             {
-                _repoOk = $"You are in the {_githubOrgLogin} organisation on GitHub. Its repositories will show up in the toolbox now.";
+                _repoOk = $"You are in the {_githubOrgLogin} organisation on GitHub. Its repositories will show up in the workbench now.";
             }
             else
             {
@@ -1389,8 +1389,8 @@ else
         "ms-linked" => "Microsoft account connected. You can now use \"Sign in with Microsoft\" on the login page.",
         "ms-unlinked" => "Microsoft account disconnected.",
         "token-revoked" => "Access token revoked.",
-        "github-linked" => "GitHub connected. The toolbox can now work with the repositories you have access to.",
-        "github-unlinked" => "GitHub disconnected. The toolbox no longer works with GitHub as you.",
+        "github-linked" => "GitHub connected. The workbench can now work with the repositories you have access to.",
+        "github-unlinked" => "GitHub disconnected. The workbench no longer works with GitHub as you.",
         _ => "Saved.",
     };
 
@@ -1473,7 +1473,7 @@ else
     // --- Connected assistants -------------------------------------------
 
     /// <summary>
-    /// Disconnecting stops an assistant reaching the toolbox as you, so it asks
+    /// Disconnecting stops an assistant reaching the workbench as you, so it asks
     /// first — the old row button did it on a single click with no way back.
     /// </summary>
     private async Task DisconnectClientAsync(ConnectedClient client)
@@ -1494,7 +1494,7 @@ else
         var parts = scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var labels = parts.Select(s => s switch
         {
-            "mcp" => "Use AL Dev Toolbox tools",
+            "mcp" => "Use AL Workbench tools",
             "offline_access" => "Stay signed in",
             _ => s,
         });

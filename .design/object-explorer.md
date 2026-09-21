@@ -9,7 +9,7 @@ This document specifies how the Object Explorer ingests Business Central applica
 Today the Object Explorer imports one "Base Application" source ZIP per BC version and runs find-references as a name-only regex over file contents. That has two known limits:
 
 1. **Name-only matching is wrong.** `ErrorInfo.Create(...)` shows up as a reference to any codeunit's `Create` procedure; every table's `Code` field surfaces every other table's same-named declaration. The receiver-awareness band-aid (separate small PR) closes part of this gap by inspecting the call site's qualifier, but the underlying model still has no way to distinguish "different objects that happen to share an identifier".
-2. **Single-app-per-version is wrong for BC.** A real BC deployment is dozens to hundreds of `.app` modules: Base Application, System Application, Business Foundation, every localisation, every Microsoft first-party extension (Shopify Connector, Sales & Inventory Forecast, AI Test Toolkit, …), every partner app, every customer customisation. A cross-app reference search — "where in everything you've imported does anyone call `Codeunit "Sales-Post"`?" — is exactly what VS Code can't do because VS Code only sees one workspace. That's the feature the toolbox should own.
+2. **Single-app-per-version is wrong for BC.** A real BC deployment is dozens to hundreds of `.app` modules: Base Application, System Application, Business Foundation, every localisation, every Microsoft first-party extension (Shopify Connector, Sales & Inventory Forecast, AI Test Toolkit, …), every partner app, every customer customisation. A cross-app reference search — "where in everything you've imported does anyone call `Codeunit "Sales-Post"`?" — is exactly what VS Code can't do because VS Code only sees one workspace. That's the feature the workbench should own.
 
 The `.app` archive is the right ingest format because it carries a `SymbolReference.json` with **fully resolved type metadata**: every variable's `TypeDefinition.Subtype = (ModuleId, Id, Name)` triplet uniquely identifies the target object across the entire BC ecosystem. Ingesting `.app` files turns receiver resolution from a regex heuristic into a SQL join.
 
@@ -94,7 +94,7 @@ Approximate corpus footprint after filtering for a full BC 25 DVD: order of 200�
 
 ## Ingest pipeline
 
-A new endpoint, e.g. `POST /admin/object-explorer/releases`, accepts a multipart upload of one archive plus a label (`"BC 25.18"`). Processing runs synchronously inside the request (consistent with the rest of the toolbox — no background workers) and streams progress to the page via Blazor Server's interactive render.
+A new endpoint, e.g. `POST /admin/object-explorer/releases`, accepts a multipart upload of one archive plus a label (`"BC 25.18"`). Processing runs synchronously inside the request (consistent with the rest of the workbench — no background workers) and streams progress to the page via Blazor Server's interactive render.
 
 1. **Stream the upload to a temp file.** A 500 MB body can't live in memory.
 2. **Walk the archive's directory entries.** No full extraction. For each `.app` encountered:

@@ -13,7 +13,7 @@
 @using ALDevToolbox.Services.Cookbook
 @using ALDevToolbox.Services.GitHub
 
-<PageTitle>@(_recipe?.Title ?? "Recipe") · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_recipe?.Title ?? "Recipe") · AL Workbench</PageTitle>
 
 @*
     Archetype 3 (master-detail), same shape as /pipelines/{id} and /releases/{id}:
@@ -561,7 +561,7 @@
         catch (Exception ex) when (ex is GitHubAppNotConfiguredException or HttpRequestException or TaskCanceledException)
         {
             Logger.LogWarning(ex, "Could not reach GitHub to apply recipe {RecipeId}.", _recipe.Id);
-            _repoError = "The toolbox could not reach GitHub just now, so nothing was committed. "
+            _repoError = "The workbench could not reach GitHub just now, so nothing was committed. "
                 + "Try again in a minute.";
         }
         finally

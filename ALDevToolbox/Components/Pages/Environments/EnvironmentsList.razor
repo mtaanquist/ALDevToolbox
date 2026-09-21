@@ -31,7 +31,7 @@
     current - see .design/environment-updates.md.
 *@
 
-<PageTitle>Environments · AL Dev Toolbox</PageTitle>
+<PageTitle>Environments · AL Workbench</PageTitle>
 
 @{
     // Worked out once: the no-matches state, the table and the count all read it.
@@ -764,7 +764,7 @@
         catch (Exception ex)
         {
             Log.LogError(ex, "Uploading an app failed for environment {EnvId}.", row.EnvironmentId);
-            _error = $"Couldn't upload {upload.FileName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.";
+            _error = $"Couldn't upload {upload.FileName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.";
         }
         finally
         {
@@ -809,7 +809,7 @@
         catch (Exception ex)
         {
             Log.LogError(ex, "Copying environment {EnvId} failed.", row.EnvironmentId);
-            _error = $"Couldn't copy {row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.";
+            _error = $"Couldn't copy {row.EnvironmentName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.";
         }
         finally
         {
@@ -864,7 +864,7 @@
         catch (Exception ex)
         {
             Log.LogError(ex, "Recovering environment {EnvId} failed.", row.EnvironmentId);
-            _error = $"Couldn't bring {row.EnvironmentName} back. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.";
+            _error = $"Couldn't bring {row.EnvironmentName} back. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.";
         }
         finally
         {

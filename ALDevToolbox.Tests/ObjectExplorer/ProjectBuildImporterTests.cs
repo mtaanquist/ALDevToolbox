@@ -166,7 +166,7 @@ public sealed class ProjectBuildImporterTests : IDisposable
     public async Task StartPullRequestBuildAsync_accepts_a_build_with_no_check_run()
     {
         // GitHub can refuse the check run (a missing grant, most often). The build
-        // still runs and is still visible in the toolbox; it simply reports nowhere.
+        // still runs and is still visible in the workbench; it simply reports nowhere.
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectWithRepoAsync(ctx);
         var repositoryId = await ctx.OeProjectRepositories.Where(r => r.ProjectId == projectId)

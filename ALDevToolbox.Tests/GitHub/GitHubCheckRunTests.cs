@@ -36,10 +36,10 @@ public sealed class GitHubCheckRunTests : IDisposable
         var token = await client.GetInstallationTokenAsync(InstallationId);
         var id = await client.CreateCheckRunAsync(
             token, "cronus-dk", "customer-app",
-            name: "AL Dev Toolbox / CRONUS Retail",
+            name: "AL Workbench / CRONUS Retail",
             headSha: "abc123",
             status: "in_progress",
-            detailsUrl: "https://toolbox.example/solutions/9",
+            detailsUrl: "https://workbench.example/solutions/9",
             externalId: "9");
 
         id.Should().Be(555);
@@ -50,9 +50,9 @@ public sealed class GitHubCheckRunTests : IDisposable
 
         var body = JsonDocument.Parse(api.Bodies.Single(b => b.Call.Contains("/check-runs")).Body).RootElement;
         body.GetProperty("head_sha").GetString().Should().Be("abc123");
-        body.GetProperty("name").GetString().Should().Be("AL Dev Toolbox / CRONUS Retail");
+        body.GetProperty("name").GetString().Should().Be("AL Workbench / CRONUS Retail");
         body.GetProperty("status").GetString().Should().Be("in_progress");
-        body.GetProperty("details_url").GetString().Should().Be("https://toolbox.example/solutions/9");
+        body.GetProperty("details_url").GetString().Should().Be("https://workbench.example/solutions/9");
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class GitHubCheckRunTests : IDisposable
 
         await client.CreateCheckRunAsync(
             token, "cronus-dk", "customer-app",
-            name: "AL Dev Toolbox / CRONUS Retail",
+            name: "AL Workbench / CRONUS Retail",
             headSha: "abc123",
             status: "in_progress",
             detailsUrl: null,
@@ -209,7 +209,7 @@ public sealed class GitHubCheckRunTests : IDisposable
         var token = await client.GetInstallationTokenAsync(InstallationId);
 
         Func<Task> act = () => client.CreateCheckRunAsync(
-            token, "cronus-dk", "customer-app", "AL Dev Toolbox / CRONUS", "abc", "in_progress");
+            token, "cronus-dk", "customer-app", "AL Workbench / CRONUS", "abc", "in_progress");
 
         var ex = await act.Should().ThrowAsync<GitHubApiException>();
         ex.Which.Message.Should().Contain("Resource not accessible by integration");
@@ -220,7 +220,7 @@ public sealed class GitHubCheckRunTests : IDisposable
         // A repository can be tracked by more than one solution, and each gets
         // its own run - the name is what tells them apart on the pull request.
         GitHubCheckRunService.CheckRunName("CRONUS Retail")
-            .Should().Be("AL Dev Toolbox / CRONUS Retail");
+            .Should().Be("AL Workbench / CRONUS Retail");
 
     private static FakeGitHubApi ApiWithChecks() =>
         new FakeGitHubApi()
@@ -235,7 +235,7 @@ public sealed class GitHubCheckRunTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

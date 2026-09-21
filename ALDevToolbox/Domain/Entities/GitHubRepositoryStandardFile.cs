@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
-/// One file the organisation wants in every repository the toolbox creates
+/// One file the organisation wants in every repository the workbench creates
 /// (issue #628) - a workflow, a CODEOWNERS, a pull-request template.
 ///
 /// <para>Deliberately not an <see cref="OrganizationFile"/>: those are the

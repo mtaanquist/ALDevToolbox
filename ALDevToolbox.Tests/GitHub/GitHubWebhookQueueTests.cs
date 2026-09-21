@@ -39,7 +39,7 @@ public sealed class GitHubWebhookQueueTests
     [Fact]
     public void Finishing_the_latest_head_forgets_it_so_the_map_does_not_grow_forever()
     {
-        // Every pull request the toolbox ever built would otherwise leave an
+        // Every pull request the workbench ever built would otherwise leave an
         // entry behind for the life of the process.
         var queue = new GitHubWebhookQueue();
         var job = Job("aaa");

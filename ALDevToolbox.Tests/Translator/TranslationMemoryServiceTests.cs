@@ -68,7 +68,7 @@ public sealed class TranslationMemoryServiceTests : IDisposable
         // The repository sweep records which repository and file a pair came
         // from; a release import upserts the same pairs with no attribution at
         // all. Letting its nulls through left "where did this come from" blank
-        // for entries the toolbox could answer for.
+        // for entries the workbench could answer for.
         await using (var ctx = _db.NewContext())
         {
             await NewMemory(ctx).UpsertAsync([new TranslationMemoryUpsert(

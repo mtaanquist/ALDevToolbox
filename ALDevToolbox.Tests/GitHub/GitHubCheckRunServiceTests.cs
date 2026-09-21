@@ -109,7 +109,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var service = NewService(ctx, api);
 
-        await service.AbandonAsync(InstallationId, UnderReview, 555, "The toolbox could not start this build.");
+        await service.AbandonAsync(InstallationId, UnderReview, 555, "The workbench could not start this build.");
 
         var patch = api.Bodies.Single(b => b.Call.StartsWith("PATCH"));
         var body = JsonDocument.Parse(patch.Body).RootElement;
@@ -283,7 +283,7 @@ public sealed class GitHubCheckRunServiceTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

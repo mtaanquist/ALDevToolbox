@@ -32,7 +32,7 @@
     the legacy convention.
 *@
 
-<PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_release?.Label ?? "Release") · AL Workbench</PageTitle>
 
 <DetailPage IsLoading="@(_release is null && !_loaded)"
             LoadingText="Loading release..."
@@ -729,7 +729,7 @@
             // that the circuit is connected and the release has loaded.
             if (_release is not null)
             {
-                await JS.InvokeVoidAsync("aldt.setTitle", $"{_release.Label} · AL Dev Toolbox");
+                await JS.InvokeVoidAsync("aldt.setTitle", $"{_release.Label} · AL Workbench");
             }
 
             // Park focus in the search box on first render so a keyboard-first

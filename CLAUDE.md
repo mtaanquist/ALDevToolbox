@@ -4,7 +4,7 @@ Guidance for working on this repository: the principles, fences, and conventions
 
 ## Project at a glance
 
-- **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
+- **AL Workbench** — internal Blazor Server tool covering a Business Central solution end to end: generating workspaces and extensions from runtime templates, exploring and translating source, building and shipping repositories, and operating the customer environments they land on.
 - Stack: .NET 10, Blazor Server, EF Core 10 + Npgsql against PostgreSQL 18, Tomlyn. Lucide icons are vendored as embedded SVGs (no NuGet dependency); see `Resources/Icons/`.
 - Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit v3 + AwesomeAssertions). The solution file is `ALDevToolbox.slnx` at the repo root. `PROJECT.md` has the folder-by-folder map — match it when adding files.
 - Source of truth for behaviour: documents under `.design/` (indexed in `PROJECT.md`). If code disagrees with the design doc, fix one of them — don't leave them out of sync.
@@ -80,6 +80,64 @@ The spine keeps the old name because renaming it would touch ~5,300 identifiers 
 files and need a migration over 13 tables, for nothing a user or an agent would notice. So
 when you add UI copy, write Solution; when you name a variable, write Project; and don't
 "fix" one side to match the other. `/projects*` still redirects (`LegacyRedirectEndpoints`).
+
+### AL Workbench in the product, ALDevToolbox in the plumbing
+
+The product is called **AL Workbench** everywhere a person can read it, and keeps the
+spelling `ALDevToolbox` / `aldevtoolbox` / `aldt` everywhere only a machine reads it. Same
+split as Solution/Project above, and for the same reason: the visible name was wrong, and
+the spine is not worth breaking to fix it.
+
+It got the new name because the tool outgrew "Dev" — Environments, Upgrades, Pipelines and
+Deliveries are operations work, not development — and because "Toolbox" sits one word away
+from Erik Hougaard's ToolBox, a commercial Business Central product this audience already
+knows. "Workbench" covers authoring and operating without naming either.
+
+The line runs exactly here:
+
+| Says AL Workbench | Keeps the old spelling |
+| --- | --- |
+| Visible copy — page titles, the brand in the shell, captions, empty states, validation messages, emails, docs pages | The C# namespace and assembly, `ALDevToolbox.dll`, the csproj and solution file |
+| OCI image labels, `README.md` / `PROJECT.md` prose, `.design/` documents | The compose service `aldevtoolbox` and the Caddy upstream that resolves it by that name |
+| The GitHub check-run name and the repository-standards ruleset name | In-container paths `/var/lib/aldevtoolbox/{dp-keys,backups,altool}` |
+| The seeded ruleset description and README body in `PlatformOrganizationFiles` | `POSTGRES_USER` / `POSTGRES_DB` defaults, and the `ALDEVTOOLBOX_TAG` env var |
+| The app-owned stylesheets' header comments (`app.css`, `code-editor.css`, `source-viewer.css`) | `workspace.aldt.toml`, the `aldt` JS namespace, and the `ALDT` MCP server name |
+| | Every Data Protection purpose string (`ALDevToolbox.UserTotpSecret`, `ALDevToolbox.EmailOutbox.Body`, the SMTP / off-site / Entra / GitHub secrets) |
+| | The `aldevtoolbox-` backup filename prefix and the `aldevtoolbox/` off-site key prefix |
+| | The byte-locked stylesheets' header comments, which must stay identical to `.design/handoff/` |
+
+Three of those are frozen for reasons worth stating, because they look like leftovers:
+
+- **A Data Protection purpose string is a decryption key in all but name.** Change one and
+  every value encrypted under it - a user's TOTP seed, a queued email body, the SMTP
+  password, the off-site and Entra and GitHub secrets - stops decrypting, with no error
+  until something reaches for it. They all carry the `ALDevToolbox.` prefix, which is why
+  the rename could not reach them; keep it that way. The `aldevtoolbox-` prefix on
+  `pg_dump` filenames and the `aldevtoolbox/` key prefix off-site are the same shape of
+  problem one level down: rename either and retention stops recognising the backups that
+  are already there.
+- **The in-container paths are load-bearing.** They are the defaults behind
+  `DATA_PROTECTION_KEY_DIR`, `BACKUPS_DIR` and `AL_COMPILER_DIR`. Rename them and a stack
+  running on defaults points at an empty directory on its next start: the Data Protection
+  key ring reads as absent, every login cookie is invalidated, and the stored SMTP password
+  can no longer be decrypted. That is the `app-keys` loss scenario, self-inflicted during
+  an upgrade. The named volumes themselves (`pg-data`, `app-keys`, `app-backups`,
+  `app-altool`) never carried the product name, so they need no story.
+- **`workspace.aldt.toml` is in other people's repositories.** Every generated workspace
+  carries one and `WorkspaceConfigService` reads it back. It can only change if the parser
+  learns to accept both names, which is not worth doing for a filename nobody reads aloud.
+  The `ALDT` MCP server name is the same shape of promise, made to colleagues' agent
+  configuration instead.
+- **The image path follows the repo, not a literal.** `release.yml` and `staging.yml` build
+  it from `ghcr.io/${{ github.repository }}`, so renaming the GitHub repository moves the
+  image on its own with no workflow edit. GHCR packages do not follow a repository rename:
+  the old package keeps serving its existing tags and never receives new ones, and the new
+  package is created private and unlinked. Publish both paths for a release or two before
+  dropping the old one.
+
+So when you write something a user reads, write AL Workbench; when you name a directory, a
+service, a volume or a namespace, leave it alone; and don't "fix" one side to match the
+other.
 
 ### Stay inside the architectural fences
 

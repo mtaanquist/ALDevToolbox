@@ -83,7 +83,7 @@ public sealed class BcEnvironmentStatusTests
     }
 
     /// <summary>
-    /// The one lifecycle state the toolbox splits out rather than merely describes:
+    /// The one lifecycle state the workbench splits out rather than merely describes:
     /// nothing can be published, updated or rescheduled on a deleted environment, so
     /// every list has to be able to ask this question the same way.
     /// </summary>

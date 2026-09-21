@@ -1,6 +1,6 @@
 # AL reference extractor — structural refactor
 
-This document captures the design lessons from the iterative noise-reduction work on `AlReferenceExtractor` (PR #159) and proposes a structural refactor that addresses the root causes those band-aids worked around. It's a follow-up doc, not a milestone replacement: the existing extractor is good enough for the current v0.5 alpha and will merge to `main` as-is; this work goes on a fresh branch where destructive changes are acceptable since the toolbox isn't in production yet.
+This document captures the design lessons from the iterative noise-reduction work on `AlReferenceExtractor` (PR #159) and proposes a structural refactor that addresses the root causes those band-aids worked around. It's a follow-up doc, not a milestone replacement: the existing extractor is good enough for the current v0.5 alpha and will merge to `main` as-is; this work goes on a fresh branch where destructive changes are acceptable since the workbench isn't in production yet.
 
 **Status:** proposal. Written after the noise-reduction PR shipped, before any of the refactor work has started. A planning agent or implementer should treat this as a punch list to scope against `.design/object-explorer.md` (the canonical Object Explorer spec) and `.design/al-reference-extractor-gaps.md` (the existing gaps list — extends it rather than replaces it).
 
@@ -71,7 +71,7 @@ Replace the conflated kind strings at write time so every downstream consumer re
 
 Updated `AlSymbolExtractor` emits the disambiguated kinds directly. `ReleaseImportService.EmitSymbols` no longer needs the `EmitSymbols` → "consumed extractor row" dedup gymnastics for table-vs-page fields. The filter at `SourceFileViewer.razor:IsNonNavigableDeclaration` becomes a flat list lookup again — no owner-kind branch.
 
-**Migration**: backfill via re-import. The toolbox is alpha; re-imports of full BC DVDs take ~90 seconds. A scripted "drop all object-explorer data + re-import" path is fine. The schema doesn't need a column rename — the values in `kind` just change.
+**Migration**: backfill via re-import. The workbench is alpha; re-imports of full BC DVDs take ~90 seconds. A scripted "drop all object-explorer data + re-import" path is fine. The schema doesn't need a column rename — the values in `kind` just change.
 
 **Side benefit**: the kind alone tells a maintainer what they're looking at, without having to load the surrounding object's row.
 

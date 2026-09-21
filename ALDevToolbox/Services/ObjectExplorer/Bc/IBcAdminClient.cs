@@ -170,7 +170,7 @@ public interface IBcAdminClient
 
     /// <summary>
     /// Reads the environment's <em>Microsoft platform-update window</em>
-    /// (<c>settings/upgrade</c>) — mirrored as context beside the toolbox's own delivery
+    /// (<c>settings/upgrade</c>) — mirrored as context beside the workbench's own delivery
     /// slot, never as a source for it. Returns <c>null</c> when the environment has no
     /// window configured (the API answers a literal <c>null</c> body) and when the
     /// environment itself is gone (404), because neither is a fault the caller can act

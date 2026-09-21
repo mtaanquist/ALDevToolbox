@@ -19,7 +19,7 @@ namespace ALDevToolbox.Endpoints;
 /// sends them back to <c>/github/setup</c> with the installation id.</description></item>
 /// <item><description><em>Link</em> (issue #621) — any member posts to
 /// <c>/account/github/link</c>, authorises the app as themselves, and GitHub
-/// sends them back to <c>/signin-github</c> with a code the toolbox trades for
+/// sends them back to <c>/signin-github</c> with a code the workbench trades for
 /// a user-to-server token.</description></item>
 /// </list>
 ///
@@ -95,7 +95,7 @@ internal static class GitHubAppEndpoints
             if (!view.IsConfigured)
             {
                 RedirectWithMessage(ctx, RepositoriesTab,
-                    "GitHub is not set up on this server yet. Ask whoever runs AL Dev Toolbox to add it, then try again.");
+                    "GitHub is not set up on this server yet. Ask whoever runs AL Workbench to add it, then try again.");
                 return;
             }
 
@@ -162,7 +162,7 @@ internal static class GitHubAppEndpoints
             catch (GitHubAppNotConfiguredException)
             {
                 RedirectWithMessage(ctx, RepositoriesTab,
-                    "GitHub is not set up on this server yet. Ask whoever runs AL Dev Toolbox to add it, then try again.");
+                    "GitHub is not set up on this server yet. Ask whoever runs AL Workbench to add it, then try again.");
             }
             catch (GitHubApiException ex)
             {
@@ -190,7 +190,7 @@ internal static class GitHubAppEndpoints
             if (!app.IsConfigured || string.IsNullOrEmpty(app.ClientId) || !app.HasClientSecret)
             {
                 RedirectToAccount(ctx,
-                    "GitHub is not set up on this server yet. Ask whoever runs AL Dev Toolbox to finish setting it up, then try again.");
+                    "GitHub is not set up on this server yet. Ask whoever runs AL Workbench to finish setting it up, then try again.");
                 return;
             }
 
@@ -265,7 +265,7 @@ internal static class GitHubAppEndpoints
             catch (GitHubAppNotConfiguredException)
             {
                 RedirectToAccount(ctx,
-                    "GitHub is not set up on this server yet. Ask whoever runs AL Dev Toolbox to finish setting it up, then try again.");
+                    "GitHub is not set up on this server yet. Ask whoever runs AL Workbench to finish setting it up, then try again.");
             }
             catch (GitHubApiException ex)
             {

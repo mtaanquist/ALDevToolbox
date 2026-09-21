@@ -26,7 +26,7 @@ public sealed class LauncherPageTests : IDisposable
 
     private IRenderedComponent<LauncherPage> Render(params LauncherGroup[] groups) =>
         _ctx.Render<LauncherPage>(p => p
-            .Add(c => c.Title, "AL Dev Toolbox")
+            .Add(c => c.Title, "AL Workbench")
             .Add(c => c.Subtitle, "Pick a tool to get started.")
             .Add(c => c.Groups, groups));
 
@@ -39,7 +39,7 @@ public sealed class LauncherPageTests : IDisposable
 
         cut.Find("div.page").Children.Select(e => e.ClassName).Should()
             .Equal("page__hero", "section-label", "tool-grid", "section-label", "tool-grid");
-        cut.Find("h1.page__hero-title").TextContent.Should().Be("AL Dev Toolbox");
+        cut.Find("h1.page__hero-title").TextContent.Should().Be("AL Workbench");
         cut.FindAll(".section-label").Select(e => e.TextContent).Should().Equal("Build", "Deliver");
 
         var tile = cut.Find("a.tool-tile[href='/templates']");

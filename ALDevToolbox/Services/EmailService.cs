@@ -146,7 +146,7 @@ public sealed class SmtpEmailService : IEmailService
         if (!string.IsNullOrWhiteSpace(resolved.FromName))
         {
             // Pair the configured display name with the resolved address so
-            // recipients see "AL Dev Toolbox <noreply@…>" rather than the bare
+            // recipients see "AL Workbench <noreply@…>" rather than the bare
             // address acting as its own name.
             fromAddress = new MailboxAddress(resolved.FromName, fromAddress.Address);
         }
@@ -176,7 +176,7 @@ public static class EmailTemplates
     public static (string Subject, string HtmlBody) ForgotPassword(string displayName, string resetUrl)
         => ("Reset your password",
             $"<p>Hi {Html(displayName)},</p>"
-            + "<p>Someone (hopefully you) asked to reset your AL Dev Toolbox password. "
+            + "<p>Someone (hopefully you) asked to reset your AL Workbench password. "
             + $"Use this link within the next hour to choose a new one:</p>"
             + $"<p><a href=\"{Html(resetUrl)}\">{Html(resetUrl)}</a></p>"
             + "<p>If you didn't request this, you can ignore this message and your password stays unchanged.</p>");
@@ -205,10 +205,10 @@ public static class EmailTemplates
         var welcomeBlock = string.IsNullOrWhiteSpace(welcomeMessage)
             ? string.Empty
             : $"<blockquote style=\"border-left: 3px solid #ccc; padding-left: 0.75em; margin: 1em 0; color: #444;\">{Html(welcomeMessage)}</blockquote>";
-        return ($"You're invited to {Subject(orgName)} on AL Dev Toolbox",
+        return ($"You're invited to {Subject(orgName)} on AL Workbench",
             $"<p>Hi,</p>"
             + $"<p><strong>{Html(invitingAdminName)}</strong> has invited you to join "
-            + $"<strong>{Html(orgName)}</strong> on AL Dev Toolbox as a <strong>{Html(roleLabel)}</strong>.</p>"
+            + $"<strong>{Html(orgName)}</strong> on AL Workbench as a <strong>{Html(roleLabel)}</strong>.</p>"
             + welcomeBlock
             + $"<p>Use this link within the next 7 days to set a full name and password:</p>"
             + $"<p><a href=\"{Html(acceptUrl)}\">{Html(acceptUrl)}</a></p>"
@@ -216,10 +216,10 @@ public static class EmailTemplates
     }
 
     public static (string Subject, string HtmlBody) SignupVerification(string verifyUrl, string code)
-        => ("Verify your email for AL Dev Toolbox",
+        => ("Verify your email for AL Workbench",
             // No display name is known yet — the account doesn't exist.
             "<p>Hi,</p>"
-            + "<p>Someone (hopefully you) started signing up for AL Dev Toolbox with this email "
+            + "<p>Someone (hopefully you) started signing up for AL Workbench with this email "
             + "address. Confirm it's yours to continue — this link and code are valid for the next "
             + "30 minutes:</p>"
             + $"<p><a href=\"{Html(verifyUrl)}\">{Html(verifyUrl)}</a></p>"
@@ -229,29 +229,29 @@ public static class EmailTemplates
             + "the address is confirmed.</p>");
 
     public static (string Subject, string HtmlBody) MagicLink(string displayName, string magicUrl)
-        => ("Your AL Dev Toolbox sign-in link",
+        => ("Your AL Workbench sign-in link",
             $"<p>Hi {Html(displayName)},</p>"
-            + "<p>Use this single-use link to sign in to AL Dev Toolbox. "
+            + "<p>Use this single-use link to sign in to AL Workbench. "
             + "It's valid for the next 15 minutes:</p>"
             + $"<p><a href=\"{Html(magicUrl)}\">{Html(magicUrl)}</a></p>"
             + "<p>If you didn't request this link, you can ignore this email.</p>");
 
     public static (string Subject, string HtmlBody) MfaEmailCode(string displayName, string code)
-        => ("Your AL Dev Toolbox sign-in code",
+        => ("Your AL Workbench sign-in code",
             $"<p>Hi {Html(displayName)},</p>"
             + $"<p>Your verification code is <strong style=\"font-size: 1.5em; letter-spacing: 0.15em;\">{Html(code)}</strong></p>"
             + "<p>It expires in 10 minutes. If you didn't request it, ignore this email and change your password.</p>");
 
     public static (string Subject, string HtmlBody) EmailChangeConfirm(string displayName, string confirmUrl)
-        => ("Confirm your new AL Dev Toolbox email",
+        => ("Confirm your new AL Workbench email",
             $"<p>Hi {Html(displayName)},</p>"
-            + "<p>An administrator changed the email address on your AL Dev Toolbox account to this one. "
+            + "<p>An administrator changed the email address on your AL Workbench account to this one. "
             + "Click below within 24 hours to confirm. Until then, sign-in still uses your old address.</p>"
             + $"<p><a href=\"{Html(confirmUrl)}\">{Html(confirmUrl)}</a></p>"
             + "<p>If you weren't expecting this, ignore the message — the change won't take effect.</p>");
 
     public static (string Subject, string HtmlBody) SiteAdminTest(string displayName)
-        => ("AL Dev Toolbox SMTP test",
+        => ("AL Workbench SMTP test",
             $"<p>Hi {Html(displayName)},</p>"
             + "<p>This is a test from /site-admin/settings. If you're reading it, the SMTP configuration is working.</p>");
 

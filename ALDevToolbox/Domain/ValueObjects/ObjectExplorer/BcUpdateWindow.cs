@@ -4,7 +4,7 @@ namespace ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 /// Pure helpers for <em>Microsoft's</em> platform-update window, mirrored from
 /// <c>settings/upgrade</c> onto <c>ProjectEnvironment.BcUpdateWindow*</c>.
 /// <para>
-/// <b>Two different windows exist and this is the other one.</b> The toolbox's own
+/// <b>Two different windows exist and this is the other one.</b> The workbench's own
 /// delivery slot (<see cref="UpdateWindow"/>, <c>ProjectEnvironment.UpdateWindowStart</c>
 /// / <c>End</c>) is a commercial arrangement enforced by our worker. This one is when
 /// Microsoft patches the environment. Neither is derived from the other; the only
@@ -54,7 +54,7 @@ public static class BcUpdateWindow
     }
 
     /// <summary>
-    /// True when the toolbox's delivery slot and Microsoft's update window share any
+    /// True when the workbench's delivery slot and Microsoft's update window share any
     /// minute of the day. Both windows are daily and may wrap past midnight, and they can
     /// be expressed in different zones, so both are projected onto the same UTC day
     /// (<paramref name="referenceUtc"/>) before comparing. Returns false when either

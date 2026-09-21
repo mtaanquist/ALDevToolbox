@@ -135,7 +135,7 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
             {
                 // Without a token nothing can be cloned, and saying so on the build
                 // is more useful than a clone failure per repository.
-                const string Message = "The toolbox could not get permission from GitHub to read the repository.";
+                const string Message = "The workbench could not get permission from GitHub to read the repository.";
                 _logger.LogWarning(ex, "Pull-request build for release {ReleaseId}: no installation token.", job.ReleaseId);
                 await importer.MarkFailedAsync(job.ReleaseId, Message, ct).ConfigureAwait(false);
                 await buildService.MarkBuildFailedAsync(job.ReleaseId, Message, ct).ConfigureAwait(false);

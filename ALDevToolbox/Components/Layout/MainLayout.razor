@@ -24,9 +24,20 @@
 <div class="shell-root">
     <div class="app">
         <div class="app__brand">
-            <a href="/" class="brand__link" aria-label="Home">
+            @* Product name over organisation: "which install am I in" reads
+               here, beside the mark, rather than bundled with the user's
+               identity in the top bar. Both lines are inside the link, so its
+               own label has to name the organisation - at rail width shell.css
+               hides the text and the label is all that is left. *@
+            <a href="/" class="brand__link" aria-label="@HomeLabel(BrandOrg)">
                 <span class="brand__mark"><Icon Name="hammer" Width="17" Height="17" /></span>
-                <span class="brand__name">AL Dev Toolbox</span>
+                <span class="brand__text">
+                    <span class="brand__name">AL Workbench</span>
+                    @if (!string.IsNullOrEmpty(BrandOrg))
+                    {
+                        <span class="brand__org" title="@BrandOrg">@BrandOrg</span>
+                    }
+                </span>
             </a>
             @* Closes the drawer once it is open; the opener lives in the top
                bar, because below 700px .app__brand is itself hidden. *@
@@ -56,15 +67,6 @@
                 <AuthorizeView>
                     <Authorized>
                         @{
-                            // Prefer the live (cached) name so a rename via
-                            // /admin/configuration/identity takes effect for every
-                            // active circuit without forcing a re-login. Fall back
-                            // to the org_name claim if the live lookup hasn't
-                            // completed yet, so the first prerender frame still
-                            // shows something useful.
-                            var orgName = !string.IsNullOrEmpty(_liveOrgName)
-                                ? _liveOrgName
-                                : context.User.FindFirst("org_name")?.Value;
                             var roles = context.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
                             var role = roles.Contains("SiteAdmin") ? "Site admin"
                                 : roles.Contains("Admin") ? "Admin"
@@ -76,9 +78,12 @@
                             <span class="user-btn__avatar" aria-hidden="true">@Initials(name)</span>
                             <span class="user-btn__meta">
                                 <span class="user-btn__name">@name</span>
-                                @if (!string.IsNullOrEmpty(orgName) || !string.IsNullOrEmpty(role))
+                                @if (!string.IsNullOrEmpty(role))
                                 {
-                                    <span class="user-btn__org">@OrgLine(orgName, role)</span>
+                                    @* The handoff calls this line __org; it now
+                                       carries the role alone, because the
+                                       organisation moved to the brand. *@
+                                    <span class="user-btn__org">@role</span>
                                 }
                             </span>
                         </a>
@@ -121,27 +126,32 @@
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private string? _liveOrgName;
+    private string? _claimOrgName;
+
+    /// <summary>
+    /// The organisation shown under the product name. Prefers the live (cached)
+    /// name so a rename via /admin/configuration/identity takes effect for every
+    /// active circuit without forcing a re-login, and falls back to the
+    /// <c>org_name</c> claim for the frame before the lookup returns.
+    /// </summary>
+    private string? BrandOrg => !string.IsNullOrEmpty(_liveOrgName) ? _liveOrgName : _claimOrgName;
 
     private static string Initials(string? name) => Avatar.Initials(name);
 
     /// <summary>
-    /// The user button's second line. The old top bar had three separate
-    /// elements (name, "(org)", a role badge); the design system's
-    /// <c>.user-btn</c> has two lines, so org and role share the lower one
-    /// rather than either being dropped.
+    /// The brand link's accessible name. Both visible lines sit inside the link,
+    /// so its label would otherwise be the bare "Home" it needs at rail width,
+    /// where shell.css hides the text and nothing announces which organisation
+    /// this is.
     /// </summary>
-    private static string OrgLine(string? orgName, string? role)
-    {
-        var parts = new List<string>(2);
-        if (!string.IsNullOrEmpty(orgName)) parts.Add(orgName);
-        if (!string.IsNullOrEmpty(role)) parts.Add(role);
-        return string.Join(" · ", parts);
-    }
+    private static string HomeLabel(string? orgName) =>
+        string.IsNullOrEmpty(orgName) ? "Home" : $"Home, {orgName}";
 
     protected override async Task OnInitializedAsync()
     {
         if (AuthStateTask is null) return;
         var state = await AuthStateTask;
+        _claimOrgName = state.User.FindFirst("org_name")?.Value;
         var orgIdClaim = state.User.FindFirst(HttpOrganizationContext.OrganizationIdClaim)?.Value;
         if (int.TryParse(orgIdClaim, out var orgId))
         {

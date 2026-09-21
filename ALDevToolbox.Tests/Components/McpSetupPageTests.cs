@@ -47,7 +47,7 @@ public sealed class McpSetupPageTests : IDisposable
         _ctx.Services.AddSingleton(TimeProvider.System);
         _ctx.Services.AddSingleton(_db.DataProtectionProvider);
         _ctx.Services.AddSingleton<IHttpContextAccessor>(
-            new HttpContextAccessor { HttpContext = Request("https", "toolbox.cronus.example") });
+            new HttpContextAccessor { HttpContext = Request("https", "workbench.cronus.example") });
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
@@ -106,7 +106,7 @@ public sealed class McpSetupPageTests : IDisposable
         var page = _ctx.Render<ALDevToolbox.Components.Pages.Mcp>();
 
         var connector = page.FindAll(".mcp-choice .card")[1];
-        connector.TextContent.Should().Contain("https://toolbox.cronus.example/mcp",
+        connector.TextContent.Should().Contain("https://workbench.cronus.example/mcp",
             "this path never reaches a snippet, so step 1 is the only place the address can appear");
         connector.TextContent.Should().Contain("steps 2 and 3 are not yours");
         connector.QuerySelector("[data-copy-target]").Should().NotBeNull();

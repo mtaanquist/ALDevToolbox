@@ -108,7 +108,7 @@ public sealed record GitHubWorkspaceRepository(
 /// <para><strong>The organisation acts, not the person.</strong> Both calls go
 /// out on the installation token, which is the credential split the design doc
 /// settles: creating a repository is an act of the organisation, and no
-/// individual should need <c>admin:org</c> on their own account for the toolbox
+/// individual should need <c>admin:org</c> on their own account for the workbench
 /// to work. The first commit rides the same token deliberately - the repository
 /// is seconds old and was made by the app, so the person who asked for it may
 /// have no permissions on it yet, and asking with their token would fail for a
@@ -224,7 +224,7 @@ public sealed class GitHubWorkspaceRepositoryService
     /// validation failure.</para>
     ///
     /// <para>The organisation is never a parameter: it is the one this
-    /// toolbox organisation connected, so a caller naming a repository cannot
+    /// workbench organisation connected, so a caller naming a repository cannot
     /// aim it anywhere else.</para>
     ///
     /// <para>The repository is also what registers the customer as a solution
@@ -294,16 +294,16 @@ public sealed class GitHubWorkspaceRepositoryService
         {
             GitHubRepositoryReadiness.NotConfigured =>
                 "GitHub is not set up on this server yet, so no repository can be created. "
-                + "Ask whoever runs AL Dev Toolbox to set it up.",
+                + "Ask whoever runs AL Workbench to set it up.",
             GitHubRepositoryReadiness.NotConnected =>
                 "Your organisation has not connected a GitHub organisation yet, so there is nowhere to "
                 + "create this. An administrator connects one under Administration -> Repositories.",
             GitHubRepositoryReadiness.LinkNeedsRepair =>
-                "Your GitHub account is no longer connected to the toolbox. Connect it again on your "
+                "Your GitHub account is no longer connected to the workbench. Connect it again on your "
                 + "account page under Repository access, then try this again.",
             _ =>
                 "Connect your own GitHub account first, on your account page under Repository access. "
-                + "The toolbox checks that you are in the GitHub organisation before it creates anything there.",
+                + "The workbench checks that you are in the GitHub organisation before it creates anything there.",
         });
 
         var connection = await _connection.GetStatusAsync(ct);
@@ -313,7 +313,7 @@ public sealed class GitHubWorkspaceRepositoryService
         if (!await _access.IsOrgMemberAsync(userId, ct))
         {
             throw Refuse(RepositoryField,
-                $"GitHub does not list you as a member of {orgLogin}, so the toolbox will not create a "
+                $"GitHub does not list you as a member of {orgLogin}, so the workbench will not create a "
                 + "repository there for you. Ask an owner of that organisation to add you, then try again.");
         }
 
@@ -537,7 +537,7 @@ public sealed class GitHubWorkspaceRepositoryService
     /// <para><strong>Why a branch is created rather than updated.</strong> An
     /// organisation ruleset that requires a pull request applies to a
     /// repository the moment it exists, and refuses every <em>update</em> of
-    /// the default branch - which is what the toolbox used to do, leaving a
+    /// the default branch - which is what the workbench used to do, leaving a
     /// repository holding nothing but the file it had seeded (issue #811).
     /// Creating the ref at a finished commit is not an update, so the workspace
     /// arrives whole. It also reads better: one "Initial commit" rather than a
@@ -753,14 +753,14 @@ public sealed class GitHubWorkspaceRepositoryService
     /// The pull request is aimed at the default branch the repository was
     /// created with, not at whatever the seed left as the default: a customer
     /// whose organisation took this route would otherwise be handed a
-    /// repository whose default branch is a throwaway name the toolbox made up,
+    /// repository whose default branch is a throwaway name the workbench made up,
     /// with no <c>main</c> and a pull request merging into the wrong thing. So
     /// the real branch is made to exist, made the default, and the throwaway
     /// one goes - and only then is the workspace put up for review.</para>
     ///
     /// <para>The branch is made with a Contents write rather than a ref
     /// creation, because a ref creation is the operation that was just refused,
-    /// and a Contents write onto the branch is what the toolbox did before this
+    /// and a Contents write onto the branch is what the workbench did before this
     /// issue - which the bug report shows this organisation's rules allow (a
     /// <c>.gitignore</c> did land on <c>main</c>; it was the <em>update</em>
     /// after it that was refused). A ref creation at the seed commit is tried
@@ -804,7 +804,7 @@ public sealed class GitHubWorkspaceRepositoryService
             var pullRequest = await _github.CreatePullRequestAsync(
                 token, owner, name, $"Add the {plan.WorkspaceName} workspace",
                 WorkspaceBranch, branch,
-                $"AL Dev Toolbox generated this workspace: {fileCount} "
+                $"AL Workbench generated this workspace: {fileCount} "
                 + $"{(fileCount == 1 ? "file" : "files")} for {plan.WorkspaceName}.\n\n"
                 + $"Your GitHub organisation only allows changes to {branch} through a pull request, so "
                 + "the files are here rather than committed straight to it. The workspace is in this "
@@ -823,14 +823,14 @@ public sealed class GitHubWorkspaceRepositoryService
             // Both routes refused. What is left on GitHub is one placeholder
             // file, and the person needs the repository named so they can find
             // it - not GitHub's wording, which they cannot act on, and not the
-            // name of a branch the toolbox invented, which means nothing to
+            // name of a branch the workbench invented, which means nothing to
             // them.
             _logger.LogWarning(
                 ex, "GitHub refused the pull request holding the workspace for {RepoFullName} too.",
                 repository.FullName);
             throw Refuse(RepositoryField,
                 $"Your GitHub organisation only allows changes to {repository.DefaultBranch} through a "
-                + "pull request, and GitHub refused the pull request AL Dev Toolbox opened as well. "
+                + "pull request, and GitHub refused the pull request AL Workbench opened as well. "
                 + $"{repository.FullName} was created but is empty apart from a single placeholder file. "
                 + "Use Download ZIP above and push the workspace yourself through a pull request, or "
                 + "delete the repository on GitHub and try again.");
@@ -843,7 +843,7 @@ public sealed class GitHubWorkspaceRepositoryService
     ///
     /// <para>Two ways round, in the order most likely to be allowed by the
     /// rules that sent the flow here: a Contents write onto the branch, which
-    /// is how the toolbox used to start a repository, and failing that a ref
+    /// is how the workbench used to start a repository, and failing that a ref
     /// creation at the commit the throwaway branch already holds.</para>
     /// </summary>
     private async Task<string> StartDefaultBranchAsync(
@@ -877,7 +877,7 @@ public sealed class GitHubWorkspaceRepositoryService
             // Somebody else made it in the meantime; whatever is on it now is
             // what the pull request will be aimed at.
             _logger.LogInformation(
-                "{Branch} on {RepoFullName} appeared while the toolbox was making it.",
+                "{Branch} on {RepoFullName} appeared while the workbench was making it.",
                 branch, repository.FullName);
         }
         return seedHead;
@@ -947,20 +947,20 @@ public sealed class GitHubWorkspaceRepositoryService
                 ex, "GitHub refused the branch rules on {RepoFullName}.", repository.FullName);
             return
                 "The repository is ready, but GitHub would not set your branch rules on it. "
-                + "AL Dev Toolbox may not be allowed to change repository settings in this GitHub "
+                + "AL Workbench may not be allowed to change repository settings in this GitHub "
                 + "organisation - an owner of it can allow that. Until then, set the rules on GitHub.";
         }
     }
 
     /// <summary>
     /// What to say when somebody else wrote to the repository in the seconds
-    /// between its creation and the toolbox filling it in. Not a case to paper
+    /// between its creation and the workbench filling it in. Not a case to paper
     /// over: whatever is in there now is not what was generated, and the person
     /// has to look.
     /// </summary>
     private static PlanValidationException RaceRefusal(GitHubRepositorySummary repository) =>
         Refuse(RepositoryField,
-            $"Something else pushed to {repository.FullName} while the toolbox was filling it in, so "
+            $"Something else pushed to {repository.FullName} while the workbench was filling it in, so "
             + "the generated files were not committed. Open it on GitHub to see what is there.");
 
     /// <summary>
@@ -1004,7 +1004,7 @@ public sealed class GitHubWorkspaceRepositoryService
 
     /// <summary>
     /// Records the repository in the audit log, so "who created this from the
-    /// toolbox" has an answer months later.
+    /// workbench" has an answer months later.
     ///
     /// <para>Written by hand rather than by <c>AuditInterceptor</c> because
     /// nothing of ours changed - the row this describes lives on GitHub, which
@@ -1044,7 +1044,7 @@ public sealed class GitHubWorkspaceRepositoryService
     /// ask somebody for something, not quote a permission name.
     /// </summary>
     private static string NotPermittedMessage(string orgLogin) =>
-        $"AL Dev Toolbox has not been allowed to create repositories in {orgLogin}. An owner of that "
+        $"AL Workbench has not been allowed to create repositories in {orgLogin}. An owner of that "
         + "GitHub organisation can allow it, and then this will work.";
 
     private static PlanValidationException Refuse(string field, string message) =>

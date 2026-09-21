@@ -1,10 +1,10 @@
-# AL Dev Toolbox
+# AL Workbench
 
-A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus an MCP surface so AI agents can reach the same knowledge humans do.
+A self-hosted Blazor Server workbench for Microsoft Dynamics 365 Business Central. It covers both halves of a BC team's work - building a solution and operating the environments it runs on - as a suite of focused tools the team hosts for itself, plus an MCP surface so AI agents can reach the same knowledge humans do.
 
 The design lives under [`.design/`](./.design/). Read it before non-trivial changes. [`CLAUDE.md`](./CLAUDE.md) covers the conventions and the architectural fences to stay inside.
 
-## What's in the box
+## What's in it
 
 The sidebar's **Tools** section holds the end-user tools. Every tool requires a signed-in user; anonymous traffic redirects to `/login`.
 
@@ -23,7 +23,7 @@ The admin surface (Editors and Admins) curates the content behind these tools: t
 
 ## MCP server
 
-A Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the toolbox's knowledge directly. It exposes 50 tools mirroring the web UI. Most only read, but some write, and a handful act outside the toolbox: **`publish_build` publishes a compiled extension to a customer's live Business Central environment**, and **`generate_workspace` / `create_repository` create a repository in the organisation's connected GitHub organisation**, while **`generate_extension`, `add_extension_to_repository`, `apply_recipe` and `open_translation_pr` open pull requests on GitHub** - as the calling user, on a branch of its own, and only in a repository they can already open themselves. `stage_github_release` copies a GitHub Release's app files into the toolbox so `publish_build` can deliver them. The rest of the writers stay inside the toolbox's own data - `suggest_recipe`, `update_recipe`, `update_recipe_suggestion`, `vote_translation` and `remove_translation`. One more reaches outward without writing: `machine_translate` sends the string to the org's configured third-party translation provider. Weigh that before enabling `/mcp`, and remember that a token an agent holds carries the permissions of the user who issued it.
+A Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the workbench's knowledge directly. It exposes 50 tools mirroring the web UI. Most only read, but some write, and a handful act outside the workbench: **`publish_build` publishes a compiled extension to a customer's live Business Central environment**, and **`generate_workspace` / `create_repository` create a repository in the organisation's connected GitHub organisation**, while **`generate_extension`, `add_extension_to_repository`, `apply_recipe` and `open_translation_pr` open pull requests on GitHub** - as the calling user, on a branch of its own, and only in a repository they can already open themselves. `stage_github_release` copies a GitHub Release's app files into the workbench so `publish_build` can deliver them. The rest of the writers stay inside the workbench's own data - `suggest_recipe`, `update_recipe`, `update_recipe_suggestion`, `vote_translation` and `remove_translation`. One more reaches outward without writing: `machine_translate` sends the string to the org's configured third-party translation provider. Weigh that before enabling `/mcp`, and remember that a token an agent holds carries the permissions of the user who issued it.
 
 - **Templates**: `list_templates`, `get_template`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
 - **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`, `update_recipe`.
@@ -61,7 +61,7 @@ This brings up Postgres and the app, runs migrations, ensures the singleton **sy
 
 Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yaml`, then run `docker compose up --build`.
 
-The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery. Connecting the toolbox to a GitHub organisation (the App registration, the org connection, and per-member links) is in [`docs/github-app-setup.md`](./docs/github-app-setup.md).
+The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery. Connecting the workbench to a GitHub organisation (the App registration, the org connection, and per-member links) is in [`docs/github-app-setup.md`](./docs/github-app-setup.md).
 
 ## Run locally without Docker
 
@@ -155,7 +155,7 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `SINGLE_TENANT_MODE`                          | `1` to run as a single-organisation install (see below).  | `0` (multi-tenant)     |
 | `SINGLE_TENANT_ORG_NAME` / `SINGLE_TENANT_ORG_SLUG` / `SINGLE_TENANT_EMAIL_DOMAINS` | First-run-only seeding for the lone org in single-tenant mode. | none |
 | `TRUSTED_PROXIES`                             | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted and forwarded headers from anywhere else are ignored. | unset |
-| `PUBLIC_BASE_URL`                             | Public origin (e.g. `https://toolbox.cronus.example`) that password-reset, magic-link, invite and email-verification links are built from. Unset, links use the request's `Host` header — set it, plus `AllowedHosts`, on anything internet-facing. | unset |
+| `PUBLIC_BASE_URL`                             | Public origin (e.g. `https://workbench.cronus.example`) that password-reset, magic-link, invite and email-verification links are built from. Unset, links use the request's `Host` header — set it, plus `AllowedHosts`, on anything internet-facing. | unset |
 | `DATA_PROTECTION_KEY_DIR`                     | Where the Data Protection key ring lives (cookie auth keys, SMTP-password ciphertext). Mounted on the `app-keys` volume. | `/var/lib/aldevtoolbox/dp-keys` |
 | `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume). | `/var/lib/aldevtoolbox/backups` |
 | `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily `pg_dump` (+ per-tenant snapshot) scheduler. | unset            |
@@ -191,7 +191,7 @@ This is the full set of variables the app reads, so [`.design/deployment.md`](./
 
 By default the app is **multi-tenant**: organisations are isolated by an EF query filter, new-org signups auto-provision an org, and SiteAdmins manage storage quotas and per-tenant snapshots across all of them.
 
-Set `SINGLE_TENANT_MODE=1` when one company hosts the toolbox for itself. The multi-tenant machinery is unnecessary in that shape, so the flag **hides and disables** it:
+Set `SINGLE_TENANT_MODE=1` when one company hosts the workbench for itself. The multi-tenant machinery is unnecessary in that shape, so the flag **hides and disables** it:
 
 - **Storage quotas** are gone: the settings tab, the per-org Storage page, the sidebar capacity bar, and the usage-snapshot scheduler are all removed, and no write is ever silently blocked.
 - **Per-tenant snapshots** are gone; the system-level `pg_dump` backups keep running.

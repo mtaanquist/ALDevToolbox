@@ -143,7 +143,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
         WaitForListed(cut, RepoA);
         await cut.Find("button:contains('Create a solution')").ClickAsync(new());
 
-        // Both fields arrive filled in from what the toolbox already knows.
+        // Both fields arrive filled in from what the workbench already knows.
         cut.Find("#track-name").GetAttribute("value").Should().Be("Payment Import");
         cut.Find("#track-country").GetAttribute("value").Should().Be("dk");
 
@@ -288,7 +288,7 @@ public sealed class UntrackedRepositoriesPanelTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
 

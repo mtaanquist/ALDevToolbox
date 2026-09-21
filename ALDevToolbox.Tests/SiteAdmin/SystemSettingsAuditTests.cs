@@ -141,7 +141,7 @@ public sealed class SystemSettingsAuditTests : IDisposable
 
     private static GitHubAppInput NewGitHubInput(string webhookSecret) => new(
         AppId: "123456",
-        AppSlug: "al-dev-toolbox",
+        AppSlug: "al-workbench",
         ClientId: null,
         ClientSecret: null,
         ClearClientSecret: false,

@@ -43,7 +43,7 @@ public sealed class EnvironmentRefreshScheduler : PolledScheduler
 
     /// <summary>
     /// How far into the sweep hour tonight's sweep starts. Every installation of this
-    /// toolbox - and a good deal else in the world - fires on the hour; a few random
+    /// workbench - and a good deal else in the world - fires on the hour; a few random
     /// minutes keeps us out of that spike at Microsoft's sign-in and admin endpoints.
     /// Chosen once per process, inside the hour so the hour check below still holds.
     /// </summary>

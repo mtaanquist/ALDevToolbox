@@ -505,7 +505,7 @@ public static class TemplateTomlMapper
     /// <see cref="ToToml"/> which re-emits without them.
     /// </summary>
     public static string BlankToml() => """"
-# AL Dev Toolbox workspace template — TOML reference.
+# AL Workbench workspace template — TOML reference.
 # Edit the fields below, then click "Create template". Comments are
 # stripped on save and won't reappear after the next round-trip.
 # Anything you leave at its default stays empty in the generated

@@ -198,6 +198,15 @@ Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (
 
 Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile, pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR, and publishes the matching GitHub Release with auto-generated notes. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
 
+The image path is not a literal: both `release.yml` and `staging.yml` build it from
+`ghcr.io/${{ github.repository }}`, so it follows the GitHub repository's name. If the
+repository is ever renamed to match the AL Workbench product name, the image moves with it
+and no workflow changes - but GHCR packages do not follow a repository rename. The old
+package keeps serving the tags it already has and never receives new ones, and the new
+package is created private and unlinked from the repository, so the first pull after the
+rename 404s until somebody makes it public. Publish both paths (two entries under
+`images:`) for a release or two, say so in the release notes, then drop the old one.
+
 **Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping (10 is the tag the Upgrades work is cut as):
 
 | Major | Tool that opened it      | Landed |

@@ -5,7 +5,7 @@
 @inject IHttpContextAccessor Http
 @inject NavigationManager Nav
 
-<PageTitle>Connect an AI assistant · AL Dev Toolbox</PageTitle>
+<PageTitle>Connect an AI assistant · AL Workbench</PageTitle>
 
 @*
     Page archetype 12 (docs / long-form): `.page-head` + `.docs`, a `.prose`
@@ -35,18 +35,18 @@
 *@
 
 <DocsPage Title="Connect an AI assistant"
-          Subtitle="Let Claude, Cursor, Copilot or another assistant use AL Dev Toolbox on your behalf."
+          Subtitle="Let Claude, Cursor, Copilot or another assistant use AL Workbench on your behalf."
           Toc="@Toc" Prose="false">
             <article class="prose">
                 <p class="prose__lead">
-                    AL Dev Toolbox can be plugged into AI assistants. Once connected, you
+                    AL Workbench can be plugged into AI assistants. Once connected, you
                     can ask the assistant to generate a workspace, look up a procedure on a
                     Business Central release, or fetch one of your saved recipes, and it does
                     the work using your account here.
                 </p>
                 <p>
-                    You'll need an AL Dev Toolbox account to connect one. If you don't have
-                    one yet, ask whoever administers AL Dev Toolbox for your team.
+                    You'll need an AL Workbench account to connect one. If you don't have
+                    one yet, ask whoever administers AL Workbench for your team.
                 </p>
 
                 <div class="note note--info">
@@ -146,7 +146,7 @@
                             <li>Leave the OAuth Client Secret field empty.</li>
                         }
                         <li>
-                            Sign in to AL Dev Toolbox in the window that opens, then click
+                            Sign in to AL Workbench in the window that opens, then click
                             <strong>Allow</strong> on the permission screen.
                         </li>
                         <li>That's it. Ask it to generate a workspace and it'll use the tools.</li>
@@ -190,7 +190,7 @@
                         @if (client.Snippet is { } snippet)
                         {
                             <li>
-                                Add the toolbox:
+                                Add the workbench:
                                 <div class="code-block">
                                     <div class="code-block__bar">
                                         <span class="code-block__lang">@client.SnippetLang</span>
@@ -223,7 +223,7 @@
                                 Copilot Studio builds a custom connector behind the tool, and its
                                 generated definition needs two fixes. Open <strong>Power Apps
                                 &rarr; Custom connectors</strong> in the same environment as your
-                                agent, edit the AL Dev Toolbox connector, and switch on the
+                                agent, edit the AL Workbench connector, and switch on the
                                 <strong>Swagger editor</strong>:
                             </span>
                             <span>
@@ -263,7 +263,7 @@
                 <h2 id="mcp-does">What it can do once it's connected</h2>
                 <p>Things you can ask for:</p>
                 <ul>
-                    <li><strong>Generate a workspace.</strong> "Make me a new workspace from the CRONUS Customer template, called CRONUS Pilot v2." The toolbox builds the ZIP and hands it back.</li>
+                    <li><strong>Generate a workspace.</strong> "Make me a new workspace from the CRONUS Customer template, called CRONUS Pilot v2." The workbench builds the ZIP and hands it back.</li>
                     <li><strong>Generate a standalone extension.</strong> "Spin up an empty extension named Sales Bonus, in the Sales prefix, with App Source Cop on."</li>
                     <li><strong>Find a procedure across Business Central.</strong> "In release 28.1, what calls <code>OnAfterValidateNo</code> on the Sales Line table?"</li>
                     <li><strong>Read part of a codeunit.</strong> "Show me the body of <code>CallPostDocument</code> in <em>Sales-Post</em>."</li>
@@ -303,7 +303,7 @@
                     If you signed in from the assistant instead, revoke the connection and
                     connect again.
                 </p>
-                <h3>The assistant says it can't see the toolbox</h3>
+                <h3>The assistant says it can't see the workbench</h3>
                 <p>
                     Reload it after adding the connection. To check the address itself,
                     open <code>@_serverUrl</code> in your browser - a 401 is the right
@@ -311,7 +311,7 @@
                 </p>
                 <h3>Tool calls come back with validation errors</h3>
                 <p>
-                    The toolbox returns the same field-by-field errors the web pages show.
+                    The workbench returns the same field-by-field errors the web pages show.
                     Tell the assistant which field it got wrong and it will retry.
                 </p>
                 <h2 id="mcp-tools">Every tool it can use</h2>
@@ -400,7 +400,7 @@
         new ClientGuide("claude-code", "Claude Code", false,
             "Open a terminal in any project directory.",
             "shell", null, ClaudeCodeSnippet,
-            "The toolbox is available in every Claude Code session in that directory."),
+            "The workbench is available in every Claude Code session in that directory."),
         new ClientGuide("cursor", "Cursor", false,
             "Open <strong>Cursor Settings &rarr; MCP &rarr; Add Server</strong>, or edit <code>~/.cursor/mcp.json</code> directly.",
             "json", "~/.cursor/mcp.json", CursorSnippet,
@@ -418,7 +418,7 @@
             "Open <strong>Admin Panel &rarr; Settings &rarr; Tools &rarr; MCP Servers &rarr; Add server</strong>, "
             + "or your own <strong>Settings &rarr; Tools</strong> for a personal connection.",
             "json", null, OpenWebUiSnippet,
-            "Save. OpenWebUI picks it up straight away - choose a model that supports tools and ask it to use AL Dev Toolbox."),
+            "Save. OpenWebUI picks it up straight away - choose a model that supports tools and ask it to use AL Workbench."),
     };
 
     protected override void OnInitialized()

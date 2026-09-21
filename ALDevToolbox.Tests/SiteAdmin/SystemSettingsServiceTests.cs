@@ -115,13 +115,13 @@ public sealed class SystemSettingsServiceTests : IDisposable
     public async Task Save_round_trips_sender_name_through_view_and_resolve()
     {
         var svc = NewService();
-        await svc.SaveAsync(NewInput(fromName: "AL Dev Toolbox"));
+        await svc.SaveAsync(NewInput(fromName: "AL Workbench"));
 
         var view = await svc.GetViewAsync();
-        view.SmtpFromName.Should().Be("AL Dev Toolbox");
+        view.SmtpFromName.Should().Be("AL Workbench");
 
         var resolved = await svc.ResolveSmtpAsync();
-        resolved!.FromName.Should().Be("AL Dev Toolbox",
+        resolved!.FromName.Should().Be("AL Workbench",
             "the resolver carries the sender name through so the email sender "
             + "can pair it with the from address");
     }

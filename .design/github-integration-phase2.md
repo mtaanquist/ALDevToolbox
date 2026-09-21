@@ -65,7 +65,7 @@ implementations are written so they do not need to:
 ## #629 Discover AL repositories across the connected organisation
 
 Named user: a BC consultant who has just connected their GitHub organisation and wants
-to see which of its repositories the toolbox does not know about yet.
+to see which of its repositories the workbench does not know about yet.
 
 **Decisions**
 
@@ -154,9 +154,9 @@ to see which of its repositories the toolbox does not know about yet.
   sweep carries on.
 - **No MCP tool**, as decided.
 
-## #628 Repository standards when the toolbox creates a repository
+## #628 Repository standards when the workbench creates a repository
 
-Named user: an org Admin who wants every repository the toolbox creates to look like the
+Named user: an org Admin who wants every repository the workbench creates to look like the
 ones their team already maintains by hand.
 
 **Decisions**
@@ -185,7 +185,7 @@ ones their team already maintains by hand.
   a stack trace over it. Files are committed before the ruleset is attempted, so a
   ruleset that requires a pull request never blocks the standards commit.
 - **Admin surface:** a "Repository standards" row on Administration -> Repositories,
-  in the connected block after "What the toolbox may do there", linking to a dedicated
+  in the connected block after "What the workbench may do there", linking to a dedicated
   editor page (`/admin/administration/repositories/standards`) modelled on
   `AdminTemplateFiles`. The row summarises what is configured ("3 files and a branch
   ruleset").
@@ -211,7 +211,7 @@ second commit; a workspace of a single file would take the same route as any oth
 A ruleset is only posted when it asks GitHub for something. `GitHubRepositoryRuleset.IsEmpty`
 is the guard, and it is why "3 approvals" with "require a pull request" switched off counts
 as nothing configured everywhere: the summary sentence, the New Workspace caption and the
-call itself. A ruleset named after the toolbox that enforces nothing would be worse than
+call itself. A ruleset named after the workbench that enforces nothing would be worse than
 no ruleset.
 
 `GitHubApiException` from the ruleset call is caught, logged at Warning and returned as a
@@ -223,7 +223,7 @@ naming the permission, the way the create-repository refusal already does.
 `pull_request` parameter object (the four booleans as well as the approval count) and
 `strict_required_status_checks_policy` alongside the check contexts, because GitHub rejects
 a partial parameter object on those two rules. The ruleset carries a fixed name,
-`AL Dev Toolbox repository standards`, so somebody reading a repository's settings can see
+`AL Workbench repository standards`, so somebody reading a repository's settings can see
 which rules were not written by hand. **These request shapes are from the documented API and
 have not been exercised against api.github.com from this environment** - the same caveat
 phase 1's tests carry.
@@ -342,7 +342,7 @@ in the customer's repository as a reviewable change, not a ZIP on their desktop.
 ## #632 Publish build artifacts as GitHub Releases, and deliver from them
 
 Named user: a consultant whose customer wants every shipped `.app` on the repository's
-Releases page, and who sometimes has to redeploy a version the toolbox did not build.
+Releases page, and who sometimes has to redeploy a version the workbench did not build.
 
 **Decisions**
 
@@ -467,7 +467,7 @@ Releases page, and who sometimes has to redeploy a version the toolbox did not b
   asked for, and `GitHubReleaseService` words the resulting state honestly ("This release
   pipeline no longer names a repository; pick one on the release pipeline.") rather than
   claiming the pipeline draws from a build pipeline.
-- **GitHub rewrites some asset filenames** (spaces become dots, for one). The toolbox
+- **GitHub rewrites some asset filenames** (spaces become dots, for one). The workbench
   reads the assets back by the name GitHub reports, not by the name it sent, so this costs
   nothing today - but a future feature that matches on the uploaded name has to read the
   name back rather than assume it.
@@ -495,7 +495,7 @@ on every pull request, inline in the Files tab.
   ambient loop (no `IgnoreQueryFilters()`). The repository is matched to
   `oe_project_repositories` rows by normalised clone URL under that org's filter; every
   solution that tracks it gets a build and a check run named
-  "AL Dev Toolbox / {solution}".
+  "AL Workbench / {solution}".
 - **The clone uses the installation token** (`x-access-token:<token>` in the same
   `http.extraHeader` shape as a PAT). A webhook has no user, and the check runs as the
   App - the honest model the issue names. Manual builds keep the user's PAT; nothing
@@ -609,7 +609,7 @@ on every pull request, inline in the Files tab.
 - **Reporting is best-effort throughout.** A check run GitHub refuses (the missing
   `checks: write` grant, most often) is logged and the build carries on with
   `check_run_id` null; a build with no check run is still a build, still ingests, and
-  is still visible in the toolbox. The reverse is not true: a build that fell over
+  is still visible in the workbench. The reverse is not true: a build that fell over
   because GitHub was unreachable would be a missing answer, which is worse.
 - **`details_url` points at the Solution** (`/solutions/{id}`), not at a per-build
   page - there is no route for one, and a pull-request build has no pipeline whose
@@ -642,7 +642,7 @@ built when three things hold, and all three are needed.
   carried since phase 1 is what makes the call possible.
 
 The check happens after the organisation is resolved and **before any check run is
-opened**, so a refused fork leaves nothing spinning on the pull request; the toolbox
+opened**, so a refused fork leaves nothing spinning on the pull request; the workbench
 simply says nothing, which is what it already does for a repository no solution tracks.
 A same-repository pull request never makes the call, so nothing about the ordinary path
 costs an extra request on the organisation's rate limit.

@@ -95,7 +95,7 @@ public sealed class ContentPageTests : IDisposable
     public void Every_assistant_is_shown_the_server_address_in_its_own_steps(string client)
     {
         _http.HttpContext!.Request.Scheme = "https";
-        _http.HttpContext!.Request.Host = new HostString("toolbox.cronus.example");
+        _http.HttpContext!.Request.Host = new HostString("workbench.cronus.example");
 
         Navigate($"/docs/mcp?client={client}");
         var page = _ctx.Render<McpDocs>();
@@ -103,7 +103,7 @@ public sealed class ContentPageTests : IDisposable
         // Scoped to the steps: the troubleshooting section at the foot of the
         // page also names the address, and finding it there is exactly the bug.
         var steps = page.Find("ol").TextContent;
-        steps.Should().Contain("https://toolbox.cronus.example/mcp");
+        steps.Should().Contain("https://workbench.cronus.example/mcp");
 
         page.FindAll("[data-copy-target]").Should().NotBeEmpty(
             "the address is useless if it cannot be copied");
@@ -173,13 +173,13 @@ public sealed class ContentPageTests : IDisposable
     public void The_snippet_carries_this_deployment_url()
     {
         _http.HttpContext!.Request.Scheme = "https";
-        _http.HttpContext!.Request.Host = new HostString("toolbox.cronus.example");
+        _http.HttpContext!.Request.Host = new HostString("workbench.cronus.example");
 
         Navigate("/docs/mcp?client=vscode");
         var page = _ctx.Render<McpDocs>();
 
         page.Find(".code-block pre").TextContent
-            .Should().Contain("https://toolbox.cronus.example/mcp")
+            .Should().Contain("https://workbench.cronus.example/mcp")
             .And.NotContain("YOUR-SERVER");
     }
 

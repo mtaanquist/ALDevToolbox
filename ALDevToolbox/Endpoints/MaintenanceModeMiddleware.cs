@@ -57,7 +57,7 @@ internal static class MaintenanceModeMiddleware
     {
         var reason = System.Net.WebUtility.HtmlEncode(
             maintenance.Reason ?? "The application is restoring from a backup.");
-        return "<!doctype html><html><head><title>Maintenance · AL Dev Toolbox</title></head>"
+        return "<!doctype html><html><head><title>Maintenance · AL Workbench</title></head>"
             + "<body style=\"font-family: system-ui, sans-serif; padding: 2rem;\">"
             + "<h1>Maintenance in progress</h1>"
             + $"<p>{reason}</p>"

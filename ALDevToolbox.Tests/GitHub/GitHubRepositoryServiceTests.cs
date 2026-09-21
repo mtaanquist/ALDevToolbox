@@ -188,7 +188,7 @@ public sealed class GitHubRepositoryServiceTests : IDisposable
         await ReadyAsync();
         var api = ListableApi("cronus-dk/solution-a")
             // The user can see this one perfectly well on GitHub - it is simply
-            // not in the organisation their toolbox organisation connected.
+            // not in the organisation their workbench organisation connected.
             .On(HttpMethod.Get, "/repos/someone-else/private-thing", HttpStatusCode.OK,
                 FakeGitHubApi.RepositoryJson("someone-else/private-thing"));
         var (service, ctx, _) = NewService(api);
@@ -287,7 +287,7 @@ public sealed class GitHubRepositoryServiceTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

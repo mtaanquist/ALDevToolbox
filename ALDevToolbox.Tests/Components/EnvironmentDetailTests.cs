@@ -543,7 +543,7 @@ public sealed class EnvironmentDetailTests : IDisposable
         var cut = Render(envId);
 
         cut.FindAll(".header-tab").Select(t => t.TextContent).Should().Equal(
-            "Overview", "Apps", "Operations", "Sessions", "Toolbox history");
+            "Overview", "Apps", "Operations", "Sessions", "Workbench history");
         cut.Find(".header-tab.is-active").TextContent.Should().Be("Overview");
         cut.FindAll(".header-tab").Select(t => t.GetAttribute("href")).Should().Equal(
             $"/environments/{envId}", $"/environments/{envId}/apps",
@@ -577,7 +577,7 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         var cut = Render(envId, "history");
 
-        cut.Find(".header-tab.is-active").TextContent.Should().Be("Toolbox history");
+        cut.Find(".header-tab.is-active").TextContent.Should().Be("Workbench history");
         cut.FindAll(".setting-list, table.u-compact").Should().BeEmpty();
         cut.Markup.Should().NotContain("Couldn't read");
     }
@@ -684,12 +684,12 @@ public sealed class EnvironmentDetailTests : IDisposable
         var cut = Render(envId, "sessions");
         cut.WaitForAssertion(() => _admin.Reads.Should().Be(1), TimeSpan.FromSeconds(5));
 
-        // Toolbox history asks Business Central nothing, so this leaves the tab without
+        // Workbench history asks Business Central nothing, so this leaves the tab without
         // starting a second read that the next assertion would have to tell apart.
         cut.Render(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, "history"));
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".header-tab.is-active").TextContent.Should().Be("Toolbox history");
+            cut.Find(".header-tab.is-active").TextContent.Should().Be("Workbench history");
             cut.Markup.Should().NotContain("ola@cronus.example", "leaving the tab forgets the list");
         });
 

@@ -40,7 +40,7 @@
     same cached panel read (ProjectConnectionService.GetEnvironmentPanelAsync).
 *@
 
-<PageTitle>@(_env?.Fleet.EnvironmentName ?? "Environment") · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_env?.Fleet.EnvironmentName ?? "Environment") · AL Workbench</PageTitle>
 
 <DetailPage IsLoading="@(!_loaded)"
             LoadingText="Loading environment..."
@@ -351,7 +351,7 @@
                             <span>
                                 <b>These change @Row.EnvironmentName in the customer's tenant.</b>
                                 Saving here writes straight to @Row.ProjectName's Business Central
-                                environment, not just to the toolbox. Agree the change with the customer first.
+                                environment, not just to the workbench. Agree the change with the customer first.
                             </span>
                         </Alert>
                     }
@@ -485,7 +485,7 @@
                     <div class="card__head">
                         <div>
                             <h2 class="card__title">Scheduled installs</h2>
-                            <p class="card__sub">Installs this toolbox has queued against the environment.</p>
+                            <p class="card__sub">Installs this workbench has queued against the environment.</p>
                         </div>
                         @if (_canManage)
                         {
@@ -530,7 +530,7 @@
                                             @(string.IsNullOrWhiteSpace(op.Name) ? "An extension" : op.Name)
                                             @if (op.AppId is { } ourApp && panel.ReleasedAppIds.Contains(ourApp))
                                             {
-                                                <span class="tag">Released from this toolbox</span>
+                                                <span class="tag">Released from this workbench</span>
                                             }
                                         </td>
                                         <td class="u-num env-detail__mono">@op.TargetAppVersion</td>
@@ -606,7 +606,7 @@
                                                 @app.Name
                                                 @if (panel.ReleasedAppIds.Contains(app.AppId))
                                                 {
-                                                    <span class="tag">Released from this toolbox</span>
+                                                    <span class="tag">Released from this workbench</span>
                                                 }
                                             </td>
                                             <td>@app.Publisher</td>
@@ -882,9 +882,9 @@
             <div class="card">
                 <div class="card__head">
                     <div>
-                        <h2 class="card__title">Toolbox history</h2>
+                        <h2 class="card__title">Workbench history</h2>
                         <p class="card__sub">
-                            What people did to @Row.EnvironmentName from AL Dev Toolbox, and what is still booked.
+                            What people did to @Row.EnvironmentName from AL Workbench, and what is still booked.
                             Everything Business Central itself recorded, whoever started it, is under
                             <a href="@TabHref(Section.Operations)">Operations</a>.
                         </p>
@@ -1050,7 +1050,7 @@
         Tab("Apps", Section.Apps),
         Tab("Operations", Section.Operations),
         Tab("Sessions", Section.Sessions),
-        Tab("Toolbox history", Section.History),
+        Tab("Workbench history", Section.History),
     ];
 
     private HeaderTabs.HeaderTabItem Tab(string label, Section section) =>
@@ -1755,7 +1755,7 @@
         var alongside = update.Requirements.Where(r => r.AppId is not null).Select(r => r.AppId!.Value).ToList();
         var started = await RunSettingWriteAsync(UpdateBusyKey(update),
             () => Connection.UpdateAppAsync(Row.ProjectId, Id, update.AppId, update.Version, inWindow, alongside),
-            $"Couldn't update {update.Name}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't update {update.Name}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => inWindow
                 ? $"Business Central will update {what} in {Row.EnvironmentName}'s BC update window."
                 : $"Business Central has started updating {what}. Use Refresh in a few minutes to see it finish.");
@@ -1785,7 +1785,7 @@
 
         await RunSettingWriteAsync("upload",
             () => Connection.InstallUploadedAppAsync(Row.ProjectId, Id, upload.Bytes, upload.FileName, upload.InUpdateWindow),
-            $"Couldn't upload {upload.FileName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't upload {upload.FileName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => UploadAppDialog.DoneMessage(upload, Row.EnvironmentName));
     }
 
@@ -1805,7 +1805,7 @@
 
         var made = await RunSettingWriteAsync("copy",
             () => Connection.CopyEnvironmentAsync(Row.ProjectId, Id, copy.Name, copy.Type),
-            $"Couldn't copy {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't copy {Row.EnvironmentName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => CopyEnvironmentDialog.DoneMessage(copy, Row.EnvironmentName));
         if (made)
         {
@@ -1894,7 +1894,7 @@
 
         var saved = await RunSettingWriteAsync("cadence",
             () => Connection.SetAppUpdateCadenceAsync(Row.ProjectId, Id, chosen),
-            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't change the update cadence on {Row.EnvironmentName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central now updates AppSource apps on {Row.EnvironmentName}: {BcAppUpdateCadence.Display(chosen)}.");
         if (!saved) _cadence = previous;
     }
@@ -1919,7 +1919,7 @@
 
         await RunSettingWriteAsync("m365",
             () => Connection.SetM365AccessAsync(Row.ProjectId, Id, enable),
-            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't change Microsoft 365 licence access on {Row.EnvironmentName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => enable
                 ? $"Business Central now allows Microsoft 365 licence sign-in on {Row.EnvironmentName}."
                 : $"Business Central no longer allows Microsoft 365 licence sign-in on {Row.EnvironmentName}.");
@@ -1971,7 +1971,7 @@
 
         await RunSettingWriteAsync("recover",
             () => Connection.RecoverEnvironmentAsync(Row.ProjectId, Id),
-            $"Couldn't bring {Row.EnvironmentName} back. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't bring {Row.EnvironmentName} back. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central is bringing {Row.EnvironmentName} back. It can take a few minutes; use Refresh to see where it has got to.");
     }
 
@@ -2006,7 +2006,7 @@
 
         await RunSettingWriteAsync("version",
             () => Connection.SelectTargetVersionAsync(Row.ProjectId, Id, version),
-            $"Couldn't schedule the update on {Row.EnvironmentName}. Check AL Dev Toolbox still has admin access in the customer's Business Central admin centre, then try again.",
+            $"Couldn't schedule the update on {Row.EnvironmentName}. Check AL Workbench still has admin access in the customer's Business Central admin centre, then try again.",
             () => $"Business Central now shows {version} as the next update for {Row.EnvironmentName}.");
     }
 

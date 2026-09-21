@@ -134,27 +134,27 @@ public sealed class GitHubRecipeDeliveryService
         {
             GitHubRepositoryReadiness.NotConfigured =>
                 "GitHub is not set up on this server yet, so a recipe cannot be put in a repository. "
-                + "Ask whoever runs AL Dev Toolbox to set it up - meanwhile you can download it and commit it yourself.",
+                + "Ask whoever runs AL Workbench to set it up - meanwhile you can download it and commit it yourself.",
             GitHubRepositoryReadiness.NotConnected =>
                 "Your organisation has not connected a GitHub organisation yet, so there is nowhere to put "
                 + "this. An administrator connects one under Administration -> Repositories.",
             GitHubRepositoryReadiness.LinkNeedsRepair =>
-                "Your GitHub account is no longer connected to the toolbox. Connect it again on your "
+                "Your GitHub account is no longer connected to the workbench. Connect it again on your "
                 + "account page under Repository access, then try this again.",
             _ =>
                 "Connect your own GitHub account first, on your account page under Repository access. "
-                + "The pull request is opened in your name, so the toolbox needs your GitHub account to do it.",
+                + "The pull request is opened in your name, so the workbench needs your GitHub account to do it.",
         });
 
         var repo = await _repositories.ResolveAsync(repoFullName, ct)
             ?? throw Refuse(
-                "That repository is not one the toolbox can offer you. Pick one from the list, "
+                "That repository is not one the workbench can offer you. Pick one from the list, "
                 + "or ask an owner of your GitHub organisation to give you access to it.");
 
         var token = await _access.ResolveUserTokenAsync(userId, ct)
             ?? throw Refuse(
                 "Connect your own GitHub account first, on your account page under Repository access. "
-                + "The pull request is opened in your name, so the toolbox needs your GitHub account to do it.");
+                + "The pull request is opened in your name, so the workbench needs your GitHub account to do it.");
 
         var target = await ChooseBranchAsync(token, repo, recipe.Title, ct);
 
@@ -187,7 +187,7 @@ public sealed class GitHubRecipeDeliveryService
                 // is rare enough to say so rather than to loop again.
                 throw Refuse(
                     $"Branch {target.Branch} appeared on '{repo.FullName}' while this was being prepared. "
-                    + "Try again and the toolbox will pick the next name.");
+                    + "Try again and the workbench will pick the next name.");
             }
         }
         else if (!await _github.UpdateBranchAsync(token, repo.Owner, repo.Name, target.Branch, commit, ct))
@@ -294,7 +294,7 @@ public sealed class GitHubRecipeDeliveryService
         }
         lines.Add("The recipe's files are written as they stand in the Cookbook, so a file this repository has "
             + "changed since is replaced rather than merged - the diff shows exactly what would change.");
-        lines.Add("Sent from AL Dev Toolbox.");
+        lines.Add("Sent from AL Workbench.");
         return string.Join("\n\n", lines);
     }
 

@@ -9,7 +9,7 @@
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services.Cookbook
 
-<PageTitle>Review suggestion · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Review suggestion · Admin · AL Workbench</PageTitle>
 
 <EditPage Title="@(_suggestion?.Title ?? (_loaded ? "Suggestion not found" : "Review suggestion"))"
           IsLoading="@(!_loaded)" IsNotFound="@(_suggestion is null)" Sticky="true"

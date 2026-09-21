@@ -283,28 +283,28 @@ public sealed class GitHubTranslationService
         if (!access.IsReady) throw Refuse(access.Readiness switch
         {
             GitHubRepositoryReadiness.NotConfigured =>
-                "GitHub is not set up on this server yet. Ask whoever runs AL Dev Toolbox to set it up - "
+                "GitHub is not set up on this server yet. Ask whoever runs AL Workbench to set it up - "
                 + "meanwhile you can export the file and commit it yourself.",
             GitHubRepositoryReadiness.NotConnected =>
                 "Your organisation has not connected a GitHub organisation yet. An administrator connects "
                 + "one under Administration -> Repositories.",
             GitHubRepositoryReadiness.LinkNeedsRepair =>
-                "Your GitHub account is no longer connected to the toolbox. Connect it again on your "
+                "Your GitHub account is no longer connected to the workbench. Connect it again on your "
                 + "account page under Repository access, then try again.",
             _ =>
                 "Connect your own GitHub account first, on your account page under Repository access. "
-                + "The pull request is opened in your name, so the toolbox needs your GitHub account to do it.",
+                + "The pull request is opened in your name, so the workbench needs your GitHub account to do it.",
         });
 
         var repo = await _repositories.ResolveAsync(repoFullName, ct)
             ?? throw Refuse(
-                "That repository is not one the toolbox can offer you. Pick one from the list, or ask an "
+                "That repository is not one the workbench can offer you. Pick one from the list, or ask an "
                 + "owner of your GitHub organisation to give you access to it.");
 
         var token = await _access.ResolveUserTokenAsync(userId, ct)
             ?? throw Refuse(
                 "Connect your own GitHub account first, on your account page under Repository access. "
-                + "The pull request is opened in your name, so the toolbox needs your GitHub account to do it.");
+                + "The pull request is opened in your name, so the workbench needs your GitHub account to do it.");
 
         return (repo, token);
     }
@@ -333,7 +333,7 @@ public sealed class GitHubTranslationService
         {
             lines.Add(summary.Trim());
         }
-        lines.Add("Translated in AL Dev Toolbox. Every other byte of the file is unchanged, so the diff is "
+        lines.Add("Translated in AL Workbench. Every other byte of the file is unchanged, so the diff is "
             + "the translations themselves.");
         return string.Join("\n\n", lines);
     }

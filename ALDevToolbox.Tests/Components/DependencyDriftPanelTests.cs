@@ -167,7 +167,7 @@ public sealed class DependencyDriftPanelTests : IDisposable
         await cut.Find("button:contains('Open pull request')").ClickAsync(new());
 
         cut.WaitForAssertion(
-            () => cut.Markup.Should().Contain("not one the toolbox can offer you"), WaitTimeout);
+            () => cut.Markup.Should().Contain("not one the workbench can offer you"), WaitTimeout);
     }
 
     // ── Fixtures ─────────────────────────────────────────────────────────
@@ -258,7 +258,7 @@ public sealed class DependencyDriftPanelTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
 

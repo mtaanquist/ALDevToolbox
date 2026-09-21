@@ -50,7 +50,7 @@
         @if (_failed)
         {
             <Alert Tone="AlertTone.Warn" Role="alert">
-                <span>The toolbox could not reach GitHub just now, so nothing was changed. Try again in a moment.</span>
+                <span>The workbench could not reach GitHub just now, so nothing was changed. Try again in a moment.</span>
             </Alert>
         }
 
@@ -135,7 +135,7 @@
 
     private string Subheading => _summary?.TargetVersion is { } version
         ? $"Business Central {version} is imported here. These repositories' app.json still ask for an older version."
-        : "These repositories' app.json ask for older versions than the toolbox knows about.";
+        : "These repositories' app.json ask for older versions than the workbench knows about.";
 
     protected override async Task OnInitializedAsync()
     {
@@ -182,7 +182,7 @@
 
     /// <summary>
     /// Runs the scan the release import runs, against the newest Business
-    /// Central release the toolbox holds - so somebody who has just tidied a
+    /// Central release the workbench holds - so somebody who has just tidied a
     /// repository by hand can see it drop off the list.
     /// </summary>
     private async Task CheckAgainAsync()

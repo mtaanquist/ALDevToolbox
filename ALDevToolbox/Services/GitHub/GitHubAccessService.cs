@@ -208,7 +208,7 @@ public sealed class GitHubAccessService
             .FirstOrDefaultAsync(l => l.UserId == userId && l.Provider == ProviderName, ct);
 
         // (provider, issuer, subject) is unique, so one GitHub account belongs to
-        // one toolbox user. Checking inside the filter deliberately: a clash with
+        // one workbench user. Checking inside the filter deliberately: a clash with
         // someone in another organisation is not this user's business, and letting
         // the insert fail there surfaces as a plain refusal rather than telling
         // them a stranger exists.
@@ -299,7 +299,7 @@ public sealed class GitHubAccessService
     /// <summary>
     /// Removes the acting user's link. The authorisation itself survives on
     /// GitHub until the person revokes it there, which is said on the page -
-    /// deleting the row only stops the toolbox holding a token.
+    /// deleting the row only stops the workbench holding a token.
     /// </summary>
     public async Task UnlinkAsync(CancellationToken ct = default)
     {
@@ -462,7 +462,7 @@ public sealed class GitHubAccessService
     /// repositories they own, collaborate on, or see through an organisation.
     /// An outside collaborator on a single repository in a GitHub organisation
     /// that has installed the App would otherwise have been able to connect
-    /// that organisation to their own toolbox organisation, and mint its
+    /// that organisation to their own workbench organisation, and mint its
     /// installation token for every repository the installation covers. The
     /// role is the thing that had to be checked, and only the memberships route
     /// reports it.</para>

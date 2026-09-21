@@ -9,7 +9,7 @@
 @inject AppDbContext Db
 @inject IOrganizationContext Org
 
-<PageTitle>Authorise · AL Dev Toolbox</PageTitle>
+<PageTitle>Authorise · AL Workbench</PageTitle>
 
 @if (_invalid)
 {
@@ -23,7 +23,7 @@ else
     <div class="page">
         <PageHead Title="@($"Authorise {_clientName}")">
             <SubtitleContent>
-                @_clientName wants to sign in to AL Dev Toolbox on your behalf. Approving lets it
+                @_clientName wants to sign in to AL Workbench on your behalf. Approving lets it
                 use the tools below as @_currentEmail in your organisation
                 <strong>@_orgName</strong>. You can take this access back at any time from
                 <a href="/account?section=ai">your account, under Connected assistants</a>.
@@ -161,10 +161,10 @@ else
     /// </summary>
     private static (string Name, string Blurb) PermissionFor(string scope) => scope switch
     {
-        "mcp" => ("Use AL Dev Toolbox tools",
+        "mcp" => ("Use AL Workbench tools",
             "List templates, generate workspaces, search Object Explorer, look up recipes."),
         "offline_access" => ("Stay signed in",
             "Keeps working between sessions, so it doesn't ask you to approve this again every hour."),
-        _ => (scope, "This permission is not one AL Dev Toolbox recognises."),
+        _ => (scope, "This permission is not one AL Workbench recognises."),
     };
 }

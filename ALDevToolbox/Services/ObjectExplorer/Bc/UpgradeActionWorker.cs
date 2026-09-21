@@ -255,7 +255,7 @@ public sealed class UpgradeActionWorker : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         const string outcome =
-            "The toolbox restarted while this was being sent, so we can't say whether it reached Business Central. "
+            "The workbench restarted while this was being sent, so we can't say whether it reached Business Central. "
             + "Check the environment, then schedule it again if you need to.";
         var failed = await db.OeEnvironmentUpgradeActions
             .Where(a => a.Status == UpgradeActionStatus.Pending && a.SentAt != null)

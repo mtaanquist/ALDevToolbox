@@ -27,8 +27,13 @@ public sealed record TotpEnrollment(string SecretBase32, string OtpAuthUri, byte
 /// </summary>
 public sealed class TotpService
 {
+    // The purpose string is part of the ciphertext's identity: every stored TOTP
+    // seed was protected under it, so it keeps the old spelling for good. The
+    // issuer below is only the label the authenticator app shows, so it follows
+    // the product name - enrolments made before the rename keep reading "AL Dev
+    // Toolbox" in the user's app, and their codes keep verifying either way.
     public const string TotpSecretProtectionPurpose = "ALDevToolbox.UserTotpSecret";
-    private const string Issuer = "AL Dev Toolbox";
+    private const string Issuer = "AL Workbench";
 
     private readonly AppDbContext _db;
     private readonly IDataProtector _protector;

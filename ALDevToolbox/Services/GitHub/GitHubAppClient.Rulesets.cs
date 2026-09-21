@@ -5,7 +5,7 @@ namespace ALDevToolbox.Services.GitHub;
 
 /// <summary>
 /// Repository rulesets: the branch rules an organisation wants on every
-/// repository the toolbox creates for it (issue #628).
+/// repository the workbench creates for it (issue #628).
 ///
 /// <para>A ruleset is the modern replacement for a branch protection rule, and
 /// it is what this uses because it can be aimed at <c>~DEFAULT_BRANCH</c> - a
@@ -17,11 +17,15 @@ namespace ALDevToolbox.Services.GitHub;
 public sealed partial class GitHubAppClient
 {
     /// <summary>
-    /// The name the toolbox's ruleset carries on GitHub. Fixed rather than
+    /// The name the workbench's ruleset carries on GitHub. Fixed rather than
     /// derived from the organisation, so somebody reading a repository's
     /// settings can see at a glance which rules were not written by hand.
-    /// </summary>
-    public const string RulesetName = "AL Dev Toolbox repository standards";
+    ///
+    /// <para>Only newly created rulesets carry this name - an existing one is
+    /// updated by the id we stored, so rulesets created before the AL Workbench
+    /// rename keep reading "AL Dev Toolbox repository standards" on GitHub until
+    /// somebody recreates them. Cosmetic, and not worth a migration.</para>
+    public const string RulesetName = "AL Workbench repository standards";
 
     /// <summary>
     /// Creates the organisation's ruleset on <paramref name="owner"/>/<paramref name="repo"/>,

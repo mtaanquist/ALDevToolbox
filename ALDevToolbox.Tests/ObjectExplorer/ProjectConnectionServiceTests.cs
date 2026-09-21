@@ -915,7 +915,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovering_puts_a_line_in_the_environments_toolbox_history()
+    public async Task Recovering_puts_a_line_in_the_environments_workbench_history()
     {
         var (projectId, envId) = await SeedDeletedEnvironmentAsync();
         var admin = new FakeAdminClient
@@ -1043,7 +1043,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Copying_puts_a_line_on_the_source_environments_toolbox_history()
+    public async Task Copying_puts_a_line_on_the_source_environments_workbench_history()
     {
         var (projectId, envId) = await SeedEnvironmentAsync("Production");
         var admin = new FakeAdminClient
@@ -1880,7 +1880,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private static BcScheduledPteOperation Scheduled(Guid appId, string version = "2.0.0.0") => new(
         Id: Guid.NewGuid(), AppId: appId, Type: "Install", Status: BcAppOperationStatus.Scheduled,
         RawStatus: "scheduled", TargetAppVersion: version, ScheduleKind: BcDeploymentSchedule.UpdateWindow,
-        Name: "CRONUS Toolbox", Publisher: "CRONUS A/S", SyncMode: BcSyncMode.Add,
+        Name: "CRONUS Workbench", Publisher: "CRONUS A/S", SyncMode: BcSyncMode.Add,
         LanguageId: string.Empty, CreatedOn: DateTimeOffset.UtcNow);
 
     [Fact]
@@ -1889,7 +1889,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var (projectId, envId) = await SeedEnvironmentAsync();
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => new[] { App("CRONUS Toolbox"), App("Some Marketplace App", "global") },
+            OnInstalled = () => new[] { App("CRONUS Workbench"), App("Some Marketplace App", "global") },
             OnAvailable = () => new[] { new BcAvailableAppUpdate(Guid.NewGuid(), "Some Marketplace App", "Vendor", "3.0.0.0", Array.Empty<BcAppUpdateRequirement>()) },
             OnScheduled = () => new[] { Scheduled(Guid.NewGuid()) },
         };
@@ -1919,7 +1919,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var (projectId, envId) = await SeedEnvironmentAsync();
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => new[] { App("CRONUS Toolbox") },
+            OnInstalled = () => new[] { App("CRONUS Workbench") },
             // The available-updates read is denied; the rest must survive it.
             OnAvailable = () => throw new BcApiException(System.Net.HttpStatusCode.Forbidden, "denied"),
         };
@@ -1934,7 +1934,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task The_panel_marks_the_apps_this_toolbox_released_here()
+    public async Task The_panel_marks_the_apps_this_workbench_released_here()
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         var ours = Guid.NewGuid();
@@ -1942,7 +1942,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => new[] { App("CRONUS Toolbox", "tenant", ours), App("Someone Else's PTE") },
+            OnInstalled = () => new[] { App("CRONUS Workbench", "tenant", ours), App("Someone Else's PTE") },
         };
 
         await using var ctx = _db.NewContext();
@@ -2124,7 +2124,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     [InlineData("Partner.zip", 3, ".app")]
     [InlineData("Partner.app", 0, "empty")]
     [InlineData("Partner.app", BcAppManagementClient.MaxAppBytes + 1, "50 MB")]
-    public async Task An_upload_business_central_would_refuse_never_leaves_the_toolbox(string fileName, int size, string says)
+    public async Task An_upload_business_central_would_refuse_never_leaves_the_workbench(string fileName, int size, string says)
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
         var apps = new FakeAppManagementClient();
@@ -2194,7 +2194,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var reads = 0;
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Workbench") }; },
         };
 
         await using var ctx = _db.NewContext();
@@ -2216,7 +2216,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var reads = 0;
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Workbench") }; },
         };
 
         await using var ctx = _db.NewContext();
@@ -2235,7 +2235,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var reads = 0;
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Workbench") }; },
         };
 
         await using var ctx = _db.NewContext();
@@ -2255,7 +2255,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var reads = 0;
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Workbench") }; },
         };
 
         await using var ctx = _db.NewContext();
@@ -2277,7 +2277,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         var ours = Guid.NewGuid();
         var apps = new FakeAppManagementClient
         {
-            OnInstalled = () => new[] { App("CRONUS Toolbox", "tenant", ours) },
+            OnInstalled = () => new[] { App("CRONUS Workbench", "tenant", ours) },
         };
 
         await using var ctx = _db.NewContext();
@@ -2332,7 +2332,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         };
         delivery.Results.Add(new OeProjectDeliveryResult
         {
-            OrganizationId = TestDb.DefaultOrgId, Ordering = 0, AppName = "CRONUS Toolbox",
+            OrganizationId = TestDb.DefaultOrgId, Ordering = 0, AppName = "CRONUS Workbench",
             AppVersion = "2.0.0.0", AppId = appId.ToString(), Status = ProjectDeliveryResultStatus.Scheduled,
             CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
         });

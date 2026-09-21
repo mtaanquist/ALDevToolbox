@@ -4,10 +4,10 @@ using ALDevToolbox.Services.Workers;
 namespace ALDevToolbox.Services.GitHub;
 
 /// <summary>
-/// One pull-request head the toolbox has been asked to compile, as
+/// One pull-request head the workbench has been asked to compile, as
 /// <c>POST /github/webhook</c> read it off GitHub's <c>pull_request</c> delivery.
 ///
-/// <para>Everything here is what GitHub said, not what the toolbox believes: the
+/// <para>Everything here is what GitHub said, not what the workbench believes: the
 /// endpoint never touches the database, so a delivery whose signature checked out
 /// costs one channel write and nothing else. The worker is where the installation
 /// is resolved back to an organisation and where anything is trusted.</para>
@@ -131,7 +131,7 @@ public sealed class GitHubWebhookQueue : JobQueue<GitHubPullRequestJob>
     /// record when <paramref name="headSha"/> is still that head.
     ///
     /// <para>The second half is what keeps the map from growing for the life of
-    /// the process: every pull request the toolbox ever built would otherwise
+    /// the process: every pull request the workbench ever built would otherwise
     /// leave an entry behind. It is only safe when the head just built is still
     /// the newest one - a newer head announced mid-build owns the entry, and
     /// dropping it would make the superseded build look current again.</para>

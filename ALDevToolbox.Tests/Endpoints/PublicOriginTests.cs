@@ -22,29 +22,29 @@ public class PublicOriginTests
     }
 
     [Theory]
-    [InlineData("https://toolbox.cronus.example")]
+    [InlineData("https://workbench.cronus.example")]
     [InlineData("http://localhost:8080")]
-    [InlineData("https://toolbox.cronus.example:8443")]
+    [InlineData("https://workbench.cronus.example:8443")]
     public void AcceptsHttpAndHttpsOrigins(string raw)
     {
         PublicOrigin.Parse(raw).Should().Be(raw);
     }
 
     [Theory]
-    [InlineData("https://toolbox.cronus.example/", "https://toolbox.cronus.example")]
-    [InlineData("  https://toolbox.cronus.example//  ", "https://toolbox.cronus.example")]
-    [InlineData("https://toolbox.cronus.example/base/", "https://toolbox.cronus.example/base")]
+    [InlineData("https://workbench.cronus.example/", "https://workbench.cronus.example")]
+    [InlineData("  https://workbench.cronus.example//  ", "https://workbench.cronus.example")]
+    [InlineData("https://workbench.cronus.example/base/", "https://workbench.cronus.example/base")]
     public void StripsTrailingSlashAndSurroundingWhitespace(string raw, string expected)
     {
         PublicOrigin.Parse(raw).Should().Be(expected);
     }
 
     [Theory]
-    [InlineData("ftp://toolbox.cronus.example")]
+    [InlineData("ftp://workbench.cronus.example")]
     [InlineData("file:///etc/passwd")]
     [InlineData("javascript:alert(1)")]
-    [InlineData("toolbox.cronus.example")]
-    [InlineData("//toolbox.cronus.example")]
+    [InlineData("workbench.cronus.example")]
+    [InlineData("//workbench.cronus.example")]
     public void RejectsAnythingThatIsNotAnHttpOrigin(string raw)
     {
         PublicOrigin.Parse(raw).Should().BeNull();
@@ -62,9 +62,9 @@ public class PublicOriginTests
     [Fact]
     public void ConfiguredOriginReportsItself()
     {
-        var origin = new PublicOrigin("https://toolbox.cronus.example");
+        var origin = new PublicOrigin("https://workbench.cronus.example");
 
         origin.IsConfigured.Should().BeTrue();
-        origin.Configured.Should().Be("https://toolbox.cronus.example");
+        origin.Configured.Should().Be("https://workbench.cronus.example");
     }
 }

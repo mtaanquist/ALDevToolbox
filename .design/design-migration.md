@@ -3647,7 +3647,7 @@ job was to keep dead CSS resolving.
   one letter apart in the name. That is a third AL palette on top of the two
   #565 is about. Worth its own issue before either grows.
 - **`list_projects` does not return this project.** It filters to
-  `PROJECT_TYPE_DESIGN_SYSTEM`, and the AL Dev Toolbox design system is a
+  `PROJECT_TYPE_DESIGN_SYSTEM`, and the AL Workbench design system is a
   `PROJECT_TYPE_PROJECT`. `get_project` on the id in `.design/handoff/README.md`
   confirms `canEdit: true`. Go straight to the id; do not conclude from an empty
   list that there is nothing to push to.

@@ -25,7 +25,7 @@
 @using ALDevToolbox.Domain.Tools
 @using Microsoft.AspNetCore.Components.Authorization
 
-<PageTitle>New workspace · AL Dev Toolbox</PageTitle>
+<PageTitle>New workspace · AL Workbench</PageTitle>
 
 @*
     Archetype 5 (generator with live preview): a single form column beside a
@@ -612,7 +612,7 @@
                         </Authorized>
                         <NotAuthorized>
                             <p class="field__hint">
-                                Ask whoever runs AL Dev Toolbox to set it up.
+                                Ask whoever runs AL Workbench to set it up.
                             </p>
                         </NotAuthorized>
                     </AuthorizeView>
@@ -638,7 +638,7 @@
                 else if (_gitHub.Readiness == GitHubRepositoryReadiness.LinkNeedsRepair)
                 {
                     <p>
-                        Your GitHub account is no longer connected to the toolbox, so it cannot
+                        Your GitHub account is no longer connected to the workbench, so it cannot
                         check that you are in @_gitHub.OrgLogin.
                     </p>
                     <a class="btn" href="/account?section=repos">
@@ -1175,7 +1175,7 @@
             Logger.LogWarning(ex, "Could not reach GitHub to create the repository {RepositoryName}.", RepositoryName);
             _repoErrors = new Dictionary<string, string>
             {
-                ["GitHubRepository"] = "The toolbox could not reach GitHub just now, so nothing was created. "
+                ["GitHubRepository"] = "The workbench could not reach GitHub just now, so nothing was created. "
                     + "Try again in a minute.",
             };
         }

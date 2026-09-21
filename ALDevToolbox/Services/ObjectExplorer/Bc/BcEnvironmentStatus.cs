@@ -49,7 +49,7 @@ public static class BcEnvironmentStatus
     /// Compared case-insensitively, because the status is stored exactly as Microsoft
     /// spelled it (see <see cref="BcEnvironment"/>), and trimmed for the same reason.
     /// <para>
-    /// This is the one lifecycle state the toolbox splits out rather than merely
+    /// This is the one lifecycle state the workbench splits out rather than merely
     /// describes: a soft-deleted environment cannot be published to, updated or
     /// rescheduled, so it is kept out of the working lists and shown on its own. See
     /// <c>.design/environment-updates.md</c>, "Deleted environments".

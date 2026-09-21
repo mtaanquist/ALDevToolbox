@@ -145,7 +145,7 @@ waiting for the nightly sweep. A failed re-read costs the freshness, never the w
   value of midnight UTC means "before that day", which is why the admin center's own picker
   stops the day before — so a midnight bound is turned into the previous day and only a
   bound carrying a time of day is sent as it stands. The write is then verified rather than
-  trusted: the toolbox recorded the move as done while the date stayed exactly where it was,
+  trusted: the workbench recorded the move as done while the date stayed exactly where it was,
   so the re-read that re-mirrors the row is also what proves the date changed, and an
   unchanged date fails the action. The test is whether the date *moved*, not whether it
   landed on the day we asked for — Business Central stores it at the start of the customer's
@@ -402,7 +402,7 @@ same question is asked in SQL.
 the customer's tenant and carries the four things every such write does: it is gated on
 managing the solution (`ResolveEnvironmentAsync`), it sits behind a confirm that names the
 environment and its customer and says out loud when it is a production one, it records
-"Recovered the environment" in that environment's Toolbox history, and a `BcApiException`
+"Recovered the environment" in that environment's Workbench history, and a `BcApiException`
 reaches the page as a sentence — the two codes Microsoft documents here, an environment
 already being recovered and one whose state forbids it, are told apart rather than both
 arriving as "the API refused it". An environment that was never deleted is refused before
@@ -420,7 +420,7 @@ write.
 
 **Deliberately not built.** Deleting an environment, renaming one and restoring one to a
 point in time all stay in the admin centre. Recover is here because it is the one of them
-with a deadline — a fortnight, after which nobody can do it at all — and because the toolbox
+with a deadline — a fortnight, after which nobody can do it at all — and because the workbench
 is where a deleted environment is noticed. Copying one is here for the opposite reason: it
 has no deadline and is simply the thing an ops engineer does most often, which is the next
 section.
@@ -437,7 +437,7 @@ against their storage allowance, and a production copy against their licences.
 
 It carries the four things every tenant write does: it is gated on managing the solution
 (`ResolveEnvironmentAsync`), it sits behind a confirm that names the environment and its
-customer, it records "Copied the environment" in the **source** environment's Toolbox
+customer, it records "Copied the environment" in the **source** environment's Workbench
 history — the one that existed when it was asked for, and the one somebody later asks where
 the sandbox came from — and a `BcApiException` reaches the page as a sentence. Every code
 Microsoft documents for this endpoint is told apart, because they are different situations
@@ -497,7 +497,7 @@ It is one read and one write on Microsoft's documented session endpoints:
 Session ids are integers. The read is gated on managing the solution, like every other read
 that spends the customer's credentials; the write carries the four things every tenant write
 carries — the same gate, a confirm that names the environment and says when it is a
-production one, a line in the environment's Toolbox history (`UpgradeActionKind.CancelSession`,
+production one, a line in the environment's Workbench history (`UpgradeActionKind.CancelSession`,
 a text column, no migration), and a `BcApiException` that reaches the page as a sentence.
 Microsoft documents no error codes of its own for the DELETE, so the one worth telling apart
 is the status: a **404 is a session that ended between the list and the click**, which is the
@@ -674,7 +674,7 @@ Where it differs from the sheet, and why:
 
 | The sheet has | We have | Why |
 | --- | --- | --- |
-| "Nothing on this page is stored by the toolbox." | "Apps and settings read from Business Central {age}. Version and update dates last checked {age}." | The sheet's sentence is not true for us: the environment row and its next update are mirrored, and the app lists are cached for fifteen minutes. The strip says which half is which. |
+| "Nothing on this page is stored by the workbench." | "Apps and settings read from Business Central {age}. Version and update dates last checked {age}." | The sheet's sentence is not true for us: the environment row and its next update are mirrored, and the app lists are cached for fifteen minutes. The strip says which half is which. |
 | An overflow menu: Copy environment ID, Open the admin centre, Export the app list, Remove from this solution | "Open the admin centre" as a second button; no menu | We mirror no Business Central environment id, there is no export, and environments are mirrored from Business Central rather than attached by hand, so nothing can be removed. One entry is not a menu. |
 | Refresh for everyone | Refresh for everyone on Operations and Sessions, for people who manage the solution on Overview and Apps | Those two tabs are read live on every visit anyway, so their Refresh gives a reader nothing new; the other two are cached for everybody, and making the customer's tenant answer again is a manager's call. |
 | A region in the subtitle and a country in the meta row | Both, when Business Central reported them | `location_name` and `country_code` are mirrored; an environment read before they were captured shows a dash. |
@@ -691,8 +691,8 @@ Where it differs from the sheet, and why:
 | The result of a write beside its control | One result line under the head | The writes are spread down a long page and each re-reads everything; the top is where the eye is afterwards. |
 | Nothing about copying the environment | **Copy this environment...** as a third outline button in the head, and **Copy...** in the Environments list's row menu; both open the same dialog | The sheet draws a page that only reads and adjusts. Copying is the errand this page's reader would otherwise open the admin centre for, and it is the one write here that adds an environment to the customer's tenant; see "Copying an environment" above. Not shown on a deleted environment, which has nothing to copy. **Not yet tried against a live tenant** - the request shape is from Microsoft's documentation of `POST .../copy`. **There is no sheet for this; it needs a design pass upstream.** |
 | Nothing about a deleted environment | A danger alert above the meta row, with **Recover this environment** | The sheet draws a live environment. A deleted one changes what every number under it means, and it has a deadline; see "Deleted environments" above. |
-| One long page: Updates, Apps, Environment settings | Five tabs under the meta row - **Overview** (the Updates card, both windows, the three settings), **Apps** (scheduled installs, installed apps, AppSource updates waiting, Upload an app), **Operations**, **Sessions**, **Toolbox history** | The page had grown past what the sheet drew (uploads, app updates, the delivery window, history) and the thing looked for was a long scroll away. The head, the freshness strip, the result line and the meta row stay above the tabs because they are true on every one. The tabs are real links (`/environments/{id}/apps`), so one can be bookmarked and Back works; the page reads the environment once per id, and a change of tab reads only what that tab shows - Overview and Apps share the one cached panel, Operations has its own read, History asks Business Central nothing. Refresh re-reads the open tab - and Sessions, the one live tab, keeps itself current besides; see "Sessions" above. Maintainer's decision, 2026-09-20; needs a design pass upstream. |
-| No operations list | **Operations**: Business Central's own record for the environment (`GET .../environments/{name}/operations`) - app installs, updates and uninstalls, platform updates, restarts, renames, setting changes - newest first, each as a sentence with a status, who started it, when (the solution's time zone) and how long it took; a failure carries Business Central's message | Toolbox history is what *we* did from here (named so at the tab strip, where the choice between the two is made); an update started in the admin centre, or one Microsoft ran overnight, is only in Business Central's record. Two tabs rather than one merged timeline until there is real data to judge a merge by. Read live on every visit, never cached: the point is to watch something finish. Read-only, and gated on seeing the solution like the panel. Operation types and statuses are worded in `BcEnvironmentOperationDisplay`; one Microsoft adds later is spaced out into words rather than shown as the wire token. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation. |
+| One long page: Updates, Apps, Environment settings | Five tabs under the meta row - **Overview** (the Updates card, both windows, the three settings), **Apps** (scheduled installs, installed apps, AppSource updates waiting, Upload an app), **Operations**, **Sessions**, **Workbench history** | The page had grown past what the sheet drew (uploads, app updates, the delivery window, history) and the thing looked for was a long scroll away. The head, the freshness strip, the result line and the meta row stay above the tabs because they are true on every one. The tabs are real links (`/environments/{id}/apps`), so one can be bookmarked and Back works; the page reads the environment once per id, and a change of tab reads only what that tab shows - Overview and Apps share the one cached panel, Operations has its own read, History asks Business Central nothing. Refresh re-reads the open tab - and Sessions, the one live tab, keeps itself current besides; see "Sessions" above. Maintainer's decision, 2026-09-20; needs a design pass upstream. |
+| No operations list | **Operations**: Business Central's own record for the environment (`GET .../environments/{name}/operations`) - app installs, updates and uninstalls, platform updates, restarts, renames, setting changes - newest first, each as a sentence with a status, who started it, when (the solution's time zone) and how long it took; a failure carries Business Central's message | Workbench history is what *we* did from here (named so at the tab strip, where the choice between the two is made); an update started in the admin centre, or one Microsoft ran overnight, is only in Business Central's record. Two tabs rather than one merged timeline until there is real data to judge a merge by. Read live on every visit, never cached: the point is to watch something finish. Read-only, and gated on seeing the solution like the panel. Operation types and statuses are worded in `BcEnvironmentOperationDisplay`; one Microsoft adds later is spaced out into words rather than shown as the wire token. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation. |
 | No notion of who is signed in | **Sessions**: who has a session open on the environment right now (`GET .../environments/{name}/sessions`) - who, how they got in, since when, what they are running and for how long - with **End session** per row behind a confirm | The errand this page's reader would otherwise open the admin centre for while a customer is on the phone with everything locked. The one live tab: it reads on arrival, re-reads every 30 seconds for 10 minutes, and says so. Nothing about a session is stored. Read by anyone who can see the solution; ending one is manage-gated, and the history line names whose session it was and what it was running. **Not yet tried against a live tenant** - the shape is from Microsoft's documentation of the session endpoints, and `currentOperationDuration` is documented as a bare `long` with no unit. See "Sessions" above. **There is no sheet for this; it needs a design pass upstream.** |
 | Scheduled installs drawn only as an empty state | A table with a Cancel install action when there are any | The write exists and a booked install has to be reachable from somewhere. |
 

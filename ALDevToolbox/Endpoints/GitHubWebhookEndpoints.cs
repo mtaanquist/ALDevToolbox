@@ -8,7 +8,7 @@ using ALDevToolbox.Services.Operations;
 namespace ALDevToolbox.Endpoints;
 
 /// <summary>
-/// The toolbox's one inbound route: GitHub telling us a pull request opened,
+/// The workbench's one inbound route: GitHub telling us a pull request opened,
 /// reopened or gained a new commit, so the compile gate (#627) can answer "does
 /// this still build?" on the pull request itself.
 ///
@@ -110,7 +110,7 @@ public static class GitHubWebhookEndpoints
             var job = TryReadPullRequest(body, deliveryId, log);
             if (job is null) return Results.NoContent();
 
-            // A full channel means the toolbox is already behind on builds.
+            // A full channel means the workbench is already behind on builds.
             // Waiting here would hold GitHub's request open behind that backlog;
             // saying so lets GitHub redeliver, which is what it does with a 5xx.
             if (!queue.TryEnqueue(job))

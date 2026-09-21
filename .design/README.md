@@ -1,6 +1,6 @@
 # Design docs
 
-Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the implementation; these documents are the contract it's built against. When the code and a doc disagree, fix one of them — don't leave them out of sync.
+Living specification for the AL Workbench. The code in `ALDevToolbox/` is the implementation; these documents are the contract it's built against. When the code and a doc disagree, fix one of them — don't leave them out of sync.
 
 ## What's here
 

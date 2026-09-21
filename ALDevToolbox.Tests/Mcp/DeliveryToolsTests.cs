@@ -370,7 +370,7 @@ public sealed class DeliveryToolsTests : IDisposable
         using var rsa = System.Security.Cryptography.RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(
             new ALDevToolbox.Services.Operations.GitHubAppInput(
-                AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+                AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
                 ClientSecret: "s3cr3t", ClearClientSecret: false,
                 PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
 

@@ -34,7 +34,7 @@ public static class BcDeploymentSchedule
     /// <para>
     /// <see cref="UpdateWindow"/> is deliberately absent. The engine supports it and the
     /// API accepts it, but it means "whenever Microsoft next patches this environment",
-    /// which is a different promise to a customer than the delivery slot the toolbox
+    /// which is a different promise to a customer than the delivery slot the workbench
     /// already schedules — offering both without distinguishing them would be a trap.
     /// Whether to offer it is an open product question; until it's answered, it isn't
     /// pickable.

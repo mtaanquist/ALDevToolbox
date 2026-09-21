@@ -19,7 +19,7 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 /// </summary>
 public sealed class EmailMessageTests
 {
-    private static ResolvedSmtpSettings Smtp(string from = "noreply@example.com", string? fromName = "AL Dev Toolbox") =>
+    private static ResolvedSmtpSettings Smtp(string from = "noreply@example.com", string? fromName = "AL Workbench") =>
         new(Host: "smtp.example.com", Port: 587, User: null, Password: null,
             From: from, FromName: fromName, UseStartTls: true);
 
@@ -42,7 +42,7 @@ public sealed class EmailMessageTests
             Smtp(), "user@example.com", "Subject", "<p>Body</p>"));
 
         var from = message.From.Mailboxes.Single();
-        from.Name.Should().Be("AL Dev Toolbox");
+        from.Name.Should().Be("AL Workbench");
         from.Address.Should().Be("noreply@example.com");
     }
 
@@ -87,10 +87,10 @@ public sealed class EmailMessageTests
     public void A_display_name_with_non_ascii_characters_survives_the_round_trip()
     {
         var message = RoundTrip(SmtpEmailService.BuildMessage(
-            Smtp(fromName: "AL Dev Toolbox — Ærø"), "user@example.com", "Subject", "<p>Body</p>"));
+            Smtp(fromName: "AL Workbench — Ærø"), "user@example.com", "Subject", "<p>Body</p>"));
 
         var from = message.From.Mailboxes.Single();
-        from.Name.Should().Be("AL Dev Toolbox — Ærø");
+        from.Name.Should().Be("AL Workbench — Ærø");
         from.Address.Should().Be("noreply@example.com");
     }
 

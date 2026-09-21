@@ -27,7 +27,7 @@
     See the deviation note in .design/github-integration.md.
 *@
 
-<PageTitle>Repositories · Administration · AL Dev Toolbox</PageTitle>
+<PageTitle>Repositories · Administration · AL Workbench</PageTitle>
 
 <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Repositories">
     <Alerts>
@@ -79,9 +79,9 @@
                     <SettingRow Name="Your GitHub organisation">
                         <HintContent>
                             Connect once, and your team can create repositories and save
-                            work straight from the toolbox - without anyone sharing a
+                            work straight from the workbench - without anyone sharing a
                             personal access token to do it. You will be sent to GitHub to
-                            pick the organisation and confirm what the AL Dev Toolbox app
+                            pick the organisation and confirm what the AL Workbench app
                             may do there. That app is what GitHub calls it, and what you
                             will look for in your organisation's settings later.
                         </HintContent>
@@ -114,7 +114,7 @@
                                         <Alert Tone="AlertTone.Info">
                                             <span>
                                                 GitHub is not set up on this server yet. Ask whoever runs
-                                                AL Dev Toolbox to set it up under Site administration
+                                                AL Workbench to set it up under Site administration
                                                 &#8594; Settings &#8594; GitHub, then come back here.
                                             </span>
                                         </Alert>
@@ -170,7 +170,7 @@
                 else if (_github is { IsConnected: true })
                 {
                     <SettingRow Name="Your GitHub organisation"
-                                Hint="The GitHub organisation this toolbox organisation works with.">
+                                Hint="The GitHub organisation this workbench organisation works with.">
                         <div class="u-stack">
                             <span class="u-row">
                                 <Icon Name="folder-git-2" Width="16" Height="16" />
@@ -184,13 +184,13 @@
                         </div>
                     </SettingRow>
 
-                    <SettingRow Name="What the toolbox may do there"
-                                Hint="Chosen on GitHub when you connected. To change it, an owner of your GitHub organisation edits what the AL Dev Toolbox app may do, there.">
+                    <SettingRow Name="What the workbench may do there"
+                                Hint="Chosen on GitHub when you connected. To change it, an owner of your GitHub organisation edits what the AL Workbench app may do, there.">
                         <div class="u-stack">
                             @if (_github.Permissions.Count == 0)
                             {
                                 <span class="u-muted">
-                                    GitHub has not told us what the toolbox may do here yet.
+                                    GitHub has not told us what the workbench may do here yet.
                                     Choose Check connection below to ask again.
                                 </span>
                             }
@@ -208,8 +208,8 @@
                             {
                                 <Alert Tone="AlertTone.Warn" Role="">
                                     <span>
-                                        Creating repositories from the toolbox will not work. An owner
-                                        of your GitHub organisation needs to let the AL Dev Toolbox app
+                                        Creating repositories from the workbench will not work. An owner
+                                        of your GitHub organisation needs to let the AL Workbench app
                                         create new repositories, and approve the change. Once they have,
                                         choose Check connection below and this list updates.
                                     </span>
@@ -217,7 +217,7 @@
                             }
                             <span class="u-row">
                                 <a href="@AccessOnGitHubUrl" target="_blank" rel="noopener">
-                                    Change what the AL Dev Toolbox app may do, on GitHub
+                                    Change what the AL Workbench app may do, on GitHub
                                 </a>
                                 <Icon Name="external-link" Width="14" Height="14" />
                             </span>
@@ -229,7 +229,7 @@
                        once a GitHub organisation is connected, and this is where
                        an admin already is when they think about it. (#628) *@
                     <SettingRow Name="Repository standards"
-                                Hint="The files and branch rules every repository the toolbox creates starts with.">
+                                Hint="The files and branch rules every repository the workbench creates starts with.">
                         <div class="u-stack">
                             @if (_standardsSummary is null)
                             {
@@ -255,7 +255,7 @@
                     </SettingRow>
 
                     <SettingRow Name="Check the connection"
-                                Hint="Asks GitHub whether the toolbox can still act for your organisation, and brings the list above up to date. Nothing on GitHub is changed.">
+                                Hint="Asks GitHub whether the workbench can still act for your organisation, and brings the list above up to date. Nothing on GitHub is changed.">
                         <div class="u-stack">
                             @* The button sits in a u-row so it keeps its own width:
                                a bare button as a flex child of u-stack stretches to
@@ -286,7 +286,7 @@
 
                     <SettingRow Name="Disconnect from GitHub" Danger="true"
                                 Lock="Asks for confirmation and is written to the audit log"
-                                Hint="The toolbox stops using GitHub for this organisation. Nothing on GitHub is deleted - the AL Dev Toolbox app stays on your GitHub organisation until an owner removes it there.">
+                                Hint="The workbench stops using GitHub for this organisation. Nothing on GitHub is deleted - the AL Workbench app stays on your GitHub organisation until an owner removes it there.">
                         <div class="u-row">
                             <button type="button" class="btn btn--danger" @onclick="DisconnectAsync" disabled="@_disconnecting">
                                 <Icon Name="circle-minus" Width="16" Height="16" />
@@ -319,14 +319,14 @@
         <Alert Tone="AlertTone.Info">
             <span>
                 Connecting your organisation here covers <strong>working with
-                repositories</strong> from the toolbox: creating them, and saving
+                repositories</strong> from the workbench: creating them, and saving
                 work into them.
             </span>
         </Alert>
         <Alert Tone="AlertTone.Info">
             <span>
                 <strong>Builds are separate, on both hosts.</strong> When a solution
-                builds, the toolbox fetches its copy of the repository as whoever
+                builds, the workbench fetches its copy of the repository as whoever
                 started the build, using a token that person saved under
                 <a href="/account?section=repos">Account &#8594; Repository access</a>.
                 So a build only ever reaches what that person can reach - and they
@@ -338,7 +338,7 @@
 
 <ConfirmDialog @ref="_confirmDisconnect"
                Title="Disconnect from GitHub?"
-               Message="Your team will not be able to create repositories or save work to GitHub from the toolbox until you connect again. Nothing on GitHub is deleted."
+               Message="Your team will not be able to create repositories or save work to GitHub from the workbench until you connect again. Nothing on GitHub is deleted."
                ConfirmLabel="Disconnect"
                ConfirmButtonClass="btn--danger" ConfirmIcon="circle-minus" />
 
@@ -393,7 +393,7 @@
         // through this circuit.
         if (Ok == "github-connected")
         {
-            _okMessage = "Connected. Your team can now work with this GitHub organisation from the toolbox.";
+            _okMessage = "Connected. Your team can now work with this GitHub organisation from the workbench.";
         }
         _errMessage = string.IsNullOrWhiteSpace(Msg) ? null : Msg;
 
@@ -467,25 +467,25 @@
             await GitHub.RefreshAsync(installation);
             await ReloadAsync();
             _testOk = true;
-            _testMessage = $"All good. The toolbox can act for {_github.OrgLogin} on GitHub, and the list above is up to date.";
+            _testMessage = $"All good. The workbench can act for {_github.OrgLogin} on GitHub, and the list above is up to date.";
         }
         catch (GitHubAppNotConfiguredException)
         {
             _testOk = false;
-            _testMessage = "GitHub is not set up on this server any more. Ask whoever runs AL Dev Toolbox to check it.";
+            _testMessage = "GitHub is not set up on this server any more. Ask whoever runs AL Workbench to check it.";
         }
         catch (GitHubApiException ex)
         {
             Log.LogWarning(ex, "GitHub connection check failed for installation {InstallationId}.", installationId);
             _testOk = false;
-            _testMessage = "The toolbox could not check the connection. Try again in a minute; if it keeps failing, ask whoever runs AL Dev Toolbox.";
+            _testMessage = "The workbench could not check the connection. Try again in a minute; if it keeps failing, ask whoever runs AL Workbench.";
             _testDetail = ex.Message;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "GitHub connection check failed for installation {InstallationId}.", installationId);
             _testOk = false;
-            _testMessage = "The toolbox could not reach GitHub. Try again in a minute; if it keeps failing, ask whoever runs AL Dev Toolbox.";
+            _testMessage = "The workbench could not reach GitHub. Try again in a minute; if it keeps failing, ask whoever runs AL Workbench.";
         }
         finally
         {
@@ -504,7 +504,7 @@
         {
             await GitHub.DisconnectAsync();
             await ReloadAsync();
-            _okMessage = "Disconnected. The AL Dev Toolbox app is still on your GitHub organisation until an owner there removes it.";
+            _okMessage = "Disconnected. The AL Workbench app is still on your GitHub organisation until an owner there removes it.";
         }
         catch (Exception ex)
         {

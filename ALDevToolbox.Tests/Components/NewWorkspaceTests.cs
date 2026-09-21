@@ -422,7 +422,7 @@ public sealed class NewWorkspaceTests : IDisposable
         using var rsa = System.Security.Cryptography.RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(
             new ALDevToolbox.Services.Operations.GitHubAppInput(
-                AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+                AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
                 ClientSecret: "s3cr3t", ClearClientSecret: false,
                 PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
 
@@ -634,7 +634,7 @@ public sealed class NewWorkspaceTests : IDisposable
     // --- Organisations that do not use Solutions (#772) --------------------
 
     /// <summary>
-    /// A consultant whose organisation uses the toolbox only to generate
+    /// A consultant whose organisation uses the workbench only to generate
     /// workspaces gets the field as it was before the picker: type the
     /// customer's name and carry on. Offering to pick or create a solution
     /// would point at a tool their organisation has switched off, and nothing
