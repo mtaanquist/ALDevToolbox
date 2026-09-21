@@ -34,13 +34,16 @@ public sealed class StylesheetLoadOrderTests
     /// source-viewer.css are NOT legacy and are not going anywhere - the first
     /// styles DOM CodeMirror builds at runtime, the second is the Object
     /// Explorer's own composition on archetype 10. They sit after the design
-    /// layer because that is what they extend (PR 17b).
+    /// layer because that is what they extend (PR 17b). command-palette.css is
+    /// in the same family: its rows are cloned by a script, so a scoped sheet
+    /// would match nothing, and it builds on .modal-layer from the design
+    /// layer - see .design/command-palette.md.
     /// </summary>
     private static readonly string[] Expected =
     [
         "fonts.css", "tokens.css", "components.css", "shell.css",
         "pages.css", "pages-forms.css", "pages-power.css", "pages-content.css",
-        "app.css", "code-editor.css", "source-viewer.css", ];
+        "app.css", "command-palette.css", "code-editor.css", "source-viewer.css", ];
 
     [Fact]
     public void Every_sheet_in_wwwroot_is_linked_from_App_razor()

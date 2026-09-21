@@ -1,8 +1,9 @@
 # The command palette
 
-Status: **designed, not built.** This document is the outcome of #879; the build is the
-rest of milestone "Command palette" (#880-#889). Every decision below was made with the
-maintainer on 2026-09-21.
+Status: **the shell is built (#880); the search behind it is not.** This document is the
+outcome of #879; the rest of milestone "Command palette" (#881-#889) is still to come, so
+everything about sources and the endpoint below describes what is coming rather than what
+is there. Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
 
@@ -124,6 +125,16 @@ ranking cannot drift from source to source.
 | Recipes | recipe title | the recipe |
 | Go to | tool and page names | the page |
 
+**Go to is the one that is not a DI source.** It has no database behind it and its
+whole content is decided by the caller's roles and tool toggles, so Razor renders it
+into the page and the script filters it in the browser, under the same every-term-must-match
+rule. That is also what makes it survive a failed request: when the endpoint is
+unreachable the palette says so and still jumps. The list itself is
+`Domain/Navigation/NavDestinations.cs`, shared with the sidebar - `NavMenu.razor` keeps
+its own markup (its groups collapse, nest and carry active states) and a test fails if
+the two ever disagree about which pages exist. For the same reason Go to is **not capped**:
+it is the browsable list of tools, which the empty query already shows whole.
+
 Releases and Recipes search **names and titles only**, never objects, source or recipe
 bodies - those tables are large and Object Explorer already has a search built for them.
 A later version may add a "Search for '...' in Object Explorer" row that carries the
@@ -203,9 +214,13 @@ storage is unavailable the palette simply shows Go to.
 ## States
 
 The list pane always shows exactly one of: recents and Go to (empty query), results,
-"No results for '...'" with a line pointing at the Solutions list, or "Search is not
-available right now" when the request fails. While a request is in flight the previous
-results stay put - no spinner flicker on every keystroke.
+"Nothing matches '...'" with a line pointing at the Solutions list, or "Search is not
+available right now" when the request fails. The last two never stack - a failed request
+has already explained the silence, so saying nothing matched on top of it would be a
+second sentence about the same thing. Either way the closest tool is still offered as a
+row, so the palette never ends on a dead end. While a request is in flight the previous
+results stay put - no spinner flicker on every keystroke, and the selected row keeps its
+place when the new ones arrive.
 
 Keyboard: Up/Down move, Enter opens, Ctrl/Cmd+Enter opens in a new tab, Esc closes. The
 dialog is a labelled `role="dialog"` with a combobox/listbox pattern, focus is trapped

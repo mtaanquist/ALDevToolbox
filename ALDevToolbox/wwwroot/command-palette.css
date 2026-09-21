@@ -1,0 +1,161 @@
+/* AL Workbench - the command palette.
+
+   A global sheet rather than a CommandPalette.razor.css, and that is not a
+   style preference: every row on screen is a clone made by
+   wwwroot/command-palette.js, and Blazor's CSS-isolation scope attribute is
+   not on script-cloned nodes. Scoped rules would compile, ship, and match
+   nothing.
+
+   It builds on the design system - .modal-layer and .modal-backdrop carry the
+   overlay, .kbd and .kbd-hint carry the shortcut hints - and adds only the
+   panel the system has no counterpart for. Tokens only. See
+   .design/command-palette.md. */
+
+/* .modal-layer is `display: grid`, which outranks the UA rule behind the
+   `hidden` attribute. Without this the palette is on screen from the first
+   paint. */
+.cmdp-layer[hidden] { display: none; }
+
+/* A palette is a thing you type into, not a thing you read: it sits high so
+   the list grows downwards into empty space rather than pushing the input
+   around, and so it lands near where the eye already is. */
+.cmdp-layer { align-items: start; padding-top: 12vh; }
+
+.cmdp {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(620px, 100%);
+    max-height: min(560px, 70vh);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+/* ---------- the input ---------- */
+
+.cmdp__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.cmdp__head-icon { display: flex; flex: none; color: var(--ink-4); }
+
+.cmdp__input {
+    flex: 1;
+    min-width: 0;
+    height: var(--control-h-lg);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
+}
+
+.cmdp__input::placeholder { color: var(--ink-4); }
+/* The ring belongs to the panel, not to a borderless box inside it. */
+.cmdp__input:focus { outline: none; }
+
+/* ---------- the list ---------- */
+
+.cmdp__list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-2) 0;
+}
+
+.cmdp__group {
+    margin: 0;
+    padding: var(--space-2) var(--space-4) var(--space-1);
+    color: var(--ink-4);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.cmdp-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    border-left: 2px solid transparent;
+    color: var(--ink);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.cmdp-row__icon { display: flex; flex: none; color: var(--ink-3); }
+
+.cmdp-row__text {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.cmdp-row__title {
+    color: var(--ink);
+    font-size: var(--text-base);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cmdp-row__sub {
+    color: var(--ink-4);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* app.css underlines a bare <a> on hover, which on a list of forty rows reads
+   as forty links rather than one list. The rows are links on purpose (so
+   middle-click and Ctrl+click work), but they are not prose. */
+.cmdp-row:hover, .cmdp-row:focus { text-decoration: none; }
+
+/* Exactly one row is ever lit. The pointer moves the selection rather than
+   drawing a highlight of its own, so the row under the mouse and the row Enter
+   would open are never two different rows. */
+.cmdp-row.is-active {
+    background: var(--primary-weak);
+    border-left-color: var(--primary);
+}
+
+.cmdp-row.is-active .cmdp-row__icon { color: var(--primary-ink); }
+
+/* ---------- what it says when it has nothing ---------- */
+
+.cmdp__state { padding: var(--space-4) var(--space-4) var(--space-3); }
+.cmdp__state-title { margin: 0; color: var(--ink); font-size: var(--text-base); }
+.cmdp__state-text { margin: var(--space-1) 0 0; color: var(--ink-3); font-size: var(--text-sm); }
+
+/* ---------- the shortcut foot ---------- */
+
+.cmdp__foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: var(--text-2xs);
+    color: var(--ink-4);
+}
+
+/* On a phone the palette is the screen: the scrim has no room to be a hint
+   that something is behind it, and the keyboard takes the bottom half. */
+@media (max-width: 560px) {
+    .cmdp-layer { padding: var(--space-3); padding-top: var(--space-5); }
+    .cmdp { max-height: 80vh; }
+    .cmdp__foot { display: none; }
+    .cmdp-row__text { flex-direction: column; align-items: flex-start; gap: 0; }
+}
