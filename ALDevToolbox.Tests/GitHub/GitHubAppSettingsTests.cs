@@ -93,7 +93,7 @@ public sealed class GitHubAppSettingsTests : IDisposable
 
         var slug = new System.Text.RegularExpressions.Regex($"^{SystemSettingsService.GitHubAppSlugPattern}$");
         slug.IsMatch("al-workbench").Should().BeTrue();
-        slug.IsMatch("AL-Dev-Workbench").Should().BeTrue("the service lowercases before storing");
+        slug.IsMatch("AL-Workbench").Should().BeTrue("the service lowercases before storing");
         slug.IsMatch("a").Should().BeTrue();
         slug.IsMatch("-leading-hyphen").Should().BeFalse();
         slug.IsMatch("https://github.com/apps/al-workbench").Should().BeFalse();
@@ -144,7 +144,7 @@ public sealed class GitHubAppSettingsTests : IDisposable
     {
         var pem = NewPrivateKey();
         await NewService().SaveGitHubAppAsync(Valid(
-            slug: "AL-Dev-Workbench", clientId: "Iv1.abc", clientSecret: "gh-secret", privateKey: pem));
+            slug: "AL-Workbench", clientId: "Iv1.abc", clientSecret: "gh-secret", privateKey: pem));
 
         await using var read = _db.NewContext();
         var row = await read.SystemSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
