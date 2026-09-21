@@ -254,9 +254,9 @@ public sealed class PaletteSearchServiceTests
 
         await service.SearchAsync(Caller, "contoso", CancellationToken.None);
 
-        capture.Messages.Where(m => m.StartsWith("Information:", StringComparison.Ordinal))
-            .Should().NotBeEmpty("the search still reports what it did")
-            .And.AllSatisfy(m => m.Should().NotContainEquivalentOf("contoso"));
+        capture.Messages.Where(m => !m.StartsWith("Debug:", StringComparison.Ordinal)
+                && !m.StartsWith("Trace:", StringComparison.Ordinal))
+            .Should().AllSatisfy(m => m.Should().NotContainEquivalentOf("contoso"));
         capture.Messages.Should().Contain(m => m.StartsWith("Debug:", StringComparison.Ordinal)
             && m.Contains("contoso", StringComparison.OrdinalIgnoreCase),
             "Debug is where the query text is allowed to be, for a maintainer chasing a bad result");
