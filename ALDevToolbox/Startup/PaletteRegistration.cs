@@ -18,8 +18,8 @@ public static class PaletteRegistration
     /// what a user sees. Scoped, because a source reads through the request's
     /// <c>DbContext</c> and the caller's organisation context.</para>
     ///
-    /// <para>Releases and Recipes land next; until they do the endpoint simply
-    /// answers with the groups it has.</para>
+    /// <para>With no source registered the endpoint still works and answers empty
+    /// groups, which is how the backbone shipped before its sources did.</para>
     /// </summary>
     public static IServiceCollection AddPalette(this IServiceCollection services)
     {
@@ -27,6 +27,7 @@ public static class PaletteRegistration
         services.AddScoped<IPaletteSource, SolutionPaletteSource>();
         services.AddScoped<IPaletteSource, EnvironmentPaletteSource>();
         services.AddScoped<IPaletteSource, RecipePaletteSource>();
+        services.AddScoped<IPaletteSource, ReleasePaletteSource>();
         return services;
     }
 }
