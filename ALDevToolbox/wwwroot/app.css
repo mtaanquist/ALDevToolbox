@@ -349,7 +349,9 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    the contrast it was opened for. In dark the scrim is mixed from --bg, the darkest
    surface the theme has, so it darkens like the light one does. Both of tokens.css's
    dark selectors, because either can be what put the page in dark. To go upstream
-   to the design project with the next hand-off; this is the stopgap, in our own sheet. */
+   to the design project with the next hand-off; this is the stopgap, in our own sheet.
+   Reported upstream in the design project's briefs/2026-09-shipped-without-a-sheet.md;
+   delete this once components.css is fixed there and re-pulled. */
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) .modal-backdrop { background: color-mix(in oklab, var(--bg) 72%, transparent); }
 }
