@@ -250,9 +250,16 @@ public abstract class PaletteSourceVisibilityTestBase : IDisposable
     {
         // Every field, not just the title: a subtitle naming the customer or an
         // href carrying their solution id leaks exactly as much as a title does.
+        // SearchOnly is in the list although it never reaches the browser - a
+        // source that put a Private customer there would still be answering
+        // "yes, that name exists" to anyone who typed it.
         foreach (var candidate in results)
         {
-            foreach (var field in new[] { candidate.Title, candidate.Subtitle, candidate.Href, candidate.ShortName })
+            foreach (var field in new[]
+                     {
+                         candidate.Title, candidate.Subtitle, candidate.Href,
+                         candidate.ShortName, candidate.SearchOnly,
+                     })
             {
                 if (string.IsNullOrEmpty(field)) continue;
                 field.Should().NotContainEquivalentOf(name, "{0} must not leak the name", when);
