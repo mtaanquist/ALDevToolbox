@@ -109,9 +109,10 @@ public sealed class PaletteSearchService
             .ToList();
 
         var shown = groups.Sum(g => g.Items.Count) + (top is null ? 0 : 1);
-        // Never the query text at Information: a palette query is a customer
-        // name somebody typed, and this line lands in the container's log.
-        _logger.LogInformation(
+        // Debug, not Information: this fires once per debounced keystroke, so at
+        // Information it would be most of the container's log. And never the
+        // query text above Debug: it is a customer name somebody typed.
+        _logger.LogDebug(
             "Palette search asked {SourceCount} of {RegisteredCount} sources and returned {ResultCount} rows in {GroupCount} groups (top hit: {HasTop}) in {ElapsedMs} ms",
             asked, _sources.Count, shown, groups.Count, top is not null,
             (int)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
