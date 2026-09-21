@@ -30,12 +30,13 @@
 
     Two kinds of reading share the page, and the freshness strip says which is which.
     The head, the meta row and the Updates card come from our own mirror of the
-    environment, so anyone who can see the solution gets them and they cost Business
-    Central nothing. Apps and Environment settings are read live, with the customer's
-    credentials, and are for people who manage the solution - its owner, an org admin,
-    or anyone on a team assigned to it, which covers every holder of the
-    environment-updates grant. The same gate the solution's Business Central tab has
-    always had. No second fetch path: it is the
+    environment and cost Business Central nothing. Apps, Operations, Sessions and the
+    environment's settings are read live with the customer's credentials - but reading
+    is still reading, so all of it follows the solution's visibility: everyone in the
+    organisation on a Public or Read-only solution, its teams on a Private one. What
+    acts on the customer's tenant - every setting, an app update, an upload, a copy, a
+    recovery, ending a session, and the Refresh that makes the tenant answer again - is
+    for the people who manage the solution. No second fetch path: it is the
     same cached panel read (ProjectConnectionService.GetEnvironmentPanelAsync).
 *@
 
@@ -128,13 +129,28 @@
                 }
             </span>
             <span class="freshness__spacer"></span>
-            @if (_canManage)
+            @* Refresh is offered where it changes nothing the reader isn't already
+               getting. Operations and Sessions are read live on every visit, so anyone
+               reading them may read them again; Apps and settings are cached for
+               everyone, and making the customer's tenant answer again is a manager's
+               call. *@
+            @if (_canManage || _tab is Section.Operations or Section.Sessions)
             {
                 <button type="button" class="btn btn--sm @(Refreshing ? "btn--loading" : "")"
                         @onclick="RefreshAsync" disabled="@Refreshing">
                     <Icon Name="refresh-cw" Width="14" Height="14" />
                     <span class="btn__label">@(Refreshing ? "Refreshing" : "Refresh")</span>
                 </button>
+            }
+            else
+            {
+                @* A timestamp with no way to move it reads as something broken. Say who
+                   can move it, and point at the tab that answers the question this page's
+                   reader most often came with - Operations is read fresh every visit. *@
+                <span class="u-muted env-detail__count">
+                    Only people who manage this solution can read Business Central again.
+                    <a href="@TabHref(Section.Operations)">Operations</a> is read fresh every time you open it.
+                </span>
             }
         </div>
 
@@ -238,7 +254,7 @@
                         <h2 class="card__title">Updates</h2>
                         <p class="card__sub">When Microsoft moves this environment to the next Business Central version, and the hours agreed with the customer for our own installs.</p>
                     </div>
-                    @if (_panel is not null && Choosable().Count > 0)
+                    @if (_canManage && _panel is not null && Choosable().Count > 0)
                     {
                         <a class="btn btn--sm" href="@($"/environments/{Id}#env-next-update")">
                             <Icon Name="arrow-down" Width="14" Height="14" />
@@ -258,6 +274,17 @@
                     @if (LaterVersions() is { Length: > 0 } later)
                     {
                         <p class="u-muted env-detail__later">Also announced: @later</p>
+                    }
+                    @* "None announced" above is a fact; when Business Central refused to
+                       say, it is a guess. A manager reads the refusal on the setting row
+                       this card links down to, which nobody else has, so it is said here
+                       for everyone else. *@
+                    @if (!_canManage && _panel?.EnvironmentUpdatesError is { } updatesUnread)
+                    {
+                        <p class="field-error env-detail__later">
+                            <Icon Name="triangle-alert" Width="13" Height="13" />
+                            Couldn't read the versions this environment is being offered: @updatesUnread
+                        </p>
                     }
                     @if (WindowsOverlap())
                     {
@@ -307,29 +334,57 @@
             @if (LivePanel is { } panel)
             {
                 <div class="card">
-                    <Alert Tone="AlertTone.Warn" Role="" Class="env-detail__warn" Block="true">
-                        <span>
-                            <b>These change @Row.EnvironmentName in the customer's tenant.</b>
-                            Saving here writes straight to @Row.ProjectName's Business Central
-                            environment, not just to the toolbox. Agree the change with the customer first.
-                        </span>
-                    </Alert>
+                    @if (!_canManage)
+                    {
+                        <div class="card__head">
+                            <div>
+                                <p class="card__sub">
+                                    Read from @Row.ProjectName's Business Central. Only people who manage
+                                    this solution can change them.
+                                </p>
+                            </div>
+                        </div>
+                    }
+                    @if (_canManage)
+                    {
+                        <Alert Tone="AlertTone.Warn" Role="" Class="env-detail__warn" Block="true">
+                            <span>
+                                <b>These change @Row.EnvironmentName in the customer's tenant.</b>
+                                Saving here writes straight to @Row.ProjectName's Business Central
+                                environment, not just to the toolbox. Agree the change with the customer first.
+                            </span>
+                        </Alert>
+                    }
                     <div class="setting-list">
                         <div class="setting">
                             <span class="setting__label">
-                                <label class="setting__name" for="env-cadence">AppSource apps update cadence</label>
+                                @if (_canManage)
+                                {
+                                    <label class="setting__name" for="env-cadence">AppSource apps update cadence</label>
+                                }
+                                else
+                                {
+                                    <span class="setting__name">AppSource apps update cadence</span>
+                                }
                                 <span class="setting__hint">How often apps the customer installed are updated. Does not affect extensions you release yourself.</span>
                             </span>
                             <span class="setting__ctl">
-                                <SelectBox style="width: 240px">
-                                    <select id="env-cadence" class="select" value="@_cadence" disabled="@_settingSaving"
-                                            @onchange="OnCadenceChangedAsync">
-                                        @foreach (var option in BcAppUpdateCadence.All)
-                                        {
-                                            <option value="@option">@BcAppUpdateCadence.Display(option)</option>
-                                        }
-                                    </select>
-                                </SelectBox>
+                                @if (_canManage)
+                                {
+                                    <SelectBox style="width: 240px">
+                                        <select id="env-cadence" class="select" value="@_cadence" disabled="@_settingSaving"
+                                                @onchange="OnCadenceChangedAsync">
+                                            @foreach (var option in BcAppUpdateCadence.All)
+                                            {
+                                                <option value="@option">@BcAppUpdateCadence.Display(option)</option>
+                                            }
+                                        </select>
+                                    </SelectBox>
+                                }
+                                else
+                                {
+                                    <span class="env-detail__value">@BcAppUpdateCadence.Display(_cadence)</span>
+                                }
                             </span>
                         </div>
                         <div class="setting">
@@ -337,21 +392,29 @@
                                 <span class="setting__name" id="env-m365-label">Access with Microsoft 365 licences</span>
                                 <span class="setting__hint">
                                     Lets people who hold only a Microsoft 365 licence sign in and read data in this environment.
-                                    @if (_m365 is null)
+                                    @if (_m365 is null && _canManage)
                                     {
                                         <text>
                                             Couldn't read this setting right now - try Refresh above, or check the
                                             connection on the <a href="@($"/solutions/{Row.ProjectId}?tab=bc")">solution's Business Central tab</a>.
                                         </text>
                                     }
+                                    else if (_m365 is null)
+                                    {
+                                        <text>Couldn't read this setting right now. Someone who manages this solution can read it again.</text>
+                                    }
                                 </span>
                             </span>
                             <span class="setting__ctl">
-                                @if (_m365 is { } m365)
+                                @if (_m365 is { } m365 && _canManage)
                                 {
                                     <Switch Name="M365Access" Label="@(m365 ? "Allowed" : "Not allowed")" Checked="m365"
                                             Disabled="_settingSaving" AriaDescribedBy="env-m365-label"
                                             CheckedChanged="SaveM365Async" />
+                                }
+                                else if (_m365 is { } m365Value)
+                                {
+                                    <span class="env-detail__value">@(m365Value ? "Allowed" : "Not allowed")</span>
                                 }
                                 else
                                 {
@@ -359,50 +422,53 @@
                                 }
                             </span>
                         </div>
-                        <div class="setting setting--danger" id="env-next-update">
-                            <span class="setting__label">
-                                <label class="setting__name" for="env-version">Next Business Central update</label>
-                                <span class="setting__hint">
-                                    @if (panel.EnvironmentUpdatesError is { } platformErr)
-                                    {
-                                        <text>@platformErr</text>
-                                    }
-                                    else if (Choosable().Count == 0)
-                                    {
-                                        <text>No other version is available to choose right now.</text>
-                                    }
-                                    else
-                                    {
-                                        <text>
-                                            Picking a version reschedules the update in the customer's tenant.
-                                            The upgrade itself runs in Microsoft's update window, not yours.
-                                        </text>
-                                    }
+                        @if (_canManage)
+                        {
+                            <div class="setting setting--danger" id="env-next-update">
+                                <span class="setting__label">
+                                    <label class="setting__name" for="env-version">Next Business Central update</label>
+                                    <span class="setting__hint">
+                                        @if (panel.EnvironmentUpdatesError is { } platformErr)
+                                        {
+                                            <text>@platformErr</text>
+                                        }
+                                        else if (Choosable().Count == 0)
+                                        {
+                                            <text>No other version is available to choose right now.</text>
+                                        }
+                                        else
+                                        {
+                                            <text>
+                                                Picking a version reschedules the update in the customer's tenant.
+                                                The upgrade itself runs in Microsoft's update window, not yours.
+                                            </text>
+                                        }
+                                    </span>
                                 </span>
-                            </span>
-                            <span class="setting__ctl">
-                                <span class="u-row">
-                                    <SelectBox style="width: 180px">
-                                        <select id="env-version" class="select" @bind="_targetVersion"
-                                                disabled="@(_settingSaving || Choosable().Count == 0)">
-                                            <option value="">Choose a version...</option>
-                                            @foreach (var option in panel.EnvironmentUpdates.Where(u => u.Available))
-                                            {
-                                                @* The version already queued is shown so the list matches the
-                                                   admin centre, but picking it would ask for no change. *@
-                                                <option value="@option.TargetVersion" disabled="@option.Selected">@option.TargetVersion@(option.Selected ? " (already next)" : "")</option>
-                                            }
-                                        </select>
-                                    </SelectBox>
-                                    <button type="button" class="btn btn--sm @(_settingBusy == "version" ? "btn--loading" : "")"
-                                            disabled="@(_settingSaving || string.IsNullOrEmpty(_targetVersion))"
-                                            @onclick="SaveTargetVersionAsync">
-                                        <span class="btn__label">Reschedule</span>
-                                    </button>
+                                <span class="setting__ctl">
+                                    <span class="u-row">
+                                        <SelectBox style="width: 180px">
+                                            <select id="env-version" class="select" @bind="_targetVersion"
+                                                    disabled="@(_settingSaving || Choosable().Count == 0)">
+                                                <option value="">Choose a version...</option>
+                                                @foreach (var option in panel.EnvironmentUpdates.Where(u => u.Available))
+                                                {
+                                                    @* The version already queued is shown so the list matches the
+                                                       admin centre, but picking it would ask for no change. *@
+                                                    <option value="@option.TargetVersion" disabled="@option.Selected">@option.TargetVersion@(option.Selected ? " (already next)" : "")</option>
+                                                }
+                                            </select>
+                                        </SelectBox>
+                                        <button type="button" class="btn btn--sm @(_settingBusy == "version" ? "btn--loading" : "")"
+                                                disabled="@(_settingSaving || string.IsNullOrEmpty(_targetVersion))"
+                                                @onclick="SaveTargetVersionAsync">
+                                            <span class="btn__label">Reschedule</span>
+                                        </button>
+                                    </span>
+                                    <span class="setting__lock"><Icon Name="lock" Width="12" Height="12" />Writes to the customer's tenant</span>
                                 </span>
-                                <span class="setting__lock"><Icon Name="lock" Width="12" Height="12" />Writes to the customer's tenant</span>
-                            </span>
-                        </div>
+                            </div>
+                        }
                     </div>
                 </div>
             }
@@ -421,10 +487,13 @@
                             <h2 class="card__title">Scheduled installs</h2>
                             <p class="card__sub">Installs this toolbox has queued against the environment.</p>
                         </div>
-                        <button type="button" class="btn btn--sm" disabled="@_settingSaving" @onclick="UploadAppAsync">
-                            <Icon Name="upload" Width="14" Height="14" />
-                            <span>Upload an app</span>
-                        </button>
+                        @if (_canManage)
+                        {
+                            <button type="button" class="btn btn--sm" disabled="@_settingSaving" @onclick="UploadAppAsync">
+                                <Icon Name="upload" Width="14" Height="14" />
+                                <span>Upload an app</span>
+                            </button>
+                        }
                     </div>
                     @if (panel.ScheduledInstallsError is { } scheduledErr)
                     {
@@ -447,7 +516,10 @@
                                     <th scope="col">App</th>
                                     <th scope="col">Version</th>
                                     <th scope="col">Installs</th>
-                                    <th scope="col" class="data-table__actions">Actions</th>
+                                    @if (_canManage)
+                                    {
+                                        <th scope="col" class="data-table__actions">Actions</th>
+                                    }
                                 </tr>
                             </thead>
                             <tbody>
@@ -463,19 +535,24 @@
                                         </td>
                                         <td class="u-num env-detail__mono">@op.TargetAppVersion</td>
                                         <td>@ScheduleWhen(op.ScheduleKind)</td>
-                                        <td class="data-table__actions">
-                                            @if (op.AppId is { } appId)
-                                            {
-                                                <button type="button" class="btn btn--sm btn--danger"
-                                                        @onclick="() => CancelScheduledAsync(appId, op)">Cancel install</button>
-                                            }
-                                        </td>
+                                        @if (_canManage)
+                                        {
+                                            <td class="data-table__actions">
+                                                @if (op.AppId is { } appId)
+                                                {
+                                                    <button type="button" class="btn btn--sm btn--danger"
+                                                            @onclick="() => CancelScheduledAsync(appId, op)">Cancel install</button>
+                                                }
+                                            </td>
+                                        }
                                     </tr>
                                 }
                             </tbody>
                         </table>
                         <div class="card__foot">
-                            <span class="u-muted env-detail__count">Installs started from Business Central's own Extension Management page aren't shown here. Pick one place per customer.</span>
+                            <span class="u-muted env-detail__count">
+                                Installs started from Business Central's own Extension Management page aren't shown here.@if (_canManage) {<text> Pick one place per customer.</text>}
+                            </span>
                         </div>
                     }
                 </div>
@@ -615,7 +692,10 @@
                                         <th scope="col">Publisher</th>
                                         <th scope="col">Target version</th>
                                         <th scope="col">Prerequisites</th>
-                                        <th scope="col" class="data-table__actions">Actions</th>
+                                        @if (_canManage)
+                                        {
+                                            <th scope="col" class="data-table__actions">Actions</th>
+                                        }
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -657,27 +737,30 @@
                                                     </span>
                                                 }
                                             </td>
-                                            <td class="data-table__actions">
-                                                @* A waiting row updates too: Business Central brings
-                                                   the apps it waits for along, and the dialog lists
-                                                   them first so nothing moves that nobody agreed to. *@
-                                                @* Once an update is on its way the button says so and
-                                                   stops working, for the app that was asked for and for
-                                                   every app that moves with it - pressing it again would
-                                                   only ask Business Central for the same thing twice. *@
-                                                <button type="button" class="btn btn--sm"
-                                                        disabled="@(_settingSaving || progress is not null)" @onclick="() => UpdateAppAsync(up)"
-                                                        aria-label="@(ready
-                                                            ? $"Update {up.Name} to {up.Version}"
-                                                            : $"Update {up.Name} to {up.Version}, along with the {up.Requirements.Count} it waits for")">
-                                                    <span class="btn__label">@(progress switch
-                                                    {
-                                                        "Updating" => "Updating...",
-                                                        "Scheduled" => "Scheduled",
-                                                        _ => ready ? "Update" : $"Update + {up.Requirements.Count}",
-                                                    })</span>
-                                                </button>
-                                            </td>
+                                            @if (_canManage)
+                                            {
+                                                <td class="data-table__actions">
+                                                    @* A waiting row updates too: Business Central brings
+                                                       the apps it waits for along, and the dialog lists
+                                                       them first so nothing moves that nobody agreed to. *@
+                                                    @* Once an update is on its way the button says so and
+                                                       stops working, for the app that was asked for and for
+                                                       every app that moves with it - pressing it again would
+                                                       only ask Business Central for the same thing twice. *@
+                                                    <button type="button" class="btn btn--sm"
+                                                            disabled="@(_settingSaving || progress is not null)" @onclick="() => UpdateAppAsync(up)"
+                                                            aria-label="@(ready
+                                                                ? $"Update {up.Name} to {up.Version}"
+                                                                : $"Update {up.Name} to {up.Version}, along with the {up.Requirements.Count} it waits for")">
+                                                        <span class="btn__label">@(progress switch
+                                                        {
+                                                            "Updating" => "Updating...",
+                                                            "Scheduled" => "Scheduled",
+                                                            _ => ready ? "Update" : $"Update + {up.Requirements.Count}",
+                                                        })</span>
+                                                    </button>
+                                                </td>
+                                            }
                                         </tr>
                                     }
                                 </tbody>
@@ -709,26 +792,17 @@
             @* Business Central's record, where History is ours: an update someone started
                from the admin centre, or one Microsoft ran overnight, shows up here and
                nowhere else on the page. *@
-            @if (!_canManage)
+            @if (_operationsError is { } operationsError)
             {
                 <div class="card">
-                    <EmptyState Icon="lock" Title="Operations are for people who manage this solution" Quiet="true">
+                    <EmptyState Icon="plug" Title="Couldn't read the operations from Business Central" Action="@ConnectionAction()">
                         <Text>
-                            Reading them uses the customer's own connection. Ask the solution's
-                            owner or an administrator to add you to one of its teams. What was
-                            done from this toolbox is under <a href="@TabHref(Section.History)">Toolbox history</a>.
+                            @operationsError
+                            @if (!_canManage)
+                            {
+                                <text> Ask the solution's owner or an administrator to check its Business Central connection.</text>
+                            }
                         </Text>
-                    </EmptyState>
-                </div>
-            }
-            else if (_operationsError is { } operationsError)
-            {
-                <div class="card">
-                    <EmptyState Icon="plug" Title="Couldn't read the operations from Business Central">
-                        <Text>@operationsError</Text>
-                        <Action>
-                            <a class="btn" href="@($"/solutions/{Row.ProjectId}?tab=bc")">Check the solution's connection</a>
-                        </Action>
                     </EmptyState>
                 </div>
             }
@@ -762,26 +836,17 @@
                     </EmptyState>
                 </div>
             }
-            else if (!_canManage)
-            {
-                <div class="card">
-                    <EmptyState Icon="lock" Title="Only people who manage this solution can see who is signed in" Quiet="true">
-                        <Text>
-                            This list comes from the customer's own Business Central, and ending
-                            a session signs somebody out of it. Ask the solution's owner or an
-                            administrator to add you to one of its teams.
-                        </Text>
-                    </EmptyState>
-                </div>
-            }
             else if (_sessionsError is { } sessionsError)
             {
                 <div class="card">
-                    <EmptyState Icon="plug" Title="Couldn't read who is signed in to this environment">
-                        <Text>@sessionsError</Text>
-                        <Action>
-                            <a class="btn" href="@($"/solutions/{Row.ProjectId}?tab=bc")">Check the solution's connection</a>
-                        </Action>
+                    <EmptyState Icon="plug" Title="Couldn't read who is signed in to this environment" Action="@ConnectionAction()">
+                        <Text>
+                            @sessionsError
+                            @if (!_canManage)
+                            {
+                                <text> Ask the solution's owner or an administrator to check its Business Central connection.</text>
+                            }
+                        </Text>
                     </EmptyState>
                 </div>
             }
@@ -800,7 +865,7 @@
                                          StoppedAfterText="@LiveForText()"
                                          UpdateFailed="@_sessionsStaleNote"
                                          UpdateEverySeconds="@((int)SessionsLiveEvery.TotalSeconds)"
-                                         CanCancel="true"
+                                         CanCancel="_canManage"
                                          OperationsHref="@TabHref(Section.Operations)"
                                          OnCancel="CancelSessionAsync"
                                          OnRefresh="RefreshSessionsAsync"
@@ -892,7 +957,11 @@
     /// <summary>Only read inside fragments the frame draws once the environment is found.</summary>
     private UpgradeFleetRow Row => _env!.Fleet;
 
-    /// <summary>Owner, org admin or a member of an assigned team: who may read the live panel and change the settings.</summary>
+    /// <summary>
+    /// Owner, org admin or a member of an assigned team: who may change anything here.
+    /// Reading the page - including everything read live from Business Central - only
+    /// needs to be able to see the solution, which is what finding <c>_env</c> proved.
+    /// </summary>
     private bool _canManage;
 
     private BcEnvironmentPanel? _panel;
@@ -992,30 +1061,21 @@
         : $"/environments/{Id}/{section.ToString().ToLowerInvariant()}";
 
     /// <summary>The live panel when there is one to draw, else null and <see cref="LiveUnavailable"/> says why.</summary>
-    private BcEnvironmentPanel? LivePanel => _canManage && _panelError is null ? _panel : null;
+    private BcEnvironmentPanel? LivePanel => _panelError is null ? _panel : null;
 
-    /// <summary>Why the live half is not on screen: not yours to read, still being read, or unreadable.</summary>
+    /// <summary>Why the live half is not on screen: still being read, or unreadable.</summary>
     private RenderFragment LiveUnavailable() => @<div>
-        @if (!_canManage)
+        @if (_panelError is { } panelError)
         {
             <div class="card">
-                <EmptyState Icon="lock" Title="Apps and settings are for people who manage this solution" Quiet="true">
+                <EmptyState Icon="plug" Title="Couldn't read apps and settings from Business Central" Action="@ConnectionAction()">
                     <Text>
-                        Reading what is installed uses the customer's own connection, and the
-                        settings here change their Business Central. Ask the solution's owner
-                        or an administrator to add you to one of its teams.
+                        @panelError
+                        @if (!_canManage)
+                        {
+                            <text> Ask the solution's owner or an administrator to check its Business Central connection.</text>
+                        }
                     </Text>
-                </EmptyState>
-            </div>
-        }
-        else if (_panelError is { } panelError)
-        {
-            <div class="card">
-                <EmptyState Icon="plug" Title="Couldn't read apps and settings from Business Central">
-                    <Text>@panelError</Text>
-                    <Action>
-                        <a class="btn" href="@($"/solutions/{Row.ProjectId}?tab=bc")">Check the solution's connection</a>
-                    </Action>
                 </EmptyState>
             </div>
         }
@@ -1024,6 +1084,18 @@
             <LoadingBlock Text="@($"Asking Business Central what's on {Row.EnvironmentName}...")" />
         }
     </div>;
+
+    /// <summary>
+    /// The way out of a tenant that will not answer is the solution's Business Central
+    /// tab, which only the people who manage it have. So a reader is told who to ask, in
+    /// the card's text, and gets no button: an action somebody cannot finish is worse
+    /// than none. Null rather than an empty fragment, so no action slot is drawn at all.
+    /// </summary>
+    private RenderFragment? ConnectionAction()
+    {
+        if (!_canManage) return null;
+        return @<a class="btn" href="@($"/solutions/{Row.ProjectId}?tab=bc")">Check the solution's connection</a>;
+    }
 
     private bool Refreshing => _panelLoading || _operationsLoading || _sessionsLoading;
 
@@ -1074,40 +1146,41 @@
         // is minutes old would answer the wrong question.
         if (_tab != Section.Sessions && _sessionsTabActive) LeaveSessionsTab();
 
-        if (_canManage)
+        // Drawn first, then read: the head and the Updates card are ours and ready, and
+        // the live half can take Business Central several seconds. LoadPanelAsync raises
+        // the flag and redraws before it awaits anything.
+        //
+        // Only once the page is live, though. The first pass is a prerender, which has
+        // nobody to redraw for: it waits for this whole method before a byte is sent, so
+        // reading Business Central here made the click into the page hang for as long as
+        // the customer's tenant took to answer. The prerender sends the loader instead,
+        // and the live pass that follows does the reading.
+        //
+        // Everyone who got this far reads: finding the environment at all went through
+        // the visible-solutions join, which is the whole question for a read. Whether
+        // they may change anything is _canManage, and that decides buttons, not fetches.
+        //
+        // And only what the open tab shows: Overview and Apps share the one cached panel
+        // read, Operations and Sessions each have their own, History asks Business
+        // Central nothing.
+        var wantsPanel = _tab is Section.Overview or Section.Apps;
+        if (!RendererInfo.IsInteractive) _panelLoading = wantsPanel;
+        else if (wantsPanel && _panel is null && _panelError is null) await LoadPanelAsync();
+        else if (_tab == Section.Operations && _operations is null && _operationsError is null)
         {
-            // Drawn first, then read: the head and the Updates card are ours and ready,
-            // and the live half can take Business Central several seconds. LoadPanelAsync
-            // raises the flag and redraws before it awaits anything.
-            //
-            // Only once the page is live, though. The first pass is a prerender, which
-            // has nobody to redraw for: it waits for this whole method before a byte is
-            // sent, so reading Business Central here made the click into the page hang
-            // for as long as the customer's tenant took to answer. The prerender sends
-            // the loader instead, and the live pass that follows does the reading.
-            //
-            // And only what the open tab shows: Overview and Apps share the one cached
-            // panel read, Operations and Sessions each have their own, History asks
-            // Business Central nothing.
-            var wantsPanel = _tab is Section.Overview or Section.Apps;
-            if (!RendererInfo.IsInteractive) _panelLoading = wantsPanel;
-            else if (wantsPanel && _panel is null && _panelError is null) await LoadPanelAsync();
-            else if (_tab == Section.Operations && _operations is null && _operationsError is null)
-            {
-                await LoadOperationsAsync();
-                // The list names an app only by id. The panel knows the names, and is
-                // usually cached; the list is already on screen while it is read.
-                if (_operations is not null && _panel is null && _panelError is null) await LoadPanelAsync();
-            }
-            else if (_tab == Section.Sessions && !_sessionsTabActive && !Row.IsSoftDeleted)
-            {
-                // Arriving on the tab reads at once - by a click or by landing straight
-                // on the address - and starts the loop that keeps it current. Never a
-                // tab that waits for a button: an empty Sessions tab is a wrong answer.
-                _sessionsTabActive = true;
-                StartSessionsLive();
-                await LoadSessionsAsync();
-            }
+            await LoadOperationsAsync();
+            // The list names an app only by id. The panel knows the names, and is
+            // usually cached; the list is already on screen while it is read.
+            if (_operations is not null && _panel is null && _panelError is null) await LoadPanelAsync();
+        }
+        else if (_tab == Section.Sessions && !_sessionsTabActive && !Row.IsSoftDeleted)
+        {
+            // Arriving on the tab reads at once - by a click or by landing straight on
+            // the address - and starts the loop that keeps it current. Never a tab that
+            // waits for a button: an empty Sessions tab is a wrong answer.
+            _sessionsTabActive = true;
+            StartSessionsLive();
+            await LoadSessionsAsync();
         }
     }
 
@@ -1126,9 +1199,11 @@
             _operations = null;
             _operationsError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't read this environment's operations.";
         }
-        catch (ProjectAccessDeniedException)
+        catch (ProjectAccessDeniedException ex)
         {
+            _operations = null;
             _canManage = false;
+            _operationsError = ex.Message;
         }
         catch (Exception ex)
         {
@@ -1171,10 +1246,12 @@
         {
             SessionsFailed(ex.Errors.Values.FirstOrDefault() ?? "Couldn't read who is signed in to this environment.");
         }
-        catch (ProjectAccessDeniedException)
+        catch (ProjectAccessDeniedException ex)
         {
-            // Lost between the check and the read; the quiet card says the rest.
+            // Lost between the check and the read; nothing left to keep current.
             _canManage = false;
+            _sessions = null;
+            _sessionsError = ex.Message;
             StopSessionsLive();
         }
         catch (Exception ex)
@@ -1202,7 +1279,7 @@
     /// <summary>Reads now, and starts the ten minutes over: Refresh is also how the loop is restarted.</summary>
     private async Task RefreshSessionsAsync()
     {
-        if (!Row.IsSoftDeleted && _canManage)
+        if (!Row.IsSoftDeleted)
         {
             _sessionsTabActive = true;
             StartSessionsLive();
@@ -1404,16 +1481,21 @@
             _panel = null;
             _panelError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't read this environment.";
         }
-        catch (ProjectAccessDeniedException)
+        catch (ProjectAccessDeniedException ex)
         {
-            // Lost between the check and the read; the quiet card says the rest.
+            // Lost between the check and the read - the solution was made Private, or a
+            // team changed, while the page was open.
+            _panel = null;
             _canManage = false;
+            _panelError = ex.Message;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to read the environment panel for {EnvId}.", Id);
             _panel = null;
-            _panelError = "Something went wrong at our end while asking Business Central. Try Refresh in a moment.";
+            _panelError = _canManage
+                ? "Something went wrong at our end while asking Business Central. Try Refresh in a moment."
+                : "Something went wrong at our end while asking Business Central. Try again in a few minutes.";
         }
         finally
         {

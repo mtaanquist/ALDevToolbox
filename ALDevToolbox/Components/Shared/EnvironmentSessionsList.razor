@@ -177,7 +177,7 @@
     /// <summary>How often the page re-reads, for the sub-line - so the copy and the timer cannot disagree.</summary>
     [Parameter] public int UpdateEverySeconds { get; set; } = 30;
 
-    /// <summary>True when this person may end a session. Reading is manage-gated too; ending is the write.</summary>
+    /// <summary>True when this person may end a session. Anyone who can see the solution reads the list; ending one is the write.</summary>
     [Parameter] public bool CanCancel { get; set; }
 
     /// <summary>Raised with the session somebody asked to end. The page confirms and performs it.</summary>

@@ -91,6 +91,15 @@ assigned. Migration `20260905000000_AddProjectVisibility`.
 - **Delete is carved out.** Assigned-team members get everything management covers
   *except* deleting the project — soft-delete stays with the owner, org Admin, and
   SiteAdmin. A team grant is about doing the work, not about ending it.
+- **Reading is the view axis, even when the read costs something.** A read that spends
+  the customer's Business Central credentials — what is installed on an environment,
+  what Business Central has been doing to it, who is signed in right now — is still a
+  read, so it is gated on view and not on manage. Gating those on manage looks careful
+  and isn't: a Public project has no teams by construction, so it hides from the whole
+  organisation exactly the data the org was told it could see, while a Private project's
+  teams are already the view answer. `ProjectConnectionService`'s
+  `EnvironmentGate.View` is that rule; what *acts* on the customer's tenant stays on
+  manage. See `environment-updates.md`, "The environment's own page".
 - **Org Admins and SiteAdmins bypass visibility entirely.** This cannot live in an
   EF query filter (the membership set is not a scalar and the bypass is not a model
   fact), which is why enforcement is explicit predicates rather than a second global
