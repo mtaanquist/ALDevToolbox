@@ -203,7 +203,7 @@ The lone organisation *is* the Default/system org, so its Administration and tem
 
 ## Releases and published images
 
-Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/al-workbench` (v11.9.1 and later). For now each release is also tagged at the pre-rename path, `ghcr.io/mtaanquist/aldevtoolbox`, which is where older versions remain. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool"; see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
+Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/al-workbench` (v11.9.1 and later). Versions up to v11.9.1 remain at the pre-rename path, `ghcr.io/mtaanquist/aldevtoolbox`, which no longer receives new releases. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool"; see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
 
 The repo's [`compose.yaml`](./compose.yaml) already deploys from these images: the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/al-workbench:${ALWORKBENCH_TAG:-${ALDEVTOOLBOX_TAG:-latest}}`. So a production deployment is just that file plus a `.env`:
 

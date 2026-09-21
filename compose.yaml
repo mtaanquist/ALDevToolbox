@@ -65,8 +65,8 @@ services:
     #
     # The image follows the repository's name, al-workbench. It holds v11.9.1 and
     # later; a deployment pinned to an older version pulls
-    # ghcr.io/mtaanquist/aldevtoolbox instead, where those still are (and where
-    # new releases are mirrored for now - see release.yml).
+    # ghcr.io/mtaanquist/aldevtoolbox instead, where those still are. Nothing
+    # newer than v11.9.1 is published there.
     image: ghcr.io/mtaanquist/al-workbench:${ALWORKBENCH_TAG:-${ALDEVTOOLBOX_TAG:-latest}}
     # build: .
     depends_on:
