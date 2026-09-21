@@ -151,16 +151,44 @@ public sealed class ProjectCustomerInfoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Someone_who_can_see_the_solution_but_not_manage_it_reads_and_cannot_write()
+    public async Task Anyone_who_can_see_a_public_solution_may_correct_its_customer_details_but_not_where_it_is_hosted()
     {
         var id = await SeedAsync();
         _db.OrgContext.CurrentUserId = OtherUserId;
         await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
 
-        (await Svc(ctx).GetBasicsAsync(id)).Should().NotBeNull();
-        var act = () => Svc(ctx).SaveBasicsAsync(id, Input(version: "BC 25.3"));
+        await svc.SaveBasicsAsync(id, Input(version: "BC 25.3"));
+        (await svc.GetBasicsAsync(id))!.BcVersion.Should().Be("BC 25.3",
+            "the people who learn a detail has changed are the ones answering the phone");
 
-        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        var hosting = () => svc.SaveBasicsAsync(id, Input(ProjectHostingType.CustomerHardware, version: "BC 25.3"));
+        await hosting.Should().ThrowAsync<ProjectAccessDeniedException>(
+            "where it is hosted decides which tabs the solution has, so it stays a manager's call");
+    }
+
+    [Fact]
+    public async Task A_read_only_solution_keeps_its_word_and_is_edited_by_its_managers_only()
+    {
+        var id = await SeedAsync();
+        await using (var seed = _db.NewContext())
+        {
+            var team = new Team { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS team", CreatedAt = DateTime.UtcNow };
+            seed.Teams.Add(team);
+            await seed.SaveChangesAsync();
+            seed.OeProjectTeams.Add(new OeProjectTeam { OrganizationId = TestDb.DefaultOrgId, ProjectId = id, TeamId = team.Id, CreatedAt = DateTime.UtcNow });
+            (await seed.OeProjects.SingleAsync(p => p.Id == id)).Visibility = ProjectVisibility.ReadOnly;
+            await seed.SaveChangesAsync();
+        }
+        _db.OrgContext.CurrentUserId = OtherUserId;
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        (await svc.GetBasicsAsync(id)).Should().NotBeNull("everyone still reads it");
+        var act = () => svc.SaveBasicsAsync(id, Input(version: "BC 25.3"));
+        (await act.Should().ThrowAsync<ProjectAccessDeniedException>()).Which.Message.Should().Contain("read-only");
+        await ((Func<Task>)(() => svc.SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.Customer, "A", null, "a@cronus.example", null))))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
     }
 
     // ── Notes and the three lists ───────────────────────────────────────
@@ -268,17 +296,20 @@ public sealed class ProjectCustomerInfoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task None_of_the_lists_can_be_changed_by_someone_who_only_sees_the_solution()
+    public async Task The_lists_of_a_public_solution_can_be_kept_up_by_anyone_who_can_see_it()
     {
         var id = await SeedAsync();
         _db.OrgContext.CurrentUserId = OtherUserId;
         await using var ctx = _db.NewContext();
         var svc = Svc(ctx);
 
-        await ((Func<Task>)(() => svc.SaveNotesAsync(id, new CustomerNotes("x", null, null)))).Should().ThrowAsync<ProjectAccessDeniedException>();
-        await ((Func<Task>)(() => svc.SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.Customer, "A", null, "a@cronus.example", null)))).Should().ThrowAsync<ProjectAccessDeniedException>();
-        await ((Func<Task>)(() => svc.SavePersonAsync(id, null, new CustomerPersonInput(OwnerUserId, ProjectPersonRole.Consultant, null)))).Should().ThrowAsync<ProjectAccessDeniedException>();
-        await ((Func<Task>)(() => svc.SaveIntegrationAsync(id, null, new CustomerIntegrationInput("Webshop", ProjectIntegrationDirection.Both)))).Should().ThrowAsync<ProjectAccessDeniedException>();
-        (await svc.GetAllAsync(id)).Should().NotBeNull("reading follows the solution's visibility");
+        await svc.SaveNotesAsync(id, new CustomerNotes("VPN, then CRONUS-BC01", null, null));
+        await svc.SaveContactAsync(id, null, new CustomerContactInput(ProjectContactType.Customer, "Annette Hill", null, "annette@cronus.example", null));
+        await svc.SavePersonAsync(id, null, new CustomerPersonInput(OwnerUserId, ProjectPersonRole.Consultant, null));
+        await svc.SaveIntegrationAsync(id, null, new CustomerIntegrationInput("Webshop", ProjectIntegrationDirection.Both));
+
+        var all = await svc.GetAllAsync(id);
+        all!.Notes.AccessDescription.Should().Be("VPN, then CRONUS-BC01");
+        (all.Contacts.Count, all.People.Count, all.Integrations.Count).Should().Be((1, 1, 1));
     }
 }

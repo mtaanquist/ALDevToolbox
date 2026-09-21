@@ -149,6 +149,34 @@ public sealed class ProjectAccess
     /// Throws <see cref="ProjectAccessDeniedException"/> when the current user may
     /// not manage project <paramref name="projectId"/>.
     /// </summary>
+    /// <summary>
+    /// Whether the caller may change a solution's customer information - the contacts,
+    /// notes, modules and the like that support looks up. Wider than managing it, on
+    /// purpose: the people who learn that a contact has changed are the ones answering the
+    /// phone, not the solution's owner. So anyone who can see a Public solution may edit
+    /// it; a Read-only solution keeps its word and is edited by its managers only; a
+    /// Private one is only ever seen by its managers anyway. Where it is hosted is NOT part
+    /// of this - that decides which tabs the solution has, and stays a manager's call.
+    /// See <c>.design/solution-customer-info.md</c>.
+    /// </summary>
+    public async Task<bool> CanEditCustomerInfoAsync(
+        int projectId, int? createdByUserId, ProjectVisibility visibility, CancellationToken ct = default)
+    {
+        if (await CanManageAsync(projectId, createdByUserId, ct).ConfigureAwait(false)) return true;
+        return visibility == ProjectVisibility.Public && await CanViewAsync(projectId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Throws <see cref="ProjectAccessDeniedException"/> unless <see cref="CanEditCustomerInfoAsync"/>.</summary>
+    public async Task EnsureCanEditCustomerInfoAsync(
+        int projectId, int? createdByUserId, ProjectVisibility visibility, CancellationToken ct = default)
+    {
+        if (!await CanEditCustomerInfoAsync(projectId, createdByUserId, visibility, ct).ConfigureAwait(false))
+        {
+            throw new ProjectAccessDeniedException(
+                "This solution is read-only for people outside its teams. Ask its owner or an administrator to make the change.");
+        }
+    }
+
     public async Task EnsureCanManageAsync(int projectId, int? createdByUserId, CancellationToken ct = default)
     {
         if (!await CanManageAsync(projectId, createdByUserId, ct).ConfigureAwait(false))

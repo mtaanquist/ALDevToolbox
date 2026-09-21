@@ -184,7 +184,7 @@
                 }
                 else if (_section == Section.Customer && Id is not null)
                 {
-                    <ProjectDetailCustomer Id="Id.Value" CanManage="_canManage" OnSaved="OnCustomerSavedAsync" />
+                    <ProjectDetailCustomer Id="Id.Value" CanManage="CanEditCustomer" CanChangeHosting="_canManage" OnSaved="OnCustomerSavedAsync" />
                 }
                 else if (_section == Section.Bc && Id is not null && _canManage && !IsOnPremises)
                 {
@@ -397,6 +397,13 @@
     }
 
     private OeProject? _loadedProject;
+
+    /// <summary>
+    /// Customer information is wider than the rest of the page: anyone who can see a
+    /// Public solution may correct it. Mirrors ProjectAccess.CanEditCustomerInfoAsync,
+    /// which is what actually decides.
+    /// </summary>
+    private bool CanEditCustomer => _canManage || _loadedProject?.Visibility == ProjectVisibility.Public;
 
     /// <summary>Hosted anywhere but Business Central online. See .design/solution-customer-info.md.</summary>
     private bool IsOnPremises => _loadedProject?.IsOnPremises == true;

@@ -75,7 +75,8 @@ public sealed class ProjectDetailCustomerTests : IDisposable
 
     private IRenderedComponent<ProjectDetailCustomer> Render(int id, bool canManage = true)
     {
-        var cut = _ctx.Render<ProjectDetailCustomer>(p => p.Add(c => c.Id, id).Add(c => c.CanManage, canManage));
+        var cut = _ctx.Render<ProjectDetailCustomer>(p => p
+            .Add(c => c.Id, id).Add(c => c.CanManage, canManage).Add(c => c.CanChangeHosting, canManage));
         cut.WaitForAssertion(() => cut.FindAll(".loading-block").Should().BeEmpty());
         return cut;
     }
@@ -104,6 +105,22 @@ public sealed class ProjectDetailCustomerTests : IDisposable
     }
 
     [Fact]
+    public async Task Someone_who_may_edit_but_not_manage_finds_hosting_locked_and_told_why()
+    {
+        var id = await SeedAsync(p => p.BcVersion = "BC 25.3");
+        var cut = _ctx.Render<ProjectDetailCustomer>(p => p
+            .Add(c => c.Id, id).Add(c => c.CanManage, true).Add(c => c.CanChangeHosting, false));
+        cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit customer details").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#cust-hosting").HasAttribute("disabled").Should().BeTrue();
+            cut.Find("#cust-version").HasAttribute("disabled").Should().BeFalse("everything else is anyone's to correct");
+            cut.Markup.Should().Contain("decides which tabs the solution has");
+        });
+    }
+
+    [Fact]
     public async Task The_tenant_id_is_only_editable_once_the_hosting_is_on_premises()
     {
         var id = await SeedAsync();
@@ -129,7 +146,7 @@ public sealed class ProjectDetailCustomerTests : IDisposable
         var id = await SeedAsync();
         var saved = false;
         var cut = _ctx.Render<ProjectDetailCustomer>(p => p
-            .Add(c => c.Id, id).Add(c => c.CanManage, true).Add(c => c.OnSaved, () => saved = true));
+            .Add(c => c.Id, id).Add(c => c.CanManage, true).Add(c => c.CanChangeHosting, true).Add(c => c.OnSaved, () => saved = true));
         cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Add customer details").Click());
         cut.WaitForAssertion(() => cut.Find("#cust-version").Change("BC 25.3"));
         cut.WaitForAssertion(() => cut.Find("#cust-hosting").Change(ProjectHostingType.MicrosoftCloud.ToString()));

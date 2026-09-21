@@ -49,7 +49,7 @@ else if (_editing)
                 <section class="field">
                     <label class="field__label" for="cust-hosting">Hosted by</label>
                     <SelectBox style="max-width: 320px">
-                        <select id="cust-hosting" class="select" @ref="_firstField" @bind="_edit.Hosting" disabled="@_saving">
+                        <select id="cust-hosting" class="select" @ref="_firstField" @bind="_edit.Hosting" disabled="@(_saving || !CanChangeHosting)">
                             <option value="">Not recorded</option>
                             @foreach (var option in Enum.GetValues<ProjectHostingType>())
                             {
@@ -58,7 +58,11 @@ else if (_editing)
                         </select>
                     </SelectBox>
                     <FieldError Field="HostingType" Errors="_errors" />
-                    @if (EditIsOnPremises)
+                    @if (!CanChangeHosting)
+                    {
+                        <small class="field__hint">Where it is hosted decides which tabs the solution has, so the solution's owner or an administrator changes it.</small>
+                    }
+                    else if (EditIsOnPremises)
                     {
                         <small class="field__hint">On-premises. Environments, upgrades and releases only work with Business Central online, so this solution won't have them. Repositories and builds are unaffected.</small>
                     }
@@ -199,7 +203,7 @@ else
     <CustomerContactsSection Id="Id" CanManage="CanManage" Initial="all.Contacts" />
     @if (_modules is { } modules)
     {
-        <CustomerModulesSection Id="Id" CanManage="CanManage" Initial="modules" />
+        <CustomerModulesSection Id="Id" CanManage="CanManage" CanManageSolution="CanChangeHosting" Initial="modules" />
     }
     <CustomerPeopleSection Id="Id" CanManage="CanManage" Initial="all.People" />
     <CustomerIntegrationsSection Id="Id" CanManage="CanManage" Initial="all.Integrations" />
@@ -207,7 +211,11 @@ else
 
 @code {
     [Parameter, EditorRequired] public int Id { get; set; }
+    /// <summary>May edit the customer information here - wider than managing the solution.</summary>
     [Parameter] public bool CanManage { get; set; }
+
+    /// <summary>Hosting decides which tabs the solution has, so it stays with the people who manage it.</summary>
+    [Parameter] public bool CanChangeHosting { get; set; }
 
     /// <summary>Raised after a save, so the page can show or hide the tabs that only work online.</summary>
     [Parameter] public EventCallback OnSaved { get; set; }

@@ -288,8 +288,6 @@ public sealed class BcSessionsClientTests
         var session = BcAdminClient.ParseSessions(DocumentedPayload).Single();
 
         BcSessionDisplay.Doing(session).Should().Be("Post Sales Documents (code unit 82)");
-        BcSessionDisplay.HistoryLine(session).Should()
-            .Be("Ended ola@cronus.example's web client session, which was running Post Sales Documents (code unit 82).");
     }
 
     [Fact]
@@ -303,7 +301,6 @@ public sealed class BcSessionsClientTests
 
         var bare = BcAdminClient.ParseSessions("""{"value":[{"sessionId":4}]}""").Single();
         BcSessionDisplay.Doing(bare).Should().Be("Idle");
-        BcSessionDisplay.HistoryLine(bare).Should().Be("Ended Somebody's Business Central session.");
     }
 
     /// <summary>

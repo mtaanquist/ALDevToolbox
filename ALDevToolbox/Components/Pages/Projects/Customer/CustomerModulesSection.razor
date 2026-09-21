@@ -103,11 +103,11 @@
                         <a class="btn btn--sm" href="/admin/customer-modules">Set up the catalogue</a>
                     </AuthorizeView>
                 }
-                else if (_modules.ReadFromEnvironment && _modules.EnvironmentId is null && CanManage)
+                else if (_modules.ReadFromEnvironment && _modules.EnvironmentId is null && CanManageSolution)
                 {
                     <a class="btn btn--sm" href="@($"/solutions/{Id}?tab=bc")">Open the Business Central tab</a>
                 }
-                else if (_modules.ReadFromEnvironment && _modules.EnvironmentId is { } envId && CanManage)
+                else if (_modules.ReadFromEnvironment && _modules.EnvironmentId is { } envId && CanManageSolution)
                 {
                     <a class="btn btn--sm" href="@($"/environments/{envId}/apps")">@(_modules.FetchedAt is null ? "Read them now" : $"Open {_modules.EnvironmentName}")</a>
                 }
@@ -159,6 +159,9 @@
     [Parameter, EditorRequired] public int Id { get; set; }
     [Parameter] public bool CanManage { get; set; }
 
+    /// <summary>The Business Central tab and an environment's Apps tab are for people who manage the solution; only they are sent there.</summary>
+    [Parameter] public bool CanManageSolution { get; set; }
+
     /// <summary>What the tab read for this section. The section re-reads for itself only after its own writes.</summary>
     [Parameter, EditorRequired] public SolutionModules Initial { get; set; } = default!;
 
@@ -209,7 +212,7 @@
     {
         { CatalogCount: 0 } => "An editor or administrator chooses which add-ons are worth tracking under Admin → Customer modules. Once they have, this fills in.",
         { ReadFromEnvironment: true, EnvironmentName: null } => "Connect this solution to Business Central on its Business Central tab. Its environments, and the apps installed in them, are read overnight after that.",
-        { ReadFromEnvironment: true, FetchedAt: null } => CanManage
+        { ReadFromEnvironment: true, FetchedAt: null } => CanManageSolution
             ? $"The apps installed in {_modules.EnvironmentName} are read overnight. To fetch them now, open the environment's Apps tab."
             : $"The apps installed in {_modules.EnvironmentName} are read overnight.",
         { ReadFromEnvironment: true } => $"Business Central reports other apps in {_modules.EnvironmentName}.",
