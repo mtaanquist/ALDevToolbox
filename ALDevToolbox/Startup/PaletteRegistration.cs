@@ -1,4 +1,5 @@
 using ALDevToolbox.Services.Palette;
+using ALDevToolbox.Services.Palette.Sources;
 
 namespace ALDevToolbox.Startup;
 
@@ -23,6 +24,7 @@ public static class PaletteRegistration
     public static IServiceCollection AddPalette(this IServiceCollection services)
     {
         services.AddScoped<PaletteSearchService>();
+        services.AddScoped<IPaletteSource, RecipePaletteSource>();
         return services;
     }
 }
