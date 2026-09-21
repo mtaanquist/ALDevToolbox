@@ -38,6 +38,12 @@ public sealed record PaletteResultGroup(
 /// One row. Carries no icon and no class names: the browser clones the
 /// <c>&lt;template&gt;</c> Razor rendered for this <paramref name="Kind"/> and
 /// fills in the text and the link, which keeps the design system in one place.
+///
+/// <para>It also carries neither <see cref="PaletteCandidate.ShortName"/> nor
+/// <see cref="PaletteCandidate.SearchOnly"/>. The second of those is the point:
+/// a candidate may be <em>found</em> by a customer's Voice account number or
+/// tenant id, and this record is where that stops — the row says which field
+/// matched, never what was in it.</para>
 /// </summary>
 public sealed record PaletteResultItem(
     [property: JsonPropertyName("kind")] string Kind,

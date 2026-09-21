@@ -365,15 +365,12 @@
         return parts.Count == 0 ? "/solutions" : "/solutions?" + string.Join("&", parts);
     }
 
-    /// <summary>The column is narrow, so the hosting in a word or two; the Customer tab has the sentence.</summary>
-    private static string ShortHosting(ProjectHostingType hosting) => hosting switch
-    {
-        ProjectHostingType.MicrosoftCloud => "Microsoft cloud",
-        ProjectHostingType.OurCloud => "Our hosting",
-        ProjectHostingType.HostingPartner => "Hosting partner",
-        ProjectHostingType.CustomerHardware => "Customer's hardware",
-        _ => hosting.ToString(),
-    };
+    /// <summary>
+    /// The column is narrow, so the hosting in a word or two; the Customer tab has the
+    /// sentence. The words themselves moved to <see cref="ProjectHostingText"/> once the
+    /// command palette started describing the same solution in a result row.
+    /// </summary>
+    private static string ShortHosting(ProjectHostingType hosting) => ProjectHostingText.Short(hosting);
 
     private string NoMatchTitle()
     {
