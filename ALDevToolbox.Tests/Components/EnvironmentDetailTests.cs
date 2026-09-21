@@ -81,6 +81,16 @@ public sealed class EnvironmentDetailTests : IDisposable
 
     public void Dispose()
     {
+        // The Sessions tab re-reads on a timer (60 ms in these tests). Settling first
+        // and disposing second left a gap a tick could start a read in, and the
+        // tracker counts commands, not a connection that is still opening - so the
+        // context was disposed under it: "Can't close, connection is in state
+        // Connecting". Stop the page (and with it the timer) first; then the only
+        // read left is one already under way, which the second settle waits out once
+        // the pause has let an opening connection reach its command.
+        _ctx.DisposeComponentsAsync().GetAwaiter().GetResult();
+        _db.WaitForQueriesToSettle();
+        Thread.Sleep(100);
         _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
