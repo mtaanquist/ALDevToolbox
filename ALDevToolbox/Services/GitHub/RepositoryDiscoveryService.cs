@@ -403,7 +403,7 @@ public sealed class RepositoryDiscoveryService
             ShortName: null,
             country,
             [new ProjectRepositoryInput(RepositoryProvider.GitHub, candidate.CloneUrl, RepositoryName(candidate.FullName))]),
-            ct);
+            access: null, ct);
 
         _db.GitHubRepositoryCandidates.Remove(candidate);
         await _db.SaveChangesAsync(ct);

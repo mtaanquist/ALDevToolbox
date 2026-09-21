@@ -177,10 +177,19 @@ public sealed class ProjectService
     }
 
     /// <summary>Creates a project and its repositories. Returns the new id.</summary>
-    public async Task<int> CreateProjectAsync(ProjectInput input, CancellationToken ct = default)
+    public async Task<int> CreateProjectAsync(
+        ProjectInput input, ProjectAccessSettings? access = null, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
         var (name, shortName, country, repos) = await ValidateAsync(input, existingId: null, orgId, ct);
+
+        // The level is chosen on the create form, and it is written in the same
+        // SaveChanges as the solution itself. Not a create followed by SetAccessAsync:
+        // that pair can half-succeed, and what it leaves behind is a solution at the
+        // level nobody chose - which, since a Public solution is managed by everyone in
+        // the organisation, is the wrong way round to fail. See
+        // .design/teams-and-visibility.md.
+        var (visibility, teamIds) = await ValidateAccessAsync(access, ct);
 
         var now = DateTime.UtcNow;
         var project = new OeProject
@@ -192,6 +201,7 @@ public sealed class ProjectService
             // The creator owns the project: they (or an org Admin) manage repos,
             // settings, builds, and deletion. See .design/artifacts.md.
             CreatedByUserId = _orgContext.CurrentUserId,
+            Visibility = visibility,
             CreatedAt = now,
             UpdatedAt = now,
             Repositories = repos.Select(r => new OeProjectRepository
@@ -201,12 +211,18 @@ public sealed class ProjectService
                 Url = r.Url,
                 DisplayName = r.DisplayName,
             }).ToList(),
+            Teams = teamIds.Select(teamId => new OeProjectTeam
+            {
+                OrganizationId = orgId,
+                TeamId = teamId,
+                CreatedAt = now,
+            }).ToList(),
         };
         _db.OeProjects.Add(project);
         await SaveTranslatingNameClashAsync(ct);
 
-        _logger.LogInformation("Created project {ProjectId} ({Name}) with {RepoCount} repo(s) for org {OrgId}.",
-            project.Id, name, project.Repositories.Count, orgId);
+        _logger.LogInformation("Created project {ProjectId} ({Name}) with {RepoCount} repo(s) at {Visibility} with {TeamCount} team(s) for org {OrgId}.",
+            project.Id, name, project.Repositories.Count, visibility, teamIds.Count, orgId);
 
         // Warm the discovered-extensions cache in the background so the first
         // pipeline editor open is instant. Best-effort — a discovery enqueue
@@ -466,29 +482,7 @@ public sealed class ProjectService
                 "Only the solution's owner or an organisation admin can change who may see it.");
         }
 
-        var wanted = teamIds.Distinct().ToList();
-
-        if (visibility == ProjectVisibility.Public && wanted.Count > 0)
-        {
-            throw Validation("Teams",
-                "A public project is open to everyone, so it can't have teams. Remove the teams, or pick a different visibility.");
-        }
-        if (visibility != ProjectVisibility.Public && wanted.Count == 0)
-        {
-            throw Validation("Teams", "Pick at least one team that keeps access to this project.");
-        }
-
-        if (wanted.Count > 0)
-        {
-            var known = await _db.Teams.AsNoTracking()
-                .Where(t => wanted.Contains(t.Id))
-                .Select(t => t.Id)
-                .ToListAsync(ct);
-            if (known.Count != wanted.Count)
-            {
-                throw Validation("Teams", "One of those teams no longer exists. Reload the page and try again.");
-            }
-        }
+        var (_, wanted) = await ValidateAccessAsync(new ProjectAccessSettings(visibility, teamIds), ct);
 
         var existing = await _db.OeProjectTeams
             .Where(t => t.ProjectId == projectId)
@@ -517,6 +511,44 @@ public sealed class ProjectService
 
         _logger.LogInformation("Set project {ProjectId} visibility to {Visibility} with {TeamCount} team(s).",
             projectId, visibility, wanted.Count);
+    }
+
+    /// <summary>
+    /// The invariant, in one place so creating a solution and re-levelling one cannot
+    /// drift: <c>Visibility != Public</c> holds exactly when at least one team is
+    /// assigned, and every team named has to exist in this organisation. A null
+    /// <paramref name="access"/> means Public with no teams, which is what a caller
+    /// that doesn't care about the level gets.
+    /// </summary>
+    private async Task<(ProjectVisibility Visibility, List<int> TeamIds)> ValidateAccessAsync(
+        ProjectAccessSettings? access, CancellationToken ct)
+    {
+        var visibility = access?.Visibility ?? ProjectVisibility.Public;
+        var wanted = (access?.TeamIds ?? Array.Empty<int>()).Distinct().ToList();
+
+        if (visibility == ProjectVisibility.Public && wanted.Count > 0)
+        {
+            throw Validation("Teams",
+                "A public project is open to everyone, so it can't have teams. Remove the teams, or pick a different visibility.");
+        }
+        if (visibility != ProjectVisibility.Public && wanted.Count == 0)
+        {
+            throw Validation("Teams", "Pick at least one team that keeps access to this project.");
+        }
+
+        if (wanted.Count > 0)
+        {
+            var known = await _db.Teams.AsNoTracking()
+                .Where(t => wanted.Contains(t.Id))
+                .Select(t => t.Id)
+                .ToListAsync(ct);
+            if (known.Count != wanted.Count)
+            {
+                throw Validation("Teams", "One of those teams no longer exists. Reload the page and try again.");
+            }
+        }
+
+        return (visibility, wanted);
     }
 
     // ── Supplemental symbols (manual-symbols recovery) ──────────────────

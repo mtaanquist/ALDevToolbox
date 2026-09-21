@@ -170,6 +170,20 @@ Enforced atomically by a single `ProjectService.SetAccessAsync(projectId, visibi
 teamIds)` — never by two independent writes that could interleave into a Private
 project nobody can see.
 
+**The level is chosen on the create form, not corrected afterwards.**
+`CreateProjectAsync` takes an optional `ProjectAccessSettings` and writes it in the same
+`SaveChanges` as the solution, its repositories and its teams; both it and
+`SetAccessAsync` run the invariant through one `ValidateAccessAsync`, so the two cannot
+drift. This matters more since Public became open both ways: a create that landed Public
+and was narrowed a moment later would put a customer's Business Central connection in
+front of the whole organisation for that moment, and a create-then-set pair can
+half-succeed and leave it there for good. Defaulting new solutions to Read-only instead
+is not available — the invariant needs a team, and a fresh organisation has none — which
+is the other reason the question belongs on the form, where the team is picked in the
+same breath. The Access tab renders on `/solutions/new` with no save of its own; the
+page's Create solution writes the answer with the rest. A caller that says nothing about
+the level (the GitHub import paths) still gets Public with no teams.
+
 Its consequence for teams: **deleting a team is refused while it is the last team on
 any non-Public project**, listing the projects that block it. The refusal is
 deliberate rather than auto-resetting those projects to Public — silently making a

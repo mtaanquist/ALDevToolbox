@@ -109,7 +109,8 @@
         @* Save solution applies to General + Repositories. The Business Central and
            Pipelines sections have their own save/actions, so the header primary is
            hidden there to avoid implying it would save those edits. *@
-        @if (_canManage && _section is Section.General or Section.Repos)
+        @if (_canManage && (_section is Section.General or Section.Repos
+                            || (Id is null && _section == Section.Access)))
         {
             @if (_dirty)
             {
@@ -204,6 +205,14 @@
                                          Baseline="_accessBaseline"
                                          OnSaved="OnAccessSavedAsync" />
                 }
+                else if (_section == Section.Access && Id is null)
+                {
+                    @* No id to save against yet: the tab collects the answer and Create
+                       solution writes it with the rest, in one go. *@
+                    <ProjectDetailAccess AllTeams="_allTeams"
+                                         Baseline="_newAccess"
+                                         OnChanged="OnNewAccessChanged" />
+                }
             </div>
         </div>
     </ChildContent>
@@ -254,6 +263,11 @@
                 // every manager's - on a Public solution that is everybody.
                 if (_canChangeAccess) tabs.Add(Tab("Access", Section.Access));
             }
+            // Creating: the level is picked here rather than left at Public and fixed
+            // afterwards. A Public solution is managed by everyone in the organisation,
+            // so "we'll set that later" is a customer's Business Central connection
+            // open to the whole company in the meantime.
+            else if (Id is null) tabs.Add(Tab("Access", Section.Access));
 
             return tabs;
         }
@@ -287,6 +301,15 @@
     /// managed by everyone in the organisation, and re-governing it is not theirs.
     /// </summary>
     private bool _canChangeAccess;
+
+    /// <summary>
+    /// The level and teams picked on the create form, held here until there is a
+    /// solution to put them on. Public with no teams until somebody says otherwise,
+    /// which is what the tab starts on.
+    /// </summary>
+    private ProjectAccessSettings _newAccess = new(ProjectVisibility.Public, Array.Empty<int>());
+
+    private void OnNewAccessChanged(ProjectAccessSettings access) => _newAccess = access;
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
@@ -349,6 +372,9 @@
             // state and the "Add repository" button, which is what a first-time
             // user needs. A seeded row hid both and made the "0 added" pill lie.
             _edit = new EditModel();
+            // The Access tab needs the org's teams to offer them, and there is no
+            // solution to read a baseline from yet.
+            _allTeams = await Teams.ListTeamsAsync();
         }
         else
         {
@@ -508,7 +534,7 @@
 
             if (Id is null)
             {
-                var newId = await Projects.CreateProjectAsync(input);
+                var newId = await Projects.CreateProjectAsync(input, _newAccess);
                 Nav.NavigateTo($"/solutions/{newId}");
                 return;
             }

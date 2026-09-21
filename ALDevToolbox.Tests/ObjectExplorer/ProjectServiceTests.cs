@@ -217,6 +217,77 @@ public sealed class ProjectServiceTests : IDisposable
         (await svc.GetProjectAsync(id))!.CreatedByUserId.Should().Be(OwnerUserId);
     }
 
+    // ── Access chosen while creating ──────────────────────────────────────
+
+    /// <summary>
+    /// The level is part of making a solution, not a correction applied afterwards. A
+    /// Public solution is managed by everyone in the organisation, so a create that
+    /// landed Public and was narrowed a moment later would put a customer's Business
+    /// Central connection in front of the whole company for that moment.
+    /// </summary>
+    [Fact]
+    public async Task A_solution_is_created_at_the_level_and_teams_it_was_given()
+    {
+        var teamId = await SeedTeamAsync("Nordics");
+
+        await using var ctx = _db.NewContext();
+        var id = await Svc(ctx).CreateProjectAsync(
+            NewInput("CRONUS A/S"),
+            new ProjectAccessSettings(ProjectVisibility.Private, new[] { teamId }));
+
+        await using var verify = _db.NewContext();
+        (await verify.OeProjects.AsNoTracking().SingleAsync(p => p.Id == id))
+            .Visibility.Should().Be(ProjectVisibility.Private);
+        (await verify.OeProjectTeams.AsNoTracking().Where(t => t.ProjectId == id).Select(t => t.TeamId).ToListAsync())
+            .Should().Equal(teamId);
+    }
+
+    /// <summary>
+    /// The invariant holds at creation too, and it holds atomically: a refused level
+    /// leaves no solution behind for somebody to find at the wrong one.
+    /// </summary>
+    [Fact]
+    public async Task A_narrowed_level_with_no_team_creates_nothing_at_all()
+    {
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx).CreateProjectAsync(
+            NewInput("CRONUS A/S"),
+            new ProjectAccessSettings(ProjectVisibility.ReadOnly, Array.Empty<int>()));
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Teams");
+
+        await using var verify = _db.NewContext();
+        (await verify.OeProjects.AsNoTracking().CountAsync(p => p.Name == "CRONUS A/S"))
+            .Should().Be(0, "the level was refused, so there is no solution at the wrong one");
+    }
+
+    /// <summary>A caller that says nothing about the level gets the default, as before.</summary>
+    [Fact]
+    public async Task A_create_that_names_no_level_is_public_with_no_teams()
+    {
+        await using var ctx = _db.NewContext();
+        var id = await Svc(ctx).CreateProjectAsync(NewInput("CRONUS A/S"));
+
+        await using var verify = _db.NewContext();
+        (await verify.OeProjects.AsNoTracking().SingleAsync(p => p.Id == id))
+            .Visibility.Should().Be(ProjectVisibility.Public);
+        (await verify.OeProjectTeams.AsNoTracking().CountAsync(t => t.ProjectId == id)).Should().Be(0);
+    }
+
+    private async Task<int> SeedTeamAsync(string name)
+    {
+        await using var ctx = _db.NewContext();
+        var team = new Team
+        {
+            OrganizationId = TestDb.DefaultOrgId, Name = name,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.Teams.Add(team);
+        await ctx.SaveChangesAsync();
+        return team.Id;
+    }
+
     [Fact]
     public async Task A_stranger_updates_a_public_project_but_never_deletes_one_and_neither_once_narrowed()
     {

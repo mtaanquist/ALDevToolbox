@@ -138,7 +138,7 @@ else
    whole tab, not the team list. Sized like the Business Central
    tab's own save - the header's primary is hidden on any tab that
    owns its actions, and this page keeps one primary at a time. *@
-@if (AllTeams.Count > 0)
+@if (AllTeams.Count > 0 && !Creating)
 {
     <div class="form-actions">
         <button type="button" class="btn btn--sm" @onclick="SaveAccessAsync"
@@ -156,8 +156,24 @@ else
 }
 
 @code {
-    /// <summary>The solution whose access this tab sets.</summary>
-    [Parameter, EditorRequired] public int Id { get; set; }
+    /// <summary>
+    /// The solution whose access this tab sets, or null while one is being created.
+    /// Creating, there is nothing to write to yet: the tab collects the answer, raises
+    /// <see cref="OnChanged"/>, and the page's Create solution writes it with the rest
+    /// of the solution in one go. Everything above this line renders the same either
+    /// way - the level is the same question whenever it is asked.
+    /// </summary>
+    [Parameter] public int? Id { get; set; }
+
+    /// <summary>
+    /// Raised on every pick while creating, so the page holds the answer until the
+    /// solution exists. Never raised for a solution that already has an id: that one
+    /// saves on its own button.
+    /// </summary>
+    [Parameter] public EventCallback<ProjectAccessSettings> OnChanged { get; set; }
+
+    /// <summary>True while collecting the answer for a solution that does not exist yet.</summary>
+    private bool Creating => Id is null;
 
     /// <summary>Every team in the organisation, read by the page.</summary>
     [Parameter] public IReadOnlyList<TeamListRow> AllTeams { get; set; } = Array.Empty<TeamListRow>();
@@ -201,20 +217,16 @@ else
 
     /// <summary>
     /// The three levels with the copy a solution owner reads, in the order they
-    /// widen the fence. Labels say what the reader gets, not what the enum is
-    /// called.
-    /// </summary>
-    /// <summary>
-    /// The three levels with the copy a solution owner reads, in the order they
     /// tighten the fence. Each caption answers the same two questions in the same
     /// order - who can see it, then who can change it - so the reader compares
-    /// three sentences rather than parsing three shapes. Public has no teams by
-    /// the model's invariant, which is why only it says "you and the admins".
+    /// three sentences rather than parsing three shapes. Public answers both with
+    /// "anyone", which is the thing somebody putting a customer here needs to
+    /// notice, so it says so in as many words.
     /// </summary>
     private static readonly (ProjectVisibility Value, string Label, string Caption)[] VisibilityChoices =
     {
         (ProjectVisibility.Public, "Public",
-            "Anyone in your organisation can see it and download its builds. Only you and the admins can change it."),
+            "Anyone in your organisation can see it, download its builds, and change it - including its Business Central connection. Only you and the admins can delete it."),
         (ProjectVisibility.ReadOnly, "Read-only for others",
             "Anyone can see it and download builds. Only the teams you pick below, you, and the admins can change it or run builds."),
         (ProjectVisibility.Private, "Private",
@@ -243,20 +255,27 @@ else
         ResetAccessEdit();
     }
 
-    private void PickVisibility(ProjectVisibility visibility)
+    private async Task PickVisibility(ProjectVisibility visibility)
     {
         _accessEdit.Visibility = visibility;
         // Choosing Public clears the picks rather than keeping them greyed but
         // set: the service refuses Public-with-teams, and a disabled control
         // still holding values is a trap on the next save.
         if (visibility == ProjectVisibility.Public) _accessEdit.TeamIds.Clear();
+        await RaiseIfCreatingAsync();
     }
 
-    private void ToggleTeam(int teamId, bool on)
+    private async Task ToggleTeam(int teamId, bool on)
     {
         if (on) _accessEdit.TeamIds.Add(teamId);
         else _accessEdit.TeamIds.Remove(teamId);
+        await RaiseIfCreatingAsync();
     }
+
+    /// <summary>Hands the page the answer so far, while the solution is still being created.</summary>
+    private Task RaiseIfCreatingAsync() => Creating
+        ? OnChanged.InvokeAsync(new ProjectAccessSettings(_accessEdit.Visibility, _accessEdit.TeamIds.ToList()))
+        : Task.CompletedTask;
 
     private void ResetAccessEdit()
     {
@@ -281,7 +300,7 @@ else
         _accessErrors = new();
         try
         {
-            await Projects.SetAccessAsync(Id, _accessEdit.Visibility, _accessEdit.TeamIds.ToList());
+            await Projects.SetAccessAsync(Id!.Value, _accessEdit.Visibility, _accessEdit.TeamIds.ToList());
             // The page re-reads the baseline and refreshes the header badge: the
             // level the whole page reports just moved.
             await OnSaved.InvokeAsync(_accessEdit.Visibility);

@@ -373,6 +373,69 @@ public sealed class ProjectDetailAccessTests : IDisposable
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
+    // ── Choosing the level while creating ─────────────────────────────────
+
+    /// <summary>
+    /// The level is picked on the create form, so a customer solution is never Public
+    /// for the minute between being created and being narrowed - and Public now means
+    /// everyone in the organisation can change it. The tab has no save of its own
+    /// there: Create solution writes the level with the rest.
+    /// </summary>
+    [Fact]
+    public async Task Creating_a_solution_offers_the_level_and_has_no_save_of_its_own()
+    {
+        await SeedAsync();
+
+        var cut = _ctx.Render<ProjectDetail>();
+        await OpenAccessTabAsync(cut);
+
+        cut.FindAll(".module-card__title").Select(t => t.TextContent.Trim())
+            .Should().Contain(new[] { "Public", "Read-only for others", "Private" });
+        cut.FindAll("button").Select(b => b.TextContent.Trim())
+            .Should().NotContain("Save access", "Create solution writes the level with the rest");
+        cut.FindAll("button").Select(b => b.TextContent.Trim())
+            .Should().Contain("Create solution", "the page's own primary stays reachable from this tab");
+    }
+
+    /// <summary>
+    /// End to end through the form: pick Private, tick the team, fill the name, create -
+    /// and the solution exists at that level, never at another one first.
+    /// </summary>
+    [Fact]
+    public async Task A_solution_created_as_private_is_private_from_the_moment_it_exists()
+    {
+        var (_, teamId) = await SeedAsync();
+
+        var cut = _ctx.Render<ProjectDetail>();
+        await OpenAccessTabAsync(cut);
+        await PickAsync(cut, "Private");
+        cut.WaitForState(() => cut.FindAll("input[type=checkbox]").Count > 0);
+        await cut.InvokeAsync(() => cut.FindAll("input[type=checkbox]")[0].Change(true));
+
+        // Back to General for the name, the way somebody filling this in would.
+        var general = cut.FindAll(".settings__tabs button").First(t => t.TextContent.Trim() == "General");
+        await cut.InvokeAsync(() => general.Click());
+        cut.WaitForState(() => cut.FindAll("input#proj-name").Count > 0);
+        await cut.InvokeAsync(() => cut.Find("input#proj-name").Change("CRONUS Sweden"));
+        // The base to compile against is required too, so the create gets that far.
+        await cut.InvokeAsync(() => cut.Find("input#proj-country").Change("dk"));
+
+        var create = cut.FindAll("button").First(b => b.TextContent.Trim() == "Create solution");
+        await cut.InvokeAsync(() => create.Click());
+
+        await using var verify = _db.NewContext();
+        OeProject? created = null;
+        cut.WaitForAssertion(() =>
+        {
+            created = verify.OeProjects.AsNoTracking().FirstOrDefault(p => p.Name == "CRONUS Sweden");
+            created.Should().NotBeNull();
+        });
+        created!.Visibility.Should().Be(ProjectVisibility.Private);
+        (await verify.OeProjectTeams.AsNoTracking()
+            .Where(t => t.ProjectId == created.Id).Select(t => t.TeamId).ToListAsync())
+            .Should().Equal(teamId);
+    }
+
     private static async Task OpenAccessTabAsync(IRenderedComponent<ProjectDetail> cut)
     {
         cut.WaitForState(() => cut.FindAll(".settings__tabs button")
