@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -154,11 +155,7 @@ public sealed class UnstyledMarkupTests
 
     private static string Root()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = RepoRoot.Directory;
         dir.Should().NotBeNull(because: "the tests run from inside the repo");
         return dir!.FullName;
     }

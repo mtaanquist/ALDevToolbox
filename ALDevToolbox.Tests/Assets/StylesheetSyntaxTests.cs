@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -101,13 +102,9 @@ public sealed class StylesheetSyntaxTests
 
     private static string FindWwwroot()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ALDevToolbox.slnx")))
-        {
-            dir = dir.Parent;
-        }
+        var dir = RepoRoot.Directory;
 
-        dir.Should().NotBeNull("could not locate repo root (looking for ALDevToolbox.slnx)");
+        dir.Should().NotBeNull("could not locate repo root");
         return Path.Combine(dir!.FullName, "ALDevToolbox", "wwwroot");
     }
 }
