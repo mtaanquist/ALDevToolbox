@@ -891,7 +891,11 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
     public async Task A_solution_the_caller_cannot_manage_is_refused_before_anything_is_created()
     {
         await ReadyAsync();
-        var solutionId = await SeedSolutionAsync("Somebody else's customer", ownedByCaller: false);
+        // Read-only, because somebody else's Public solution is still everyone's to
+        // manage: what is not yours to attach a repository to is a narrowed one.
+        var solutionId = await SeedSolutionAsync(
+            "Somebody else's customer", ownedByCaller: false,
+            ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectVisibility.ReadOnly);
         var api = WritableApi();
         var (service, ctx) = NewService(api);
         await using var _ = ctx;
@@ -1035,7 +1039,10 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
     /// difference between a customer they may add a repository to and one they
     /// may not.
     /// </summary>
-    private async Task<int> SeedSolutionAsync(string name, bool ownedByCaller)
+    private async Task<int> SeedSolutionAsync(
+        string name, bool ownedByCaller,
+        ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectVisibility visibility =
+            ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectVisibility.Public)
     {
         await using var ctx = _db.NewContext();
         if (!ownedByCaller)
@@ -1056,6 +1063,7 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,
+            Visibility = visibility,
             DefaultArtifactCountry = "dk",
             CreatedByUserId = ownedByCaller ? UserId : UserId + 1,
             CreatedAt = DateTime.UtcNow,

@@ -23,8 +23,10 @@ namespace ALDevToolbox.Tests.Components;
 /// <para>Two readings share the page and the tests keep them apart. The head, the meta
 /// row and the Updates card are our own mirror; Apps, Operations, Sessions and the
 /// settings' values are live, with the customer's credentials. Both halves are reads,
-/// so both follow the solution's visibility - a colleague on a Public solution gets all
-/// of it - and what acts on the customer's tenant is what needs managing the solution.
+/// so both follow the solution's visibility, and what acts on the customer's tenant
+/// needs managing it. The colleague in these tests reads a <b>Read-only</b> solution,
+/// which is the level where those two answers differ: a Public solution is managed by
+/// everyone in the organisation, so nobody is a reader-only on one.
 /// The live half is served here from the panel cache, so Business Central is never
 /// reached - the doubles throw if it is.</para>
 /// </summary>
@@ -357,7 +359,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     [Fact]
     public async Task Someone_who_can_see_the_solution_but_not_manage_it_is_not_offered_a_copy()
     {
-        var (_, envId) = await SeedAsync();
+        var (_, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 
         var cut = Render(envId);
@@ -595,16 +597,16 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     /// <summary>
-    /// What Business Central has been doing to the environment is a read, so on a Public
-    /// solution a colleague gets it too - they reach the same connection error the owner
-    /// does rather than a card telling them to join a team. The way out of that error is
+    /// What Business Central has been doing to the environment is a read, so a colleague
+    /// who cannot manage the solution gets it too - they reach the same connection error
+    /// the owner does rather than a card telling them to join a team. The way out of that error is
     /// the solution's Business Central tab, which is a manager's, so they are told who to
     /// ask instead of handed a button that goes nowhere they can follow.
     /// </summary>
     [Fact]
-    public async Task A_colleague_reads_the_operations_of_a_public_solution()
+    public async Task A_colleague_reads_the_operations_of_a_solution_they_cannot_manage()
     {
-        var (_, envId) = await SeedAsync();
+        var (_, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 
         var cut = Render(envId, "operations");
@@ -815,14 +817,14 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     /// <summary>
-    /// Who is signed in is a read, so a colleague on a Public solution sees the list.
+    /// Who is signed in is a read, so a colleague who only reads the solution sees it.
     /// Ending one of those sessions signs somebody out of the customer's system, so the
     /// column of buttons is not there for them.
     /// </summary>
     [Fact]
     public async Task A_colleague_sees_who_is_signed_in_but_gets_no_way_to_end_a_session()
     {
-        var (projectId, envId) = await SeedAsync();
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         await SeedCredentialsAsync(projectId);
         _db.OrgContext.CurrentUserId = ColleagueUserId;
         _admin.OnSessions = () => [Session(47, "ola@cronus.example")];
@@ -958,7 +960,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     /// <summary>
-    /// A colleague on a Public solution reads everything the owner reads, and changes
+    /// A colleague who only reads the solution reads everything the owner reads, and changes
     /// none of it: the settings are values rather than controls, the warning that they
     /// write to the customer's tenant is for the people who can, the version row is a
     /// control and nothing else so it goes, and Refresh - the one read that makes the
@@ -967,7 +969,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     [Fact]
     public async Task A_colleague_reads_the_live_half_and_gets_no_control_over_it()
     {
-        var (projectId, envId) = await SeedAsync();
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _panels.Set(projectId, envId, Panel());
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 
@@ -992,7 +994,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     [Fact]
     public async Task A_colleague_is_told_when_business_central_would_not_name_the_versions()
     {
-        var (projectId, envId) = await SeedAsync();
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _panels.Set(projectId, envId, Panel() with
         {
             EnvironmentUpdates = [],
@@ -1011,7 +1013,7 @@ public sealed class EnvironmentDetailTests : IDisposable
     [Fact]
     public async Task A_colleague_reads_the_apps_tab_without_its_actions()
     {
-        var (projectId, envId) = await SeedAsync();
+        var (projectId, envId) = await SeedAsync(ProjectVisibility.ReadOnly);
         _panels.Set(projectId, envId, Panel());
         _db.OrgContext.CurrentUserId = ColleagueUserId;
 

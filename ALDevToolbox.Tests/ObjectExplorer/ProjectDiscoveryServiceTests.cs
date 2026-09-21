@@ -46,13 +46,16 @@ public sealed class ProjectDiscoveryServiceTests : IDisposable
     private ProjectDiscoveryService Svc(AppDbContext ctx, ProjectDiscoveryQueue queue) =>
         new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), queue, NullLogger<ProjectDiscoveryService>.Instance);
 
-    private async Task<int> SeedProjectAsync(int? ownerId = OwnerUserId, string? discoveredJson = null, DateTime? discoveredAt = null, string? error = null)
+    private async Task<int> SeedProjectAsync(
+        int? ownerId = OwnerUserId, string? discoveredJson = null, DateTime? discoveredAt = null,
+        string? error = null, ProjectVisibility visibility = ProjectVisibility.Public)
     {
         await using var ctx = _db.NewContext();
         var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = "CRONUS A/S " + Guid.NewGuid().ToString("N"),
+            Visibility = visibility,
             CreatedByUserId = ownerId,
             DiscoveredExtensionsJson = discoveredJson,
             DiscoveredAt = discoveredAt,
@@ -80,7 +83,9 @@ public sealed class ProjectDiscoveryServiceTests : IDisposable
     [Fact]
     public async Task RequestDiscovery_is_blocked_for_a_non_owner_non_admin()
     {
-        var id = await SeedProjectAsync(); // owned by OwnerUserId
+        // Read-only: a Public solution is managed by everyone in the organisation, so a
+        // stranger to it is only a stranger at the narrower levels.
+        var id = await SeedProjectAsync(visibility: ProjectVisibility.ReadOnly); // owned by OwnerUserId
         const int strangerId = 9500;
         await using (var seed = _db.NewContext())
         {

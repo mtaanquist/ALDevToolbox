@@ -269,7 +269,12 @@ public sealed class CustomerModuleService
             ?? throw new InvalidOperationException("Changing a solution's modules needs an authenticated request.");
         var project = await _db.OeProjects.FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw Invalid("ModuleId", "This solution no longer exists.");
-        await _access.EnsureCanEditCustomerInfoAsync(project.Id, project.CreatedByUserId, project.Visibility, ct);
+        if (!await _access.CanManageAsync(project.Id, project.CreatedByUserId, ct))
+        {
+            throw new ProjectAccessDeniedException(project.Visibility == ProjectVisibility.ReadOnly
+                ? "This solution is read-only for people outside its teams. Ask one of them, or its owner or an administrator, to make the change."
+                : "Only this solution's teams, its owner and your administrators can change it.");
+        }
         return project;
     }
 

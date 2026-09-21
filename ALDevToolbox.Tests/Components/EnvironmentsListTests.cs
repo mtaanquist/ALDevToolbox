@@ -82,13 +82,14 @@ public sealed class EnvironmentsListTests : IDisposable
         _db.Dispose();
     }
 
-    private async Task<int> SeedSolutionAsync(string name)
+    private async Task<int> SeedSolutionAsync(string name, ProjectVisibility visibility = ProjectVisibility.Public)
     {
         await using var ctx = _db.NewContext();
         var project = new OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
             Name = name,
+            Visibility = visibility,
             CreatedByUserId = OwnerUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -202,11 +203,13 @@ public sealed class EnvironmentsListTests : IDisposable
     [Fact]
     public async Task Someone_who_can_see_a_solution_but_not_manage_it_is_not_offered_a_copy()
     {
-        var id = await SeedSolutionAsync("CRONUS Denmark");
+        // Read-only, because that is the level where seeing and managing part company:
+        // a Public solution is managed by everyone in the organisation.
+        var id = await SeedSolutionAsync("CRONUS Denmark", ProjectVisibility.ReadOnly);
         var now = DateTime.UtcNow;
         await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
 
-        // A colleague who can see this Public solution but neither owns it nor is on a
+        // A colleague who can see this solution but neither owns it nor is on a
         // team assigned to it.
         await using (var seed = _db.NewContext())
         {

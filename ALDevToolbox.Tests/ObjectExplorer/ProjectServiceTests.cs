@@ -218,7 +218,7 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_and_delete_are_blocked_for_a_non_owner_non_admin()
+    public async Task A_stranger_updates_a_public_project_but_never_deletes_one_and_neither_once_narrowed()
     {
         await using var ctx = _db.NewContext();
         var id = await Svc(ctx).CreateProjectAsync(NewInput("CRONUS A/S"));
@@ -243,14 +243,33 @@ public sealed class ProjectServiceTests : IDisposable
         _db.OrgContext.CurrentUserId = strangerId;
         try
         {
-            await using var ctx2 = _db.NewContext();
-            var svc = Svc(ctx2);
+            // The project is Public, which is open both ways: a stranger to it manages
+            // it like anyone else in the organisation. Ending it is the carve-out.
+            await using (var ctx2 = _db.NewContext())
+            {
+                await Svc(ctx2).UpdateProjectAsync(id, NewInput("CRONUS A/S"));
 
-            var update = () => svc.UpdateProjectAsync(id, NewInput("CRONUS A/S"));
-            await update.Should().ThrowAsync<ProjectAccessDeniedException>();
+                var delete = () => Svc(ctx2).SoftDeleteProjectAsync(id);
+                await delete.Should().ThrowAsync<ProjectAccessDeniedException>();
+            }
 
-            var delete = () => svc.SoftDeleteProjectAsync(id);
-            await delete.Should().ThrowAsync<ProjectAccessDeniedException>();
+            // Narrowed, both are refused: Read-only reserves writing for the teams.
+            await using (var narrow = _db.NewContext())
+            {
+                (await narrow.OeProjects.SingleAsync(p => p.Id == id)).Visibility = ProjectVisibility.ReadOnly;
+                await narrow.SaveChangesAsync();
+            }
+
+            await using (var ctx3 = _db.NewContext())
+            {
+                var svc = Svc(ctx3);
+
+                var update = () => svc.UpdateProjectAsync(id, NewInput("CRONUS A/S"));
+                await update.Should().ThrowAsync<ProjectAccessDeniedException>();
+
+                var delete = () => svc.SoftDeleteProjectAsync(id);
+                await delete.Should().ThrowAsync<ProjectAccessDeniedException>();
+            }
         }
         finally
         {

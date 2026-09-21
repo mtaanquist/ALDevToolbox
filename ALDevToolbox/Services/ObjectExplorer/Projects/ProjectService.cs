@@ -57,6 +57,21 @@ public sealed class ProjectService
     }
 
     /// <summary>
+    /// Whether the current user may change who can see the project, and delete it -
+    /// the solution's own governance, which is narrower than managing it and is what
+    /// <see cref="SetAccessAsync"/> enforces. For the page that decides whether to
+    /// draw the Access tab at all. Returns false when the project no longer exists.
+    /// </summary>
+    public async Task<bool> CanChangeAccessAsync(int projectId, CancellationToken ct = default)
+    {
+        var owner = await _db.OeProjects.AsNoTracking()
+            .Where(c => c.Id == projectId && c.DeletedAt == null)
+            .Select(c => new { c.CreatedByUserId })
+            .FirstOrDefaultAsync(ct);
+        return owner is not null && await _access.CanDeleteAsync(owner.CreatedByUserId, ct);
+    }
+
+    /// <summary>
     /// Active (non-deleted) projects the current user may see, repositories
     /// included, ordered by name. Private projects the caller has no grant on are
     /// left out entirely — this feeds project <em>pickers</em> (new pipeline, new
@@ -439,7 +454,17 @@ public sealed class ProjectService
             .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw Validation("Visibility", "This project no longer exists.");
 
-        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+        // Changing who may see a solution is governance, not work on it: the same set
+        // as deleting it, and for the same reason a team grant never included delete.
+        // Under the old model manage was owner-and-admins here anyway; now that a
+        // Public solution is managed by everyone, leaving this on manage would let
+        // anybody re-govern it - lock a shared solution to a team of their own, or
+        // open a narrowed one back up. See .design/teams-and-visibility.md.
+        if (!await _access.CanDeleteAsync(project.CreatedByUserId, ct))
+        {
+            throw new ProjectAccessDeniedException(
+                "Only the solution's owner or an organisation admin can change who may see it.");
+        }
 
         var wanted = teamIds.Distinct().ToList();
 

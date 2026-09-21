@@ -197,7 +197,7 @@
                                             Pipelines="_pipelines"
                                             Saving="_saving" />
                 }
-                else if (_section == Section.Access && Id is not null && _canManage)
+                else if (_section == Section.Access && Id is not null && _canChangeAccess)
                 {
                     <ProjectDetailAccess Id="Id.Value"
                                          AllTeams="_allTeams"
@@ -250,8 +250,10 @@
                 // Nothing on it works without Business Central online.
                 if (!IsOnPremises) tabs.Add(Tab("Business Central", Section.Bc));
                 tabs.Add(Tab("Pipelines", Section.Pipelines));
-                tabs.Add(Tab("Access", Section.Access));
-                }
+                // Who may see the solution is the owner's and the admins' to set, not
+                // every manager's - on a Public solution that is everybody.
+                if (_canChangeAccess) tabs.Add(Tab("Access", Section.Access));
+            }
 
             return tabs;
         }
@@ -278,6 +280,13 @@
     private bool _saving;
     private bool _dirty;
     private bool _canManage;
+
+    /// <summary>
+    /// Owner, org Admin or SiteAdmin: who may change the solution's visibility and its
+    /// teams. Narrower than <see cref="_canManage"/> on purpose - a Public solution is
+    /// managed by everyone in the organisation, and re-governing it is not theirs.
+    /// </summary>
+    private bool _canChangeAccess;
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
@@ -347,8 +356,9 @@
             if (!_notFound)
             {
                 _canManage = await Projects.CanManageAsync(Id.Value);
+                _canChangeAccess = await Projects.CanChangeAccessAsync(Id.Value);
                 HydrateEdit();
-                if (_canManage)
+                if (_canChangeAccess)
                 {
                     await LoadAccessAsync();
                 }
@@ -399,11 +409,12 @@
     private OeProject? _loadedProject;
 
     /// <summary>
-    /// Customer information is wider than the rest of the page: anyone who can see a
-    /// Public solution may correct it. Mirrors ProjectAccess.CanEditCustomerInfoAsync,
-    /// which is what actually decides.
+    /// Customer information used to be wider than the rest of the page, so that anyone
+    /// who could see a Public solution could correct a phone number. Managing a Public
+    /// solution is now everyone in the organisation, so the wider rule and the ordinary
+    /// one are the same set and there is only this. See .design/solution-customer-info.md.
     /// </summary>
-    private bool CanEditCustomer => _canManage || _loadedProject?.Visibility == ProjectVisibility.Public;
+    private bool CanEditCustomer => _canManage;
 
     /// <summary>Hosted anywhere but Business Central online. See .design/solution-customer-info.md.</summary>
     private bool IsOnPremises => _loadedProject?.IsOnPremises == true;

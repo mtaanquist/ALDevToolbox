@@ -19,8 +19,9 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 ///   the project is <see cref="ProjectVisibility.Private"/>, in which case only its
 ///   owner, a member of an assigned team, an org Admin, or a SiteAdmin.</item>
 ///   <item><b>Manage</b> (<see cref="CanManageAsync"/>) — adding and removing
-///   repositories, editing settings, triggering builds and deliveries: the owner,
-///   an org Admin, a SiteAdmin, or a member of a team assigned to the project.</item>
+///   repositories, editing settings, triggering builds and deliveries: everyone in
+///   the org on a <see cref="ProjectVisibility.Public"/> project, and otherwise the
+///   owner, an org Admin, a SiteAdmin, or a member of a team assigned to it.</item>
 ///   <item><b>Delete</b> (<see cref="EnsureCanDeleteAsync"/>) — deliberately
 ///   stricter than manage: owner, org Admin, SiteAdmin only. A team grant is about
 ///   doing the work, not about ending it.</item>
@@ -132,8 +133,18 @@ public sealed class ProjectAccess
     /// <summary>
     /// True when the current user may manage project <paramref name="projectId"/>,
     /// owned by <paramref name="createdByUserId"/>: they're a SiteAdmin, they own it,
-    /// they're an org Admin, or they're on a team assigned to it. Legacy ownerless
-    /// projects (null owner) are manageable by Admin/SiteAdmin and assigned teams.
+    /// they're an org Admin, the project is <see cref="ProjectVisibility.Public"/>, or
+    /// they're on a team assigned to it. Legacy ownerless projects (null owner) are
+    /// manageable by Admin/SiteAdmin and assigned teams.
+    ///
+    /// <para><b>Public means everyone in the organisation manages it.</b> The three
+    /// levels are one ladder — Public is open both ways, Read-only narrows writing to
+    /// the assigned teams, Private narrows reading to them as well — so a level that
+    /// says "anyone may see this" is not also the level that reserves every write to
+    /// two people. Delete is the carve-out and stays with the owner and the admins
+    /// (<see cref="CanDeleteAsync"/>), as does the environment-updates axis
+    /// (<see cref="CanManageEnvironmentUpdatesAsync"/>), which is a team grant and
+    /// never follows from this one. See <c>.design/teams-and-visibility.md</c>.</para>
     /// </summary>
     public async Task<bool> CanManageAsync(int projectId, int? createdByUserId, CancellationToken ct = default)
     {
@@ -142,6 +153,12 @@ public sealed class ProjectAccess
         if (snapshot.UserId is null) return false;
         if (createdByUserId is not null && createdByUserId == snapshot.UserId) return true;
         if (snapshot.IsOrgAdmin) return true;
+
+        // A project that isn't in this org reads as null and grants nothing: the
+        // org query filter has already decided it doesn't exist for this caller.
+        var row = await GetProjectRowAsync(projectId, ct).ConfigureAwait(false);
+        if (row is { Visibility: ProjectVisibility.Public }) return true;
+
         return await IsOnAnAssignedTeamAsync(projectId, snapshot, ct).ConfigureAwait(false);
     }
 
@@ -149,34 +166,6 @@ public sealed class ProjectAccess
     /// Throws <see cref="ProjectAccessDeniedException"/> when the current user may
     /// not manage project <paramref name="projectId"/>.
     /// </summary>
-    /// <summary>
-    /// Whether the caller may change a solution's customer information - the contacts,
-    /// notes, modules and the like that support looks up. Wider than managing it, on
-    /// purpose: the people who learn that a contact has changed are the ones answering the
-    /// phone, not the solution's owner. So anyone who can see a Public solution may edit
-    /// it; a Read-only solution keeps its word and is edited by its managers only; a
-    /// Private one is only ever seen by its managers anyway. Where it is hosted is NOT part
-    /// of this - that decides which tabs the solution has, and stays a manager's call.
-    /// See <c>.design/solution-customer-info.md</c>.
-    /// </summary>
-    public async Task<bool> CanEditCustomerInfoAsync(
-        int projectId, int? createdByUserId, ProjectVisibility visibility, CancellationToken ct = default)
-    {
-        if (await CanManageAsync(projectId, createdByUserId, ct).ConfigureAwait(false)) return true;
-        return visibility == ProjectVisibility.Public && await CanViewAsync(projectId, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>Throws <see cref="ProjectAccessDeniedException"/> unless <see cref="CanEditCustomerInfoAsync"/>.</summary>
-    public async Task EnsureCanEditCustomerInfoAsync(
-        int projectId, int? createdByUserId, ProjectVisibility visibility, CancellationToken ct = default)
-    {
-        if (!await CanEditCustomerInfoAsync(projectId, createdByUserId, visibility, ct).ConfigureAwait(false))
-        {
-            throw new ProjectAccessDeniedException(
-                "This solution is read-only for people outside its teams. Ask its owner or an administrator to make the change.");
-        }
-    }
-
     public async Task EnsureCanManageAsync(int projectId, int? createdByUserId, CancellationToken ct = default)
     {
         if (!await CanManageAsync(projectId, createdByUserId, ct).ConfigureAwait(false))
@@ -206,7 +195,9 @@ public sealed class ProjectAccess
         // survive that trip.
         var userId = snapshot.UserId.Value;
         var teamIds = snapshot.TeamIds.ToList();
-        return p => p.CreatedByUserId == userId || p.Teams.Any(t => teamIds.Contains(t.TeamId));
+        return p => p.Visibility == ProjectVisibility.Public
+                    || p.CreatedByUserId == userId
+                    || p.Teams.Any(t => teamIds.Contains(t.TeamId));
     }
 
     // ── Environment-update axis (a different axis from manage) ──────────
@@ -329,10 +320,7 @@ public sealed class ProjectAccess
         var snapshot = await GetSnapshotAsync(ct).ConfigureAwait(false);
         if (snapshot.BypassesVisibility) return true;
 
-        var row = await _db.OeProjects.AsNoTracking()
-            .Where(p => p.Id == projectId)
-            .Select(p => new { p.Visibility, p.CreatedByUserId })
-            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        var row = await GetProjectRowAsync(projectId, ct).ConfigureAwait(false);
         if (row is null) return true;
         if (row.Visibility != ProjectVisibility.Private) return true;
 
@@ -470,6 +458,33 @@ public sealed class ProjectAccess
     private static Expression<Func<OeProject, bool>> LinkedToRelease(AppDbContext db, int releaseId)
         => p => p.Builds.Any(b => b.ReleaseId == releaseId)
                 || db.OeImportJobs.Any(j => j.ProjectId == p.Id && j.ReleaseId == releaseId);
+
+    /// <summary>
+    /// The one fact both the view and the manage axis need about a project — what
+    /// level it is at, and who owns it — cached for the DI scope beside
+    /// <see cref="_snapshot"/> and for the same reason. A page that asks both
+    /// questions about one project (every detail page does) pays one read, not two,
+    /// and the answer cannot change under it mid-render. A project that is not in
+    /// this org is absent from the dictionary's value, not from the dictionary: the
+    /// org query filter has already decided it does not exist for this caller, and
+    /// each axis says what that means for it.
+    /// </summary>
+    private readonly Dictionary<int, ProjectRow?> _projectRows = new();
+
+    /// <summary>The cached <c>(visibility, owner)</c> for one project; null when it isn't in this org.</summary>
+    private async Task<ProjectRow?> GetProjectRowAsync(int projectId, CancellationToken ct)
+    {
+        if (_projectRows.TryGetValue(projectId, out var cached)) return cached;
+
+        var row = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.Id == projectId)
+            .Select(p => new ProjectRow(p.Visibility, p.CreatedByUserId))
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+        return _projectRows[projectId] = row;
+    }
+
+    private sealed record ProjectRow(ProjectVisibility Visibility, int? CreatedByUserId);
 
     /// <summary>True when the snapshot's user is on at least one team assigned to the project.</summary>
     private async Task<bool> IsOnAnAssignedTeamAsync(int projectId, AccessSnapshot snapshot, CancellationToken ct)
