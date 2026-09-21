@@ -123,7 +123,7 @@ ranking cannot drift from source to source.
 | Solutions | name, short name | the Solution (its default tab, Customer) |
 | Environments | environment name; the Solution's name and short name as subtitle | the environment page |
 | Releases | release name and version | the release in Object Explorer |
-| Recipes | recipe title | the recipe |
+| Recipes | recipe title and tags | the recipe |
 | Go to | tool and page names | the page |
 
 **Go to is the one that is not a DI source.** It has no database behind it and its
@@ -143,10 +143,19 @@ them on the admin page that curates it. The sidebar's order is editorial (tools 
 then the pages that administer them) and it gets that pair, and the four like it
 (Templates, Cookbook, Object Explorer, Audit log), right by construction.
 
-Releases and Recipes search **names and titles only**, never objects, source or recipe
-bodies - those tables are large and Object Explorer already has a search built for them.
-A later version may add a "Search for '...' in Object Explorer" row that carries the
-query over; the palette itself never runs that search.
+Releases and Recipes search **names, titles and a recipe's tags only**, never objects,
+source or recipe bodies - those tables are large and Object Explorer already has a search
+built for them. A later version may add a "Search for '...' in Object Explorer" row that
+carries the query over; the palette itself never runs that search.
+
+A recipe's summary is left out on purpose, even though the Cookbook's own search reads it:
+a palette row is a title and one line, so a row that matched on a sentence the reader
+cannot see reads as a bug rather than as a result. Tags are in for the opposite reason -
+the row can show the tag it matched on, and does: a recipe's subtitle is its minimum
+application version and one tag, and that tag is the one a typed term matched when a term
+matched one, otherwise the recipe's first. The Cookbook page's own search is unchanged and
+still finds more than the palette does; the palette is for going somewhere, and the
+Cookbook is where a wider search belongs.
 
 ## The fence
 
