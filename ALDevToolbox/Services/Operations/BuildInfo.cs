@@ -22,7 +22,11 @@ namespace ALDevToolbox.Services.Operations;
 /// </summary>
 public sealed record BuildInfo(string Version, string ReleaseUrl, string? ReleaseDateDisplay)
 {
-    private const string RepositoryUrl = "https://github.com/mtaanquist/aldevtoolbox";
+    /// <summary>
+    /// Where the source and the releases live. The one copy: the sidebar's GitHub link
+    /// reads it too, so the two cannot drift when the repository moves again.
+    /// </summary>
+    public const string RepositoryUrl = "https://github.com/mtaanquist/al-workbench";
 
     /// <summary>
     /// The stamp for this build, or <c>null</c> when the build wasn't stamped

@@ -131,6 +131,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The repository was renamed from ALDevToolbox to al-workbench (2026-09), and the
+      # image path above follows the repository's name - but a GHCR package does not
+      # follow a rename. Anyone still pulling ghcr.io/mtaanquist/aldevtoolbox would
+      # simply stop seeing new versions, with no error to tell them why. So for a
+      # release or two the same image is also tagged at the old path. It is a copy of
+      # the manifest, not a second build, and it must never fail a release: if GitHub
+      # refuses the old package, the new path has already been published.
+      # Remove this step once the deployments have moved to the new path.
+      - name: Mirror to the pre-rename image path
+        continue-on-error: true
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            docker buildx imagetools create --tag "ghcr.io/mtaanquist/aldevtoolbox:${ref##*:}" "$ref"
+          done <<< "$TAGS"
+
       # Publish the GitHub Release for the tag, with GitHub's auto-generated
       # "What's Changed" notes. Runs last so a failed image build never
       # announces a release. The tag is taken from github.ref; creating the

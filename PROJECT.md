@@ -196,16 +196,35 @@ Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (
 
 ## Releases and image publishing
 
-Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile, pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR, and publishes the matching GitHub Release with auto-generated notes. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
+Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile, pushes `ghcr.io/mtaanquist/al-workbench` to GHCR, and publishes the matching GitHub Release with auto-generated notes. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
 
-The image path is not a literal: both `release.yml` and `staging.yml` build it from
-`ghcr.io/${{ github.repository }}`, so it follows the GitHub repository's name. If the
-repository is ever renamed to match the AL Workbench product name, the image moves with it
-and no workflow changes - but GHCR packages do not follow a repository rename. The old
-package keeps serving the tags it already has and never receives new ones, and the new
-package is created private and unlinked from the repository, so the first pull after the
-rename 404s until somebody makes it public. Publish both paths (two entries under
-`images:`) for a release or two, say so in the release notes, then drop the old one.
+**The repository was renamed** from `ALDevToolbox` to `al-workbench` in September 2026, to
+match the product name. The image path is not a literal: both `release.yml` and
+`staging.yml` build it from `ghcr.io/${{ github.repository }}`, so it moved with the rename
+and no workflow had to change - but a GHCR package does not follow a repository rename. The
+old package, `ghcr.io/mtaanquist/aldevtoolbox`, keeps serving the tags it already has and
+would never receive a new one, so anything still pulling it would silently stop updating.
+Two things cover the move:
+
+- `release.yml` has a **mirror step** that tags each release at the old path as well. It
+  copies the manifest rather than building twice, and it is `continue-on-error`, so a refusal
+  from the old package can never fail a release. Delete the step once every deployment has
+  moved; it says so in its own comment.
+- `compose.yaml`'s tag variable is `ALWORKBENCH_TAG` with `ALDEVTOOLBOX_TAG` as a permanent
+  fallback, so an `.env` written before the rename keeps pinning what it pinned. It **still
+  pulls the old path**, and has to until the new package exists and is public: CI's compose
+  smoke test pulls the image anonymously, so pointing it at a path that is missing or
+  private fails every pull request (that is what happened the first time). The order is:
+  release once from the renamed repository, make the `al-workbench` package public, then
+  flip the image line.
+
+The new path only holds releases cut after the rename (v11.9.1 onwards). A deployment
+pinned to an older version must keep the old image path until it upgrades - `latest` and
+anything newer are at both.
+
+A package created by the first push to a new path starts **private**: until somebody makes it
+public in the package's settings, pulls of the new path 404. Old links to the repository,
+its issues and its pull requests redirect for as long as nothing else takes the old name.
 
 **Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping (10 is the tag the Upgrades work is cut as):
 
@@ -243,7 +262,7 @@ rename 404s until somebody makes it public. Publish both paths (two entries unde
 
 **The image is stamped with its version.** `release.yml` passes the tag and the build date to the Dockerfile as the `RELEASE_VERSION` / `RELEASE_DATE` build args, which reach `dotnet publish` as the `ReleaseVersion` / `ReleaseDate` MSBuild properties and land in the assembly as metadata attributes. `Services/Operations/BuildInfo` reads them back and the sidebar footer shows "Version x.y.z" under the copyright, linking to that release's notes with the release date on hover. Builds without the args (local `dotnet run`, plain `docker build`, staging images) carry no stamp and show the copyright line alone — never a link to a release they aren't.
 
-Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/aldevtoolbox` regardless of the repo's casing.
+Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/al-workbench` regardless of the repo's casing.
 
 **Staging previews.** `.github/workflows/staging.yml` publishes the same image under a `staging` tag so a branch can be *run* before it merges. It pushes both `staging` (moves every run) and `staging-<sha>` (immutable, so a preview worth keeping can be pinned). Run it with `ALDEVTOOLBOX_TAG=staging docker compose up -d`.
 
