@@ -57,7 +57,7 @@ jobs:
       #
       # metadata-action rather than a literal image name for the same reason
       # release.yml uses it: it lowercases `github.repository`, so the repo's
-      # casing (ALDevToolbox) doesn't have to be hardcoded here to satisfy GHCR.
+      # casing doesn't have to be hardcoded here to satisfy GHCR.
       - name: Derive image tags
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -95,7 +95,7 @@ jobs:
             echo "Run it with the repo's compose file:"
             echo
             echo '```bash'
-            echo "ALDEVTOOLBOX_TAG=staging docker compose pull aldevtoolbox"
-            echo "ALDEVTOOLBOX_TAG=staging docker compose up -d"
+            echo "ALWORKBENCH_TAG=staging docker compose pull aldevtoolbox"
+            echo "ALWORKBENCH_TAG=staging docker compose up -d"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

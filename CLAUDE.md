@@ -100,7 +100,7 @@ The line runs exactly here:
 | Visible copy — page titles, the brand in the shell, captions, empty states, validation messages, emails, docs pages | The C# namespace and assembly, `ALDevToolbox.dll`, the csproj and solution file |
 | OCI image labels, `README.md` / `PROJECT.md` prose, `.design/` documents | The compose service `aldevtoolbox` and the Caddy upstream that resolves it by that name |
 | The GitHub check-run name and the repository-standards ruleset name | In-container paths `/var/lib/aldevtoolbox/{dp-keys,backups,altool}` |
-| The seeded ruleset description and README body in `PlatformOrganizationFiles` | `POSTGRES_USER` / `POSTGRES_DB` defaults, and the `ALDEVTOOLBOX_TAG` env var |
+| The seeded ruleset description and README body in `PlatformOrganizationFiles` | `POSTGRES_USER` / `POSTGRES_DB` defaults. (`ALDEVTOOLBOX_TAG` is now `ALWORKBENCH_TAG`; the old name stays as a fallback in `compose.yaml` and must not be removed) |
 | The app-owned stylesheets' header comments (`app.css`, `code-editor.css`, `source-viewer.css`) | `workspace.aldt.toml`, the `aldt` JS namespace, and the `ALDT` MCP server name |
 | | Every Data Protection purpose string (`ALDevToolbox.UserTotpSecret`, `ALDevToolbox.EmailOutbox.Body`, the SMTP / off-site / Entra / GitHub secrets) |
 | | The `aldevtoolbox-` backup filename prefix and the `aldevtoolbox/` off-site key prefix |

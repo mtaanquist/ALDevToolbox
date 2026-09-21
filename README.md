@@ -59,7 +59,7 @@ docker compose up
 
 This brings up Postgres and the app, runs migrations, ensures the singleton **system org** exists (`Default`, flagged `IsSystem = true`, the canonical templates other orgs fork from), and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
 
-Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yaml`, then run `docker compose up --build`.
+Pin a specific release with `ALWORKBENCH_TAG` (e.g. `ALWORKBENCH_TAG=6.0.0`); it defaults to `latest`. `ALDEVTOOLBOX_TAG`, the name it had before the repository was renamed, still works. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yaml`, then run `docker compose up --build`.
 
 The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery. Connecting the workbench to a GitHub organisation (the App registration, the org connection, and per-member links) is in [`docs/github-app-setup.md`](./docs/github-app-setup.md).
 
@@ -146,7 +146,7 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 
 | Variable                                      | Purpose                                                   | Default                |
 |-----------------------------------------------|-----------------------------------------------------------|------------------------|
-| `ALDEVTOOLBOX_TAG`                            | Image tag the `aldevtoolbox` service pulls from GHCR.     | `latest`               |
+| `ALWORKBENCH_TAG`                             | Image tag the `aldevtoolbox` service pulls from GHCR. `ALDEVTOOLBOX_TAG` still works as a fallback. | `latest`               |
 | `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email. Read once on a fresh database (no users yet); ignored after. | none |
 | `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password. Same fresh-database-only rule.      | none                   |
 | `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | required |
@@ -203,9 +203,9 @@ The lone organisation *is* the Default/system org, so its Administration and tem
 
 ## Releases and published images
 
-Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool"; see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
+Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/al-workbench`. (Until the deployments have moved, each release is also tagged at the pre-rename path, `ghcr.io/mtaanquist/aldevtoolbox`.) Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool"; see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
 
-The repo's [`compose.yaml`](./compose.yaml) already deploys from these images: the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}`. So a production deployment is just that file plus a `.env`:
+The repo's [`compose.yaml`](./compose.yaml) already deploys from these images: the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/al-workbench:${ALWORKBENCH_TAG:-${ALDEVTOOLBOX_TAG:-latest}}`. So a production deployment is just that file plus a `.env`:
 
 ```bash
 # Copy the annotated sample and fill in the essentials.
@@ -213,7 +213,7 @@ cp .env-sample .env
 #   POSTGRES_PASSWORD=change-me-to-something-strong   # required
 #   BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 #   BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
-#   ALDEVTOOLBOX_TAG=6.0.0        # optional: pin a release; defaults to latest
+#   ALWORKBENCH_TAG=6.0.0         # optional: pin a release; defaults to latest
 
 docker compose up -d
 docker compose pull && docker compose up -d   # later: grab a newer image and recreate

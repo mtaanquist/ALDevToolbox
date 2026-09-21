@@ -54,9 +54,15 @@ services:
     # PROJECT.md "Releases and image publishing". For a release vX.Y.Z the
     # moving tags `latest`, `X` (major) and `X.Y` (minor) plus the exact
     # `X.Y.Z` are all pushed; pin as
-    # loosely or tightly as you like via ALDEVTOOLBOX_TAG. To build from source
+    # loosely or tightly as you like via ALWORKBENCH_TAG. To build from source
     # instead, comment out `image:` and uncomment `build: .`.
-    image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}
+    #
+    # The repository was renamed to al-workbench (2026-09) and the image path with
+    # it. ALDEVTOOLBOX_TAG, the variable's old name, still works and always will:
+    # the new name wins when both are set, and an .env written before the rename
+    # keeps pinning the version it pinned. The service name below stays
+    # `aldevtoolbox` on purpose - Caddy and the volumes resolve it (see CLAUDE.md).
+    image: ghcr.io/mtaanquist/al-workbench:${ALWORKBENCH_TAG:-${ALDEVTOOLBOX_TAG:-latest}}
     # build: .
     depends_on:
       db:
