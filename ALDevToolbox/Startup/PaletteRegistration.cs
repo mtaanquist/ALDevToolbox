@@ -23,6 +23,7 @@ public static class PaletteRegistration
     public static IServiceCollection AddPalette(this IServiceCollection services)
     {
         services.AddScoped<PaletteSearchService>();
+        services.AddScoped<IPaletteSource, ALDevToolbox.Services.Palette.Sources.ReleasePaletteSource>();
         return services;
     }
 }

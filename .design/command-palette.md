@@ -122,7 +122,7 @@ ranking cannot drift from source to source.
 | --- | --- | --- |
 | Solutions | name, short name | the Solution (its default tab, Customer) |
 | Environments | environment name; the Solution's name and short name as subtitle | the environment page |
-| Releases | release name and version | the release in Object Explorer |
+| Releases | release label, BC version, country, and the name of the Solution whose build produced it | the release in Object Explorer |
 | Recipes | recipe title | the recipe |
 | Go to | tool and page names | the page |
 
@@ -230,7 +230,15 @@ while it is open, and the selected row is announced (#888).
 ## Deliberately left out
 
 - Commands that write to a tenant, ever (see "What it never does").
-- Searching inside releases, source, or recipe bodies.
+- Searching inside releases, source, or recipe bodies. That includes searching a
+  release's *objects* from the palette (`table 18`, `page customer card`), which
+  #883 raised as a stretch: the palette would have to pick which release the
+  objects came from, and Object Explorer's own search already answers that
+  question once a release is open.
+- Ordering a group by anything but the shared ranking. #883 asked for a
+  Solution's releases newest-first; ranking breaks every tie by title instead,
+  for the reason under "Matching and ranking" - one ranking function, or it
+  drifts per source.
 - Typo tolerance and initials.
 - Server-side recents, pinned items, per-user ranking.
 - From the first version: pipelines, teams, templates and docs pages as sources. Each is
