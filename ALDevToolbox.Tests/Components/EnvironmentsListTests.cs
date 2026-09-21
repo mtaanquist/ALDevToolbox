@@ -189,7 +189,7 @@ public sealed class EnvironmentsListTests : IDisposable
         cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
 
         cut.WaitForAssertion(() =>
-            cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Copy...").Click());
+            cut.FindAll("button.menu__item").Single(b => b.TextContent.Trim() == "Copy this environment...").Click());
 
         cut.WaitForAssertion(() =>
         {
@@ -224,7 +224,7 @@ public sealed class EnvironmentsListTests : IDisposable
 
         cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
         cut.FindAll("button.menu__item").Select(b => b.TextContent.Trim())
-            .Should().NotContain("Copy...");
+            .Should().NotContain("Copy this environment...");
     }
 
     [Fact]
@@ -373,7 +373,7 @@ public sealed class EnvironmentsListTests : IDisposable
         var menu = cut.FindAll("button.menu__item, a.menu__item").Select(b => b.TextContent.Trim()).ToList();
         menu.Should().Contain("Recover this environment...")
             .And.NotContain("Upload an app...", "nothing can be installed on a deleted environment")
-            .And.NotContain("Copy...", "and there is nothing to copy until it is back");
+            .And.NotContain("Copy this environment...", "and there is nothing to copy until it is back");
         menu[0].Should().Be("Recover this environment...", "it is the only thing left to do, and the only one with a deadline");
     }
 

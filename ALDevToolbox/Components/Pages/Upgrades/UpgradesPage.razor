@@ -601,11 +601,11 @@
     // ── The view, remembered ────────────────────────────────────────────
 
     /// <summary>
-    /// Where this browser keeps the last view picked. Whoever runs the upgrades looks at
-    /// the same slice every morning (production, usually), and picking it again each
-    /// visit is a chore. Kept in the browser rather than on the account: it is a habit
-    /// of the desk somebody works at, and it costs no table. The search box is not part
-    /// of it - a search is a question, not a habit.
+    /// Where the last view picked is kept for as long as this browser session lasts:
+    /// coming back to the page, or reloading it, keeps the slice somebody was working in
+    /// (production, usually), and a new session starts on everything again. Session
+    /// storage on purpose (maintainer's decision, 2026-09-21) - not the account, and not
+    /// for good. The search box is not part of it: a search is a question, not a habit.
     /// </summary>
     private const string ViewStorageKey = "aldt-upgrades-view";
 
@@ -624,7 +624,7 @@
         string? saved;
         try
         {
-            saved = await JS.InvokeAsync<string?>("localStorage.getItem", ViewStorageKey);
+            saved = await JS.InvokeAsync<string?>("sessionStorage.getItem", ViewStorageKey);
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException or TaskCanceledException)
         {
@@ -639,7 +639,7 @@
     {
         try
         {
-            await JS.InvokeVoidAsync("localStorage.setItem", ViewStorageKey, view);
+            await JS.InvokeVoidAsync("sessionStorage.setItem", ViewStorageKey, view);
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException or TaskCanceledException)
         {

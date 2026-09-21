@@ -179,7 +179,7 @@ public sealed class UpgradesPageTests : IDisposable
     public async Task A_bare_visit_opens_on_the_view_this_browser_picked_last()
     {
         await SeedOneEnvironmentAsync();
-        _ctx.JSInterop.Setup<string?>("localStorage.getItem", "aldt-upgrades-view").SetResult("0Production");
+        _ctx.JSInterop.Setup<string?>("sessionStorage.getItem", "aldt-upgrades-view").SetResult("0Production");
         var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
 
         var cut = _ctx.Render<UpgradesPage>();
@@ -191,7 +191,7 @@ public sealed class UpgradesPageTests : IDisposable
     public async Task An_address_that_names_a_filter_outranks_the_remembered_view()
     {
         await SeedOneEnvironmentAsync();
-        _ctx.JSInterop.Setup<string?>("localStorage.getItem", "aldt-upgrades-view").SetResult("0Production");
+        _ctx.JSInterop.Setup<string?>("sessionStorage.getItem", "aldt-upgrades-view").SetResult("0Production");
         var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
         nav.NavigateTo(nav.GetUriWithQueryParameter("waiting", "1"));
         var before = nav.Uri;

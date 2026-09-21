@@ -519,22 +519,6 @@ public static class BcSessionDisplay
         return string.IsNullOrWhiteSpace(session.EntryPointOperation) ? Idle : session.EntryPointOperation;
     }
 
-    /// <summary>
-    /// The line the environment's Toolbox history keeps. It names the person and what
-    /// their session was doing, because "cancelled session 47" answers nothing a week
-    /// later - which is the whole reason the history line is written from the session
-    /// itself rather than from its id.
-    /// </summary>
-    public static string HistoryLine(BcSession session)
-    {
-        var who = string.IsNullOrWhiteSpace(session.UserId) ? "Somebody's" : $"{session.UserId}'s";
-        var doing = Doing(session);
-        var running = string.Equals(doing, Idle, StringComparison.Ordinal)
-            ? string.Empty
-            : $", which was running {doing}";
-        return $"Ended {who} {ClientTypePhrase(session.ClientType)} session{running}.";
-    }
-
     /// <summary>How long, in the same rounded words the Operations tab uses for "Took".</summary>
     public static string Duration(TimeSpan? duration)
     {

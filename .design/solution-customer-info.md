@@ -78,8 +78,16 @@ action, not a settings form: the named reader outnumbers the named editor many t
 over, and a page of inputs is a poor way to read a phone number.
 
 Reading follows the Solution's visibility, unchanged: whoever can see the Solution sees
-all of this. Editing is for people who manage it (owner, org Admin, a member of an
-assigned team) - the gate the rest of the page has.
+all of this. **Editing is wider than managing the Solution, on purpose** (maintainer's
+decision, 2026-09-21): the people who learn that a contact has changed are the ones
+answering the phone, not the Solution's owner. `ProjectAccess.CanEditCustomerInfoAsync`
+decides - anyone who can see a **Public** Solution may edit its customer information; a
+**Read-only** Solution keeps its word and is edited by its managers only; a **Private** one
+is only ever seen by its managers. One field is excepted: **Hosted by** decides which tabs
+the Solution has, so changing it stays with the people who manage the Solution, and the
+editor says so beside the locked field. None of these edits is in the audit trail - a
+contact corrected or a version typed in is too frequent and too small to be worth the noise
+(same decision); the connection and team grants remain what the trail is for.
 
 Sections, top to bottom:
 
@@ -201,9 +209,3 @@ There is no sheet for a list with a rail, so this needs a design pass upstream.
 - **No comments thread.** Notes are one text field; history is the audit log.
 - **No MCP surface** in these slices. Contacts are personal data; handing them to an
   agent is a conversation of its own.
-
-## Open questions
-
-- Should a plain `User` who can see a Solution be able to *edit* its customer
-  information? Support are the people who learn a contact has changed. The current
-  answer is no (manage gate); revisit once it is in use.

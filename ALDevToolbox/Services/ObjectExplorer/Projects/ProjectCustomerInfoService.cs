@@ -7,8 +7,8 @@ namespace ALDevToolbox.Services.ObjectExplorer.Projects;
 
 /// <summary>
 /// What support looks up about a customer: where their Business Central runs, how to
-/// get in, who to call. Reading follows the solution's visibility; writing is for the
-/// people who manage it. See <c>.design/solution-customer-info.md</c>.
+/// get in, who to call. Reading follows the solution's visibility; so does writing, bar a
+/// Read-only solution and the hosting type - see <c>ProjectAccess.CanEditCustomerInfoAsync</c>. See <c>.design/solution-customer-info.md</c>.
 /// </summary>
 public sealed class ProjectCustomerInfoService
 {
@@ -88,7 +88,13 @@ public sealed class ProjectCustomerInfoService
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["HostingType"] = "This solution no longer exists." });
-        await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
+        await _access.EnsureCanEditCustomerInfoAsync(project.Id, project.CreatedByUserId, project.Visibility, ct);
+        // Where it is hosted decides which tabs the solution has, so changing it stays
+        // with the people who manage the solution; everything else here is anyone's to fix.
+        if (input.HostingType != project.HostingType)
+        {
+            await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
+        }
 
         var onPremises = input.HostingType is not (null or ProjectHostingType.MicrosoftCloud);
         Guid? tenantId = null;
@@ -368,14 +374,14 @@ public sealed class ProjectCustomerInfoService
         await _db.SaveChangesAsync(ct);
     }
 
-    /// <summary>The tracked solution, once the caller is known to manage it.</summary>
+    /// <summary>The tracked solution, once the caller is known to be allowed to edit its customer information.</summary>
     private async Task<OeProject> LoadManagedProjectAsync(int projectId, CancellationToken ct)
     {
         _ = _orgContext.CurrentOrganizationId
             ?? throw new InvalidOperationException("Changing customer information needs an authenticated request.");
         var project = await _db.OeProjects.FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
             ?? throw Gone("Name", "This solution no longer exists.");
-        await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
+        await _access.EnsureCanEditCustomerInfoAsync(project.Id, project.CreatedByUserId, project.Visibility, ct);
         return project;
     }
 
