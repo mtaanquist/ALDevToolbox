@@ -2,7 +2,7 @@ namespace ALDevToolbox.Services.SingleTenant;
 
 /// <summary>
 /// Process-local view of the single-tenant deployment flag. When a company
-/// hosts the toolbox internally for one organisation, multi-tenant surfaces
+/// hosts the workbench internally for one organisation, multi-tenant surfaces
 /// — storage quotas, per-tenant snapshots, and self-service org creation at
 /// signup — are noise. <c>SINGLE_TENANT_MODE=1</c> hides those surfaces and
 /// disables their behaviour (enforcement no-ops, the per-tenant snapshot

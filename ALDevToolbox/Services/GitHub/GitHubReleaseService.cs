@@ -52,7 +52,7 @@ public sealed record GitHubReleaseOption(
     IReadOnlyList<string> AppFileNames);
 
 /// <summary>
-/// GitHub Releases as the toolbox uses them (issue #632), in both directions:
+/// GitHub Releases as the workbench uses them (issue #632), in both directions:
 ///
 /// <list type="bullet">
 /// <item><description><strong>Out.</strong> A build pipeline can name one of its
@@ -337,7 +337,7 @@ public sealed class GitHubReleaseService
     /// <summary>The Release body: which apps this build produced, and where the build itself is.</summary>
     private string ReleaseBody(IReadOnlyList<(string Name, string Version)> apps, int projectBuildId)
     {
-        var lines = new List<string> { "Published by AL Dev Toolbox.", string.Empty };
+        var lines = new List<string> { "Published by AL Workbench.", string.Empty };
         foreach (var app in apps.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
         {
             lines.Add($"- {app.Name} {app.Version}");
@@ -545,7 +545,7 @@ public sealed class GitHubReleaseService
         return owner.Length > 0 && name.Length > 0;
     }
 
-    /// <summary>A Release asset the toolbox can install: a compiled extension, not a packaging by-product.</summary>
+    /// <summary>A Release asset the workbench can install: a compiled extension, not a packaging by-product.</summary>
     private static bool IsAppAsset(GitHubReleaseAsset asset) =>
         asset.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase)
         && !asset.Name.EndsWith(".dep.app", StringComparison.OrdinalIgnoreCase);

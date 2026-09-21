@@ -9,7 +9,7 @@
 
 @*
     Repository standards (issue #628): the files and the branch rules every
-    repository the toolbox creates gets. Reached from the "Repository standards"
+    repository the workbench creates gets. Reached from the "Repository standards"
     row on Administration -> Repositories.
 
     Named user: an org Admin who knows GitHub well and knows nothing about this
@@ -17,13 +17,13 @@
     things they already set by hand today.
 *@
 
-<PageTitle>Repository standards · Administration · AL Dev Toolbox</PageTitle>
+<PageTitle>Repository standards · Administration · AL Workbench</PageTitle>
 
 <EditPage Title="Repository standards"
           IsLoading="@(_loading)" Sticky="true"
           Trail='@([new("Administration", "/admin/administration"), new("Repositories", "/admin/administration/repositories"), new("Repository standards")])'>
     <SubtitleContent>
-        What every GitHub repository the toolbox creates starts with: the files your
+        What every GitHub repository the workbench creates starts with: the files your
         team expects to find, and the rules on its default branch. Repositories on
         Azure DevOps are not affected.
     </SubtitleContent>
@@ -110,7 +110,7 @@
                                     Add a file, for example
                                     <code class="code">.github/workflows/build.yml</code> or
                                     <code class="code">CODEOWNERS</code>, and every repository the
-                                    toolbox creates will have it from the day it is made.
+                                    workbench creates will have it from the day it is made.
                                 </Text>
                                 <Action>
                                     <button type="button" class="btn" @onclick="StartAdd">
@@ -206,7 +206,7 @@
                         </p>
                         <Alert Tone="AlertTone.Info">
                             <span>
-                                Setting branch rules needs AL Dev Toolbox to be allowed to change
+                                Setting branch rules needs AL Workbench to be allowed to change
                                 repository settings in your GitHub organisation. If it is not, the
                                 repository is still created with its files and whoever created it is
                                 told the rules were not set.

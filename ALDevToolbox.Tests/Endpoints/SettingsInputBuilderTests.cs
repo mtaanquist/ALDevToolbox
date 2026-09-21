@@ -19,10 +19,10 @@ public class SettingsInputBuilderTests
     private static SystemSettingsView Current(bool? startTls = true) => new(
         SmtpHost: "smtp.cronus.com",
         SmtpPort: 587,
-        SmtpUser: "toolbox",
+        SmtpUser: "workbench",
         HasSmtpPassword: true,
         SmtpFrom: "noreply@cronus.com",
-        SmtpFromName: "AL Dev Toolbox",
+        SmtpFromName: "AL Workbench",
         SmtpUseStartTls: startTls,
         BannerText: "Scheduled maintenance on Sunday.",
         BackupScheduleEnabled: true,
@@ -65,7 +65,7 @@ public class SettingsInputBuilderTests
 
         input.SmtpUseStartTls.Should().BeFalse();
         ResolvedSmtpSettings.TryFrom(
-                host: "smtp.cronus.com", port: 587, user: "toolbox", password: "pw",
+                host: "smtp.cronus.com", port: 587, user: "workbench", password: "pw",
                 from: "noreply@cronus.com", fromName: null,
                 useStartTls: input.SmtpUseStartTls)!
             .UseStartTls.Should().BeFalse();

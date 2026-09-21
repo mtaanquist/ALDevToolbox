@@ -9,7 +9,7 @@ namespace ALDevToolbox.Domain.Entities;
 /// <item><description><c>"entra"</c> — Microsoft Entra ID, the one federated
 /// <em>sign-in</em>. These rows let someone log in.</description></item>
 /// <item><description><c>"github"</c> — a GitHub account <em>link</em> (issue
-/// #621). These rows never sign anyone in; they exist so the toolbox can act
+/// #621). These rows never sign anyone in; they exist so the workbench can act
 /// as that person on GitHub and ask GitHub what they may see. See
 /// <c>.design/github-integration.md</c>.</description></item>
 /// </list>

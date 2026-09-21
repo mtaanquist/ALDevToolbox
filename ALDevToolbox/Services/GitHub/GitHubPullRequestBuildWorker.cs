@@ -102,7 +102,7 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
         if (resolved is null)
         {
             // Ordinary rather than alarming: a GitHub organisation can have the
-            // app installed without any toolbox organisation having connected it,
+            // app installed without any workbench organisation having connected it,
             // and a disconnected one keeps its webhook until somebody removes the
             // installation on GitHub.
             _logger.LogInformation(
@@ -127,7 +127,7 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
         {
             // Dropped before any check run is opened: there is nothing to leave
             // spinning, and a pull request whose author we cannot vouch for is
-            // one the toolbox says nothing about at all.
+            // one the workbench says nothing about at all.
             return;
         }
 
@@ -194,7 +194,7 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
                 {
                     await checks.AbandonAsync(
                         job.InstallationId, job.RepositoryFullName, openRun,
-                        "The toolbox could not start this build. Push again, or look at the solution in the toolbox.",
+                        "The workbench could not start this build. Push again, or look at the solution in the workbench.",
                         ct).ConfigureAwait(false);
                 }
             }

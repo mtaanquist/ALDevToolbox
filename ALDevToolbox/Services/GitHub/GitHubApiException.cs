@@ -57,7 +57,7 @@ public sealed class GitHubAppNotConfiguredException : Exception
 
 /// <summary>
 /// A write was refused because the file in the repository is no longer the
-/// version the toolbox read. Its own type rather than a
+/// version the workbench read. Its own type rather than a
 /// <see cref="GitHubApiException"/> because it is not a failure to report: it
 /// is the answer that stops the Translator committing over somebody else's
 /// work, and the page it reaches renders a way back rather than an error.

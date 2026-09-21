@@ -98,7 +98,7 @@ public sealed class GenerateWorkspaceRepositoryToolTests : IDisposable
     }
 
     [Fact]
-    public async Task It_can_only_create_in_the_organisation_the_toolbox_organisation_connected()
+    public async Task It_can_only_create_in_the_organisation_the_workbench_organisation_connected()
     {
         await ReadyAsync();
         var api = WritableApi();
@@ -318,7 +318,7 @@ public sealed class GenerateWorkspaceRepositoryToolTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

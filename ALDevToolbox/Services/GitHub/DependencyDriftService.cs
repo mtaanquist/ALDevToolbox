@@ -74,7 +74,7 @@ public sealed record DependencyDriftPullRequest(
 /// that changed and leaves the rest of the file alone.</para>
 ///
 /// <para><strong>Behind, never ahead.</strong> A value is only proposed when
-/// what the manifest asks for is <em>lower</em> than what the toolbox now knows
+/// what the manifest asks for is <em>lower</em> than what the workbench now knows
 /// about, compared numerically by <see cref="BcVersionComparer"/>. A repository
 /// already on the new version is not offered a pull request that changes
 /// nothing, and one deliberately pinned ahead is left alone.</para>
@@ -487,7 +487,7 @@ public sealed class DependencyDriftService
 
     /// <summary>
     /// The <c>owner/name</c> of every GitHub repository a live solution tracks,
-    /// narrowed to the connected organisation - the toolbox has no business
+    /// narrowed to the connected organisation - the workbench has no business
     /// reading a repository somewhere else, and could not open a pull request on
     /// one either.
     /// </summary>
@@ -713,7 +713,7 @@ public sealed class DependencyDriftService
         if (repo is null)
         {
             return new DependencyDriftPullRequest(fullName, null, false, 0,
-                "That repository is not one the toolbox can offer you. Ask an owner of your GitHub organisation "
+                "That repository is not one the workbench can offer you. Ask an owner of your GitHub organisation "
                 + "to give you access to it.");
         }
 
@@ -750,7 +750,7 @@ public sealed class DependencyDriftService
         if (blobs.Count == 0)
         {
             return new DependencyDriftPullRequest(fullName, null, false, 0,
-                "Every value the toolbox would have changed here is already up to date. Check again to refresh "
+                "Every value the workbench would have changed here is already up to date. Check again to refresh "
                 + "what it knows.");
         }
 
@@ -765,7 +765,7 @@ public sealed class DependencyDriftService
             {
                 throw Refuse(
                     $"Branch {target.Branch} appeared on '{repo.FullName}' while this was being prepared. "
-                    + "Try again and the toolbox will pick the next name.");
+                    + "Try again and the workbench will pick the next name.");
             }
         }
         else if (!await _github.UpdateBranchAsync(token, repo.Owner, repo.Name, target.Branch, commit, ct))
@@ -969,7 +969,7 @@ public sealed class DependencyDriftService
         }
 
         lines.Add("Only the values listed above were changed; the rest of each file is untouched.");
-        lines.Add("Sent from AL Dev Toolbox.");
+        lines.Add("Sent from AL Workbench.");
         return string.Join("\n\n", lines);
     }
 
@@ -1025,16 +1025,16 @@ public sealed class DependencyDriftService
     {
         GitHubRepositoryReadiness.NotConfigured =>
             "GitHub is not set up on this server yet, so a pull request cannot be opened. Ask whoever runs "
-            + "AL Dev Toolbox to set it up.",
+            + "AL Workbench to set it up.",
         GitHubRepositoryReadiness.NotConnected =>
             "Your organisation has not connected a GitHub organisation yet, so there is nowhere to open a pull "
             + "request. An administrator connects one under Administration -> Repositories.",
         GitHubRepositoryReadiness.LinkNeedsRepair =>
-            "Your GitHub account is no longer connected to the toolbox. Connect it again on your account page "
+            "Your GitHub account is no longer connected to the workbench. Connect it again on your account page "
             + "under Repository access, then try this again.",
         _ =>
             "Connect your own GitHub account first, on your account page under Repository access. The pull request "
-            + "is opened in your name, so the toolbox needs your GitHub account to do it.",
+            + "is opened in your name, so the workbench needs your GitHub account to do it.",
     };
 
     private static PlanValidationException Refuse(string message) =>

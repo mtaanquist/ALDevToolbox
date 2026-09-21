@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in AL Dev Toolbox.
+Thanks for your interest in AL Workbench.
 
 ## Licensing of contributions
 

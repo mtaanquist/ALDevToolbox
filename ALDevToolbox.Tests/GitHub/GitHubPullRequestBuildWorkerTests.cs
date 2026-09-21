@@ -61,7 +61,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
     public async Task An_installation_nobody_connected_resolves_to_nothing()
     {
         // Ordinary rather than alarming: an app can be installed on a GitHub
-        // organisation that no toolbox organisation has connected, and a
+        // organisation that no workbench organisation has connected, and a
         // disconnected one keeps its webhook until the installation is removed.
         await ConfigureDeploymentAsync();
         await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
@@ -166,7 +166,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         // 404 is "not a member", 302 is "you are not in this organisation
         // either", and no answer at all is not a yes. All three refuse, and none
         // of them opens a check run - there is nothing to leave spinning on a
-        // pull request the toolbox will say nothing about.
+        // pull request the workbench will say nothing about.
         await ConfigureDeploymentAsync();
         await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
         await SeedSolutionTrackingTheRepositoryAsync();
@@ -314,7 +314,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

@@ -140,7 +140,7 @@ public sealed class WorkspaceConfigServiceRoundTripTests : IDisposable
 
         var toml = svc.BuildWorkspace(plan, Array.Empty<WorkspaceExtensionIdentity>());
 
-        toml.Should().StartWith("# AL Dev Toolbox project config.");
+        toml.Should().StartWith("# AL Workbench project config.");
     }
 
     [Fact]

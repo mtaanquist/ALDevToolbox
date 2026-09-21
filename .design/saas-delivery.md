@@ -302,7 +302,7 @@ the naming suggested.
 |---|---|---|
 | `id` / `organization_id` / `project_id` / `created_by_user_id` / `deleted_at` | | Standard, org-scoped, soft-deletable, owner-managed (same as `OePipeline`). |
 | `name` | `text` | e.g. `Contoso App → Production`. |
-| `artifact_source` | `text` | Where the apps come from: `build` (the default) or `github_release`. Added by #632, when "redeploy a version the toolbox did not build" stopped being a hole in the model. |
+| `artifact_source` | `text` | Where the apps come from: `build` (the default) or `github_release`. Added by #632, when "redeploy a version the workbench did not build" stopped being a hole in the model. |
 | `build_pipeline_id` | FK → `oe_pipelines`, **nullable** | The artifact source when `artifact_source = build` — releases publish *this* build pipeline's builds. Null (and unused) for a Release-sourced pipeline. |
 | `github_release_repository_id` | FK → `oe_project_repositories`, nullable | The repository whose GitHub Releases the pipeline installs, when `artifact_source = github_release`. Exactly one of these two is set. |
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
@@ -334,12 +334,12 @@ specific build. Mirrors how `OeProjectBuild` records a build run:
   install `operation_id`, the operation's result, message.
 - `failure_message`, and a log section for the raw API responses (secret-free).
 
-**As built (#632):** a delivery can also publish a build the toolbox never compiled. Choosing a
+**As built (#632):** a delivery can also publish a build the workbench never compiled. Choosing a
 tag on a Release-sourced pipeline downloads that Release's `.app` assets and **stages them as an
 ordinary `OeProjectBuild`** — status `ready`, no `pipeline_id`, `github_release_tag` set — so
 `OeProjectDelivery` and every downstream reader are unchanged; `ScheduleDeliveryAsync` accepts such a
 build in place of its build-pipeline check. `oe_project_builds` gained `github_release_tag`,
-`github_release_url` and `github_release_error` for both halves of that traffic: a build the toolbox
+`github_release_url` and `github_release_error` for both halves of that traffic: a build the workbench
 compiled records where it was *published*, and a staged build records where it came *from*.
 
 **As built:** `oe_project_deliveries` also carries a denormalised `project_id` (so the worker
@@ -429,7 +429,7 @@ panel opens and reused for a short window after that:
   the delivery ends when BC accepts the upload, and this is where it can still be pulled
   back. Cancelling removes the uploaded package permanently, so the version has to be
   released again afterwards.
-- **Installed apps**, with per-tenant extensions first and anything this toolbox has
+- **Installed apps**, with per-tenant extensions first and anything this workbench has
   actually released to that environment marked as ours. The correlation is best-effort, by
   app id, from the delivery history — enough to answer "is that pending install mine?".
 - **AppSource updates waiting** — AppSource (Marketplace) apps only. The endpoint is documented
@@ -454,7 +454,7 @@ and a stale answer defeats the point — but it treated every kind of staleness 
 answers that go stale fastest are the ones **we** changed, so those invalidate the entry
 outright: publishing a build, cancelling a scheduled install, choosing a target version,
 moving an update's date, starting an update now. A consultant can therefore never be shown
-a stale panel as a consequence of something they just did in the toolbox. What remains is
+a stale panel as a consequence of something they just did in the workbench. What remains is
 a change made directly in Business Central within the last quarter of an hour, and the
 panel's **Refresh** re-reads past the cache for exactly that.
 
@@ -586,7 +586,7 @@ preserve it by ordering on artifact id rather than re-sorting):
 resolves dependencies BC can already see — it cannot conjure a sibling extension that hasn't been
 uploaded yet — so it supplements our dependency ordering rather than replacing it.
 
-**No language is sent.** `languageId` sets the extension's install locale, and the toolbox has no
+**No language is sent.** `languageId` sets the extension's install locale, and the workbench has no
 concept of a language; defaulting to `en-US` would be wrong for, say, a Danish customer. BC applies
 its own default until a release pipeline can say what the language should be. Open question, below.
 
@@ -788,12 +788,12 @@ The shape is settled (see Decisions). What's left is **implementation detail to 
 not architecture:
 
 - **Install language.** `pteInstall` takes a `languageId` that sets the extension's install locale.
-  We send none, because the toolbox has no language concept and `en-US` would be wrong for a Danish
+  We send none, because the workbench has no language concept and `en-US` would be wrong for a Danish
   customer. It probably belongs on the release pipeline, beside the other per-target settings.
 - **Whether to offer "install in Business Central's update window".** The API's `UpdateWindow`
   schedule is supported by the engine and deliberately absent from the picker. It means *whenever
   Microsoft next patches this environment*, which is a different promise from the delivery slot the
-  toolbox already schedules; offering both without distinguishing them would mislead.
+  workbench already schedules; offering both without distinguishing them would mislead.
 - **Re-releasing a version that's already scheduled.** BC won't hold two versions of one app for the
   same schedule, so re-releasing the same version probably 400s. Decide between pre-checking,
   cancel-then-install, and mapping the error to a clear message.

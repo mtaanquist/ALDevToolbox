@@ -2,8 +2,8 @@ namespace ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 
 /// <summary>
 /// Where a release pipeline's apps come from. A pipeline draws either from a build
-/// pipeline the toolbox compiles itself, or from the Releases published on one of the
-/// solution's GitHub repositories - which is how a version the toolbox did not build
+/// pipeline the workbench compiles itself, or from the Releases published on one of the
+/// solution's GitHub repositories - which is how a version the workbench did not build
 /// can still be deployed. See <c>.design/github-integration-phase2.md</c> (#632).
 /// </summary>
 public static class ReleaseArtifactSource

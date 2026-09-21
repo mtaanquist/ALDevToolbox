@@ -4,7 +4,7 @@ namespace ALDevToolbox.Domain.Tools;
 /// One MCP tool, described for a person rather than for an agent.
 /// </summary>
 /// <param name="Name">The wire name the agent calls, e.g. <c>search_objects</c>.</param>
-/// <param name="Group">Which part of the toolbox it reaches, used to group the docs table.</param>
+/// <param name="Group">Which part of the workbench it reaches, used to group the docs table.</param>
 /// <param name="Blurb">One plain sentence. Not the agent-facing <c>[Description]</c>, which
 /// is prompt text ("use search_recipes to find candidate ids") and reads as nonsense to a
 /// consultant looking up what their assistant can do.</param>

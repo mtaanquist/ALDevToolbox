@@ -102,8 +102,8 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=AL Dev Toolbox
-            org.opencontainers.image.description=Blazor Server tool for generating AL/BC workspaces and standalone extensions
+            org.opencontainers.image.title=AL Workbench
+            org.opencontainers.image.description=Blazor Server tool for building and operating Business Central solutions: workspaces, source, translation, builds, pipelines and environments
 
       # The date the release image is built is the date the release goes out,
       # which is what the sidebar's version hover shows (issue #604).

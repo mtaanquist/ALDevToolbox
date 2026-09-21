@@ -1,6 +1,6 @@
 # ALDevToolbox.Tests
 
-xUnit test project for AL Dev Toolbox. Established in Milestone 12 (see
+xUnit test project for AL Workbench. Established in Milestone 12 (see
 `.design/completed-milestones.md`); the patterns here are the bar M13 onward
 should copy rather than reinvent.
 

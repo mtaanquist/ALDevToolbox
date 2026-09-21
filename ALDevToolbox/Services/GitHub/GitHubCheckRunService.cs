@@ -16,12 +16,12 @@ namespace ALDevToolbox.Services.GitHub;
 /// this build has no user behind it at all - see the credential split in
 /// <c>.design/github-integration.md</c>.</para>
 ///
-/// <para>Every method here is best-effort by design. A check run the toolbox
+/// <para>Every method here is best-effort by design. A check run the workbench
 /// could not write is a missing tick on a pull request; a build that fell over
 /// because GitHub was unreachable would be a missing answer, which is worse. So
 /// refusals are logged and swallowed, and <see cref="OpenAsync"/> answers null
 /// rather than throwing - a build with no check run still builds, still ingests,
-/// and is still visible in the toolbox.</para>
+/// and is still visible in the workbench.</para>
 /// </summary>
 public sealed class GitHubCheckRunService
 {
@@ -29,8 +29,13 @@ public sealed class GitHubCheckRunService
     /// How the run is named on the pull request. The prefix says who is speaking
     /// - a repository may be tracked by more than one solution, and each gets its
     /// own run, so the solution's name is what tells them apart.
-    /// </summary>
-    public static string CheckRunName(string solutionName) => $"AL Dev Toolbox / {solutionName}";
+    ///
+    /// <para>This string is load-bearing outside the codebase: GitHub matches a
+    /// required status check by name. An organisation that typed the old
+    /// "AL Dev Toolbox / {solution}" into Repository standards -> Required status
+    /// checks has to retype it, or its ruleset waits for a check that no longer
+    /// reports. Renaming it again carries the same cost.</para>
+    public static string CheckRunName(string solutionName) => $"AL Workbench / {solutionName}";
 
     private readonly AppDbContext _db;
     private readonly GitHubAppClient _github;
@@ -263,7 +268,7 @@ public sealed class GitHubCheckRunService
         catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException or HttpRequestException)
         {
             _logger.LogWarning(ex,
-                "Could not complete check run {CheckRunId} on {Repository}; the build itself is recorded in the toolbox.",
+                "Could not complete check run {CheckRunId} on {Repository}; the build itself is recorded in the workbench.",
                 checkRunId, repositoryFullName);
         }
     }
@@ -324,7 +329,7 @@ public sealed class GitHubCheckRunService
         {
             lines.Add(string.Empty);
             lines.Add($"Only the first {MaxAnnotations} are marked in the Files tab; "
-                + $"{omittedAnnotations} more are in the build report in the toolbox.");
+                + $"{omittedAnnotations} more are in the build report in the workbench.");
         }
 
         if (results.Count > 0)
@@ -352,7 +357,7 @@ public sealed class GitHubCheckRunService
     private static string Count(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
 
     /// <summary>
-    /// Where "Details" on the check run goes: the solution in the toolbox, built
+    /// Where "Details" on the check run goes: the solution in the workbench, built
     /// from the configured public origin. Null when the deployment has not been
     /// told its own address - a link to <c>localhost</c> would be worse than no
     /// link, and GitHub simply renders the run without one.

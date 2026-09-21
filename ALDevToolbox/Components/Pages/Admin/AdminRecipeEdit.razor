@@ -14,7 +14,7 @@
 @using ALDevToolbox.Services.Cookbook
 @using ALDevToolbox.Services.Templates
 
-<PageTitle>@(IsEdit ? "Edit recipe" : "New recipe") · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>@(IsEdit ? "Edit recipe" : "New recipe") · Admin · AL Workbench</PageTitle>
 
 <div class="page">
     <PageHead Title="@(IsEdit ? "Edit recipe" : "New recipe")" Sticky="true"
@@ -529,7 +529,7 @@
         {
             Log.LogWarning(ex, "Could not reach GitHub to update {RepoFullName}.", repository);
             _updateOutcomes[repository] = new UpdateOutcome(
-                "The toolbox could not reach GitHub just now, so nothing was committed. Try again in a minute.", null);
+                "The workbench could not reach GitHub just now, so nothing was committed. Try again in a minute.", null);
         }
     }
 

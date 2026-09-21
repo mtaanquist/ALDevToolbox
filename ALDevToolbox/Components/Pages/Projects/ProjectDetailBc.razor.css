@@ -30,7 +30,7 @@
 }
 
 /* The environment name opens the environment in Business Central. The icon is
-   what says "this leaves the toolbox" - a bare underline would read as a link
+   what says "this leaves the workbench" - a bare underline would read as a link
    to another page in here. */
 .pd-env-link { display: inline-flex; align-items: center; gap: var(--space-1); color: inherit; text-decoration: none; }
 .pd-env-link:hover span { text-decoration: underline; }

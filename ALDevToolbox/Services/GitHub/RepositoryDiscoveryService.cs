@@ -38,7 +38,7 @@ public sealed record UntrackedRepositoriesView(
 /// <summary>
 /// Finds the AL repositories in the connected GitHub organisation that no
 /// solution tracks yet, so a consultant who has just connected their
-/// organisation is told what the toolbox does not know about instead of having
+/// organisation is told what the workbench does not know about instead of having
 /// to remember it.
 ///
 /// <para><strong>This is repository discovery, not the extension discovery of

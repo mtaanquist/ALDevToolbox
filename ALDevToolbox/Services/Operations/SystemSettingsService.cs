@@ -681,7 +681,7 @@ public sealed class SystemSettingsService
         var slug = NullIfBlank(input.AppSlug)?.ToLowerInvariant();
         if (slug is not null && (slug.Length > 120 || !GitHubAppSlugRegex.IsMatch(slug)))
         {
-            errors["GitHubAppSlug"] = "Enter just the app's name as it appears at the end of its GitHub URL, like al-dev-toolbox.";
+            errors["GitHubAppSlug"] = "Enter just the app's name as it appears at the end of its GitHub URL, like al-workbench.";
         }
         else if (slug is null && rawAppId is not null)
         {

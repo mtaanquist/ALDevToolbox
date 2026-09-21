@@ -114,7 +114,7 @@ public sealed class GitHubConnectionServiceTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: null,
+            AppId: "123456", AppSlug: "al-workbench", ClientId: null,
             ClientSecret: null, ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }
@@ -141,7 +141,7 @@ public sealed class GitHubConnectionServiceTests : IDisposable
         var status = await NewService().GetStatusAsync();
 
         status.DeploymentConfigured.Should().BeTrue();
-        status.AppSlug.Should().Be("al-dev-toolbox");
+        status.AppSlug.Should().Be("al-workbench");
         status.IsConnected.Should().BeFalse("the deployment having an app is not the org having connected one");
     }
 
@@ -224,7 +224,7 @@ public sealed class GitHubConnectionServiceTests : IDisposable
     // --- The cross-organisation claim guard ---------------------------------
 
     /// <summary>
-    /// Seeds another toolbox organisation that already holds
+    /// Seeds another workbench organisation that already holds
     /// <paramref name="installationId"/>. Writes through the tracked context
     /// directly: the query filter scopes reads, not inserts, so this needs no
     /// bypass of its own.

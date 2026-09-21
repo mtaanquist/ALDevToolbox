@@ -1,6 +1,6 @@
 # Connecting AI clients to the MCP server
 
-AL Dev Toolbox exposes its template browser, workspace generator, Object
+AL Workbench exposes its template browser, workspace generator, Object
 Explorer queries, and snippet library through a Model Context Protocol (MCP)
 endpoint at `/mcp`. There are two supported sign-in styles, and which one
 you pick depends on the assistant:
@@ -21,11 +21,11 @@ The in-app docs hub at **`/docs/mcp`** is the long-form, layman-friendly
 walkthrough — link signed-in users there. This file is the same content in
 markdown form so it shows up in the repo.
 
-## Connect with AL Dev Toolbox (Claude on the web & mobile)
+## Connect with AL Workbench (Claude on the web & mobile)
 
 Claude.ai's **directory** and **custom connector** flow does not accept a
 pasted bearer token — `static_bearer` is not in Anthropic's supported auth
-matrix. Instead, AL Dev Toolbox runs a small OAuth 2.1 server (powered by
+matrix. Instead, AL Workbench runs a small OAuth 2.1 server (powered by
 OpenIddict) at `/.well-known/oauth-authorization-server`, and Claude
 registers itself via Dynamic Client Registration (RFC 7591) on first
 connect.
@@ -33,20 +33,20 @@ connect.
 1. Open Claude.ai → **Settings → Connectors → Add custom connector**.
 2. Enter `https://YOUR-SERVER/mcp` as the URL. Leave the OAuth Client
    Secret field empty — DCR registers Claude as a public PKCE client.
-3. Sign in to AL Dev Toolbox in the popup, click **Allow** on the
+3. Sign in to AL Workbench in the popup, click **Allow** on the
    permission screen, and you're connected.
 
 To take access back, go to **Account → Connected assistants** at
 `/account?section=ai`.
 
-## Connect with AL Dev Toolbox (ChatGPT custom connectors)
+## Connect with AL Workbench (ChatGPT custom connectors)
 
 ChatGPT's custom-connector flow uses the same OAuth 2.1 server, but the
 client-authentication shape differs: instead of registering as a public
 PKCE client, ChatGPT publishes a per-connector Client ID Metadata Document
 (CIMD) at `https://chatgpt.com/oauth/<id>/client.json` and authenticates
 the token endpoint by signing a JWT with a private key whose public half
-lives at `https://chatgpt.com/oauth/jwks.json`. AL Dev Toolbox accepts
+lives at `https://chatgpt.com/oauth/jwks.json`. AL Workbench accepts
 both shapes — `token_endpoint_auth_method=none` (Claude) and
 `token_endpoint_auth_method=private_key_jwt` (ChatGPT) — and fetches the
 JWKS on every authorize so a key rotation only requires the user to
@@ -55,7 +55,7 @@ reconnect, not an administrator to intervene.
 1. Open ChatGPT → **Settings → Connectors → Add custom connector** (or
    the equivalent in your workspace's admin panel).
 2. Enter `https://YOUR-SERVER/mcp` as the URL.
-3. Sign in to AL Dev Toolbox in the popup, click **Allow** on the
+3. Sign in to AL Workbench in the popup, click **Allow** on the
    permission screen, and you're connected.
 
 As with Claude, revoke access at **Account → Connected assistants**
@@ -67,7 +67,7 @@ through re-fetches the JWKS and gets you back in.
 
 ### Create a token
 
-1. Sign in at the AL Dev Toolbox web app.
+1. Sign in at the AL Workbench web app.
 2. Go to **Account → Manage access tokens** (or directly to
    `/account?section=ai`).
 3. Click **Create token**. Give it a recognisable name (e.g. *Cursor on
@@ -164,7 +164,7 @@ The server is then available in any Claude Code session in that directory.
 
 You author the connection in **Copilot Studio**; once you publish the agent
 it surfaces in M365 Copilot. The connector runs from Microsoft's cloud, so
-the AL Dev Toolbox deployment has to be reachable over HTTPS from the
+the AL Workbench deployment has to be reachable over HTTPS from the
 public internet (same constraint as Claude.ai).
 
 1. Open Copilot Studio, pick (or create) an agent, then go to
@@ -196,7 +196,7 @@ personal connection). It accepts the same server shape as Claude Desktop:
 ```
 
 OpenWebUI hot-reloads MCP servers. Pick a model that supports tool calling
-— the toolbox's tools only fire on tool-aware chat models.
+— the workbench's tools only fire on tool-aware chat models.
 
 ## What you can ask
 
@@ -232,6 +232,6 @@ do **not** carry SiteAdmin authority unless your account does.
 - **The server doesn't appear in my client** — confirm the URL is reachable
   from your machine (`curl -H "Authorization: Bearer ${PAT}" ${SERVER}/mcp`
   should return a 200 / streamable response, not a 404 or HTML).
-- **Tool calls return validation errors** — the toolbox returns the same
+- **Tool calls return validation errors** — the workbench returns the same
   field-keyed errors the web UI uses. Re-prompt the agent with the missing
   field or a corrected value.

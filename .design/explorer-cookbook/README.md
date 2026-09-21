@@ -1,7 +1,7 @@
 # Handoff: Object Explorer, Cookbook & Recipe screens
 
 ## Overview
-This package covers a redesign of three screens in the **AL Dev Toolbox**, all living inside the main work area (the area to the right of the left nav and below the top bar):
+This package covers a redesign of three screens in the **AL Workbench**, all living inside the main work area (the area to the right of the left nav and below the top bar):
 
 1. **Object Explorer — landing**: the first screen you hit from the "Object Explorer" nav item. A picker for every imported reference package (Microsoft base app releases, third-party apps, customer apps). Selecting a release drills into the existing object-list view.
 2. **Cookbook**: a searchable, filterable grid of reusable AL recipes (snippets, patterns, modules).
@@ -12,7 +12,7 @@ All three reuse the existing app chrome (left nav, top bar) and the design-token
 ## About the Design Files
 The files in this bundle are **design references created in HTML/CSS/React (via inline Babel JSX)** — prototypes that show the intended look and behavior. They are **not production code to copy directly**.
 
-The task is to **recreate these designs in the AL Dev Toolbox's existing front-end environment**, using its established component library, routing, state, and styling patterns. Where this bundle ships raw CSS and React, treat it as a precise spec of layout/spacing/color/type — re-express it in the target stack rather than pasting it in. If part of the app has no front-end environment yet, pick the framework that best matches the rest of the toolbox and implement there.
+The task is to **recreate these designs in the AL Workbench's existing front-end environment**, using its established component library, routing, state, and styling patterns. Where this bundle ships raw CSS and React, treat it as a precise spec of layout/spacing/color/type — re-express it in the target stack rather than pasting it in. If part of the app has no front-end environment yet, pick the framework that best matches the rest of the workbench and implement there.
 
 The HTML prototype switches between screens with a banner segmented control and in-memory React state purely for demo purposes. In the real app, these are separate routes/views reached through the existing left-nav and click-throughs — there is no banner switcher to port.
 

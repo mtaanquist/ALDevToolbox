@@ -22,12 +22,12 @@
     Archetype 2 (list / browser), table view. This was a bespoke .alr row grid; the
     handoff is explicit that a history like this "is a real .data-table ... not a
     bespoke row layout, so it sorts, filters and scans like every other table in the
-    toolbox". Build status is the row's edge keyline plus a leading glyph, and the
+    workbench". Build status is the row's edge keyline plus a leading glyph, and the
     passive counts strip became .pill-tabs that actually filter.
     See .design/design-migration.md.
 *@
 
-<PageTitle>Pipelines · AL Dev Toolbox</PageTitle>
+<PageTitle>Pipelines · AL Workbench</PageTitle>
 
 <ListPage Title="Pipelines" SearchForm="true"
           IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(Visible.Count == 0)"

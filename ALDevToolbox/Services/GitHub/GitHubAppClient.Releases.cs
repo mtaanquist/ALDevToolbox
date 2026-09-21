@@ -27,7 +27,7 @@ public sealed record GitHubReleaseAsset(long Id, string Name, long SizeBytes);
 /// <summary>
 /// The Releases half of the client (issue #632): publishing a build's
 /// <c>.app</c> files to a repository's Releases page, and reading them back so
-/// a version the toolbox did not build can still be deployed.
+/// a version the workbench did not build can still be deployed.
 ///
 /// <para>Every call here rides the <em>installation</em> token. A Release is an
 /// act of the organisation, and the publish half runs inside a build worker

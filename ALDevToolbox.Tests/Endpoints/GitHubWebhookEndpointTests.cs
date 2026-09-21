@@ -13,7 +13,7 @@ using ALDevToolbox.Services.Operations;
 namespace ALDevToolbox.Tests.Endpoints;
 
 /// <summary>
-/// The toolbox's one inbound route (issue #627), booted end to end so the real
+/// The workbench's one inbound route (issue #627), booted end to end so the real
 /// pipeline is in the picture: anonymous, antiforgery-disabled, and refusing
 /// everything whose HMAC does not match the deployment's stored webhook secret.
 ///
@@ -115,7 +115,7 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         using var scope = _factory.Services.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
         await settings.SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: null,
+            AppId: "123456", AppSlug: "al-workbench", ClientId: null,
             ClientSecret: null, ClearClientSecret: false,
             PrivateKeyPem: null, ClearPrivateKey: false,
             WebhookSecret: secret, ClearWebhookSecret: false));

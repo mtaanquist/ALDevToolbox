@@ -78,7 +78,7 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         created.Repository.HtmlUrl.Should().Be($"https://github.com/{Repo}");
         created.FileCount.Should().BeGreaterThan(0);
 
-        // The organisation is never a parameter: it is the one this toolbox
+        // The organisation is never a parameter: it is the one this workbench
         // organisation connected, so a caller naming a repository cannot aim it
         // anywhere else.
         api.Calls.Should().Contain(c => c.Contains($"/orgs/{OrgLogin}/repos"));
@@ -775,7 +775,7 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         message.Should().Contain("pull request");
         // What is actually on the repository, named so they can find it, and
         // the two ways out - not GitHub's wording quoted at somebody who cannot
-        // act on it, and not the name of a branch the toolbox invented.
+        // act on it, and not the name of a branch the workbench invented.
         message.Should().Contain(Repo);
         message.Should().Contain("single placeholder file");
         message.Should().Contain("Download ZIP");
@@ -1149,7 +1149,7 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

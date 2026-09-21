@@ -1,7 +1,7 @@
 namespace ALDevToolbox.Services.GitHub;
 
 /// <summary>
-/// One repository, as much of it as any GitHub feature in the toolbox needs.
+/// One repository, as much of it as any GitHub feature in the workbench needs.
 ///
 /// <para>The same shape comes back from three different GitHub routes - the
 /// installation's repository list, a single repository read, and a freshly
@@ -41,10 +41,10 @@ public sealed record GitHubFileContent(string Path, string Text, string Sha);
 /// <summary>One file to commit: its repository-relative path and its bytes.</summary>
 public sealed record GitHubCommitFile(string Path, byte[] Content);
 
-/// <summary>A pull request the toolbox opened, as the success state needs it.</summary>
+/// <summary>A pull request the workbench opened, as the success state needs it.</summary>
 public sealed record GitHubPullRequest(int Number, string HtmlUrl, string HeadBranch);
 
-/// <summary>Who a commit is credited to, when the toolbox has to say (issue #622).</summary>
+/// <summary>Who a commit is credited to, when the workbench has to say (issue #622).</summary>
 /// <param name="Name">The display name git records as the author.</param>
 /// <param name="Email">
 /// The author's email. GitHub links a commit to an account by this address,

@@ -98,7 +98,7 @@ public sealed class BcAppManagementClientTests
 
     private static Task<BcAppOperation> Install(
         BcAppManagementClient client,
-        string fileName = "CRONUS.Toolbox.app",
+        string fileName = "CRONUS.Workbench.app",
         byte[]? appBytes = null,
         string schedule = BcDeploymentSchedule.Immediate,
         string syncMode = BcSyncMode.Add,
@@ -116,7 +116,7 @@ public sealed class BcAppManagementClientTests
         await Install(client, appBytes: Package(64));
 
         var file = handler.Parts.Should().ContainSingle(p => p.Name == "extensionFile").Subject;
-        file.FileName.Should().Be("CRONUS.Toolbox.app", "BC reads the app id and version out of the named package");
+        file.FileName.Should().Be("CRONUS.Workbench.app", "BC reads the app id and version out of the named package");
         file.ByteLength.Should().Be(64);
         handler.Method.Should().Be(HttpMethod.Post);
         handler.Url!.AbsoluteUri.Should().Be(
@@ -162,8 +162,8 @@ public sealed class BcAppManagementClientTests
     // ── Local guards (no HTTP call) ───────────────────────────────────────
 
     [Theory]
-    [InlineData("CRONUS.Toolbox.zip")]
-    [InlineData("CRONUS.Toolbox")]
+    [InlineData("CRONUS.Workbench.zip")]
+    [InlineData("CRONUS.Workbench")]
     [InlineData("")]
     public async Task InstallPte_refuses_a_file_name_that_isnt_a_dot_app(string fileName)
     {
@@ -180,7 +180,7 @@ public sealed class BcAppManagementClientTests
     {
         var (client, handler) = Client(body: """{"id":"11111111-1111-1111-1111-111111111111","status":"running"}""");
 
-        await Install(client, fileName: "CRONUS.Toolbox.APP");
+        await Install(client, fileName: "CRONUS.Workbench.APP");
 
         handler.Calls.Should().Be(1);
     }
@@ -314,7 +314,7 @@ public sealed class BcAppManagementClientTests
     {
         const string json = """
         {"value":[
-          {"appId":"55555555-5555-5555-5555-555555555555","name":"CRONUS Toolbox","publisher":"CRONUS A/S",
+          {"appId":"55555555-5555-5555-5555-555555555555","name":"CRONUS Workbench","publisher":"CRONUS A/S",
            "version":"1.2.3.4","state":"Installed","appType":"tenant","canBeUninstalled":true,
            "lastOperationId":"66666666-6666-6666-6666-666666666666","lastUpdateAttemptResult":"Succeeded"},
           {"appId":"77777777-7777-7777-7777-777777777777","name":"Base Application","publisher":"Microsoft",
@@ -327,7 +327,7 @@ public sealed class BcAppManagementClientTests
 
         handler.Url!.AbsolutePath.Should().EndWith("/environments/Test/apps");
         apps.Should().HaveCount(2);
-        var pte = apps.Single(a => a.Name == "CRONUS Toolbox");
+        var pte = apps.Single(a => a.Name == "CRONUS Workbench");
         pte.IsPerTenant.Should().BeTrue();
         pte.Version.Should().Be("1.2.3.4");
         pte.LastOperationId.Should().Be(Guid.Parse("66666666-6666-6666-6666-666666666666"));
@@ -354,7 +354,7 @@ public sealed class BcAppManagementClientTests
     public async Task ListInstalledApps_keeps_a_row_that_calls_its_app_id_plain_id()
     {
         const string json = """
-        {"value":[{"id":"55555555-5555-5555-5555-555555555555","name":"CRONUS Toolbox","version":"1.2.3.4"}]}
+        {"value":[{"id":"55555555-5555-5555-5555-555555555555","name":"CRONUS Workbench","version":"1.2.3.4"}]}
         """;
         var (client, _) = Client(body: json);
 
@@ -370,7 +370,7 @@ public sealed class BcAppManagementClientTests
         {"value":[{
           "id":"88888888-8888-8888-8888-888888888888","type":"Install","status":"scheduled",
           "targetAppVersion":"2.0.0.0","appId":"99999999-9999-9999-9999-999999999999","scheduleKind":"UpdateWindow",
-          "parameters":{"name":"CRONUS Toolbox","publisher":"CRONUS A/S","syncMode":"ForceSync","languageId":"en-US"}
+          "parameters":{"name":"CRONUS Workbench","publisher":"CRONUS A/S","syncMode":"ForceSync","languageId":"en-US"}
         }]}
         """;
         var (client, handler) = Client(body: json);
@@ -380,7 +380,7 @@ public sealed class BcAppManagementClientTests
         handler.Url!.AbsolutePath.Should().EndWith("/apps/scheduledPteOperations");
         var op = scheduled.Should().ContainSingle().Subject;
         op.Status.Should().Be(BcAppOperationStatus.Scheduled);
-        op.Name.Should().Be("CRONUS Toolbox");
+        op.Name.Should().Be("CRONUS Workbench");
         op.SyncMode.Should().Be(BcSyncMode.ForceSync);
         op.ScheduleKind.Should().Be(BcDeploymentSchedule.UpdateWindow);
         op.TargetAppVersion.Should().Be("2.0.0.0");

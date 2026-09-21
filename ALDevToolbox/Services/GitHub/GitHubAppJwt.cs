@@ -4,7 +4,7 @@ using System.Text;
 namespace ALDevToolbox.Services.GitHub;
 
 /// <summary>
-/// Signs the short-lived JSON Web Token GitHub requires when the toolbox acts
+/// Signs the short-lived JSON Web Token GitHub requires when the workbench acts
 /// as the App itself (rather than as one of its installations).
 ///
 /// <para>Hand-rolled on <see cref="RSA"/> rather than pulled from a JWT

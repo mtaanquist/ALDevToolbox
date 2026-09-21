@@ -87,7 +87,7 @@ public sealed class ApplyRecipeToolTests : IDisposable
         var recipeId = await SeedRecipeAsync();
         var api = WritableApi()
             // The agent's user can see this one on GitHub; it is simply not in
-            // the organisation the toolbox organisation connected, so the web UI
+            // the organisation the workbench organisation connected, so the web UI
             // would never offer it - and neither may the tool.
             .On(HttpMethod.Get, "/repos/someone-else/theirs", HttpStatusCode.OK,
                 FakeGitHubApi.RepositoryJson("someone-else/theirs"));
@@ -196,7 +196,7 @@ public sealed class ApplyRecipeToolTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

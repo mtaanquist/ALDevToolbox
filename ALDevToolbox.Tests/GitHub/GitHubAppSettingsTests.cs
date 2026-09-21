@@ -33,7 +33,7 @@ public sealed class GitHubAppSettingsTests : IDisposable
 
     private static GitHubAppInput Valid(
         string? appId = "123456",
-        string? slug = "al-dev-toolbox",
+        string? slug = "al-workbench",
         string? clientId = null,
         string? clientSecret = null,
         bool clearClientSecret = false,
@@ -59,8 +59,8 @@ public sealed class GitHubAppSettingsTests : IDisposable
     }
 
     [Theory]
-    [InlineData("https://github.com/apps/al-dev-toolbox")]
-    [InlineData("AL Dev Toolbox")]
+    [InlineData("https://github.com/apps/al-workbench")]
+    [InlineData("AL Workbench")]
     [InlineData("-leading-hyphen")]
     public async Task Save_rejects_a_slug_that_is_not_the_last_part_of_the_apps_url(string slug)
     {
@@ -92,11 +92,11 @@ public sealed class GitHubAppSettingsTests : IDisposable
         appId.IsMatch("12a").Should().BeFalse();
 
         var slug = new System.Text.RegularExpressions.Regex($"^{SystemSettingsService.GitHubAppSlugPattern}$");
-        slug.IsMatch("al-dev-toolbox").Should().BeTrue();
-        slug.IsMatch("AL-Dev-Toolbox").Should().BeTrue("the service lowercases before storing");
+        slug.IsMatch("al-workbench").Should().BeTrue();
+        slug.IsMatch("AL-Dev-Workbench").Should().BeTrue("the service lowercases before storing");
         slug.IsMatch("a").Should().BeTrue();
         slug.IsMatch("-leading-hyphen").Should().BeFalse();
-        slug.IsMatch("https://github.com/apps/al-dev-toolbox").Should().BeFalse();
+        slug.IsMatch("https://github.com/apps/al-workbench").Should().BeFalse();
     }
 
     [Fact]
@@ -144,12 +144,12 @@ public sealed class GitHubAppSettingsTests : IDisposable
     {
         var pem = NewPrivateKey();
         await NewService().SaveGitHubAppAsync(Valid(
-            slug: "AL-Dev-Toolbox", clientId: "Iv1.abc", clientSecret: "gh-secret", privateKey: pem));
+            slug: "AL-Dev-Workbench", clientId: "Iv1.abc", clientSecret: "gh-secret", privateKey: pem));
 
         await using var read = _db.NewContext();
         var row = await read.SystemSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
         row.GitHubAppId.Should().Be(123456);
-        row.GitHubAppSlug.Should().Be("al-dev-toolbox");
+        row.GitHubAppSlug.Should().Be("al-workbench");
         row.GitHubPrivateKeyEncrypted.Should().NotBeNullOrEmpty().And.NotBe(pem,
             "the column holds Data-Protection ciphertext, never the key itself");
         row.GitHubClientSecretEncrypted.Should().NotBeNullOrEmpty().And.NotBe("gh-secret");
@@ -309,7 +309,7 @@ public sealed class GitHubAppSettingsTests : IDisposable
 
         resolved.Should().NotBeNull();
         resolved!.AppId.Should().Be(123456);
-        resolved.AppSlug.Should().Be("al-dev-toolbox");
+        resolved.AppSlug.Should().Be("al-workbench");
         resolved.ClientId.Should().Be("Iv1.abc");
         resolved.ClientSecret.Should().Be("gh-secret");
         resolved.PrivateKeyPem.Should().Be(pem);

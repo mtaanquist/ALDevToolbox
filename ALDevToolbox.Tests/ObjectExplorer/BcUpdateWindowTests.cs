@@ -6,7 +6,7 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
 /// Microsoft's platform-update window: parsing it, converting the Windows zone it comes
-/// in, and deciding whether it collides with the toolbox's own delivery window.
+/// in, and deciding whether it collides with the workbench's own delivery window.
 /// <para>
 /// The conversion is the part that fails quietly in production. Business Central speaks
 /// Windows time-zone ids; the host runs Linux, where handing one to

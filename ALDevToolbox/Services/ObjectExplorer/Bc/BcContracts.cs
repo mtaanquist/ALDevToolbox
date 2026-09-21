@@ -114,7 +114,7 @@ public sealed class BcApiException : Exception
 /// An environment's <em>Microsoft platform-update window</em>, from
 /// <c>settings/upgrade</c> — when Microsoft's own updates run against that environment.
 /// <para>
-/// <b>This is not the toolbox's delivery slot.</b> The delivery slot lives on
+/// <b>This is not the workbench's delivery slot.</b> The delivery slot lives on
 /// <c>ProjectEnvironment.UpdateWindowStart/End</c>, is a commercial arrangement with the
 /// customer, and is enforced by our own worker. This record is mirrored context so a
 /// consultant can see Microsoft's maintenance hours before choosing that slot. The two
@@ -307,7 +307,7 @@ public sealed record BcEnvironmentCopy(string? OperationId, string? Status);
 /// <summary>
 /// One thing Business Central did, or is doing, to an environment - an app install or
 /// update, a platform update, a rename, a restart, a setting change. Whoever did it:
-/// this toolbox, the admin centre, or Microsoft.
+/// this workbench, the admin centre, or Microsoft.
 /// </summary>
 public sealed record BcEnvironmentOperation(
     string Id,

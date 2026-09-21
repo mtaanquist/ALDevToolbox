@@ -412,7 +412,7 @@ public sealed class DependencyDriftServiceTests : IDisposable
         results.Should().HaveCount(2);
         results.Single(r => r.Repository == RepoA).PullRequest.Should().NotBeNull();
         results.Single(r => r.Repository == RepoB).Refusal
-            .Should().Contain("not one the toolbox can offer you");
+            .Should().Contain("not one the workbench can offer you");
     }
 
     [Fact]
@@ -458,7 +458,7 @@ public sealed class DependencyDriftServiceTests : IDisposable
         var ctx = _db.NewContext();
         var client = _db.NewGitHubAppClient(ctx, api);
         var access = _db.NewGitHubAccessService(ctx, client);
-        return (_db.NewDependencyDriftService(ctx, client, access, publicOrigin: "https://toolbox.cronus.example"), ctx);
+        return (_db.NewDependencyDriftService(ctx, client, access, publicOrigin: "https://workbench.cronus.example"), ctx);
     }
 
     /// <summary>The body of the one blob the run pushed.</summary>
@@ -645,7 +645,7 @@ public sealed class DependencyDriftServiceTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: "Iv1.cronus",
+            AppId: "123456", AppSlug: "al-workbench", ClientId: "Iv1.cronus",
             ClientSecret: "s3cr3t", ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false));
     }

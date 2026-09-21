@@ -18,7 +18,7 @@
     sibling tab. See .design/github-integration.md.
 *@
 
-<PageTitle>GitHub · Site administration · AL Dev Toolbox</PageTitle>
+<PageTitle>GitHub · Site administration · AL Workbench</PageTitle>
 
 <SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.GitHub">
     <Alerts>
@@ -74,7 +74,7 @@
                             names. The first is where GitHub sends an admin back to after they
                             install the app, the second is where it sends anyone who connects
                             their own GitHub account, and the third is where it tells the
-                            toolbox that a pull request has changed. Make up a webhook secret
+                            workbench that a pull request has changed. Make up a webhook secret
                             of your own, paste the same text into GitHub's Webhook secret box
                             and into the Webhook secret field below. Tick "Active" beside the
                             webhook on GitHub.
@@ -98,16 +98,16 @@
                             requests), report build results on pull requests (Checks), and see
                             who is in the organisation (Members). The name in brackets is what
                             GitHub calls the permission on its own page. Anything you leave out
-                            simply turns off the part of the toolbox that needs it.
+                            simply turns off the part of the workbench that needs it.
                         </Text>
                     </SetupStep>
 
                     <SetupStep Number="5" Title="Subscribe it to pull requests">
                         <Text>
                             Further down the same page, under "Subscribe to events", tick
-                            "Pull request". That is what lets the toolbox build a branch when
+                            "Pull request". That is what lets the workbench build a branch when
                             somebody opens a pull request and post the result back on it.
-                            Leave it unticked and nothing else changes - the toolbox simply
+                            Leave it unticked and nothing else changes - the workbench simply
                             never hears about pull requests.
                         </Text>
                     </SetupStep>
@@ -120,7 +120,7 @@
                             name, the Client ID and a new client secret into the fields below,
                             and the webhook secret you made up in step 2.
                             While you are there, tick "Expire user authorization tokens" - it is
-                            on by default, and the toolbox renews them for people quietly.
+                            on by default, and the workbench renews them for people quietly.
                         </Text>
                     </SetupStep>
                 </SetupSteps>
@@ -142,14 +142,14 @@
                     </SettingRow>
 
                     <SettingRow Name="Webhook URL"
-                                Hint="On GitHub, put this in the app's Webhook URL box and tick Active. It is how GitHub tells the toolbox a pull request has changed, so it can build the branch and report back.">
+                                Hint="On GitHub, put this in the app's Webhook URL box and tick Active. It is how GitHub tells the workbench a pull request has changed, so it can build the branch and report back.">
                         <input class="input input--ro" type="text" value="@WebhookUrl" readonly
                                aria-label="Webhook URL to copy into GitHub" />
                         @if (!Origin.IsConfigured)
                         {
                             <small class="field__hint">
                                 This is a guess from the address you're using right now. GitHub reaches it
-                                from the internet, so if the toolbox sits behind a reverse proxy, ask whoever
+                                from the internet, so if the workbench sits behind a reverse proxy, ask whoever
                                 runs the server to set the public address.
                             </small>
                         }
@@ -167,11 +167,11 @@
                     </SettingRow>
 
                     <SettingRow Name="App name in its URL"
-                                Hint="The last part of the app's address on GitHub - for github.com/apps/al-dev-toolbox, enter al-dev-toolbox. This is what sends an admin to the right install page.">
+                                Hint="The last part of the app's address on GitHub - for github.com/apps/al-workbench, enter al-workbench. This is what sends an admin to the right install page.">
                         <input class="input" type="text" name="GitHubAppSlug" value="@_view.AppSlug"
                                maxlength="120" autocomplete="off" required
                                pattern="@SystemSettingsService.GitHubAppSlugPattern"
-                               placeholder="e.g. al-dev-toolbox" />
+                               placeholder="e.g. al-workbench" />
                     </SettingRow>
 
                     <SettingRow Name="Private key"
@@ -212,7 +212,7 @@
                     </SettingRow>
 
                     <SettingRow Name="Webhook secret"
-                                Hint="Stored encrypted. Make one up, and paste the same text into the app's Webhook secret box on GitHub. It is how the toolbox knows a message really came from GitHub - without it, nothing GitHub sends is accepted. Leave blank to keep the one already saved.">
+                                Hint="Stored encrypted. Make one up, and paste the same text into the app's Webhook secret box on GitHub. It is how the workbench knows a message really came from GitHub - without it, nothing GitHub sends is accepted. Leave blank to keep the one already saved.">
                         <input class="input" type="password" name="GitHubWebhookSecret" value=""
                                autocomplete="new-password"
                                placeholder="@(_view.HasWebhookSecret ? "Unchanged" : "Not set")" />

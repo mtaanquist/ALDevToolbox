@@ -113,7 +113,7 @@ public sealed record BcScheduledPteOperation(
 /// <para>
 /// <b>Per-tenant extensions never appear here.</b> The endpoint reports global app
 /// updates only, so a consultant looking for their own extension's next version will not
-/// find it in this list — anything the toolbox publishes shows up as an installed app and
+/// find it in this list — anything the workbench publishes shows up as an installed app and
 /// as a scheduled install instead.
 /// </para>
 /// </summary>

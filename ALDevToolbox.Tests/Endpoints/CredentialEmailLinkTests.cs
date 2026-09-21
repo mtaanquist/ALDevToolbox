@@ -19,7 +19,7 @@ namespace ALDevToolbox.Tests.Endpoints;
 [Collection(EndpointFactoryCollection.Name)]
 public sealed class CredentialEmailLinkTests : IDisposable
 {
-    private const string PublicBaseUrl = "https://toolbox.cronus.example";
+    private const string PublicBaseUrl = "https://workbench.cronus.example";
     private const string VictimEmail = "victim@cronus.example";
 
     private readonly TestDb _db = new();

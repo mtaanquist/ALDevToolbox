@@ -557,7 +557,7 @@ public sealed class DeliveryService
                     bc.AccessToken, family, delivery.EnvironmentName,
                     bytes, artifact.FileName,
                     delivery.DeploymentSchedule, delivery.SchemaSyncMode,
-                    // No language is sent. The toolbox has no concept of one, and
+                    // No language is sent. The workbench has no concept of one, and
                     // guessing "en-US" would set the install locale wrong for (say) a
                     // Danish customer; BC applies its own default until a release
                     // pipeline can say what the language should be.

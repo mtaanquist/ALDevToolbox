@@ -7,7 +7,7 @@ using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Services.GitHub;
 
-/// <summary>What an organisation wants in every repository the toolbox creates.</summary>
+/// <summary>What an organisation wants in every repository the workbench creates.</summary>
 /// <param name="Ruleset">The branch rules, or null when none are configured.</param>
 /// <param name="Files">The files to commit, in the admin's own order.</param>
 public sealed record GitHubRepositoryStandards(
@@ -19,7 +19,7 @@ public sealed record GitHubStandardFileInput(int? Id, string Path, string Conten
 
 /// <summary>
 /// The per-organisation repository standards (issue #628): a set of files added
-/// to every repository the toolbox creates, and a branch ruleset applied to it.
+/// to every repository the workbench creates, and a branch ruleset applied to it.
 ///
 /// <para>Reads are open to anyone in the organisation, because
 /// <see cref="GitHubWorkspaceRepositoryService"/> and the New Workspace page both

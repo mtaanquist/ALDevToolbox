@@ -82,7 +82,7 @@ public static class OperationsRegistration
                         QueueLimit = 0,
                     }));
 
-            // POST /github/webhook is the toolbox's one inbound route (#627). It is
+            // POST /github/webhook is the workbench's one inbound route (#627). It is
             // anonymous by necessity - GitHub carries no cookie - so the limiter is
             // the backstop against somebody pointing a load generator at it. The
             // window is generous on purpose: a busy organisation legitimately

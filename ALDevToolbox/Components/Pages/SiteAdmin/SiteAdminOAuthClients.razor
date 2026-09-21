@@ -6,7 +6,7 @@
 @using ALDevToolbox.Components.Shared
 @inject OAuthClientAdminService Clients
 
-<PageTitle>OAuth clients · Site administration · AL Dev Toolbox</PageTitle>
+<PageTitle>OAuth clients · Site administration · AL Workbench</PageTitle>
 
 <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.OAuthClients">
     @if (Ok == "revoked")
@@ -45,7 +45,7 @@
                 <span class="empty-state__icon"><Icon Name="plug" Width="21" Height="21" /></span>
                 <span class="empty-state__title">Nothing connected yet</span>
                 <span class="empty-state__text">
-                    When someone adds AL Dev Toolbox to Claude or another assistant
+                    When someone adds AL Workbench to Claude or another assistant
                     and allows it in, their connection appears here.
                 </span>
             </div>

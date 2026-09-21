@@ -86,7 +86,7 @@
                 </Authorized>
                 <NotAuthorized>
                     <span class="empty-state__text">
-                        Until whoever runs AL Dev Toolbox sets it up, there are no
+                        Until whoever runs AL Workbench sets it up, there are no
                         repositories to list here.
                     </span>
                 </NotAuthorized>
@@ -121,11 +121,11 @@
     {
         <div class="empty-state empty-state--quiet">
             <span class="empty-state__title">Connect your GitHub account to see your repositories</span>
-            @* This is the moment someone decides whether to let the toolbox near
-               a customer's code, so it says what the toolbox will and will not be
+            @* This is the moment someone decides whether to let the workbench near
+               a customer's code, so it says what the workbench will and will not be
                able to do - not how many clicks it takes. *@
             <span class="empty-state__text">
-                The toolbox will list the repositories you can already open on GitHub,
+                The workbench will list the repositories you can already open on GitHub,
                 and no others. It never changes who can see what there, it never acts
                 as anyone else, and you can disconnect it whenever you like.
             </span>
@@ -140,8 +140,8 @@
         <div class="empty-state empty-state--quiet">
             <span class="empty-state__title">Your GitHub account needs connecting again</span>
             <span class="empty-state__text">
-                The toolbox can no longer act as you on GitHub - most often because the
-                toolbox was removed from your authorised apps there, under your GitHub
+                The workbench can no longer act as you on GitHub - most often because the
+                workbench was removed from your authorised apps there, under your GitHub
                 Settings &#8594; Applications. Connecting again puts it back.
             </span>
             <a class="btn empty-state__action" href="/account?section=repos">
@@ -191,7 +191,7 @@
                 <div class="empty-state empty-state--quiet">
                     <span class="empty-state__title">You cannot open any of @OrgName's repositories yet</span>
                     <span class="empty-state__text">
-                        The toolbox lists only what you can already open on GitHub. Ask an
+                        The workbench lists only what you can already open on GitHub. Ask an
                         owner of @OrgName to give you access, then look again.
                     </span>
                     <button type="button" class="btn empty-state__action" @onclick="ReloadAsync">
@@ -402,7 +402,7 @@
         {
             Logger.LogWarning(ex, "Could not list the repositories for the repository picker.");
             _loadFailed = true;
-            _loadError = "The toolbox could not reach GitHub just now, so it cannot show your repositories.";
+            _loadError = "The workbench could not reach GitHub just now, so it cannot show your repositories.";
         }
         finally
         {

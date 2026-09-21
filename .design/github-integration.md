@@ -1,6 +1,6 @@
 # GitHub integration
 
-Milestone "GitHub integration" (issues #620-#625). The toolbox gains a GitHub App
+Milestone "GitHub integration" (issues #620-#625). The workbench gains a GitHub App
 installed on the customer's GitHub organisation, a per-user account link, and four
 features that use them: creating a repository from New Workspace, adding an extension
 to an existing repository, assisted repository entry on solution pipelines, and the
@@ -11,11 +11,11 @@ this document wins and the deviation is called out below.
 
 ## Why a GitHub App and not a PAT
 
-The toolbox already stores per-user GitHub PATs (`UserRepositoryToken`, Account →
+The workbench already stores per-user GitHub PATs (`UserRepositoryToken`, Account →
 Repository tokens) and clones solution repositories with them. That is the right
 credential for "clone what I can see" and the wrong one for "create a repository in
 our organisation": repository creation is an act of the *organisation*, and no
-individual's PAT should have to carry `admin:org` for the toolbox to work.
+individual's PAT should have to carry `admin:org` for the workbench to work.
 
 So there are two credentials, and which one acts is a security decision, not a
 convenience one:
@@ -33,13 +33,13 @@ see every repository the App was installed on - that gate is
 
 ## Configuration: three layers
 
-1. **Deployment (SiteAdmin).** One GitHub App registered per toolbox deployment:
+1. **Deployment (SiteAdmin).** One GitHub App registered per workbench deployment:
    app id, client id, client secret, private key (PEM). Lives on the
    `system_settings` singleton, secrets encrypted with the Data Protection key ring
    exactly like `SmtpPasswordEncrypted` and `EntraClientSecretEncrypted`, and
    redacted by `AuditInterceptor`. Losing the `app-keys` volume means re-entering
    them. Page: `/site-admin/settings/github`, a new tab on `SiteAdminSettingsPage`.
-2. **Organisation (Admin).** An org Admin connects the toolbox organisation to one
+2. **Organisation (Admin).** An org Admin connects the workbench organisation to one
    GitHub organisation: the install/authorise handshake returns an
    `installation_id`, stored on `organization_settings` with the org login and the
    permissions the installation was granted. Page: the existing Administration →
@@ -240,7 +240,7 @@ not work.
 - The callback refuses an installation that is not on a GitHub organisation, which
   removes the personal-account half of the space.
 - `GitHubConnectionService.ConnectAsync` refuses an installation id already held by a
-  different toolbox organisation (a category-6 existence-only probe). That makes the
+  different workbench organisation (a category-6 existence-only probe). That makes the
   attack first-come-first-served rather than free, and it makes the collision visible
   to the org that loses - but a customer who has not connected yet is still claimable.
 
@@ -261,7 +261,7 @@ through an organisation, so presence in it means "can reach one repository this
 installation covers", not "administers it". As first shipped the gate checked only
 presence, which left an Admin who is an outside collaborator on a single repository in
 an unconnected GitHub organisation able to connect that organisation to their own
-toolbox organisation - and then mint its installation token for every repository the
+workbench organisation - and then mint its installation token for every repository the
 installation covers. The account's id is not even guessed: it appears in their own
 `/user/installations`.
 
@@ -391,18 +391,18 @@ default branch, `aldt/seed` is gone - and the workspace is committed onto
 `aldt/initial-workspace` parented on `main`, with a pull request open against
 it. `main` is brought into being there with a Contents write rather than a ref
 creation, since a ref creation is what was just refused and a Contents write
-onto the branch is what the toolbox did before this issue - which the bug report
+onto the branch is what the workbench did before this issue - which the bug report
 shows such an organisation allows, because a `.gitignore` did land on `main`; it
 was the update after it that was refused. The result says which route was taken and carries the
 pull request's URL, and the success card and the MCP result say so in their own
 words. Both routes are legitimate under the rule; only one needs a human to
 press merge. If GitHub refuses the pull request as well, the refusal names what
-is on the repository (the one seeded file) and points at the ZIP - the toolbox
+is on the repository (the one seeded file) and points at the ZIP - the workbench
 does not leave a failure the person cannot read.
 
 Adding the app to the ruleset's bypass list would also have worked and is
 deliberately not done: that list is for org admins unsticking a member, and the
-toolbox has to work within the rule rather than around it.
+workbench has to work within the rule rather than around it.
 
 `GET /repos/{owner}/{repo}/rules/branches/{branch}` is read once before any
 write and logged. It steers nothing - GitHub's own refusal is the authority, and

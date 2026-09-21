@@ -8,7 +8,7 @@ namespace ALDevToolbox.Tests.GitHub;
 ///
 /// <para><c>api.github.com</c> is not reachable from the build environment, and
 /// would be the wrong thing to depend on if it were: these tests are about how
-/// the toolbox reacts to GitHub's documented answers - a 404 for a repository
+/// the workbench reacts to GitHub's documented answers - a 404 for a repository
 /// you cannot see, a 302 for an organisation you are not in, a rotated refresh
 /// token - not about GitHub itself. Each route is registered by the method and
 /// path prefix the production code calls, so a change to either shows up as a
@@ -258,7 +258,7 @@ public sealed class FakeGitHubApi : HttpMessageHandler
     /// <summary>
     /// GitHub's 422 when a ruleset refuses a write - the refusal issue #811 is
     /// about. The rules that fired are appended to the message, which is why the
-    /// toolbox matches on the first two words and not the whole sentence.
+    /// workbench matches on the first two words and not the whole sentence.
     /// </summary>
     public static string RuleViolationJson(string rule = "Changes must be made through a pull request.") =>
         $"{{\"message\":\"Repository rule violations found {rule}\","

@@ -2,7 +2,7 @@ namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
 /// One value in one repository's <c>app.json</c> that is behind what the
-/// toolbox now knows about - what the drift scan found when a new Business
+/// workbench now knows about - what the drift scan found when a new Business
 /// Central release landed (issue #630).
 ///
 /// <para>A row is a <em>finding</em>, not a task: the scan replaces the

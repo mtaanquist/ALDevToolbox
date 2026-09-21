@@ -156,13 +156,13 @@ public sealed class GitHubConnectionService
                 errors["GitHubInstallationId"] = claim switch
                 {
                     GitHubInstallationClaim.NotLinked =>
-                        "Connect your own GitHub account first, on your account page under Repository access. The toolbox checks with GitHub that you can manage this organisation, and it needs your GitHub account to ask.",
+                        "Connect your own GitHub account first, on your account page under Repository access. The workbench checks with GitHub that you can manage this organisation, and it needs your GitHub account to ask.",
                     GitHubInstallationClaim.LinkUnusable =>
-                        "Your GitHub account is no longer connected to the toolbox. Connect it again on your account page under Repository access, then come back and try this.",
+                        "Your GitHub account is no longer connected to the workbench. Connect it again on your account page under Repository access, then come back and try this.",
                     GitHubInstallationClaim.NotTheirs =>
                         "GitHub does not say you manage that organisation, so nothing was connected. Only someone GitHub lists as an owner there can connect it here - ask one of them to do it, or to make you an owner.",
                     _ =>
-                        "The toolbox could not check with GitHub that you manage that organisation, so it did not connect anything. Try again in a minute.",
+                        "The workbench could not check with GitHub that you manage that organisation, so it did not connect anything. Try again in a minute.",
                 };
             }
         }
@@ -182,7 +182,7 @@ public sealed class GitHubConnectionService
                     "Org {OrgId} tried to connect GitHub installation {InstallationId}, which another organisation already holds.",
                     orgId, installationId);
                 errors["GitHubOrgLogin"] =
-                    "That GitHub organisation is already connected to another organisation on this server. Ask whoever runs AL Dev Toolbox if you think that is wrong.";
+                    "That GitHub organisation is already connected to another organisation on this server. Ask whoever runs AL Workbench if you think that is wrong.";
             }
         }
 

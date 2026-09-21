@@ -24,7 +24,7 @@
 @inject ILogger<Translator> Log
 @inject IServiceScopeFactory ScopeFactory
 
-<PageTitle>Translator · AL Dev Toolbox</PageTitle>
+<PageTitle>Translator · AL Workbench</PageTitle>
 
 @* The Translator is page archetype 9 -- the translation grid -- so it wears the
    shared power-tool frame from pages-power.css: .pw fills the shell content
@@ -117,7 +117,7 @@
                 <div>
                     <div class="trepo__title">Or open one from a repository</div>
                     <p class="trepo__sub">
-                        Pick the repository and the toolbox lists the <code>.xlf</code> files in it. When you
+                        Pick the repository and the workbench lists the <code>.xlf</code> files in it. When you
                         save, your translation goes back on a branch of its own and opens a pull request -
                         nothing on the repository's own branch changes until someone merges it.
                     </p>
@@ -1336,7 +1336,7 @@ else
             or HttpRequestException or TaskCanceledException)
         {
             Log.LogWarning(ex, "Could not list the translation files in {RepoFullName}.", _repo.FullName);
-            _repoListError = "The toolbox could not reach GitHub just now, so it cannot list the files in "
+            _repoListError = "The workbench could not reach GitHub just now, so it cannot list the files in "
                 + $"{_repo.FullName}.";
         }
         finally
@@ -1416,7 +1416,7 @@ else
             or HttpRequestException or TaskCanceledException)
         {
             Log.LogWarning(ex, "Could not open {Path} from {RepoFullName}.", file.Path, repo.FullName);
-            _parseError = $"The toolbox could not reach GitHub just now, so it could not open \"{file.FileName}\".";
+            _parseError = $"The workbench could not reach GitHub just now, so it could not open \"{file.FileName}\".";
         }
         finally
         {
@@ -1516,7 +1516,7 @@ else
         }
         catch (PlanValidationException ex)
         {
-            _toast?.Show("The toolbox could not save to the repository", FirstReason(ex), ToastKind.Danger);
+            _toast?.Show("The workbench could not save to the repository", FirstReason(ex), ToastKind.Danger);
         }
         catch (Exception ex) when (ex is GitHubApiException or GitHubAppNotConfiguredException
             or HttpRequestException or TaskCanceledException)
@@ -1524,7 +1524,7 @@ else
             Log.LogWarning(ex, "Saving {Path} to {RepoFullName} failed.",
                 _repoSource.Path, _repoSource.Repository.FullName);
             _toast?.Show(
-                "The toolbox could not reach GitHub just now",
+                "The workbench could not reach GitHub just now",
                 "Nothing was saved. Try again in a moment, or export a copy and commit it yourself.",
                 ToastKind.Danger);
         }
@@ -1580,7 +1580,7 @@ else
     /// carries a single field-keyed message written for the person reading it.
     /// </summary>
     private static string FirstReason(PlanValidationException ex) =>
-        ex.Errors.Values.FirstOrDefault() ?? "The toolbox could not use that repository.";
+        ex.Errors.Values.FirstOrDefault() ?? "The workbench could not use that repository.";
 
     // ── Selection + suggestions ───────────────────────────────────────────
     private async Task SelectAsync(string? id)

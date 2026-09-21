@@ -30,7 +30,7 @@ public class SystemSettings
 
     /// <summary>
     /// Optional display name paired with <see cref="SmtpFrom"/> on the
-    /// message envelope (e.g. <c>"AL Dev Toolbox" &lt;noreply@example.com&gt;</c>).
+    /// message envelope (e.g. <c>"AL Workbench" &lt;noreply@example.com&gt;</c>).
     /// Empty/null sends with the bare address as both name and address.
     /// </summary>
     public string? SmtpFromName { get; set; }
@@ -231,7 +231,7 @@ public class SystemSettings
     /// <summary>
     /// Data-Protection-encrypted secret GitHub signs webhook deliveries with
     /// (<c>X-Hub-Signature-256</c>). Deployment-wide, like the rest of the App
-    /// registration, because one App has one webhook. Null means the toolbox
+    /// registration, because one App has one webhook. Null means the workbench
     /// accepts no deliveries at all - an unverifiable delivery is refused, never
     /// trusted. The audit interceptor redacts the column. See
     /// <c>.design/github-integration-phase2.md</c> (#627).

@@ -24,7 +24,7 @@ public sealed record WebAuthnConfig(string RpId, IReadOnlyList<string> Origins, 
     {
         var section = configuration.GetSection("Auth:WebAuthn");
         var rpId = section["RpId"];
-        var rpName = section["RpName"] ?? "AL Dev Toolbox";
+        var rpName = section["RpName"] ?? "AL Workbench";
         // Accept either the .NET-native indexed array form (Origins__0,
         // Origins__1, …) or a single comma-separated `OriginsCsv` value —
         // the latter is friendlier in a flat docker-compose .env file.

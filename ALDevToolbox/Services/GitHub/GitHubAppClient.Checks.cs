@@ -43,7 +43,7 @@ public static class GitHubCheckConclusion
 /// <summary>
 /// The Checks API half of <see cref="GitHubAppClient"/> (issue #627).
 ///
-/// <para>Check runs are the one thing in the toolbox that <em>must</em> act as
+/// <para>Check runs are the one thing in the workbench that <em>must</em> act as
 /// the App rather than as a person: GitHub attributes a check run to whoever
 /// created it, a webhook build has no user behind it, and only an App may write
 /// to the Checks API at all. So every method here takes an installation token,

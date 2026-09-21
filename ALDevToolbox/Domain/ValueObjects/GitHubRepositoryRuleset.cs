@@ -4,7 +4,7 @@ namespace ALDevToolbox.Domain.ValueObjects;
 
 /// <summary>
 /// The branch protection an organisation wants on the default branch of every
-/// repository the toolbox creates for it (issue #628), stored as
+/// repository the workbench creates for it (issue #628), stored as
 /// <c>organization_settings.github_repository_ruleset_json</c> and applied as a
 /// GitHub *repository ruleset* right after the standards commit.
 ///

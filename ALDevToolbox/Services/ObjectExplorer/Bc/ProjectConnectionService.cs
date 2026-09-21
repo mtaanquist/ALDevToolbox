@@ -620,7 +620,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
 
     /// <summary>
-    /// Which of the apps in an environment this toolbox has actually released there.
+    /// Which of the apps in an environment this workbench has actually released there.
     /// Best-effort by app id, from the delivery history: enough to tell a consultant
     /// "this pending install is one of yours" instead of leaving them to recognise a
     /// publisher name.
@@ -843,7 +843,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// </para>
     /// <para>
     /// Changes the customer's tenant and touches no row of ours, so it is recorded in the
-    /// log and in the environment's Toolbox history rather than the audit trail.
+    /// log and in the environment's Workbench history rather than the audit trail.
     /// </para>
     /// </summary>
     public async Task CancelEnvironmentSessionAsync(
@@ -937,7 +937,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// </para>
     /// <para>
     /// Changes the customer's tenant and touches no row of ours, so it is recorded in the
-    /// log and in the environment's Toolbox history rather than the audit trail — see
+    /// log and in the environment's Workbench history rather than the audit trail — see
     /// <c>.design/environment-updates.md</c>, "Deleted environments".
     /// </para>
     /// </summary>
@@ -1006,7 +1006,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// environments are re-read afterwards; the new one appears as <c>Preparing</c> once
     /// Business Central lists it, which may not be on this read. A failed re-read costs the
     /// freshness, never the write. Recorded in the log and in the <em>source</em>
-    /// environment's Toolbox history — see <c>.design/environment-updates.md</c>,
+    /// environment's Workbench history — see <c>.design/environment-updates.md</c>,
     /// "Copying an environment".
     /// </para>
     /// </summary>
@@ -2169,7 +2169,7 @@ public sealed record ProjectEnvironmentRow(
 /// </summary>
 public sealed record BcEnvironmentPanel(
     string EnvironmentName,
-    /// <summary>App ids this toolbox has released to this environment, for highlighting our own extensions.</summary>
+    /// <summary>App ids this workbench has released to this environment, for highlighting our own extensions.</summary>
     IReadOnlySet<Guid> ReleasedAppIds,
     IReadOnlyList<BcInstalledApp> InstalledApps,
     string? InstalledAppsError,

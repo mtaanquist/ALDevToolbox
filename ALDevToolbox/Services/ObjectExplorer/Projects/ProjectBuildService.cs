@@ -825,7 +825,7 @@ public sealed class ProjectBuildService
             if (string.IsNullOrEmpty(pat))
             {
                 var reason = options.InstallationToken is not null
-                    ? $"This build was started from a pull request, and the toolbox can only reach {RepositoryProvider.GitHub.DisplayName()} repositories that way. Build this solution by hand to include the {repo.Provider.DisplayName()} repository."
+                    ? $"This build was started from a pull request, and the workbench can only reach {RepositoryProvider.GitHub.DisplayName()} repositories that way. Build this solution by hand to include the {repo.Provider.DisplayName()} repository."
                     : $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository access, then rebuild.";
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
                     reason, RepoUrl: repo.Url));

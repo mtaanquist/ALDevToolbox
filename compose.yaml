@@ -1,4 +1,4 @@
-# AL Dev Toolbox stack. Two services: Postgres (`db`) and the app
+# AL Workbench stack. Two services: Postgres (`db`) and the app
 # (`aldevtoolbox`). Four named volumes (`pg-data`, `app-keys`, `app-backups`,
 # `app-altool`) — see the `volumes` block at the bottom for the layout reference.
 services:
@@ -75,16 +75,16 @@ services:
       # (password reset, magic link, invite, email verification) are built from
       # it; unset, they fall back to the request's Host header. Set AllowedHosts
       # alongside it so a foreign Host is refused before any handler runs.
-      # PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://toolbox.cronus.example}
+      # PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://workbench.cronus.example}
       # Include localhost: the image HEALTHCHECK polls http://localhost:8080/healthz.
-      # AllowedHosts: ${ALLOWED_HOSTS:-toolbox.cronus.example;localhost}
+      # AllowedHosts: ${ALLOWED_HOSTS:-workbench.cronus.example;localhost}
       # Compose builds the connection string from the POSTGRES_* knobs so the
       # operator only manages credentials in one place. The `db` host name is
       # the compose service name above.
       ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD:?set a database password in .env}"
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      # Single-tenant mode. Set to 1 when one organisation runs the toolbox
+      # Single-tenant mode. Set to 1 when one organisation runs the workbench
       # internally: hides and disables the multi-tenant surfaces (storage
       # quotas, per-tenant snapshots, and self-service org creation at signup).
       # System-level pg_dump backups stay on. Leave blank/0 for the default
@@ -135,7 +135,7 @@ services:
       # SMTP_HOST: smtp.example.com
       # SMTP_PORT: "587"
       # SMTP_USER: apikey
-      # SMTP_FROM: "AL Dev Toolbox <noreply@example.com>"
+      # SMTP_FROM: "AL Workbench <noreply@example.com>"
       # SMTP_USE_STARTTLS: "true"
       # SMTP_PASSWORD_FILE: /run/secrets/smtp_password
       #

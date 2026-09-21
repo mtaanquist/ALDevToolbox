@@ -296,7 +296,7 @@ public sealed class GitHubTools
             // refusal, so a null here is a race, not a state worth its own copy.
             var repo = await _repositories.ResolveAsync(repoFullName, ct)
                 ?? throw new McpException(
-                    $"'{repoFullName}' is not a repository the toolbox can offer you. "
+                    $"'{repoFullName}' is not a repository the workbench can offer you. "
                     + "Call list_repositories to see the ones it can.");
 
             var source = new RepositoryTranslationSource(
@@ -350,16 +350,16 @@ public sealed class GitHubTools
     {
         GitHubRepositoryReadiness.NotConfigured =>
             "GitHub is not set up on this server yet, so there are no repositories to offer. "
-            + "Ask whoever runs AL Dev Toolbox to set it up.",
+            + "Ask whoever runs AL Workbench to set it up.",
         GitHubRepositoryReadiness.NotConnected =>
             "Your organisation has not connected a GitHub organisation yet. An administrator connects "
             + "one under Administration -> Repositories.",
         GitHubRepositoryReadiness.LinkNeedsRepair =>
-            "Your GitHub account is no longer connected to the toolbox. Connect it again on your "
+            "Your GitHub account is no longer connected to the workbench. Connect it again on your "
             + "account page under Repository access, then try this again.",
         GitHubRepositoryReadiness.NotLinked =>
             "Connect your own GitHub account first, on your account page under Repository access. "
-            + "Everything the toolbox does on GitHub is done in your name, so it needs your account to do it.",
+            + "Everything the workbench does on GitHub is done in your name, so it needs your account to do it.",
         _ => null,
     };
 

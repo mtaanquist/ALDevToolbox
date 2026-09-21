@@ -1,6 +1,6 @@
 # Object Explorer source viewer — static SSR + JS sprinkle
 
-This document proposes replacing the current Blazor Server-interactive source-file viewer (`/object-explorer/file/{FileId}`) with a static-SSR-plus-vanilla-JS architecture. It does not propose changing any other page in the toolbox.
+This document proposes replacing the current Blazor Server-interactive source-file viewer (`/object-explorer/file/{FileId}`) with a static-SSR-plus-vanilla-JS architecture. It does not propose changing any other page in the workbench.
 
 **Status:** proposal. No code in this doc has been written. If approved, it lands as a follow-up after the current `object-explorer-symbols` integration branch merges to `main`, and runs side-by-side with the existing viewer behind a route flag for one iteration before the old path is removed.
 
@@ -242,7 +242,7 @@ The two pages share `ObjectExplorerService`, `SourceFileOutlineGrouper`, and the
 ## What we explicitly don't do
 
 - **Move to Blazor WebAssembly for this page.** It would solve the SignalR-roundtrip problem and let us keep one framework, but it pays a ~2 MB WASM payload for a page that doesn't need much .NET logic in the browser, and per-page rendermode mixing in Blazor 8+ is still fragile around route boundaries. If a future page wants offline editing or genuinely complex client-side state, revisit.
-- **Build a full SPA frontend.** The release detail page, the admin pages, the snippet browser, every form in the toolbox is the right shape for Blazor Server interactive — *a form with server-owned state*. Refactoring those to a SPA would be a year of work and isn't justified by any single page. The static-SSR approach is precisely scoped to "this page is a viewer, not a form".
+- **Build a full SPA frontend.** The release detail page, the admin pages, the snippet browser, every form in the workbench is the right shape for Blazor Server interactive — *a form with server-owned state*. Refactoring those to a SPA would be a year of work and isn't justified by any single page. The static-SSR approach is precisely scoped to "this page is a viewer, not a form".
 - **Replace CodeMirror.** It's the right tool. Every issue we've hit is at the Blazor↔JS boundary, not at the JS↔editor boundary.
 - **Eliminate the C# import pipeline.** All the work on canonicalising paths, header-based file linking, AL symbol extraction, the `oe_*` schema — entirely unaffected. This proposal touches only what the *user* sees and does, not what's stored in the database.
 

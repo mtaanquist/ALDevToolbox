@@ -10,7 +10,7 @@ using ALDevToolbox.Services.Operations;
 namespace ALDevToolbox.Tests.OAuth;
 
 /// <summary>
-/// Pins the contract Claude relies on when adding AL Dev Toolbox as a custom
+/// Pins the contract Claude relies on when adding AL Workbench as a custom
 /// connector. Three guarantees:
 ///
 /// <list type="bullet">

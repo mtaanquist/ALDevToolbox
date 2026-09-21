@@ -64,7 +64,7 @@ public sealed class SiteAdminSettingsGitHubWebhookTests : IDisposable
     [Fact]
     public void The_page_offers_a_webhook_address_to_copy_and_a_secret_to_fill_in()
     {
-        UsePublicOrigin("https://toolbox.cronus.example");
+        UsePublicOrigin("https://workbench.cronus.example");
 
         var cut = _ctx.Render<SiteAdminSettingsGitHub>();
 
@@ -72,7 +72,7 @@ public sealed class SiteAdminSettingsGitHubWebhookTests : IDisposable
         {
             var address = cut.FindAll("input[readonly]")
                 .Select(i => i.GetAttribute("value"))
-                .Should().Contain("https://toolbox.cronus.example/github/webhook").And.Subject;
+                .Should().Contain("https://workbench.cronus.example/github/webhook").And.Subject;
             address.Should().NotBeEmpty();
 
             var secret = cut.Find("input[name=GitHubWebhookSecret]");
@@ -100,7 +100,7 @@ public sealed class SiteAdminSettingsGitHubWebhookTests : IDisposable
     [Fact]
     public async Task A_stored_secret_is_shown_as_unchanged_with_a_way_to_forget_it()
     {
-        UsePublicOrigin("https://toolbox.cronus.example");
+        UsePublicOrigin("https://workbench.cronus.example");
         await StoreWebhookSecretAsync();
 
         var cut = _ctx.Render<SiteAdminSettingsGitHub>();
@@ -130,7 +130,7 @@ public sealed class SiteAdminSettingsGitHubWebhookTests : IDisposable
     public void The_walkthrough_names_the_event_and_the_permission_the_gate_needs()
     {
         // Both are things the operator has to tick on GitHub itself. Leave either
-        // out and the compile gate never fires, with nothing in the toolbox to
+        // out and the compile gate never fires, with nothing in the workbench to
         // say why.
         UsePublicOrigin(null);
 
@@ -160,7 +160,7 @@ public sealed class SiteAdminSettingsGitHubWebhookTests : IDisposable
     {
         using var rsa = RSA.Create(2048);
         await _db.NewSystemSettingsService(_db.NewContext()).SaveGitHubAppAsync(new GitHubAppInput(
-            AppId: "123456", AppSlug: "al-dev-toolbox", ClientId: null,
+            AppId: "123456", AppSlug: "al-workbench", ClientId: null,
             ClientSecret: null, ClearClientSecret: false,
             PrivateKeyPem: rsa.ExportRSAPrivateKeyPem(), ClearPrivateKey: false,
             WebhookSecret: "swordfish", ClearWebhookSecret: false));

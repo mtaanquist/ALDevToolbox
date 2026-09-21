@@ -12,7 +12,7 @@ Client Registration, RFC 7591) and **CIMD** (Client ID Metadata Document).
 Anything else (`oauth_anthropic_creds`, `custom_connection`) requires
 emailing `mcp-review@anthropic.com` and an Anthropic-side review.
 
-Today AL Dev Toolbox gates `/mcp` with a single bearer flavour: the
+Today AL Workbench gates `/mcp` with a single bearer flavour: the
 PAT (`aldt_pat_…`) handler in
 `Services/Account/PatAuthenticationHandler.cs`. That works for Claude
 Desktop, Cursor, Copilot agent mode, and Claude Code, all of which let you
@@ -46,7 +46,7 @@ consent.
 ## Architecture
 
 ```
- Claude (browser / mobile)               AL Dev Toolbox
+ Claude (browser / mobile)               AL Workbench
  ──────────────────────────              ──────────────
    GET /mcp ─────────────────────────────► McpEndpoints
                                            │ McpBearerPolicy → 401
