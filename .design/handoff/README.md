@@ -54,6 +54,18 @@ the seven byte-locked sheets were compared the same way and found identical. The
 app deliberately diverges from the Environments sheet's copy in a few places;
 the design project's `briefs/2026-09-port-corrections.md` records which.
 
+**What shipped without a sheet** is listed in the design project's
+`briefs/2026-09-shipped-without-a-sheet.md` (pushed 2026-09-21): the environment page's
+five tabs with the Operations and Sessions lists, the storage bar and the Deleted view on
+the Environments list, the copy-environment dialog, the Solutions list's customer-info
+rail (a list-with-rail archetype variant), the Customer tab and its `.cust-list` pattern,
+and the customer-modules admin page - each with what was decided and what a design pass
+should settle. It also carries one **correction to `components.css`**: `.modal-backdrop`
+mixes from `--ink`, which flips with the theme, so the dark scrim comes out nearly white.
+The app overrides it in `app.css` until the sheet is fixed upstream and re-pulled; delete
+the override then. When a doc in `.design/` says something "needs a design pass upstream",
+that brief is where it is tracked.
+
 [#570]: https://github.com/mtaanquist/ALDevToolbox/issues/570
 [#818]: https://github.com/mtaanquist/ALDevToolbox/issues/818
 
