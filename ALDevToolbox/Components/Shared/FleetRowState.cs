@@ -11,22 +11,11 @@ namespace ALDevToolbox.Components.Shared;
 public static class FleetRowState
 {
     /// <summary>
-    /// The state in words a consultant would use. Business Central's own tokens
-    /// ("SoftDeleted") are API vocabulary and must not reach the screen, but an
-    /// unrecognised one is still shown rather than swallowed - a state we don't know
-    /// about is exactly the kind of thing someone needs to see.
+    /// The state in words a consultant would use. The words live in
+    /// <see cref="BcEnvironmentStatus.StatusWord(string?)"/>, because the command
+    /// palette describes the same environment in a result row and the two must agree.
     /// </summary>
-    public static string StatusWord(UpgradeFleetRow row) =>
-        (row.Status ?? string.Empty).ToLowerInvariant() switch
-        {
-            "active" => "Running",
-            "updating" => "Update in progress",
-            "preparing" => "Being prepared",
-            "suspended" => "Suspended by Microsoft",
-            "softdeleted" => BcEnvironmentStatus.Humanise(row.Status),
-            "" => "State not reported",
-            _ => "In a state we don't recognise",
-        };
+    public static string StatusWord(UpgradeFleetRow row) => BcEnvironmentStatus.StatusWord(row.Status);
 
     /// <summary>
     /// True when the row exists but Business Central told us no lifecycle state for it.
@@ -37,8 +26,7 @@ public static class FleetRowState
     public static bool StateUnknown(UpgradeFleetRow row) => string.IsNullOrWhiteSpace(row.Status);
 
     /// <summary>True for a plainly running environment - the one state that needs no word on screen.</summary>
-    public static bool IsRunning(UpgradeFleetRow row) =>
-        string.Equals(row.Status, "active", StringComparison.OrdinalIgnoreCase);
+    public static bool IsRunning(UpgradeFleetRow row) => BcEnvironmentStatus.IsRunning(row.Status);
 
     /// <summary>
     /// The row's keyline state. An unread environment takes the neutral queued

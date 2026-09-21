@@ -44,10 +44,16 @@ public static class PaletteRanking
     /// loosely filtered rows is cheaper than missing one.
     ///
     /// <para>The rule underneath every tier is the same: <b>every term must match
-    /// somewhere</b> across the candidate's title, short name and subtitle, in
-    /// any order. <c>con cof</c> and <c>cof con</c> both find "Contoso Coffee";
-    /// <c>con prod</c> finds the environment titled "Production" whose subtitle
-    /// is "Contoso Coffee".</para>
+    /// somewhere</b> across the candidate's title, short name, subtitle and
+    /// searched-only text, in any order. <c>con cof</c> and <c>cof con</c> both
+    /// find "Contoso Coffee"; <c>con prod</c> finds the environment titled
+    /// "Production" whose subtitle is "Contoso Coffee".</para>
+    ///
+    /// <para>Only the two tiers below care <em>which</em> field matched: the top
+    /// hit is an exact short name and the prefix tier is over the title and the
+    /// short name, so a row found through
+    /// <see cref="PaletteCandidate.SearchOnly"/> can never be lifted above its
+    /// group by text the user cannot see.</para>
     /// </summary>
     public static PaletteMatchTier? Match(PaletteQuery query, PaletteCandidate candidate)
     {
@@ -58,10 +64,11 @@ public static class PaletteRanking
         var title = PaletteQuery.Fold(candidate.Title);
         var shortName = PaletteQuery.Fold(candidate.ShortName);
         var subtitle = PaletteQuery.Fold(candidate.Subtitle);
+        var searchOnly = PaletteQuery.Fold(candidate.SearchOnly);
 
         // Ordered so the field a user most likely typed is checked first; the
         // answer does not depend on the order, only the work does.
-        Span<string> fields = [title, shortName, subtitle];
+        Span<string> fields = [title, shortName, subtitle, searchOnly];
 
         foreach (var term in query.Terms)
         {

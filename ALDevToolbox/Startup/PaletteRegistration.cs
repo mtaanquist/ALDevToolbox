@@ -18,12 +18,14 @@ public static class PaletteRegistration
     /// what a user sees. Scoped, because a source reads through the request's
     /// <c>DbContext</c> and the caller's organisation context.</para>
     ///
-    /// <para>No sources are registered yet: the endpoint works and answers empty
-    /// groups. Solutions, Environments, Releases and Recipes land next.</para>
+    /// <para>Releases and Recipes land next; until they do the endpoint simply
+    /// answers with the groups it has.</para>
     /// </summary>
     public static IServiceCollection AddPalette(this IServiceCollection services)
     {
         services.AddScoped<PaletteSearchService>();
+        services.AddScoped<IPaletteSource, SolutionPaletteSource>();
+        services.AddScoped<IPaletteSource, EnvironmentPaletteSource>();
         services.AddScoped<IPaletteSource, RecipePaletteSource>();
         return services;
     }
