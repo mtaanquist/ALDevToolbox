@@ -210,20 +210,25 @@ Two things cover the move:
   copies the manifest rather than building twice, and it is `continue-on-error`, so a refusal
   from the old package can never fail a release. Delete the step once every deployment has
   moved; it says so in its own comment.
-- `compose.yaml`'s tag variable is `ALWORKBENCH_TAG` with `ALDEVTOOLBOX_TAG` as a permanent
-  fallback, so an `.env` written before the rename keeps pinning what it pinned. It **still
-  pulls the old path**, and has to until the new package exists and is public: CI's compose
-  smoke test pulls the image anonymously, so pointing it at a path that is missing or
-  private fails every pull request (that is what happened the first time). The order is:
-  release once from the renamed repository, make the `al-workbench` package public, then
-  flip the image line.
+- `compose.yaml` pulls the new path, and its tag variable is `ALWORKBENCH_TAG` with
+  `ALDEVTOOLBOX_TAG` as a permanent fallback, so an `.env` written before the rename keeps
+  pinning what it pinned.
+
+**The order mattered, and is worth keeping for next time.** `compose.yaml` could not move in
+the same change as the rename: CI's compose smoke test pulls the image anonymously, and the
+new package did not exist until a release had published it - while releasing needed that
+change merged. So: release once from the renamed repository (v11.9.1) with compose still on
+the old path, check the new package can be pulled without signing in, then flip the image
+line.
 
 The new path only holds releases cut after the rename (v11.9.1 onwards). A deployment
 pinned to an older version must keep the old image path until it upgrades - `latest` and
 anything newer are at both.
 
-A package created by the first push to a new path starts **private**: until somebody makes it
-public in the package's settings, pulls of the new path 404. Old links to the repository,
+The new package came up **public**, inheriting the repository's visibility - not private, as
+this document and the rename PR had both predicted. Check rather than assume:
+`docker logout ghcr.io && docker manifest inspect ghcr.io/mtaanquist/al-workbench:<tag>`.
+Old links to the repository,
 its issues and its pull requests redirect for as long as nothing else takes the old name.
 
 **Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping (10 is the tag the Upgrades work is cut as):
