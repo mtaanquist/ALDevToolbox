@@ -210,9 +210,13 @@ Two things cover the move:
   copies the manifest rather than building twice, and it is `continue-on-error`, so a refusal
   from the old package can never fail a release. Delete the step once every deployment has
   moved; it says so in its own comment.
-- `compose.yaml` pulls the new path, and its tag variable is `ALWORKBENCH_TAG` with
-  `ALDEVTOOLBOX_TAG` as a permanent fallback, so an `.env` written before the rename keeps
-  pinning what it pinned.
+- `compose.yaml`'s tag variable is `ALWORKBENCH_TAG` with `ALDEVTOOLBOX_TAG` as a permanent
+  fallback, so an `.env` written before the rename keeps pinning what it pinned. It **still
+  pulls the old path**, and has to until the new package exists and is public: CI's compose
+  smoke test pulls the image anonymously, so pointing it at a path that is missing or
+  private fails every pull request (that is what happened the first time). The order is:
+  release once from the renamed repository, make the `al-workbench` package public, then
+  flip the image line.
 
 The new path only holds releases cut after the rename (v11.9.1 onwards). A deployment
 pinned to an older version must keep the old image path until it upgrades - `latest` and
