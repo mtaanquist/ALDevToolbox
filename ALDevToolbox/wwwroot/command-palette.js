@@ -341,7 +341,6 @@
         for (let i = 0; i < rows.length; i++) {
             rows[i].id = "cmdp-opt-" + i;
             rows[i].setAttribute("aria-selected", "false");
-            rows[i].classList.remove("is-active");
         }
     }
 
@@ -353,7 +352,6 @@
     function select(index, scroll) {
         const field = input();
         for (let i = 0; i < rows.length; i++) {
-            rows[i].classList.remove("is-active");
             rows[i].setAttribute("aria-selected", "false");
         }
         if (rows.length === 0) {
@@ -364,7 +362,6 @@
 
         activeIndex = ((index % rows.length) + rows.length) % rows.length;
         const row = rows[activeIndex];
-        row.classList.add("is-active");
         row.setAttribute("aria-selected", "true");
         if (scroll !== false) row.scrollIntoView({ block: "nearest" });
         if (field) field.setAttribute("aria-activedescendant", row.id);

@@ -142,12 +142,12 @@
 /* Exactly one row is ever lit. The pointer moves the selection rather than
    drawing a highlight of its own, so the row under the mouse and the row Enter
    would open are never two different rows. */
-.cmdp-row.is-active {
+.cmdp-row[aria-selected="true"] {
     background: var(--primary-weak);
     border-left-color: var(--primary);
 }
 
-.cmdp-row.is-active .cmdp-row__icon { color: var(--primary-ink); }
+.cmdp-row[aria-selected="true"] .cmdp-row__icon { color: var(--primary-ink); }
 
 /* ---------- what it says when it has nothing ---------- */
 

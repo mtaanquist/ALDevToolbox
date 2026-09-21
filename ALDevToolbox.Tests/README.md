@@ -85,7 +85,7 @@ their names say:
 | Object Explorer      | `ObjectExplorer/`, `Al/`, `Cal/`, `Diff/`                             |
 | Translator           | `Translator/` (memory, suggestions, XLIFF writing), `Translations/` (XLIFF parsing and import), `Translation/` (machine-translation providers) |
 | Other tools          | `Cookbook/`, `BcQuality/`, `Mcp/`, `Tools/`, `Dashboard/`, `GitHub/`  |
-| UI and shell         | `Components/`, `Assets/` (stylesheet and rendered-markup invariants), `Icons/`, `Routing/`, `Endpoints/` |
+| UI and shell         | `Components/`, `Assets/` (stylesheet and rendered-markup invariants), `Icons/`, `Routing/`, `Endpoints/`, `Palette/` (the command palette's query parsing, ranking, endpoint, and the visibility harness every source must pass) |
 | Operations           | `Migrations/`, `Storage/`, `Services/` (`BuildInfo`, `WorkerHeartbeat`), `Piper/` |
 
 When you add a new test file, match the folder. Resist creating new

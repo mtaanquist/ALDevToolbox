@@ -8,7 +8,7 @@ namespace ALDevToolbox.Startup;
 
 /// <summary>
 /// Operator-facing plumbing: the health checks behind /healthz, /readyz and
-/// /healthz/workers, plus the anonymous-write rate limiter.
+/// /healthz/workers, plus the rate-limiter policies.
 /// </summary>
 public static class OperationsRegistration
 {
@@ -78,6 +78,33 @@ public static class OperationsRegistration
                         TokenLimit = 60,
                         TokensPerPeriod = 40,
                         ReplenishmentPeriod = TimeSpan.FromSeconds(10),
+                        AutoReplenishment = true,
+                        QueueLimit = 0,
+                    }));
+
+            // GET /palette/search is authenticated, so it is not exposed the way
+            // the three policies around it are - the limit is here because the
+            // palette fires one request per 120 ms debounce while somebody types,
+            // which is the one route in the app a person can hit tens of times in
+            // a few seconds without meaning to. A token bucket fits that traffic:
+            // a burst while a query is typed out, then a quiet minute.
+            //
+            // Partitioned by the caller's address rather than their user id,
+            // although the route is authenticated: UseRateLimiter runs ahead of
+            // UseAuthentication in Program.cs (it has to stay above
+            // UseStatusCodePagesWithReExecute, or a 429 would be re-executed into
+            // the not-found page), so there is no user_id claim to read here yet.
+            // The budget below is sized for that: 30 per second sustained with a
+            // 120 burst is more than a floor of people behind one address can
+            // produce through a 120 ms debounce, and still bounds a script.
+            options.AddPolicy(PaletteEndpoints.SearchRateLimitPolicy, httpContext =>
+                RateLimitPartition.GetTokenBucketLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new TokenBucketRateLimiterOptions
+                    {
+                        TokenLimit = 120,
+                        TokensPerPeriod = 60,
+                        ReplenishmentPeriod = TimeSpan.FromSeconds(2),
                         AutoReplenishment = true,
                         QueueLimit = 0,
                     }));

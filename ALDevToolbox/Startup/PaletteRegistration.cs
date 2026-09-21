@@ -1,0 +1,28 @@
+using ALDevToolbox.Services.Palette;
+
+namespace ALDevToolbox.Startup;
+
+/// <summary>
+/// The command palette's search backbone. See
+/// <c>.design/command-palette.md</c>.
+/// </summary>
+public static class PaletteRegistration
+{
+    /// <summary>
+    /// Registers the search service and its sources.
+    ///
+    /// <para><b>Adding a source is one class and one line here.</b> Order the
+    /// line however you like — <see cref="PaletteSearchService"/> sorts by
+    /// <see cref="IPaletteSource.Order"/>, so registration order never decides
+    /// what a user sees. Scoped, because a source reads through the request's
+    /// <c>DbContext</c> and the caller's organisation context.</para>
+    ///
+    /// <para>No sources are registered yet: the endpoint works and answers empty
+    /// groups. Solutions, Environments, Releases and Recipes land next.</para>
+    /// </summary>
+    public static IServiceCollection AddPalette(this IServiceCollection services)
+    {
+        services.AddScoped<PaletteSearchService>();
+        return services;
+    }
+}

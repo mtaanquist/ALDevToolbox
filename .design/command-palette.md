@@ -1,9 +1,8 @@
 # The command palette
 
-Status: **the shell is built (#880); the search behind it is not.** This document is the
-outcome of #879; the rest of milestone "Command palette" (#881-#889) is still to come, so
-everything about sources and the endpoint below describes what is coming rather than what
-is there. Every decision below was made with the maintainer on 2026-09-21.
+Status: **the shell (#880) and the search backbone (#881) are built; the sources that
+give it something to find (#882-#884) are next.** This document is the outcome of #879.
+Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
 
@@ -111,8 +110,10 @@ A source provides:
   Releases, Recipes, Go to.
 - **A gate.** The role check and feature gate its matching page already has. A caller who
   fails it never has that source asked.
-- **A search.** Query terms and a limit in; candidate rows out - title, subtitle, link,
-  icon name, and the fields that were matched against.
+- **A search.** Query terms and a limit in; candidate rows out - kind, title, subtitle,
+  link, and the short name when the row has one. Those three text fields *are* what was
+  matched against. No icon name: the icon is in the `<template>` the kind selects, so it
+  never rides the JSON.
 
 Sources return candidates, **not scores**. One shared function ranks everything, so
 ranking cannot drift from source to source.
@@ -180,6 +181,15 @@ row's searched fields, in any order - so `con cof` finds "Contoso Coffee", `cof 
 too, and `con prod` finds the Production environment of Contoso because an environment's
 subtitle is its Solution. Matching ignores case and accents (`moller` finds "Møller").
 
+Accent folding happens in memory, in `PaletteRanking`, because Postgres can only do it
+in SQL through the `unaccent` extension and installing one is a migration, not something
+a search box decides. A source over a small table of human-typed names (Solutions,
+Environments) therefore projects its rows and lets the ranking decide, which folds
+correctly. A source over a large table (Releases, Recipes) pre-filters with `ILIKE` per
+term first, and that pre-filter is accent-sensitive: `møller` finds a release named for
+Møller, `moller` does not. Accepted, and recorded here so the next person does not read
+it as a bug.
+
 Results are **grouped by source in a fixed order** - Solutions, Environments, Releases,
 Recipes, Go to - so a Solution and its environments do not shuffle against each other as
 the user types. Within a group, best tier first, ties broken by name:
@@ -215,8 +225,13 @@ storage is unavailable the palette simply shows Go to.
 - **Browser:** 120 ms debounce after the last keystroke; the in-flight request is
   aborted when a new one starts; a late response for an old query is dropped. A
   one-character query is not sent - Go to filters locally.
-- The endpoint is rate-limit-free but cheap by construction; if it ever shows up in
-  traces, fix the slow source rather than adding a cache.
+- The endpoint is cheap by construction; if it ever shows up in traces, fix the slow
+  source rather than adding a cache. It still carries a rate-limit policy beside the
+  three in `OperationsRegistration`, because it is the one route a person can hit tens
+  of times in a few seconds without meaning to: a token bucket sized well above what a
+  120 ms debounce can produce, so typing never trips it and a script is still bounded.
+  The partition is the caller's address rather than their user id - `UseRateLimiter`
+  runs ahead of `UseAuthentication`, so there is no claim to read at that point.
 
 ## States
 
