@@ -245,7 +245,7 @@ public sealed class SolutionPaletteSourceTests : PaletteSourceVisibilityTestBase
     {
         await using var ctx = Db.NewContext();
         var source = CreateSource(new PaletteSourceUnderTest(ctx, Db.OrgContext, new ProjectAccess(ctx, Db.OrgContext)));
-        var service = new PaletteSearchService([source], NullLogger<PaletteSearchService>.Instance);
+        var service = new PaletteSearchService([source], NullLogger<PaletteSearchService>.Instance, TimeSpan.FromSeconds(30));
 
         return await service.SearchAsync(CallerPrincipal(), query, CancellationToken.None);
     }
