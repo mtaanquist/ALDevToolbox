@@ -88,7 +88,25 @@ public sealed class EnvironmentDetailTests : IDisposable
         // Connecting". Stop the page (and with it the timer) first; then the only
         // read left is one already under way, which the second settle waits out once
         // the pause has let an opening connection reach its command.
-        _ctx.DisposeComponentsAsync().GetAwaiter().GetResult();
+        //
+        // Stopping the page can itself race: a test that asserts straight after
+        // Render leaves the page's async initialisation still finishing, and
+        // bunit's DisposeComponents enumerates its component list while that last
+        // render lands on it ("Collection was modified"). Nothing is wrong with the
+        // page; teardown has just arrived early. A short wait and one more attempt
+        // is all it needs.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                _ctx.DisposeComponentsAsync().GetAwaiter().GetResult();
+                break;
+            }
+            catch (InvalidOperationException) when (attempt < 3)
+            {
+                Thread.Sleep(100);
+            }
+        }
         _db.WaitForQueriesToSettle();
         Thread.Sleep(100);
         _db.WaitForQueriesToSettle();
