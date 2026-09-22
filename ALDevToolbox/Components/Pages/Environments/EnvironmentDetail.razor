@@ -137,11 +137,12 @@
                getting. Operations and Sessions are read live on every visit, so anyone
                reading them may read them again; Apps and settings are cached for
                everyone, and making the customer's tenant answer again is a manager's
-               call. *@
+               call. data-page-refresh lets the command palette press the same button,
+               under the same condition - it is offered only where the button is drawn. *@
             @if (_canManage || _tab is Section.Operations or Section.Sessions)
             {
                 <button type="button" class="btn btn--sm @(Refreshing ? "btn--loading" : "")"
-                        @onclick="RefreshAsync" disabled="@Refreshing">
+                        @onclick="RefreshAsync" disabled="@Refreshing" data-page-refresh>
                     <Icon Name="refresh-cw" Width="14" Height="14" />
                     <span class="btn__label">@(Refreshing ? "Refreshing" : "Refresh")</span>
                 </button>

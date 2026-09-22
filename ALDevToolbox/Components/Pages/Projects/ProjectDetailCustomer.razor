@@ -67,13 +67,27 @@ else if (_editing)
                         <small class="field__hint">On-premises. Environments, upgrades and releases only work with Business Central online, so this solution won't have them. Repositories and builds are unaffected.</small>
                     }
                 </section>
-                <section class="field">
-                    <label class="field__label" for="cust-version">Version</label>
-                    <input id="cust-version" type="text" class="input" style="max-width: 320px"
-                           maxlength="@ProjectCustomerInfoService.VersionMaxLength"
-                           @bind="_edit.Version" disabled="@_saving" placeholder="e.g. BC 25.3 or NAV 2018 CU12" />
-                    <FieldError Field="BcVersion" Errors="_errors" />
-                </section>
+                @if (_basics.FromBusinessCentral)
+                {
+                    @* Business Central says, so there is nothing to type: the row is the
+                       explanation. The typed value stays in its column for the day the
+                       connection goes. *@
+                    <section class="field">
+                        <span class="field__label">Version</span>
+                        <span class="cust__fixed">@(_basics.EffectiveVersion ?? NotReported)</span>
+                        <small class="field__hint">@ReadFrom <a href="@($"/solutions/{Id}?tab=bc")">Refresh it on the Business Central tab.</a></small>
+                    </section>
+                }
+                else
+                {
+                    <section class="field">
+                        <label class="field__label" for="cust-version">Version</label>
+                        <input id="cust-version" type="text" class="input" style="max-width: 320px"
+                               maxlength="@ProjectCustomerInfoService.VersionMaxLength"
+                               @bind="_edit.Version" disabled="@_saving" placeholder="e.g. BC 25.3 or NAV 2018 CU12" />
+                        <FieldError Field="BcVersion" Errors="_errors" />
+                    </section>
+                }
                 <section class="field">
                     <label class="field__label" for="cust-licence">Licence</label>
                     <SelectBox style="max-width: 320px">
@@ -99,13 +113,31 @@ else if (_editing)
                     </SelectBox>
                     <small class="field__hint">Essential or Premium, as on the customer's Company Information page.</small>
                 </section>
-                <section class="field">
-                    <label class="field__label" for="cust-url">Business Central address</label>
-                    <input id="cust-url" type="url" class="input" maxlength="@ProjectCustomerInfoService.ClientUrlMaxLength"
-                           @bind="_edit.Url" disabled="@_saving" placeholder="e.g. https://bc.cronus.example/BC250" />
-                    <FieldError Field="ClientUrl" Errors="_errors" />
-                    <small class="field__hint">Where a person opens Business Central.</small>
-                </section>
+                @if (_basics.FromBusinessCentral)
+                {
+                    <section class="field">
+                        <span class="field__label">Business Central address</span>
+                        @if (_basics.EffectiveClientUrl is { } fixedUrl)
+                        {
+                            <a class="cust__fixed" href="@fixedUrl" target="_blank" rel="noopener noreferrer">@fixedUrl</a>
+                        }
+                        else
+                        {
+                            <span class="cust__fixed">@NotReported</span>
+                        }
+                        <small class="field__hint">@ReadFrom <a href="@($"/solutions/{Id}?tab=bc")">Refresh it on the Business Central tab.</a></small>
+                    </section>
+                }
+                else
+                {
+                    <section class="field">
+                        <label class="field__label" for="cust-url">Business Central address</label>
+                        <input id="cust-url" type="url" class="input" maxlength="@ProjectCustomerInfoService.ClientUrlMaxLength"
+                               @bind="_edit.Url" disabled="@_saving" placeholder="e.g. https://bc.cronus.example/BC250" />
+                        <FieldError Field="ClientUrl" Errors="_errors" />
+                        <small class="field__hint">Where a person opens Business Central.</small>
+                    </section>
+                }
                 <section class="field">
                     <label class="field__label" for="cust-voice">Voice account number</label>
                     <input id="cust-voice" type="text" class="input" style="max-width: 320px"
@@ -175,13 +207,13 @@ else
         <div class="card__body">
             <div class="kv-grid cust__grid">
                 <span class="meta-item"><span class="meta-item__label">Hosted by</span><span class="meta-item__value">@(_basics.HostingType is { } h ? HostingText(h) : "—")</span></span>
-                <span class="meta-item"><span class="meta-item__label">Version</span><span class="meta-item__value">@(_basics.BcVersion ?? "—")</span></span>
+                <span class="meta-item"><span class="meta-item__label">Version</span><span class="meta-item__value">@(_basics.EffectiveVersion ?? "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Licence</span><span class="meta-item__value">@(_basics.LicenseType is { } l ? LicenceText(l) : "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Experience</span><span class="meta-item__value">@(_basics.UserExperience?.ToString() ?? "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Voice account number</span><span class="meta-item__value meta-item__value--mono">@(_basics.VoiceAccountNumber ?? "—")</span></span>
                 <span class="meta-item"><span class="meta-item__label">Microsoft tenant ID</span><span class="meta-item__value meta-item__value--mono">@(_basics.TenantId?.ToString("D") ?? "—")</span></span>
             </div>
-            @if (_basics.ClientUrl is { } url)
+            @if (_basics.EffectiveClientUrl is { } url)
             {
                 <p class="meta-item cust__url">
                     <span class="meta-item__label">Business Central address</span>
@@ -256,6 +288,13 @@ else
         public string Voice { get; set; } = string.Empty;
         public string Tenant { get; set; } = string.Empty;
     }
+
+    /// <summary>Where the version and address came from and how fresh they are, e.g. "From the Production environment, read 3 hours ago."</summary>
+    private const string NotReported = "Business Central hasn't reported this yet.";
+
+    private string ReadFrom => _basics?.Production is { } p
+        ? $"From the {p.EnvironmentName} environment, read {RelativeTime.Ago(p.FetchedAt)}."
+        : string.Empty;
 
     private bool EditIsOnPremises =>
         Enum.TryParse<ProjectHostingType>(_edit.Hosting, out var chosen) && chosen != ProjectHostingType.MicrosoftCloud;

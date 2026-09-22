@@ -3,9 +3,9 @@
 Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884), the
 way in, the accessibility pass and the docs (#888), the performance work (#889), page
 context and recents (#887) and the rest of the sources (#885: pipelines, release
-pipelines, templates, teams, people and the docs pages) are built; commands (#886) are
-next. BCQuality articles and translation files were looked at and left out - see
-"Deliberately left out".** This document is the outcome of #879.
+pipelines, templates, teams, people and the docs pages) and commands (#886) are built.
+BCQuality articles and translation files were looked at and left out, and so were typed
+search modes - see "Deliberately left out".** This document is the outcome of #879.
 Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
@@ -42,7 +42,7 @@ Instead the palette is three parts:
    error states, and one `<template>` per kind of result row. Icons come from
    `Icon.razor` like everywhere else, and the "Go to" list of tools is rendered
    server-side from the same role and feature gates the nav menu uses, so the palette
-   never offers a page the nav would not.
+   never offers a page the nav would not. The Commands group is rendered the same way.
 2. **One script in the shell.** A single dependency-free file beside `shell-drawer.js`.
    It owns the hotkey, open and close, focus, keyboard navigation, the fetch, and cloning
    templates into the list. It writes no HTML and chooses no class names - it fills
@@ -262,8 +262,88 @@ The palette is a new read path across most of the app, so it is a new way to lea
 behind a confirm that names the environment and says when it is production; a palette
 command is exactly how the wrong environment gets updated. A command like "Copy
 environment" - if one is ever added - navigates to the page that owns the action and its
-confirm. The first version has no commands at all, only places to go; #886 adds
-commands under this rule.
+confirm. The commands #886 added keep this rule by construction - see "Commands" below.
+
+## Commands
+
+A few things are worth a keystroke without being a place: starting a new Solution, switching
+the theme, copying the page's address, signing out. They are one more group, **Commands**,
+found by ordinary text like everything else - `new sol`, `dark`, `sign out`.
+
+**Commands are rendered and filtered exactly like Go to.** The list is a static catalogue,
+`Domain/Navigation/PaletteCommands.cs`, beside `NavDestinations` and gated by the same
+`NavGate` and tool toggles (one evaluator, `NavDestinations.Passes`, so a command and a page
+cannot disagree about who may see them). `CommandPalette.razor` renders the ones the caller
+passes into an inert `<template>`, each row carrying its own icon; the script filters them
+under the every-term-must-match rule, ranks them like Go to (best tier, then catalogue order),
+and draws them after the context block and Recent - local groups, so search results never
+land above them - and before the search results and Go to. No endpoint, no server call.
+
+**Before anything is typed, only three show**: New solution, Copy link to this page, and
+Refresh where the page has one (`OnOpen` in the catalogue). The palette is opened to jump
+somewhere, and all thirteen an Admin gets would push every Go to page below the fold; the
+rest are one word away. Sign out in particular is never on the opening list, and sits last
+in the group, so it is never one reflexive Enter from opening the box.
+
+A navigate command's second line names where it lands ("Solutions", "Templates", "Your
+account"), and an act command's says it happens here ("This page", "Appearance"), so the two
+kinds read differently without a caption explaining them. The foot's hint says "Enter to
+choose" rather than "to open", which was wrong for a command that acts in place.
+Commands are not deduplicated against Go to: "New workspace" beside "Workspace" is two ways
+to say one thing, and both are worth finding.
+
+There are two kinds:
+
+| Kind | What it is | The commands |
+| --- | --- | --- |
+| Navigate | An ordinary link to the page that owns the form | New solution, New workspace, New extension, Suggest a recipe (each behind its tool); Repository access (`/account?section=repos`); Import a Business Central release (Admins and Editors - named in full because "release" alone reads as the delivery area); Business Central app registration (Admins, where the organisation owns its settings) |
+| Act | `data-command-action`, run by the script from a closed list | `theme:light`, `theme:dark`, `theme:system`, `copy-link`, `sign-out`, `refresh` |
+
+**The act list is the whole list.** The script keeps its own copy and refuses any other
+action id, even when the markup asks for one. Each is small and stays inside the app:
+
+- **Theme** calls `theme.js`'s own `set` (published as `window.aldt.theme`), so there is one
+  place that knows how a theme is stored and applied. The row for the current theme shows
+  "Current" as its second line, read from the same file when the list is drawn.
+- **Copy link** writes the page's address to the clipboard and shows "Copied" on its row
+  (and says it to a screen reader) for a moment before the palette closes - the one act
+  command that does not close at once, because a copy with no sign that it worked reads as
+  a copy that failed. A refused clipboard says "Couldn't copy - use the address bar" on the
+  row and leaves the palette open, so the sentence can be read.
+- **Sign out** submits the top bar's own `.signout-form`, which carries the antiforgery
+  token. The palette never builds a POST of its own.
+- **Refresh** presses the page's own Refresh button, which a page marks with
+  `data-page-refresh` - today the Environments list and an environment's page. The command
+  is offered only while such a button is on the page and not mid-refresh, which is how it
+  inherits the page's own condition for drawing it (an environment's Apps tab offers it to
+  the people who manage the Solution, and to nobody else). A Refresh reads Business Central
+  again; it writes nothing there.
+
+Every act command closes the palette and returns focus before it acts, so what it does lands
+on the page. Two tests hold the fence: every navigate command's link resolves to a routable
+page, and every act command is on the sanctioned list - written out in the test rather than
+read from the catalogue, so widening the list is a visible diff to the test as well as the
+code - and the script's copy of the list matches it.
+
+Two rows the issue listed are left out because Go to already has them, same label and same
+link: **Account** and **Customer modules**. A command that repeats a page row word for word
+adds a line and no way in.
+
+### No typed modes
+
+#886 proposed leading characters that narrow the search - `>` commands, `@` Solutions, `#`
+releases, `/` pages - taught by the placeholder ("Search, or type > for commands") and
+listed in the foot. They were not built, for two reasons:
+
+- **A placeholder that teaches a prefix is a caption explaining a mechanic**, which
+  `CLAUDE.md` rules out: if the UI needs one, the UI is wrong. The palette's promise is one
+  input and a list, and nothing in it that needs learning. Commands are found by what they
+  say, like everything else.
+- **The palette does not need narrowing to be fast.** "Budget" has the numbers: the whole
+  fan-out is about an eighth of its budget at a few hundred Solutions, and inside budget at
+  four times that. A mode would buy speed nobody is short of, at the price of a syntax.
+  The list stays short the same way it always has - grouping, the per-group caps, and
+  every term having to match.
 
 ## Matching and ranking
 
@@ -302,8 +382,9 @@ there.
 ### An empty query
 
 Opening the palette without typing shows, in order: **the page you are on** (its context
-block, headed by the record's name), **Recent**, then the **Go to** list (#887). Typing
-filters the first two in the browser under the same every-term-must-match rule as Go to,
+block, headed by the record's name), **Recent**, **Commands** (#886), then the **Go to**
+list (#887). Typing
+filters the first three in the browser under the same every-term-must-match rule as Go to,
 so they answer every keystroke at once; they stay above the search results, which arrive
 underneath them without pushing anything that is already on screen. A link is drawn once:
 a recent that is also in the context block, or a search result that is also a recent,
@@ -493,7 +574,7 @@ waited on. The other sources still return, and the palette shows the groups it h
 
 ## States
 
-The list pane always shows exactly one of: the context block, recents and Go to (empty
+The list pane always shows exactly one of: the context block, recents, commands and Go to (empty
 query - any of the first two may be absent), results,
 "No search results for '...'" when the search came back with nothing, or "Search is not
 available right now" when the request failed. The last two never stack - a failed request
@@ -506,7 +587,8 @@ keystroke, and the selected row keeps its place when the new ones arrive.
 
 Keyboard: Up/Down move, Home/End jump to the ends, Enter opens, Ctrl/Cmd+Enter opens in a
 new tab, Esc closes and puts focus back where it was. Enter only opens a row while the
-input has focus; on Close or Clear recents it is that button's own press.
+input has focus; on Close or Clear recents it is that button's own press. On an act
+command Enter and Ctrl/Cmd+Enter both run it - there is no page to open in a new tab.
 
 The foot carries those hints and **at most two things that are not hints**, together at
 its end: **Clear recents**, shown only while there are recents on screen, and a link to
@@ -555,6 +637,7 @@ it is recorded in the design brief for a decision upstream.
 ## Deliberately left out
 
 - Commands that write to a tenant, ever (see "What it never does").
+- Typed search modes (`>`, `@`, `#`, `/`) - see "No typed modes" under "Commands".
 - Searching inside releases, source, or recipe bodies. That includes searching a
   release's *objects* from the palette (`table 18`, `page customer card`), which
   #883 raised as a stretch: the palette would have to pick which release the

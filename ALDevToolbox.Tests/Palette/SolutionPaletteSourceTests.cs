@@ -105,6 +105,32 @@ public sealed class SolutionPaletteSourceTests : PaletteSourceVisibilityTestBase
     }
 
     [Fact]
+    public async Task A_connected_solution_says_the_version_its_production_environment_reports()
+    {
+        await SeedWorldAsync();
+        await StampCustomerInfoAsync();
+        await using (var ctx = Db.NewContext())
+        {
+            // Connected (the stored secret is not a real ciphertext - nothing decrypts it)
+            // with a Production environment Business Central has reported on (#907).
+            var project = await ctx.OeProjects.FirstAsync(p => p.Id == VisibleProjectId);
+            project.BcClientId = "11111111-2222-3333-4444-555555555555";
+            project.BcClientSecretEncrypted = "not-a-real-ciphertext";
+            ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = VisibleProjectId, Name = "Production", Type = "Production",
+                Version = "26.1.30000.0", FetchedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        var results = await SearchAsync(VisibleName);
+
+        results.Should().ContainSingle().Which.Subtitle.Should().Be($"{VisibleShortName} - Microsoft cloud - 26.1.30000.0",
+            "the palette and the Solutions list read the version the same way");
+    }
+
+    [Fact]
     public async Task A_deleted_solution_is_not_offered()
     {
         await SeedWorldAsync();

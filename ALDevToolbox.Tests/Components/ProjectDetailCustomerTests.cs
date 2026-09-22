@@ -338,4 +338,79 @@ public sealed class ProjectDetailCustomerTests : IDisposable
         modules.Markup.Should().Contain("Your organisation hasn't listed any modules yet");
         modules.FindAll("button").Should().BeEmpty();
     }
+
+    // ── The version and address Business Central reports (#907) ────────────
+
+    /// <summary>
+    /// A connected online customer with a Production environment Business Central has
+    /// reported on. The stored secret is not a real ciphertext: nothing here decrypts.
+    /// </summary>
+    private async Task<int> SeedConnectedAsync(string environmentType = "Production")
+    {
+        var id = await SeedAsync(p =>
+        {
+            p.HostingType = ProjectHostingType.MicrosoftCloud;
+            p.BcVersion = "BC 25.3";
+            p.ClientUrl = "https://bc.cronus.example/BC250";
+            p.BcTenantId = Guid.NewGuid();
+            p.BcClientId = "11111111-2222-3333-4444-555555555555";
+            p.BcClientSecretEncrypted = "not-a-real-ciphertext";
+        });
+        await using var ctx = _db.NewContext();
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = environmentType, Type = environmentType,
+            Version = "26.1.30000.0", WebClientLoginUrl = "https://businesscentral.dynamics.com/tenant/Production",
+            FetchedAt = DateTime.UtcNow.AddHours(-3).AddMinutes(-5),
+        });
+        await ctx.SaveChangesAsync();
+        return id;
+    }
+
+    [Fact]
+    public async Task A_connected_customer_reads_the_version_and_address_business_central_reports()
+    {
+        var id = await SeedConnectedAsync();
+
+        var cut = Render(id, canManage: false);
+
+        cut.Markup.Should().Contain("26.1.30000.0")
+            .And.Contain("https://businesscentral.dynamics.com/tenant/Production")
+            .And.NotContain("BC 25.3", "the typed version is hidden while Business Central's wins");
+    }
+
+    [Fact]
+    public async Task Editing_a_connected_customer_shows_where_the_version_and_address_came_from_instead_of_inputs()
+    {
+        var id = await SeedConnectedAsync();
+        var cut = Render(id);
+        cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit customer details").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#cust-version").Should().BeEmpty();
+            cut.FindAll("#cust-url").Should().BeEmpty();
+            cut.FindAll(".cust__fixed").Select(e => e.TextContent.Trim())
+                .Should().Equal("26.1.30000.0", "https://businesscentral.dynamics.com/tenant/Production");
+            cut.FindAll(".field__hint").Select(h => h.TextContent.Trim())
+                .Count(t => t == "From the Production environment, read 3 hours ago. Refresh it on the Business Central tab.").Should().Be(2);
+            cut.FindAll(".field__hint a").Select(a => a.GetAttribute("href")).Should().Contain($"/solutions/{id}?tab=bc");
+            cut.Find("#cust-licence").Should().NotBeNull("the rest of the basics are still typed");
+        });
+    }
+
+    [Fact]
+    public async Task A_customer_with_only_a_sandbox_keeps_the_version_and_address_inputs()
+    {
+        var id = await SeedConnectedAsync(environmentType: "Sandbox");
+        var cut = Render(id);
+        cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit customer details").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#cust-version").GetAttribute("value").Should().Be("BC 25.3");
+            cut.Find("#cust-url").Should().NotBeNull();
+            cut.FindAll(".cust__fixed").Should().BeEmpty();
+        });
+    }
 }
