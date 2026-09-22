@@ -61,7 +61,8 @@
                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                 <input type="search" class="input" @bind="_search" @bind:event="oninput"
                        placeholder="Search by release name, version, or publisher..."
-                       aria-label="Search releases" />
+                       aria-label="Search releases"
+                       data-page-search aria-keyshortcuts="F3" title="Search releases (F3)" />
             </span>
             <div class="pill-tabs oe-tabs" role="tablist" aria-label="Release category">
                 @foreach (var t in _tabs.Where(t => t.Kind != "cal" || Count("cal") > 0))

@@ -83,9 +83,23 @@ emitted.
 | --- | --- |
 | Translator | Ctrl/Cmd+S, Alt+letter, arrows on the splitter |
 | Piper | Alt+1, Alt+2 |
-| Object Explorer release page | Esc, F3, Alt+letter |
+| Every page with a search box | F3 (see below) |
+| Object Explorer release page | Esc, Alt+letter |
 | Source viewer | Ctrl/Cmd+F, Ctrl/Cmd+A, Ctrl/Cmd+Up/Down, Shift+F12, Ctrl/Cmd+click |
 | Code editor | Ctrl/Cmd+click, CodeMirror's default keymap |
+
+**F3 is the page's own search, Ctrl/Cmd+K is anywhere** (#902). F3 with no modifier puts
+the cursor in the page's search box: `wwwroot/search-shortcut.js`, one `document` listener
+in the `shell-drawer.js` idiom, focuses the first *visible* element marked
+`data-page-search`, or the first input inside a `data-page-search-host` - which
+`FilterBar` puts on its search wrapper, so every `ListPage` box has it for free. It stands
+down inside a CodeMirror editor (where F3 is find-next), while the palette or one of our
+dialogs is open, and on a page with no box, where the browser keeps its find-next. It
+never falls through to the palette. The one per-page F3 handler this replaced, the
+release page's, is gone; `PageSearchShortcutTests` keeps the marker on every search box,
+so a renamed selector cannot kill the key silently again. Marked boxes carry
+`aria-keyshortcuts="F3"` and say "(F3)" in their title; the user-facing line is on
+`/docs/search`.
 
 - It works while focus is in an input, a CodeMirror editor or the source viewer. The
   listener is on `document` in the capture phase, so an editor's own keymap never sees

@@ -572,7 +572,8 @@
                             <span class="search env-detail__filter">
                                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                                 <input class="input" type="search" placeholder="Filter installed apps..."
-                                       aria-label="Filter installed apps" @bind="_installedFilter" @bind:event="oninput" />
+                                       aria-label="Filter installed apps" data-page-search aria-keyshortcuts="F3" title="Filter installed apps (F3)"
+                                       @bind="_installedFilter" @bind:event="oninput" />
                             </span>
                         }
                     </div>
@@ -655,7 +656,8 @@
                                 <span class="search env-detail__filter">
                                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                                     <input class="input" type="search" placeholder="Filter updates..."
-                                           aria-label="Filter AppSource updates" @bind="_updatesFilter" @bind:event="oninput" />
+                                           aria-label="Filter AppSource updates" data-page-search aria-keyshortcuts="F3" title="Filter AppSource updates (F3)"
+                                           @bind="_updatesFilter" @bind:event="oninput" />
                                 </span>
                                 <SelectBox style="width: 150px">
                                     <select class="select" aria-label="Show ready or waiting updates" @bind="_updatesShow">
