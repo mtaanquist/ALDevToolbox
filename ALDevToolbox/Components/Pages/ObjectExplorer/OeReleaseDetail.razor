@@ -185,6 +185,7 @@
                     *@
                     <input type="search"
                            id="oe-release-search"
+                           data-page-search aria-keyshortcuts="F3"
                            class="input"
                            placeholder="@SearchPlaceholder"
                            title="@SearchHelp"
@@ -742,7 +743,8 @@
                 catch { /* input was removed before focus landed */ }
             }
 
-            // Wire the document-level Alt+1..Alt+4 scope keybinds + F3 search focus.
+            // Wire the document-level Alt+1..Alt+4 scope keybinds and Esc for the filter
+            // panels. F3 is the shell's now (wwwroot/search-shortcut.js), via data-page-search.
             _keybindModule = await JS.InvokeAsync<IJSObjectReference>(
                 "import", "./Components/Pages/ObjectExplorer/OeReleaseDetail.razor.js");
             _selfRef = DotNetObjectReference.Create(this);
