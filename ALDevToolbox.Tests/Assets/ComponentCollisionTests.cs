@@ -83,7 +83,7 @@ public sealed class ComponentCollisionTests
     /// were two of them until PR 17b-17e deleted both.
     /// </summary>
     private static readonly string[] LegacySheets =
-        ["app.css", "code-editor.css", "source-viewer.css"];
+        ["app.css", "command-palette.css", "code-editor.css", "source-viewer.css"];
 
     /// <summary>
     /// Properties that move or size a box. A leaked colour is a cosmetic

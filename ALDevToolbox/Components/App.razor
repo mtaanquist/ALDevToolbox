@@ -43,6 +43,10 @@
     <link rel="stylesheet" href="@Assets["pages-power.css"]" />
     <link rel="stylesheet" href="@Assets["pages-content.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* The command palette is a script-built overlay, so its sheet cannot be a
+       scoped one (Blazor's scope attribute is not on cloned nodes) and it loads
+       with the other app-owned sheets. See .design/command-palette.md. *@
+    <link rel="stylesheet" href="@Assets["command-palette.css"]" />
     @* Not legacy, despite sitting down here with it: code-editor.css styles DOM
        CodeMirror builds at runtime, and source-viewer.css is the Object
        Explorer's own composition on top of archetype 10. Both load after the
@@ -63,6 +67,7 @@
     <script src="@Assets["theme.js"]"></script>
     <script src="@Assets["shell-drawer.js"]"></script>
     <script src="@Assets["nav-groups.js"]"></script>
+    <script src="@Assets["command-palette.js"]"></script>
     <script src="@Assets["generate.js"]"></script>
     <script src="@Assets["row-actions-menu.js"]"></script>
     <script src="@Assets["copy-to-clipboard.js"]"></script>
