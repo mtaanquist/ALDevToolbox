@@ -215,9 +215,17 @@ public static class NavDestinations
     /// outranks every role: a tool switched off site-wide is gone for everyone,
     /// admins included.
     /// </summary>
-    public static bool IsVisible(NavDestination destination, NavViewer viewer)
+    public static bool IsVisible(NavDestination destination, NavViewer viewer) =>
+        Passes(destination.Gate, destination.Tool, viewer);
+
+    /// <summary>
+    /// A gate and an optional tool, evaluated against <paramref name="viewer"/>.
+    /// Shared with <see cref="PaletteCommands"/>, so a command is gated by exactly
+    /// the rules the sidebar's pages are.
+    /// </summary>
+    public static bool Passes(NavGate gate, ToolKey? tool, NavViewer viewer)
     {
-        if (destination.Tool is { } tool && !viewer.VisibleTools.Contains(tool))
+        if (tool is { } key && !viewer.VisibleTools.Contains(key))
         {
             return false;
         }
@@ -228,7 +236,7 @@ public static class NavDestinations
         // offering a door the sidebar does not have.
         var contentAuthor = viewer.IsAdmin || viewer.IsEditor;
 
-        return destination.Gate switch
+        return gate switch
         {
             NavGate.Everyone => true,
             NavGate.SignedIn => viewer.IsAuthenticated,

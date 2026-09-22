@@ -77,7 +77,7 @@
                         <span class="kbd-hint"><kbd class="kbd">&uarr;</kbd><kbd class="kbd">&darr;</kbd>
                             <span class="kbd-hint__label">to move</span></span>
                         <span class="kbd-hint"><kbd class="kbd">Enter</kbd>
-                            <span class="kbd-hint__label">to open</span></span>
+                            <span class="kbd-hint__label">to choose</span></span>
                         <span class="kbd-hint"><kbd class="kbd">Esc</kbd>
                             <span class="kbd-hint__label">to close</span></span>
                         @* The two things in the foot that are not hints, together
@@ -293,6 +293,55 @@
                             <span class="cmdp-row__sub">@subtitle</span>
                         </span>
                     </a>
+                }
+            </template>
+
+            @* The Commands group, rendered here for the same reason as "Go to":
+               who may use a command is a server-side fact. A command either
+               links to the page that owns a form (an ordinary href) or names an
+               action the script runs from its closed list; the script refuses
+               any other action, and none of them writes to a customer's tenant.
+               See PaletteCommands and .design/command-palette.md, "Commands".
+               The second-line swaps ("Current", "Copied") are rendered here,
+               hidden, so the script shows copy rather than writing it. *@
+            <template id="cmdp-commands">
+                @foreach (var command in PaletteCommands.VisibleTo(viewer))
+                {
+                    @if (command.Href is { } href)
+                    {
+                        <a class="cmdp-row" role="option" tabindex="-1" href="@href"
+                           data-title="@command.Label" data-search="@command.SearchText" data-cmdp-on-open="@command.OnOpen">
+                            <span class="cmdp-row__icon" aria-hidden="true">
+                                <Icon Name="@command.Icon" Width="16" Height="16" />
+                            </span>
+                            <span class="cmdp-row__text">
+                                <span class="cmdp-row__title">@command.Label</span>
+                                <span class="cmdp-row__sub">@command.Subtitle</span>
+                            </span>
+                        </a>
+                    }
+                    else
+                    {
+                        <a class="cmdp-row" role="option" tabindex="-1" data-command-action="@command.Action"
+                           data-title="@command.Label" data-search="@command.SearchText" data-cmdp-on-open="@command.OnOpen">
+                            <span class="cmdp-row__icon" aria-hidden="true">
+                                <Icon Name="@command.Icon" Width="16" Height="16" />
+                            </span>
+                            <span class="cmdp-row__text">
+                                <span class="cmdp-row__title">@command.Label</span>
+                                <span class="cmdp-row__sub" data-cmdp-sub>@command.Subtitle</span>
+                                @if (command.Action is PaletteCommands.ThemeLight or PaletteCommands.ThemeDark or PaletteCommands.ThemeSystem)
+                                {
+                                    <span class="cmdp-row__sub" data-cmdp-sub-current hidden>Current</span>
+                                }
+                                else if (command.Action == PaletteCommands.CopyLink)
+                                {
+                                    <span class="cmdp-row__sub" data-cmdp-sub-done hidden>Copied</span>
+                                    <span class="cmdp-row__sub" data-cmdp-sub-failed hidden>Couldn't copy - use the address bar</span>
+                                }
+                            </span>
+                        </a>
+                    }
                 }
             </template>
         }

@@ -276,7 +276,8 @@ public sealed class ContentPageTests : IDisposable
         Navigate("/docs/search");
         var page = _ctx.Render<SearchDocs>();
 
-        page.Find(".prose").TextContent.Should().Contain("changes anything",
+        System.Text.RegularExpressions.Regex.Replace(page.Find(".prose").TextContent, @"\s+", " ")
+            .Should().Contain("Nothing you type here publishes, deletes or updates",
             "no palette result ever writes to a customer's tenant, and the person "
             + "deciding whether to trust the box is the one who needs to know");
     }

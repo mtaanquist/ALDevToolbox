@@ -151,6 +151,8 @@ public sealed class EnvironmentsListTests : IDisposable
         lastChecked.Should().NotBe("never",
             "the environment was read half an hour ago - only its updates were unreadable");
         lastChecked.Should().Contain("minutes ago");
+        cut.Find(".freshness [data-page-refresh]").TextContent.Should().Contain("Refresh",
+            "the command palette's Refresh presses the button carrying this mark");
     }
 
     [Fact]
