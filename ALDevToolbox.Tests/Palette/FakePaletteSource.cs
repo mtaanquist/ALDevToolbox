@@ -33,6 +33,14 @@ public sealed class FakePaletteSource : IPaletteSource
     /// <summary>Set to have <see cref="SearchAsync"/> wait on the token, for the cancellation test.</summary>
     public bool WaitForCancellation { get; set; }
 
+    /// <summary>
+    /// True once a <see cref="WaitForCancellation"/> search saw its token
+    /// cancelled. A source's token is what the SQL command is cancelled
+    /// through, so this is how a test proves the per-source slice reaches the
+    /// database rather than merely abandoning the task.
+    /// </summary>
+    public bool ObservedCancellation { get; private set; }
+
     public int SearchCallCount { get; private set; }
 
     public int? LastLimit { get; private set; }
@@ -50,7 +58,18 @@ public sealed class FakePaletteSource : IPaletteSource
     {
         SearchCallCount++;
         LastLimit = limit;
-        if (WaitForCancellation) await Task.Delay(Timeout.Infinite, ct);
+        if (WaitForCancellation)
+        {
+            try
+            {
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                ObservedCancellation = true;
+                throw;
+            }
+        }
         return _candidates.Take(limit).ToList();
     }
 }
