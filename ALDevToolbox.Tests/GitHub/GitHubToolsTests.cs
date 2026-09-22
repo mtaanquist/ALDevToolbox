@@ -547,14 +547,6 @@ public sealed class GitHubToolsTests : IDisposable
             .On(HttpMethod.Post, $"/repos/{NewRepo}/git/trees", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-tree-sha"))
             .On(HttpMethod.Post, $"/repos/{NewRepo}/git/commits", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
             .On(HttpMethod.Patch, $"/repos/{NewRepo}/git/refs/heads/", HttpStatusCode.OK, FakeGitHubApi.ShaJson("new-commit-sha"))
-            // Since #811 the default branch is created at the finished commit
-            // rather than moved on to one: the seed lands on a throwaway branch
-            // that is deleted afterwards, and the repository's default-branch
-            // setting is then pointed at the real one.
-            .On(HttpMethod.Get, $"/repos/{NewRepo}/rules/branches/", HttpStatusCode.OK, FakeGitHubApi.BranchRulesJson())
-            .On(HttpMethod.Post, $"/repos/{NewRepo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.RefJson("main"))
-            .On(HttpMethod.Delete, $"/repos/{NewRepo}/git/refs/heads/", HttpStatusCode.NoContent)
-            .On(HttpMethod.Patch, $"/repos/{NewRepo}", HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(NewRepo))
             .EmptyRepository(NewRepo);
 
     /// <summary>A GitHub that accepts an extension being added to an existing repository.</summary>

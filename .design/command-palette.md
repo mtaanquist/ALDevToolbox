@@ -1,8 +1,8 @@
 # The command palette
 
-Status: **designed, not built.** This document is the outcome of #879; the build is the
-rest of milestone "Command palette" (#880-#889). Every decision below was made with the
-maintainer on 2026-09-21.
+Status: **the shell (#880) and the search backbone (#881) are built; the sources that
+give it something to find (#882-#884) are next.** This document is the outcome of #879.
+Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
 
@@ -114,17 +114,41 @@ A source provides:
   link, and the short name when the row has one. Those three text fields *are* what was
   matched against. No icon name: the icon is in the `<template>` the kind selects, so it
   never rides the JSON.
+- **Searched-only text**, when a row needs it. A fourth field that is matched against and
+  never shown, for the things support types mid-call that a result must not print back: a
+  customer's Voice account number, their tenant id. A row found that way says in its
+  subtitle *which* field matched, never what was in it, and the field itself is absent
+  from the wire contract, so it cannot reach the browser even by accident. It is not a
+  place for personal data - a contact's name or company may be matched on and named, a
+  phone number or an email address is neither searched nor shown.
 
 Sources return candidates, **not scores**. One shared function ranks everything, so
 ranking cannot drift from source to source.
 
 | Source | Searches | Lands on |
 | --- | --- | --- |
-| Solutions | name, short name | the Solution (its default tab, Customer) |
-| Environments | environment name; the Solution's name and short name as subtitle | the environment page |
-| Releases | release name and version | the release in Object Explorer |
+| Solutions | name, short name; and the customer fields support types mid-call - a contact's name or company, the Voice account number, the tenant id | the Solution (its default tab, Customer) |
+| Environments | environment name; the Solution's name as subtitle and its short name as searched-only text | the environment page |
+| Releases | release label, BC version, country, and the name of the Solution whose build produced it | the release in Object Explorer |
 | Recipes | recipe title and tags | the recipe |
 | Go to | tool and page names | the page |
+
+**Go to is the one that is not a DI source.** It has no database behind it and its
+whole content is decided by the caller's roles and tool toggles, so Razor renders it
+into the page and the script filters it in the browser, under the same every-term-must-match
+rule. That is also what makes it survive a failed request: when the endpoint is
+unreachable the palette says so and still jumps. The list itself is
+`Domain/Navigation/NavDestinations.cs`, shared with the sidebar - `NavMenu.razor` keeps
+its own markup (its groups collapse, nest and carry active states) and a test fails if
+the two ever disagree about which pages exist. For the same reason Go to is **not capped**:
+it is the browsable list of tools, which the empty query already shows whole.
+
+Go to also breaks ties by **sidebar order, not by name**, which is the one place it
+departs from the ranking below. Alphabetically, `trans` puts "Translation memory" above
+"Translator" - so the three letters a consultant types for the tool in their sidebar land
+them on the admin page that curates it. The sidebar's order is editorial (tools first,
+then the pages that administer them) and it gets that pair, and the four like it
+(Templates, Cookbook, Object Explorer, Audit log), right by construction.
 
 Releases and Recipes search **names, titles and a recipe's tags only**, never objects,
 source or recipe bodies - those tables are large and Object Explorer already has a search
@@ -228,9 +252,14 @@ storage is unavailable the palette simply shows Go to.
 ## States
 
 The list pane always shows exactly one of: recents and Go to (empty query), results,
-"No results for '...'" with a line pointing at the Solutions list, or "Search is not
-available right now" when the request fails. While a request is in flight the previous
-results stay put - no spinner flicker on every keystroke.
+"No search results for '...'" when the search came back with nothing, or "Search is not
+available right now" when the request failed. The last two never stack - a failed request
+has already explained the silence, so saying nothing matched on top of it would be a
+second sentence about the same thing. Either way the closest page is still offered as a
+row under Go to, so the palette never ends on a dead end - which is also why the sentence
+says "no search results" rather than "nothing matches": something below it plainly did.
+While a request is in flight the previous results stay put - no spinner flicker on every
+keystroke, and the selected row keeps its place when the new ones arrive.
 
 Keyboard: Up/Down move, Enter opens, Ctrl/Cmd+Enter opens in a new tab, Esc closes. The
 dialog is a labelled `role="dialog"` with a combobox/listbox pattern, focus is trapped
@@ -239,7 +268,15 @@ while it is open, and the selected row is announced (#888).
 ## Deliberately left out
 
 - Commands that write to a tenant, ever (see "What it never does").
-- Searching inside releases, source, or recipe bodies.
+- Searching inside releases, source, or recipe bodies. That includes searching a
+  release's *objects* from the palette (`table 18`, `page customer card`), which
+  #883 raised as a stretch: the palette would have to pick which release the
+  objects came from, and Object Explorer's own search already answers that
+  question once a release is open.
+- Ordering a group by anything but the shared ranking. #883 asked for a
+  Solution's releases newest-first; ranking breaks every tie by title instead,
+  for the reason under "Matching and ranking" - one ranking function, or it
+  drifts per source.
 - Typo tolerance and initials.
 - Server-side recents, pinned items, per-user ranking.
 - From the first version: pipelines, teams, templates and docs pages as sources. Each is

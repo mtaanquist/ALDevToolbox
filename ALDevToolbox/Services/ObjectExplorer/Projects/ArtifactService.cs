@@ -28,9 +28,9 @@ public sealed class ArtifactService
     // ── Project directory (Projects + Artifacts browsers) ───────────────
 
     /// <summary>
-    /// Active projects with owner, repo count, and a summary of their newest build,
-    /// ordered by name. Optionally filtered by a name/owner/repo substring. Drives
-    /// both the Projects directory and the Artifacts landing.
+    /// Active projects with owner, repo count, and a summary of their newest
+    /// pipeline build, ordered by name. Optionally filtered by a name/owner/repo
+    /// substring. Drives both the Projects directory and the Artifacts landing.
     /// </summary>
     public async Task<List<ProjectArtifactsRow>> ListProjectsAsync(string? search = null, CancellationToken ct = default)
     {
@@ -63,9 +63,15 @@ public sealed class ArtifactService
         // The newest build per project in one query, plus the newest *successful*
         // one (the "Download all" target). Bounded per org, so the in-memory join
         // is cheap and keeps the projection simple.
+        //
+        // Pipeline builds only. A solution has other build rows - a pull-request
+        // build the GitHub App started, a release imported from GitHub - and none
+        // of them is what the list's "Latest build" column means: the state of
+        // the deliverable a pipeline produces. A solution with no pipeline has no
+        // build status at all, however many pull requests have been checked.
         var projectIds = projects.Select(p => p.Id).ToList();
         var builds = await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => projectIds.Contains(b.ProjectId))
+            .Where(b => projectIds.Contains(b.ProjectId) && b.PipelineId != null)
             .Select(b => new
             {
                 b.Id, b.ProjectId, b.Status, b.BcVersion, b.Branch, b.StartedAt, b.FinishedAt,

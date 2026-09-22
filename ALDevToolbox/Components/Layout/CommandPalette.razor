@@ -1,0 +1,244 @@
+@using ALDevToolbox.Domain.Navigation
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services.SingleTenant
+@using ALDevToolbox.Services.Tools
+@inject IOrganizationContext OrgContext
+@inject IToolAvailability ToolAvailability
+@inject ISingleTenantMode SingleTenant
+@inject IServiceScopeFactory Scopes
+
+@*
+    The command palette's skeleton. Rendered hidden into MainLayout for every
+    signed-in person; wwwroot/command-palette.js opens it on Ctrl/Cmd+K and
+    fills the list. See .design/command-palette.md.
+
+    Static and deliberately not interactive. MainLayout is a static frame and
+    several pages (/solutions, the docs pages) hold no circuit at all, so an
+    interactive island here would tax every page with a circuit just so the
+    palette can open.
+
+    The script writes no HTML and picks no class names: everything it puts on
+    screen is a clone of something below, with textContent and href filled in.
+    That keeps the design system in one place and takes markup injection off
+    the table - which matters, because the rows carry customer names.
+
+    The styles are global (wwwroot/command-palette.css), never a scoped
+    .razor.css: Blazor's scope attribute is not on script-cloned nodes, so
+    scoped rules would silently match nothing.
+*@
+
+<AuthorizeView>
+    <Authorized>
+        @if (_viewer is { } viewer)
+        {
+            <div id="cmdp" class="modal-layer cmdp-layer" role="dialog" aria-modal="true"
+                 aria-label="Search or jump to" hidden>
+                <div class="modal-backdrop" data-cmdp-close aria-hidden="true"></div>
+                <div class="cmdp">
+                    <div class="cmdp__head">
+                        <span class="cmdp__head-icon" aria-hidden="true">
+                            <Icon Name="search" Width="17" Height="17" />
+                        </span>
+                        <label class="u-sr-only" for="cmdp-input">Search or jump to</label>
+                        <input id="cmdp-input" class="cmdp__input" type="text" role="combobox"
+                               autocomplete="off" autocapitalize="off" spellcheck="false"
+                               aria-autocomplete="list" aria-expanded="false" aria-controls="cmdp-list"
+                               placeholder="Search or jump to..." />
+                        @* A real button, not a decorative key cap. It sits where a
+                           close control belongs and looks pressable, and at phone
+                           width - where the keyboard hints below are hidden and
+                           there is no Esc key to press - it is the way out. *@
+                        <button type="button" class="cmdp__close" data-cmdp-close aria-label="Close">
+                            <span class="kbd cmdp__close-key" aria-hidden="true">Esc</span>
+                            <span class="cmdp__close-x" aria-hidden="true"><Icon Name="x" Width="16" Height="16" /></span>
+                        </button>
+                    </div>
+
+                    @* Not "Results": with nothing typed this list is the app's
+                       page index, and that is what a screen reader should hear. *@
+                    <div id="cmdp-list" class="cmdp__list" role="listbox" aria-label="Search results and pages"></div>
+
+                    <div class="cmdp__foot">
+                        <span class="kbd-hint"><kbd class="kbd">&uarr;</kbd><kbd class="kbd">&darr;</kbd>
+                            <span class="kbd-hint__label">to move</span></span>
+                        <span class="kbd-hint"><kbd class="kbd">Enter</kbd>
+                            <span class="kbd-hint__label">to open</span></span>
+                        <span class="kbd-hint"><kbd class="kbd">Esc</kbd>
+                            <span class="kbd-hint__label">to close</span></span>
+                    </div>
+                </div>
+            </div>
+
+            @* One row per kind of result. The script clones the matching
+               template, or the "default" one for a kind it has not been taught
+               yet, and fills in the title, the second line and the link. *@
+            <template data-palette-row="solution">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="folder-git-2" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="environment">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="server" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="release">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="send" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="recipe">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="square-code" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="goto">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="arrow-right" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="default">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="box" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+
+            <template data-palette-group>
+                <p class="cmdp__group"></p>
+            </template>
+
+            @* The two things the list says when it has nothing to show. The
+               script fills the <span> with what was typed; it never builds a
+               sentence of its own. *@
+            @* "No search results", not "nothing matches": a page from the list
+               below is offered right underneath, and a flat "nothing matches"
+               above something that plainly did match reads as a bug. *@
+            <template data-palette-state="no-results">
+                <div class="cmdp__state">
+                    <p class="cmdp__state-title">No search results for "<span data-cmdp-query></span>".</p>
+                    <p class="cmdp__state-text">Check the spelling, or go to a page instead.</p>
+                </div>
+            </template>
+            <template data-palette-state="unavailable">
+                <div class="cmdp__state">
+                    <p class="cmdp__state-title">Search is not available right now.</p>
+                    <p class="cmdp__state-text">You can still go to any page below. Try searching again in a moment.</p>
+                </div>
+            </template>
+
+            @* The "Go to" list, rendered here rather than fetched: the sidebar's
+               role and tool gates are server-side facts, so the palette can only
+               offer a page the sidebar would. The script filters these clones;
+               it never asks the server for them. Inside a <template> so the
+               rows are inert until one is used. *@
+            <template id="cmdp-goto">
+                @foreach (var destination in NavDestinations.VisibleTo(viewer))
+                {
+                    var label = destination.LabelFor(viewer);
+                    var subtitle = destination.SubtitleFor(viewer);
+                    <a class="cmdp-row" role="option" tabindex="-1" href="@destination.Href"
+                       data-title="@label" data-search="@($"{label} {subtitle}".Trim())">
+                        <span class="cmdp-row__icon" aria-hidden="true">
+                            <Icon Name="@destination.Icon" Width="16" Height="16" />
+                        </span>
+                        <span class="cmdp-row__text">
+                            <span class="cmdp-row__title">@label</span>
+                            <span class="cmdp-row__sub">@subtitle</span>
+                        </span>
+                    </a>
+                }
+            </template>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private NavViewer? _viewer;
+
+    /// <summary>
+    /// Whether the one question the claims cannot answer has been asked yet, and
+    /// for whom. Same guard, and the same reason, as <c>NavMenu</c>: this runs on
+    /// every navigation and every cascading auth-state change, so without it the
+    /// palette would cost a DI scope and two queries per render.
+    /// </summary>
+    private string? _opsComputedForUser;
+    private bool _opsComputed;
+    private bool _canUseEnvironmentOps;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthStateTask is null) return;
+        var state = await AuthStateTask;
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            _viewer = null;
+            return;
+        }
+
+        var userId = state.User.FindFirst(HttpOrganizationContext.UserIdClaim)?.Value ?? string.Empty;
+        if (!_opsComputed || _opsComputedForUser != userId)
+        {
+            _opsComputed = true;
+            _opsComputedForUser = userId;
+            _canUseEnvironmentOps = await CanUseEnvironmentOpsAsync();
+        }
+
+        var orgDisabled = EndpointHelpers.ReadDisabledTools(state.User);
+        var visibleTools = ToolCatalog.All
+            .Select(t => t.Key)
+            .Where(k => ToolAvailability.IsSiteEnabled(k) && !orgDisabled.Contains(k))
+            .ToHashSet();
+
+        _viewer = new NavViewer(
+            IsAuthenticated: true,
+            IsAdmin: state.User.IsInRole("Admin"),
+            IsEditor: state.User.IsInRole("Editor"),
+            IsSiteAdmin: state.User.IsInRole(HttpOrganizationContext.SiteAdminRole),
+            IsSystemOrganization: OrgContext.IsSystemOrganization,
+            SingleTenantMode: SingleTenant.IsEnabled,
+            CanUseEnvironmentOps: _canUseEnvironmentOps,
+            VisibleTools: visibleTools);
+    }
+
+    /// <summary>
+    /// Whether this person may run Business Central update actions anywhere -
+    /// what puts Upgrades in the list. Read through a DI scope of its own for
+    /// the reason <c>NavMenu.CanUseEnvironmentOpsAsync</c> gives: the shell
+    /// renders while the page's own load is mid-query, and both would otherwise
+    /// be using the one scoped <c>AppDbContext</c> at the same moment.
+    /// </summary>
+    private async Task<bool> CanUseEnvironmentOpsAsync()
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+        var access = scope.ServiceProvider
+            .GetRequiredService<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+        return (await access.GetSnapshotAsync()).CanUseEnvironmentOps;
+    }
+}

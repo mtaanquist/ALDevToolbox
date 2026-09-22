@@ -981,23 +981,30 @@ else
                 <section class="card">
                     <div class="card__head">
                         <div>
-                            <h2 class="card__title">Tokens for building solutions</h2>
+                            <h2 class="card__title">Repository access for builds</h2>
                             <p class="card__sub">
                                 @* "A different job from the GitHub account above" is only true when
                                    that card is on the page - an Azure DevOps org does not see it. *@
+                                @* Since the build clones with the connected GitHub account first,
+                                   a GitHub token is the exception rather than the rule; say so, or
+                                   people keep making tokens they no longer need. *@
                                 @if (ShowGitHubCard)
                                 {
-                                    <text>A different job from the GitHub account above, and you may
-                                    well need both. When</text>
+                                    <text>When one of your solutions builds, AL Workbench reads each
+                                    repository using your own access, so a build never sees more than
+                                    you can. For GitHub that is the account connected above, so you only
+                                    need a GitHub token if a build tells you a repository could not be
+                                    read - usually one in a customer's organisation your account was
+                                    never added to. Azure DevOps always needs a token.</text>
                                 }
                                 else
                                 {
-                                    <text>When</text>
+                                    <text>When one of your solutions builds, AL Workbench reads each
+                                    repository using your own access, through a token you paste here.</text>
                                 }
-                                one of your solutions builds, the workbench fetches a copy of the
-                                repository as you, using a token you paste here. Tokens are stored
-                                encrypted, are only ever used to fetch a copy, and a build fails if one
-                                of them has expired or been removed.
+                                Tokens are stored encrypted and are only used to read your
+                                repositories during a build. If one expires or is revoked, the build
+                                stops and says which repository it could not read.
                             </p>
                         </div>
                     </div>
@@ -1033,7 +1040,7 @@ else
                             @foreach (var p in _repoProviders)
                             {
                                 var f = _repoFields[p];
-                                var state = f.HasToken ? "connected" : "not-connected";
+                                var state = RepoRowState(p, f.HasToken);
                                 <tr class="@RowStateIcon.RowClass(state)">
                                     <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                                     <td>
@@ -1041,7 +1048,7 @@ else
                                         @* "Not connected" here read as "your GitHub is not connected"
                                            to anyone who had just connected it in the card above. Name
                                            the missing thing instead of the host. *@
-                                        <div class="u-muted">@(f.HasToken ? "Build token stored" : "No build token yet")</div>
+                                        <div class="u-muted">@RepoRowText(p, f.HasToken)</div>
                                     </td>
                                     <td class="u-muted">@(f.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "Never")</td>
                                     <td class="data-table__actions">
@@ -1577,10 +1584,34 @@ else
     /// </summary>
     private static string RepoScopeHint(RepositoryProvider p) => p switch
     {
-        RepositoryProvider.GitHub => "Make one on github.com, under Settings then Developer settings. Let it read your repositories - it needs nothing else.",
+        RepositoryProvider.GitHub => "Only add this if a build reported that a GitHub repository could not be read. Make one on github.com under Settings → Developer settings → Personal access tokens → Fine-grained tokens, give it the repository, and set Contents to Read-only - it needs nothing else.",
         RepositoryProvider.AzureDevOps => "Make one on dev.azure.com, under User settings then Personal access tokens. Tick Code (Read) - it needs nothing else.",
         _ => string.Empty,
     };
+
+    /// <summary>
+    /// Whether a build can reach this provider as the person: a stored token,
+    /// or for GitHub a healthy connected account. The row's icon and its second
+    /// line answer from the same test, so they cannot disagree.
+    /// </summary>
+    private bool RepoRowReady(RepositoryProvider p, bool hasToken) =>
+        hasToken || (p == RepositoryProvider.GitHub && _github is { IsLinked: true, NeedsRelink: false });
+
+    private string RepoRowState(RepositoryProvider p, bool hasToken) =>
+        RepoRowReady(p, hasToken) ? "connected" : "not-connected";
+
+    /// <summary>
+    /// The second line of a provider row. GitHub without a token is not "nothing",
+    /// because the connected account clones on its own; only GitHub with neither
+    /// is.
+    /// </summary>
+    private string RepoRowText(RepositoryProvider p, bool hasToken)
+    {
+        if (hasToken) return "Build token stored";
+        return RepoRowReady(p, hasToken)
+            ? "Builds with your connected GitHub account"
+            : "No build token yet";
+    }
 
     private static string RepoPlaceholder(RepositoryProvider p) => p switch
     {

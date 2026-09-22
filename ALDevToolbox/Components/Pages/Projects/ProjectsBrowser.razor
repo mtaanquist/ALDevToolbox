@@ -22,7 +22,11 @@
     Archetype 2 (list / browser), table view. The latest build's status is the
     row's 4px edge keyline plus a leading glyph rather than a pill in a cell —
     the handoff's one rule for tables. A solution with no build yet gets neither:
-    an absent build is not a status. Search stays a plain GET form, so the page
+    an absent build is not a status. Only a pipeline's builds count - a
+    pull-request build the GitHub App ran is a check on a pull request, not the
+    state of anything this list offers to download, so a solution without a
+    pipeline shows no status however many of those have failed (the query in
+    ArtifactService is where that line is drawn). Search stays a plain GET form, so the page
     needs no interactivity and a filtered result stays a shareable URL.
     See .design/design-migration.md.
 *@
@@ -365,15 +369,12 @@
         return parts.Count == 0 ? "/solutions" : "/solutions?" + string.Join("&", parts);
     }
 
-    /// <summary>The column is narrow, so the hosting in a word or two; the Customer tab has the sentence.</summary>
-    private static string ShortHosting(ProjectHostingType hosting) => hosting switch
-    {
-        ProjectHostingType.MicrosoftCloud => "Microsoft cloud",
-        ProjectHostingType.OurCloud => "Our hosting",
-        ProjectHostingType.HostingPartner => "Hosting partner",
-        ProjectHostingType.CustomerHardware => "Customer's hardware",
-        _ => hosting.ToString(),
-    };
+    /// <summary>
+    /// The column is narrow, so the hosting in a word or two; the Customer tab has the
+    /// sentence. The words themselves moved to <see cref="ProjectHostingText"/> once the
+    /// command palette started describing the same solution in a result row.
+    /// </summary>
+    private static string ShortHosting(ProjectHostingType hosting) => ProjectHostingText.Short(hosting);
 
     private string NoMatchTitle()
     {

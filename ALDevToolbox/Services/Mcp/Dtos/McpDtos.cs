@@ -135,20 +135,6 @@ public sealed record WorkspaceResult(
 /// Why the repository is not on a solution, or null when it is. The repository
 /// exists either way.
 /// </param>
-/// <param name="DefaultBranchWarning">
-/// What to change on GitHub when the files are on their branch but GitHub would
-/// not make it the repository's default, or null when it did.
-/// </param>
-/// <param name="OpenedPullRequest">
-/// True when the organisation only allows changes to the default branch through
-/// a pull request, so the files are waiting in one instead of being on that
-/// branch (issue #811). The default branch then holds a single placeholder file
-/// until somebody merges it.
-/// </param>
-/// <param name="PullRequestUrl">
-/// The pull request holding the files, when there is one - null when they are
-/// on the default branch already.
-/// </param>
 public sealed record RepositoryCreationResult(
     string RepositoryFullName,
     string HtmlUrl,
@@ -161,10 +147,7 @@ public sealed record RepositoryCreationResult(
     int? SolutionId = null,
     string? SolutionName = null,
     bool SolutionCreated = false,
-    string? SolutionWarning = null,
-    bool OpenedPullRequest = false,
-    string? PullRequestUrl = null,
-    string? DefaultBranchWarning = null)
+    string? SolutionWarning = null)
 {
     /// <summary>
     /// The projection of a created repository, written once because two tools
@@ -183,10 +166,7 @@ public sealed record RepositoryCreationResult(
         SolutionId: created.SolutionId,
         SolutionName: created.SolutionName,
         SolutionCreated: created.SolutionCreated,
-        SolutionWarning: created.SolutionWarning,
-        OpenedPullRequest: created.Delivery == ALDevToolbox.Services.GitHub.GitHubWorkspaceDelivery.PullRequest,
-        PullRequestUrl: created.PullRequestUrl,
-        DefaultBranchWarning: created.DefaultBranchWarning);
+        SolutionWarning: created.SolutionWarning);
 }
 
 /// <summary>

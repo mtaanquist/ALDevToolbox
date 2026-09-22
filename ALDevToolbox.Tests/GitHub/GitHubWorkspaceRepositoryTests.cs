@@ -107,10 +107,9 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         TokenFor(api, "POST", $"/orgs/{OrgLogin}/repos").Should().Be(InstallationToken);
         TokenFor(api, "PUT", $"/repos/{Repo}/contents/").Should().Be(InstallationToken);
         TokenFor(api, "POST", $"/repos/{Repo}/git/trees").Should().Be(InstallationToken);
-        TokenFor(api, "POST", $"/repos/{Repo}/git/refs").Should().Be(InstallationToken);
-        // The default-branch setting rides the same token, which is the grant
-        // the branch-rules step already needs (#811).
-        TokenFor(api, "PATCH", $"/repos/{Repo}").Should().Be(InstallationToken);
+        // The push to the default branch too: it is the installation, not the
+        // person, that the organisation ruleset lets bypass its rules.
+        TokenFor(api, "PATCH", $"/repos/{Repo}/git/refs/heads/main").Should().Be(InstallationToken);
         // The person's own token is what answers "are they in this
         // organisation", and it is used for nothing else here.
         api.Credentials.Where(c => c.Token == UserToken)
@@ -141,18 +140,19 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         tree.Should().NotContain("base_tree");
 
         var commit = BodyOf(api, "POST", "/git/commits");
-        // A root commit: the default branch does not exist yet, and building it
-        // whole is what keeps a pull-request rule from refusing the workspace
-        // (#811). The seed sits on a branch of its own, so it is not a parent.
-        commit.Should().Contain("\"parents\":[]");
-        commit.Should().Contain("Initial commit");
+        // On top of the seed, so the branch moves forward rather than being
+        // rewritten, and the history reads as a start followed by the workspace.
+        commit.Should().Contain("\"parents\":[\"seed-commit-sha\"]");
+        commit.Should().Contain("Add the CRONUS Customer workspace");
         // Credited to whoever asked for it, not to the app that made the call.
         // (The + in a GitHub noreply address comes back JSON-escaped.)
         commit.Should().Contain("cronus-dev@users.noreply.github.com");
         commit.Should().Contain("\"name\":\"cronus-dev\"");
 
-        // The default branch is created at that commit, never moved on to it.
-        BodyOf(api, "POST", "/git/refs").Should().Contain("\"ref\":\"refs/heads/main\"");
+        // The default branch is moved on to that commit as a fast-forward.
+        var push = BodyOf(api, "PATCH", "/git/refs/heads/main");
+        push.Should().Contain("\"sha\":\"new-commit-sha\"");
+        push.Should().Contain("\"force\":false");
     }
 
     [Fact]
@@ -177,89 +177,31 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         // initial commit, and it is a file the generator produced rather than
         // one auto-init invented.
         firstWrite.Should().Contain("/contents/README.md");
-        // Onto a branch of its own, not onto the default branch: the default
-        // branch has to stay unborn so it can be created at the finished commit
-        // instead of updated (#811).
-        BodyOf(api, "PUT", "/contents/").Should().Contain("\"branch\":\"aldt/seed\"");
+        // Straight onto the default branch, which is what brings it into
+        // being: the installation bypasses the organisation's branch rules, so
+        // there is no reason to start anywhere else.
+        BodyOf(api, "PUT", "/contents/").Should().Contain("\"branch\":\"main\"");
     }
 
     [Fact]
-    public async Task The_default_branch_is_created_at_the_finished_commit_and_never_updated()
+    public async Task The_default_branch_is_the_only_branch_touched()
     {
         await ReadyAsync();
         var api = WritableApi();
         var (service, ctx) = NewService(api);
         await using var _ = ctx;
 
-        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+        await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
 
-        created.Delivery.Should().Be(GitHubWorkspaceDelivery.DefaultBranch);
-        created.PullRequestUrl.Should().BeNull();
-
-        // The whole point of #811: an organisation ruleset that requires a pull
-        // request refuses an update of the default branch and does not govern
-        // creating it. One creation, and no update at all.
-        api.Bodies.Count(b => b.Call.StartsWith("POST") && b.Call.Contains("/git/refs"))
-            .Should().Be(1);
-        BodyOf(api, "POST", "/git/refs").Should().Contain("\"ref\":\"refs/heads/main\"");
-        api.Calls.Should().NotContain(c => c.StartsWith("PATCH") && c.Contains("/git/refs/heads/"));
-
-        // Seeding made the throwaway branch the repository's default, so the
-        // real branch has to be pointed at by hand - a repository setting, not
-        // a write to a ref - and the throwaway branch then goes.
-        DefaultBranchBody(api).Should().Contain("\"default_branch\":\"main\"");
-        api.Calls.Should().Contain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
-    }
-
-    private const string ValidationFailedJson =
-        """{"message":"Validation Failed","errors":[{"resource":"Repository","field":"default_branch","code":"invalid"}]}""";
-
-    [Fact]
-    public async Task A_default_branch_switch_github_is_not_ready_for_is_asked_again()
-    {
-        await ReadyAsync();
-        // Seen against a real organisation: the branch was created, and the
-        // settings write two milliseconds later came back 422 Validation Failed.
-        var api = WritableApi()
-            .OnSequence(HttpMethod.Patch, $"/repos/{Repo}",
-                (HttpStatusCode.UnprocessableEntity, ValidationFailedJson),
-                (HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(Repo)));
-        var (service, ctx) = NewService(api);
-        await using var _ = ctx;
-
-        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
-
-        created.DefaultBranchWarning.Should().BeNull();
-        api.Calls.Count(c => c.StartsWith("PATCH") && c.EndsWith($"/repos/{Repo}")).Should().Be(2);
-        api.Calls.Should().Contain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
-    }
-
-    [Fact]
-    public async Task A_default_branch_github_will_not_switch_is_a_warning_on_a_repository_that_is_full()
-    {
-        await ReadyAsync();
-        var api = WritableApi()
-            .On(HttpMethod.Patch, $"/repos/{Repo}", HttpStatusCode.UnprocessableEntity, ValidationFailedJson)
-            .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK,
-                FakeGitHubApi.RepositoryJson(Repo, defaultBranch: "aldt/seed"));
-        var (service, ctx) = NewService(api);
-        await using var _ = ctx;
-
-        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
-
-        // The workspace is whole on main by now, so this is a success with one
-        // thing left to do by hand - not "GitHub refused to create the
-        // repository", and not a repository missing its solution and audit entry.
-        created.Delivery.Should().Be(GitHubWorkspaceDelivery.DefaultBranch);
-        created.DefaultBranchWarning.Should().Contain("Default branch").And.Contain("main");
-        created.DefaultBranchWarning.Should().NotContain("Validation Failed").And.NotContain("aldt/");
-        created.SolutionWarning.Should().BeNull();
-        // The throwaway branch is the default, and GitHub does not delete one.
-        api.Calls.Should().NotContain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
-
-        await using var read = _db.NewContext();
-        (await read.AuditLog.AsNoTracking()
-            .CountAsync(e => e.EntityType == AuditEntityType.GitHubRepository)).Should().Be(1);
+        // No throwaway branch, no ref created outright, no default-branch
+        // switch, no pull request: the whole detour the pre-bypass flow needed
+        // (#811) is gone, and the default branch is simply moved forward.
+        api.Calls.Should().NotContain(c => c.StartsWith("POST") && c.Contains("/git/refs"));
+        api.Calls.Should().NotContain(c => c.StartsWith("DELETE"));
+        api.Calls.Should().NotContain(c => c.StartsWith("PATCH") && c.EndsWith($"/repos/{Repo}"));
+        api.Calls.Should().NotContain(c => c.Contains("/pulls"));
+        api.Calls.Should().NotContain(c => c.Contains("/rules/branches/"));
+        api.Calls.Count(c => c.StartsWith("PATCH") && c.Contains("/git/refs/heads/main")).Should().Be(1);
     }
 
     [Fact]
@@ -282,8 +224,8 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         created.StandardsFileCount.Should().Be(2);
         created.StandardsWarning.Should().BeNull();
 
-        // One commit, not three: the default branch can only be created at a
-        // commit that already describes the whole repository (#811).
+        // One workspace commit, not one per phase: the tree is built from
+        // nothing, so it describes the whole repository at once.
         api.Calls.Count(c => c.Contains("/git/commits")).Should().Be(1);
         api.Calls.Count(c => c.StartsWith("POST") && c.Contains("/git/trees")).Should().Be(1);
 
@@ -313,8 +255,8 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
 
         // The seed goes out on the installation token, so with no author GitHub
-        // credits it to the app - leaving a new repository opening on an initial
-        // commit by a bot followed by one by the person who asked for it.
+        // would credit it to the app - leaving a new repository opening on an
+        // initial commit by a bot followed by one by the person who asked for it.
         var seed = BodyOf(api, "PUT", "/contents/");
         seed.Should().Contain("cronus-dev@users.noreply.github.com");
         seed.Should().Contain("\"name\":\"cronus-dev\"");
@@ -360,9 +302,9 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
 
         var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
 
-        // The tree is built from nothing, so it has to list everything the
-        // repository should end up with. Leaving the seeded file out would not
-        // duplicate it - it would delete it.
+        // The tree is built from nothing rather than layered on the seed's, so
+        // it has to list everything the repository should end up with. Leaving
+        // the seeded file out would not duplicate it - it would delete it.
         var tree = BodyOf(api, "POST", "/git/trees");
         tree.Should().Contain("README.md");
         tree.Should().NotContain("base_tree");
@@ -585,8 +527,8 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
 
         created.StandardsFileCount.Should().Be(0);
         created.StandardsWarning.Should().BeNull();
-        // One commit, and nothing was asked about branch rules: an organisation
-        // that has set no standards must not pay for the feature.
+        // One workspace commit, and no ruleset: an organisation that has set
+        // no standards must not pay for the feature.
         api.Calls.Count(c => c.Contains("/git/commits")).Should().Be(1);
         api.Calls.Should().NotContain(c => c.Contains("/rulesets"));
         api.Calls.Should().NotContain(c => c.Contains("/git/ref/heads/"));
@@ -671,100 +613,18 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
         entry.EntityName.Should().Be(Repo);
     }
 
-    // --- Organisations that only take pull requests (#811) ------------------
+    // --- Branch rules the app is not allowed to bypass ------------------------
 
     [Fact]
-    public async Task The_rules_on_the_default_branch_are_read_before_anything_is_written()
+    public async Task A_branch_rule_that_refuses_the_push_names_the_bypass_an_owner_has_to_grant()
     {
         await ReadyAsync();
+        // The one way the direct route fails: the organisation ruleset governs
+        // the default branch and the GitHub App is not on its bypass list, so
+        // moving the branch comes back as a rule violation.
         var api = WritableApi()
-            .On(HttpMethod.Get, $"/repos/{Repo}/rules/branches/", HttpStatusCode.OK,
-                FakeGitHubApi.BranchRulesJson("pull_request", "non_fast_forward"));
-        var log = new CapturingLoggerProvider();
-        var (service, ctx) = NewService(api, logger: LoggerFor(log));
-        await using var _ = ctx;
-
-        await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
-
-        // Read first, so a support question months later has an answer without
-        // a trip to the organisation's settings.
-        var rulesRead = api.Calls.FindIndex(c => c.Contains("/rules/branches/"));
-        var firstWrite = api.Calls.FindIndex(c => c.StartsWith("PUT") || c.StartsWith("POST") && c.Contains($"/repos/{Repo}/"));
-        rulesRead.Should().BeGreaterThanOrEqualTo(0);
-        rulesRead.Should().BeLessThan(firstWrite);
-        log.Messages.Should().Contain(m => m.Contains("pull_request"));
-
-        // And it steers nothing: GitHub's own refusal is the authority, so the
-        // direct route is still what is tried.
-        api.Calls.Should().NotContain(c => c.Contains("/pulls"));
-    }
-
-    [Fact]
-    public async Task A_branch_rule_that_refuses_the_new_branch_sends_the_workspace_through_a_pull_request()
-    {
-        await ReadyAsync();
-        var api = PullRequestOnlyApi();
-        var (service, ctx) = NewService(api);
-        await using var _ = ctx;
-
-        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
-
-        // A repository is still made and the files are still in it - the person
-        // has one thing left to do rather than a one-file repository and an
-        // error message (#811).
-        created.Repository.FullName.Should().Be(Repo);
-        created.Delivery.Should().Be(GitHubWorkspaceDelivery.PullRequest);
-        created.PullRequestUrl.Should().Be($"https://github.com/{Repo}/pull/1");
-        created.FileCount.Should().BeGreaterThan(0);
-
-        var pull = BodyOf(api, "POST", "/pulls");
-        pull.Should().Contain("\"head\":\"aldt/initial-workspace\"");
-        // Into the branch the repository was created with. The throwaway branch
-        // is not something to leave a customer's repository built around.
-        pull.Should().Contain("\"base\":\"main\"");
-        pull.Should().Contain("Add the CRONUS Customer workspace");
-        pull.Should().Contain("pull request");
-
-        // The repository is left in the shape it would have had anyway, minus
-        // the merge: main exists and holds the seeded file, it is the default
-        // branch, and the throwaway branch is gone.
-        api.Bodies.Should().Contain(b =>
-            b.Call.StartsWith("PUT") && b.Call.Contains("/contents/") && b.Body.Contains("\"branch\":\"main\""));
-        DefaultBranchBody(api).Should().Contain("\"default_branch\":\"main\"");
-        api.Calls.Should().Contain(c => c.StartsWith("DELETE") && c.Contains("/git/refs/heads/aldt/seed"));
-
-        // And the workspace branch grows out of what is on main rather than
-        // orphaning it, so merging the pull request is a fast-forward.
-        var commits = api.Bodies.Where(b => b.Call.Contains("/git/commits")).Select(b => b.Body).ToList();
-        commits[^1].Should().Contain("\"parents\":[\"seed-commit-sha\"]");
-    }
-
-    [Fact]
-    public async Task The_registration_and_the_audit_entry_happen_on_the_pull_request_route_too()
-    {
-        await ReadyAsync();
-        var api = PullRequestOnlyApi();
-        var (service, ctx) = NewService(api);
-        await using var _ = ctx;
-
-        var created = await service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
-
-        created.SolutionCreated.Should().BeTrue();
-        created.SolutionWarning.Should().BeNull();
-
-        await using var read = _db.NewContext();
-        var entry = await read.AuditLog.AsNoTracking()
-            .SingleAsync(e => e.EntityType == AuditEntityType.GitHubRepository);
-        entry.EntityName.Should().Be(Repo);
-    }
-
-    [Fact]
-    public async Task A_pull_request_github_also_refuses_says_what_is_on_the_repository_and_what_to_do()
-    {
-        await ReadyAsync();
-        var api = PullRequestOnlyApi()
-            .On(HttpMethod.Post, $"/repos/{Repo}/pulls", HttpStatusCode.UnprocessableEntity,
-                """{"message":"Validation Failed"}""");
+            .On(HttpMethod.Patch, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.UnprocessableEntity,
+                FakeGitHubApi.RuleViolationJson());
         var (service, ctx) = NewService(api);
         await using var _ = ctx;
 
@@ -772,63 +632,64 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
 
         var message = (await act.Should().ThrowAsync<PlanValidationException>())
             .Which.Errors["GitHubRepository"];
-        message.Should().Contain("pull request");
-        // What is actually on the repository, named so they can find it, and
-        // the two ways out - not GitHub's wording quoted at somebody who cannot
-        // act on it, and not the name of a branch the workbench invented.
+        // Whom to ask and where the setting is, the repository named so they
+        // can find and delete it, and how to try again - not GitHub's wording,
+        // and not a pull request the workbench no longer opens.
+        message.Should().Contain(OrgLogin);
+        message.Should().Contain("Rulesets");
+        message.Should().Contain("bypass list");
         message.Should().Contain(Repo);
-        message.Should().Contain("single placeholder file");
+        message.Should().Contain("Create repository again");
         message.Should().Contain("Download ZIP");
-        message.Should().Contain("delete the repository");
-        message.Should().NotContain("Validation Failed");
-        message.Should().NotContain("aldt/");
+        message.Should().NotContain("rule violations found");
+        api.Calls.Should().NotContain(c => c.Contains("/pulls"));
+
+        // Nothing was registered or recorded for a repository that never got
+        // its workspace.
+        await using var read = _db.NewContext();
+        (await read.AuditLog.AsNoTracking()
+            .AnyAsync(e => e.EntityType == AuditEntityType.GitHubRepository)).Should().BeFalse();
+        (await read.OeProjects.AsNoTracking().AnyAsync()).Should().BeFalse();
     }
 
-    /// <summary>
-    /// A GitHub whose organisation ruleset refuses a write to the default
-    /// branch, which is how issue #811 was reported: creating
-    /// <c>refs/heads/main</c> comes back as a rule violation, and the flow has
-    /// to reach for a pull request instead.
-    /// </summary>
-    private static FakeGitHubApi PullRequestOnlyApi() =>
-        WritableApi()
-            .On(HttpMethod.Get, $"/repos/{Repo}/rules/branches/", HttpStatusCode.OK,
-                FakeGitHubApi.BranchRulesJson("pull_request"))
-            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", request =>
-                // The throwaway branch is fine; the default branch is not.
-                ReadBody(request).Contains("refs/heads/main", StringComparison.Ordinal)
-                    ? (HttpStatusCode.UnprocessableEntity, FakeGitHubApi.RuleViolationJson())
-                    : (HttpStatusCode.Created, FakeGitHubApi.RefJson("aldt/initial-workspace")))
-            // Seeding made the throwaway branch the default, which is what the
-            // flow has to put right before it opens anything.
-            .On(HttpMethod.Get, $"/repos/{Repo}", HttpStatusCode.OK,
-                FakeGitHubApi.RepositoryJson(Repo, defaultBranch: "aldt/seed"))
-            .On(HttpMethod.Get, $"/repos/{Repo}/git/ref/heads/", request =>
-                // main was never created - its ref creation is the one that was
-                // refused - while the throwaway branch carries the seed commit.
-                (request.RequestUri?.AbsolutePath ?? string.Empty).EndsWith("/heads/main", StringComparison.Ordinal)
-                    ? (HttpStatusCode.NotFound, """{"message":"Not Found"}""")
-                    : (HttpStatusCode.OK, """{"object":{"sha":"seed-commit-sha"}}"""))
-            .On(HttpMethod.Post, $"/repos/{Repo}/pulls", HttpStatusCode.Created,
-                FakeGitHubApi.PullRequestJson(Repo));
+    [Fact]
+    public async Task A_branch_rule_that_refuses_the_seed_is_reported_the_same_way()
+    {
+        await ReadyAsync();
+        // A ruleset that names the branch outright rather than symbolically
+        // refuses the very first write, before there is a branch at all.
+        var api = WritableApi()
+            .On(HttpMethod.Put, $"/repos/{Repo}/contents/", HttpStatusCode.UnprocessableEntity,
+                FakeGitHubApi.RuleViolationJson());
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
 
-    private static string ReadBody(HttpRequestMessage request) =>
-        request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        var act = () => service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
 
-    private static ILogger<GitHubWorkspaceRepositoryService> LoggerFor(CapturingLoggerProvider provider) =>
-        LoggerFactory.Create(b => b.AddProvider(provider))
-            .CreateLogger<GitHubWorkspaceRepositoryService>();
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors["GitHubRepository"].Should().Contain("bypass");
+        api.Calls.Should().NotContain(c => c.Contains("/git/blobs"));
+    }
 
-    /// <summary>
-    /// The body of the one PATCH that changes a repository setting rather than
-    /// a ref - the default-branch switch.
-    /// </summary>
-    private static string DefaultBranchBody(FakeGitHubApi api) =>
-        api.Bodies
-            .Where(b => b.Call.StartsWith("PATCH", StringComparison.Ordinal) && b.Call.EndsWith($"/repos/{Repo}", StringComparison.Ordinal))
-            .Select(b => b.Body)
-            .LastOrDefault()
-            ?? throw new InvalidOperationException("The repository's default branch was never set.");
+    [Fact]
+    public async Task A_default_branch_that_moved_under_the_workbench_is_refused_as_a_race()
+    {
+        await ReadyAsync();
+        var api = WritableApi()
+            .On(HttpMethod.Patch, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.UnprocessableEntity,
+                """{"message":"Update is not a fast forward"}""");
+        var (service, ctx) = NewService(api);
+        await using var _ = ctx;
+
+        var act = () => service.CreateAsync(WorkspacePlan(), RepoName, isPrivate: true);
+
+        // Never a forced push: whatever got in between the seed and the
+        // workspace is somebody's work, and the person is told to look.
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors["GitHubRepository"].Should().Contain("pushed to");
+        BodyOf(api, "PATCH", "/git/refs/heads/main").Should().Contain("\"force\":false");
+    }
+
     // --- The customer as a solution (#759) ---------------------------------
 
     [Fact]
@@ -1126,8 +987,8 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
 
     /// <summary>
     /// A GitHub that answers every call the flow needs: the membership check,
-    /// the installation token, the repository, the blobs, the tree, the commit
-    /// and the branch the commit is pointed at.
+    /// the installation token, the repository, the seed, the blobs, the tree,
+    /// the commit and the branch that is moved on to it.
     /// </summary>
     private static FakeGitHubApi WritableApi() =>
         new FakeGitHubApi()
@@ -1140,15 +1001,10 @@ public sealed class GitHubWorkspaceRepositoryTests : IDisposable
             .On(HttpMethod.Post, $"/repos/{Repo}/git/blobs", HttpStatusCode.Created, FakeGitHubApi.ShaJson("blob-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/trees", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-tree-sha"))
             .On(HttpMethod.Post, $"/repos/{Repo}/git/commits", HttpStatusCode.Created, FakeGitHubApi.ShaJson("new-commit-sha"))
+            // The default branch is moved on to the workspace commit; the
+            // installation bypasses the organisation's branch rules, so GitHub
+            // lets it.
             .On(HttpMethod.Patch, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.OK, FakeGitHubApi.ShaJson("new-commit-sha"))
-            // Since #811 the default branch is created at a finished commit
-            // rather than moved on to one, its seed lands on a throwaway branch
-            // that is deleted afterwards, and the repository's default branch
-            // setting is pointed at the real branch.
-            .On(HttpMethod.Get, $"/repos/{Repo}/rules/branches/", HttpStatusCode.OK, FakeGitHubApi.BranchRulesJson())
-            .On(HttpMethod.Post, $"/repos/{Repo}/git/refs", HttpStatusCode.Created, FakeGitHubApi.RefJson("main"))
-            .On(HttpMethod.Delete, $"/repos/{Repo}/git/refs/heads/", HttpStatusCode.NoContent)
-            .On(HttpMethod.Patch, $"/repos/{Repo}", HttpStatusCode.OK, FakeGitHubApi.RepositoryJson(Repo))
             // GitHub refuses the Git Data API until a repository has a commit,
             // which is what the Contents write above is for.
             .EmptyRepository(Repo);
