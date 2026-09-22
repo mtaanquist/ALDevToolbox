@@ -131,6 +131,15 @@ public abstract class PaletteSourceVisibilityTestBase : IDisposable
     protected virtual bool RowsBelongToSolutions => true;
 
     /// <summary>
+    /// The seeded caller's role, on their user row and in their claims. An
+    /// ordinary member by default - which is the point for a source over
+    /// solutions, since an Admin sees every one of them. A source that only
+    /// Admins may use at all (People) says so here; its gate case then has to
+    /// name the ordinary member among the callers who get nothing.
+    /// </summary>
+    protected virtual UserRole CallerRole => UserRole.User;
+
+    /// <summary>
     /// Callers this source must answer nothing for. An anonymous principal is
     /// always in the list - a request with no cookie has no organisation, so a
     /// source that answers one is reading across every tenant at once. A source
@@ -225,7 +234,7 @@ public abstract class PaletteSourceVisibilityTestBase : IDisposable
         var query = PaletteQuery.Parse(rawQuery);
         query.IsUsable.Should().BeTrue("the harness only searches for things a user could type");
 
-        var principal = CallerPrincipal();
+        var principal = CallerPrincipal(CallerRole.ToString());
         (await source.IsAvailableAsync(principal, CancellationToken.None)).Should().BeTrue(
             "the seeded caller is an ordinary member of the organisation and must pass the gate");
 
@@ -283,7 +292,7 @@ public abstract class PaletteSourceVisibilityTestBase : IDisposable
         await using (var ctx = Db.NewContext())
         {
             ctx.Users.AddRange(
-                NewUser(CallerUserId, TestDb.DefaultOrgId, "caller@cronus.test", UserRole.User),
+                NewUser(CallerUserId, TestDb.DefaultOrgId, "caller@cronus.test", CallerRole),
                 NewUser(StrangerUserId, TestDb.DefaultOrgId, "stranger@cronus.test", UserRole.User));
             await ctx.SaveChangesAsync();
         }

@@ -2,7 +2,9 @@
 
 Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884), the
 way in, the accessibility pass and the docs (#888), the performance work (#889) and page
-context and recents (#887) are built.** This document is the outcome of #879.
+context and recents (#887) are built, and #885 adds people and the docs pages as sources
+(BCQuality articles and translation files were looked at and left out - see "Deliberately
+left out").** This document is the outcome of #879.
 Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
@@ -153,6 +155,8 @@ ranking cannot drift from source to source.
 | Environments | environment name; the Solution's name as subtitle and its short name as searched-only text | the environment page |
 | Releases | release label, BC version, country, and the name of the Solution whose build produced it | the release in Object Explorer |
 | Recipes | recipe title and tags | the recipe |
+| People | a user's name - org Admins and SiteAdmins only; the subtitle is the role, never the email | the person's row on Administration's Users tab (`?user={id}`, which marks the row and focuses it); for a SiteAdmin who is not an org Admin, the site user list filtered to the name |
+| Docs | a docs page's title and a one-line topic, and each section heading | the page, or the section's anchor |
 | Go to | tool and page names | the page |
 
 **Go to is the one that is not a DI source.** It has no database behind it and its
@@ -185,6 +189,14 @@ application version and one tag, and that tag is the one a typed term matched wh
 matched one, otherwise the recipe's first. The Cookbook page's own search is unchanged and
 still finds more than the palette does; the palette is for going somewhere, and the
 Cookbook is where a wider search belongs.
+
+Docs has no table behind it. Its pages and their section headings are a **hand-kept
+catalogue** on the source, with a one-line topic per page so `mcp` finds the page whose
+title is "Connect an AI assistant". A test renders every docs page and fails when a
+catalogued heading is missing from it or one of its section headings is missing from the
+catalogue, so the list cannot drift from the pages. People is the one source for admins
+only; there is no page per person, so a row lands on the person's own row of the Users
+table, marked by the system's selection keyline.
 
 ## The fence
 
@@ -515,3 +527,12 @@ it is recorded in the design brief for a decision upstream.
 - Server-side recents, pinned items, per-user ranking.
 - From the first version: pipelines, teams, templates and docs pages as sources. Each is
   one class, and #885 adds them once the first five have proved the contract.
+- **BCQuality articles** (#885). The mirror has no page in the web UI - it is read through
+  the assistant tools only (`.design/bcquality.md`) - so a row would have nowhere to land.
+  It becomes a source when an article page exists.
+- **Translation files** (#885). The Translator's files live in GitHub, listed live with the
+  caller's own GitHub token, and who may see a repository is GitHub's answer, not a
+  predicate the palette can run inside one query. The organisation-wide list the
+  translation memory keeps of those files would show a repository's paths to people who
+  cannot open it, and the Translator cannot be opened on a file by address either.
+- **People by email.** A person is found by name only, and the row never prints an address.
