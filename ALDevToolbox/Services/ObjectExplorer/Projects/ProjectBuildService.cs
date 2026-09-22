@@ -3,7 +3,6 @@ using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
-using ALDevToolbox.Services.Account;
 using Microsoft.EntityFrameworkCore;
 using ALDevToolbox.Services.ObjectExplorer.Import;
 
@@ -59,7 +58,7 @@ public sealed class ProjectBuildService
     private readonly BcArtifactService _artifacts;
     private readonly ReleaseImportService _importer;
     private readonly AlCompilerProvisioner _compiler;
-    private readonly UserRepositoryTokenService _repoTokens;
+    private readonly CloneCredentialResolver _credentials;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildService> _logger;
@@ -70,7 +69,7 @@ public sealed class ProjectBuildService
         BcArtifactService artifacts,
         ReleaseImportService importer,
         AlCompilerProvisioner compiler,
-        UserRepositoryTokenService repoTokens,
+        CloneCredentialResolver credentials,
         IProcessRunner processRunner,
         TimeProvider clock,
         ILogger<ProjectBuildService> logger)
@@ -80,7 +79,7 @@ public sealed class ProjectBuildService
         _artifacts = artifacts;
         _importer = importer;
         _compiler = compiler;
-        _repoTokens = repoTokens;
+        _credentials = credentials;
         _processRunner = processRunner;
         _clock = clock;
         _logger = logger;
@@ -384,14 +383,12 @@ public sealed class ProjectBuildService
             {
                 ct.ThrowIfCancellationRequested();
                 var dest = Path.Combine(root, $"repo-{index++}");
-                var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(pat))
+                var credentials = await _credentials.ResolveAsync(repo.Provider, ct).ConfigureAwait(false);
+                if (credentials.Count == 0)
                 {
-                    failures.Add($"No {repo.Provider.DisplayName()} token for \"{repo.DisplayName}\" — add one under Account → Repository access.");
+                    failures.Add($"Couldn't reach \"{repo.DisplayName}\": {CloneCredentialResolver.NothingToCloneWith(repo.Provider)}");
                     continue;
                 }
-
-                var env = GitAuthEnv(repo.Provider, pat);
 
                 // Discovery only needs app.json — never the (often gigabytes of
                 // committed .alpackages) working tree. A blobless, no-checkout,
@@ -399,13 +396,15 @@ public sealed class ProjectBuildService
                 // sparse-checkout limited to app.json then materialises only those
                 // files, lazily fetching only their tiny blobs. This keeps discovery
                 // fast even on repos whose .git is bloated by committed binaries. The
-                // PAT travels in git config (http.extraHeader), never the URL or argv.
-                var clone = await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                // token travels in git config (http.extraHeader), never the URL or argv.
+                var (clone, used) = await CloneWithAsync(gitPath,
                     new[] { "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--single-branch", "--no-tags", "--quiet", repo.Url, dest },
-                    root, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                    root, dest, DiscoveryCloneTimeout, credentials, repo, ct).ConfigureAwait(false);
+                var pat = used.Secret;
+                var env = GitAuthEnv(repo.Provider, pat);
                 if (!clone.Succeeded || !Directory.Exists(dest))
                 {
-                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, pat)}".Trim());
+                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, credentials)}".Trim());
                     _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
                         repo.DisplayName, project.Id, clone.ExitCode);
                     continue;
@@ -812,27 +811,33 @@ public sealed class ProjectBuildService
         foreach (var repo in project.Repositories)
         {
             var dest = Path.Combine(buildRoot, $"repo-{index++}");
-            // A pull-request build has no user, so there is no personal token to
-            // resolve: it clones as the app's installation instead, in the same
-            // http.extraHeader shape a PAT travels in (#627). A manual build is
-            // unchanged - it is the user's own token or nothing.
-            var usesInstallation = options.InstallationToken is not null && repo.Provider == RepositoryProvider.GitHub;
-            var pat = usesInstallation
-                ? options.InstallationToken
-                : options.InstallationToken is not null
-                    ? null
-                    : await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
-            if (string.IsNullOrEmpty(pat))
+            // A pull-request build has no user, so there is nothing personal to
+            // clone with: it clones as the app's installation instead, in the same
+            // http.extraHeader shape a token travels in (#627). A manual build
+            // clones as the person who started it - their connected GitHub
+            // account first, their stored build token after that.
+            IReadOnlyList<CloneCredential> credentials;
+            if (options.InstallationToken is not null)
+            {
+                credentials = repo.Provider == RepositoryProvider.GitHub
+                    ? [new CloneCredential(options.InstallationToken, "the installation")]
+                    : [];
+            }
+            else
+            {
+                credentials = await _credentials.ResolveAsync(repo.Provider, ct).ConfigureAwait(false);
+            }
+            if (credentials.Count == 0)
             {
                 var reason = options.InstallationToken is not null
                     ? $"This build was started from a pull request, and the workbench can only reach {RepositoryProvider.GitHub.DisplayName()} repositories that way. Build this solution by hand to include the {repo.Provider.DisplayName()} repository."
-                    : $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository access, then rebuild.";
+                    : $"{CloneCredentialResolver.NothingToCloneWith(repo.Provider)} Then rebuild.";
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
                     reason, RepoUrl: repo.Url));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
                     options.InstallationToken is not null
                         ? $"Skipped: a pull-request build has no credential for a {repo.Provider.DisplayName()} repository."
-                        : $"Skipped: no {repo.Provider.DisplayName()} token for the user who started this build."));
+                        : $"Skipped: nothing to reach {repo.Provider.DisplayName()} with for the user who started this build."));
                 continue;
             }
 
@@ -840,13 +845,15 @@ public sealed class ProjectBuildService
             // changelog's `git log <prev>..<new>` and the force-push ancestry check
             // work) while fetching file blobs lazily on checkout — close to a
             // depth-1 clone's transfer for the working tree, but with the metadata
-            // the changelog needs. The PAT travels in the environment
+            // the changelog needs. The token travels in the environment
             // (GIT_CONFIG_* http.extraHeader), never in the URL, on disk, or in the
             // world-readable process argv.
             var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
+            var (result, used) = await CloneWithAsync(gitPath, args, buildRoot, dest, BuildCloneTimeout(), credentials, repo, ct)
+                .ConfigureAwait(false);
+            var pat = used.Secret;
             var env = GitAuthEnv(repo.Provider, pat);
-            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env, BuildCloneTimeout()), ct).ConfigureAwait(false);
-            var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
+            var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), credentials);
             if (result.Succeeded && Directory.Exists(dest))
             {
                 // The pull request's own repository is moved onto the head commit
@@ -865,17 +872,51 @@ public sealed class ProjectBuildService
                 var (sha, date) = await CaptureCommitAsync(gitPath, dest, ct).ConfigureAwait(false);
                 clones.Add(new ClonedRepo(dest, repo.Url, sha, date, repo.Id, repo.DisplayName));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
-                    $"Cloned {repo.Url} at {(sha is null ? "(unknown commit)" : sha)}.{(cloneLog.Length > 0 ? "\n" + cloneLog : "")}"));
+                    $"Cloned {repo.Url} at {(sha is null ? "(unknown commit)" : sha)} using {used.Source}.{(cloneLog.Length > 0 ? "\n" + cloneLog : "")}"));
             }
             else
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
-                    $"git clone failed: {Sanitize(result.StdErr, pat)}".Trim(), RepoUrl: repo.Url));
+                    $"git clone failed: {Sanitize(result.StdErr, credentials)}".Trim(), RepoUrl: repo.Url));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"git clone failed (exit {result.ExitCode}): {cloneLog}".Trim()));
                 _logger.LogWarning("Project {ProjectId}: clone of {Repo} exited {Exit}.", project.Id, repo.DisplayName, result.ExitCode);
             }
         }
         return clones;
+    }
+
+    /// <summary>
+    /// Runs a clone with each of <paramref name="credentials"/> in turn until one
+    /// succeeds, and returns the last outcome with the credential it was tried
+    /// with.
+    ///
+    /// <para>Trying rather than choosing is deliberate: the connected GitHub
+    /// account reaches only the repositories the App is installed on, and the
+    /// build token may reach more or fewer, and only git knows which for the
+    /// repository in front of it. A failed attempt's directory is removed before
+    /// the next, because git refuses to clone into a path that exists.</para>
+    /// </summary>
+    private async Task<(ProcessRunResult Result, CloneCredential Used)> CloneWithAsync(
+        string gitPath, IReadOnlyList<string> args, string workDir, string dest, TimeSpan timeout,
+        IReadOnlyList<CloneCredential> credentials, OeProjectRepository repo, CancellationToken ct)
+    {
+        ProcessRunResult result = null!;
+        CloneCredential used = null!;
+        for (var i = 0; i < credentials.Count; i++)
+        {
+            used = credentials[i];
+            result = await _processRunner.RunAsync(new ProcessRunRequest(
+                gitPath, args, workDir, GitAuthEnv(repo.Provider, used.Secret), timeout), ct).ConfigureAwait(false);
+            if (result.Succeeded && Directory.Exists(dest)) return (result, used);
+            if (i + 1 < credentials.Count)
+            {
+                _logger.LogInformation(
+                    "Clone of {Repo} using {Source} exited {Exit}; trying {Next}.",
+                    repo.DisplayName, used.Source, result.ExitCode, credentials[i + 1].Source);
+                TryDeleteDirectory(dest);
+            }
+        }
+        return (result, used);
     }
 
     /// <summary>
@@ -1371,6 +1412,12 @@ public sealed class ProjectBuildService
     /// commit-capture invocations never receive the PAT, so their output can't
     /// carry it — only git transport (clone / ls-remote) is routed through here.
     /// </summary>
+    private static string Sanitize(string text, IReadOnlyList<CloneCredential> credentials)
+    {
+        foreach (var credential in credentials) text = Sanitize(text, credential.Secret);
+        return text;
+    }
+
     private static string Sanitize(string text, string secret)
     {
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(secret)) return text;

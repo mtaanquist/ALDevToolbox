@@ -494,9 +494,18 @@ reports is what a build will use, and the tab says so when a repository is picke
 rather than offering a field with one legal value. Choosing a branch per repository
 is a schema change and a change to the clone, and belongs with whatever asks for it.
 
-The clone itself keeps using the user's PAT (`UserRepositoryTokenService`). Moving
-solution builds onto the linked token changes who a build fails for and is a separate,
-later decision.
+**The clone uses the linked token first, the PAT after it.** A manual build or a
+discovery asks `CloneCredentialResolver` for the acting user's credentials in order:
+the user-to-server token from their GitHub link, then the PAT from
+`UserRepositoryTokenService`, and Azure DevOps only ever has the PAT. Each is tried
+against the clone in turn, because only git knows which one reaches the repository
+in front of it: the linked token reaches the repositories the App is installed on,
+which a customer's own organisation may not be. Both act as the person with the
+person's own access, so *who a build fails for* is unchanged - the one who lacks
+access - and the linked token is simply the one that needs nothing pasted or renewed.
+The PAT stays for what the App cannot reach, and the Account page says so. The
+installation token is never used for a manual build; it is the pull-request build's
+credential, where there is no user (phase 2, #627).
 
 ### #625 Translator → open from and save to a repository
 

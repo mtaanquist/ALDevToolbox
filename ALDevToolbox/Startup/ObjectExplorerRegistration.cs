@@ -68,6 +68,7 @@ public static class ObjectExplorerRegistration
         // Project-build pipeline: the compile/ingest service, its release coordinator,
         // and the (stateless) external-process seam for git + alc.
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildService>();
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.CloneCredentialResolver>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildImporter>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
         // Background warm of the per-project discovered-extensions cache (the pipeline
