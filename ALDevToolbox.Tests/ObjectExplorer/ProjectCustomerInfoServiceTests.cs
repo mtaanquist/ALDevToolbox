@@ -4,8 +4,10 @@ using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Tests.Infrastructure;
+using System.Data.Common;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
@@ -320,5 +322,212 @@ public sealed class ProjectCustomerInfoServiceTests : IDisposable
         var all = await svc.GetAllAsync(id);
         all!.Notes.AccessDescription.Should().Be("VPN, then CRONUS-BC01");
         (all.Contacts.Count, all.People.Count, all.Integrations.Count).Should().Be((1, 1, 1));
+    }
+
+    // ── The version and address Business Central reports (#907) ────────────
+
+    private static readonly DateTime ReadAt = DateTime.UtcNow.AddHours(-3);
+
+    /// <summary>
+    /// A solution that looks connected - a tenant, its own client id and a stored secret
+    /// that is deliberately not a real ciphertext: the resolution must never decrypt it.
+    /// </summary>
+    private async Task<int> SeedConnectedAsync(
+        ProjectHostingType? hosting = ProjectHostingType.MicrosoftCloud, bool connected = true,
+        string environmentType = "Production", string? envVersion = "26.1.30000.0",
+        string? envUrl = "https://businesscentral.dynamics.com/tenant/Production",
+        bool missing = false, bool softDeleted = false, string? typedVersion = "BC 25.3",
+        string? typedUrl = "https://bc.cronus.example/BC250", bool addEnvironment = true)
+    {
+        await using var ctx = _db.NewContext();
+        var project = new OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId, Name = $"CRONUS {Guid.NewGuid():N}", CreatedByUserId = OwnerUserId,
+            HostingType = hosting, BcVersion = typedVersion, ClientUrl = typedUrl,
+            BcTenantId = Guid.NewGuid(),
+            BcClientId = connected ? "11111111-2222-3333-4444-555555555555" : null,
+            BcClientSecretEncrypted = connected ? "not-a-real-ciphertext" : null,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+        if (addEnvironment)
+        {
+            ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = environmentType, Type = environmentType,
+                Version = envVersion, WebClientLoginUrl = envUrl, FetchedAt = ReadAt,
+                MissingSince = missing ? DateTime.UtcNow : null,
+                SoftDeletedOn = softDeleted ? DateTime.UtcNow : null,
+            });
+            await ctx.SaveChangesAsync();
+        }
+        return project.Id;
+    }
+
+    [Fact]
+    public async Task A_connected_online_solution_shows_what_its_production_environment_reports()
+    {
+        var id = await SeedConnectedAsync();
+        await using var ctx = _db.NewContext();
+
+        var basics = (await Svc(ctx).GetBasicsAsync(id))!;
+
+        basics.FromBusinessCentral.Should().BeTrue();
+        basics.EffectiveVersion.Should().Be("26.1.30000.0");
+        basics.EffectiveClientUrl.Should().Be("https://businesscentral.dynamics.com/tenant/Production");
+        basics.FetchedAt.Should().BeCloseTo(ReadAt, TimeSpan.FromSeconds(1));
+        basics.Production!.EnvironmentName.Should().Be("Production");
+        basics.BcVersion.Should().Be("BC 25.3", "the typed value is kept, only hidden");
+        basics.ClientUrl.Should().Be("https://bc.cronus.example/BC250");
+    }
+
+    [Fact]
+    public async Task A_solution_that_has_not_said_where_it_is_hosted_counts_as_online()
+    {
+        var id = await SeedConnectedAsync(hosting: null);
+        await using var ctx = _db.NewContext();
+
+        (await Svc(ctx).GetBasicsAsync(id))!.FromBusinessCentral.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_organisations_registration_counts_as_a_connection_too()
+    {
+        var id = await SeedConnectedAsync(connected: false);
+        await using (var seed = _db.NewContext())
+        {
+            var settings = await seed.OrganizationSettings.FirstOrDefaultAsync(o => o.OrganizationId == TestDb.DefaultOrgId);
+            if (settings is null)
+            {
+                settings = new OrganizationSettings { OrganizationId = TestDb.DefaultOrgId };
+                seed.OrganizationSettings.Add(settings);
+            }
+            settings.BcClientId = "99999999-2222-3333-4444-555555555555";
+            settings.BcClientSecretEncrypted = "not-a-real-ciphertext";
+            await seed.SaveChangesAsync();
+        }
+        await using var ctx = _db.NewContext();
+
+        (await Svc(ctx).GetBasicsAsync(id))!.FromBusinessCentral.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("no connection")]
+    [InlineData("sandbox only")]
+    [InlineData("no environment")]
+    [InlineData("environment gone")]
+    [InlineData("environment deleted")]
+    [InlineData("nothing reported")]
+    public async Task Otherwise_what_was_typed_is_what_shows(string why)
+    {
+        var id = why switch
+        {
+            "no connection" => await SeedConnectedAsync(connected: false),
+            "sandbox only" => await SeedConnectedAsync(environmentType: "Sandbox"),
+            "no environment" => await SeedConnectedAsync(addEnvironment: false),
+            "environment gone" => await SeedConnectedAsync(missing: true),
+            "environment deleted" => await SeedConnectedAsync(softDeleted: true),
+            _ => await SeedConnectedAsync(envVersion: null, envUrl: null),
+        };
+        await using var ctx = _db.NewContext();
+
+        var basics = (await Svc(ctx).GetBasicsAsync(id))!;
+
+        basics.FromBusinessCentral.Should().BeFalse(why);
+        basics.EffectiveVersion.Should().Be("BC 25.3");
+        basics.EffectiveClientUrl.Should().Be("https://bc.cronus.example/BC250");
+    }
+
+    [Fact]
+    public async Task An_on_premises_solution_keeps_what_was_typed()
+    {
+        // Can't normally happen - on-premises is refused while environments exist - but
+        // the stored hosting type is what decides, not whether rows happen to be there.
+        var id = await SeedConnectedAsync(hosting: ProjectHostingType.OurCloud);
+        await using var ctx = _db.NewContext();
+
+        (await Svc(ctx).GetBasicsAsync(id))!.FromBusinessCentral.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_customer_with_only_business_centrals_values_is_not_an_empty_tab()
+    {
+        var id = await SeedConnectedAsync(typedVersion: null, typedUrl: null);
+        await using var ctx = _db.NewContext();
+
+        (await Svc(ctx).GetBasicsAsync(id))!.IsEmpty.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Saving_while_business_central_reports_them_leaves_the_typed_version_and_address_alone()
+    {
+        var id = await SeedConnectedAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            // A stale form: the values it carries - even invalid ones - neither land nor fail the save.
+            await Svc(ctx).SaveBasicsAsync(id, new CustomerBasicsInput(
+                ProjectHostingType.MicrosoftCloud, "BC 99", ProjectLicenseType.Cloud,
+                ProjectUserExperience.Premium, "not an address", "5123456"));
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.OeProjects.AsNoTracking().FirstAsync(p => p.Id == id);
+        row.BcVersion.Should().Be("BC 25.3");
+        row.ClientUrl.Should().Be("https://bc.cronus.example/BC250");
+        row.LicenseType.Should().Be(ProjectLicenseType.Cloud, "the rest of the form still saves");
+        row.VoiceAccountNumber.Should().Be("5123456");
+    }
+
+    [Fact]
+    public async Task Saving_without_a_connection_writes_the_typed_version_and_address()
+    {
+        var id = await SeedConnectedAsync(connected: false);
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx).SaveBasicsAsync(id, Input(ProjectHostingType.MicrosoftCloud, "BC 26.0", "https://bc.cronus.example/BC260"));
+
+        await using var read = _db.NewContext();
+        var row = await read.OeProjects.AsNoTracking().FirstAsync(p => p.Id == id);
+        row.BcVersion.Should().Be("BC 26.0");
+        row.ClientUrl.Should().Be("https://bc.cronus.example/BC260");
+    }
+
+    [Fact]
+    public async Task The_list_facts_resolve_the_same_way_in_two_reads_whatever_the_number_of_rows()
+    {
+        var connected = await SeedConnectedAsync();
+        var typed = await SeedConnectedAsync(connected: false);
+        var sandbox = await SeedConnectedAsync(environmentType: "Sandbox");
+
+        var counter = new CommandCounter();
+        await using var ctx = _db.NewContext(counter);
+        var facts = await Svc(ctx).ListFactsAsync([connected, typed, sandbox]);
+
+        facts[connected].Should().Be(new CustomerListFacts(
+            ProjectHostingType.MicrosoftCloud, "26.1.30000.0", "https://businesscentral.dynamics.com/tenant/Production", true));
+        facts[typed].Should().Be(new CustomerListFacts(
+            ProjectHostingType.MicrosoftCloud, "BC 25.3", "https://bc.cronus.example/BC250", false));
+        facts[sandbox].BcVersion.Should().Be("BC 25.3", "a sandbox's version is not the customer's");
+        counter.Count.Should().Be(2, "one read for the rows and one for Business Central's facts - no read per row");
+    }
+
+    private sealed class CommandCounter : DbCommandInterceptor
+    {
+        public int Count { get; private set; }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Count++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Count++;
+            return ValueTask.FromResult(result);
+        }
     }
 }

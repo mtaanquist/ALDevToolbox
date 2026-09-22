@@ -263,8 +263,8 @@
             </div>
             <div class="card__body sol-rail__body">
                 <div class="meta-item"><span class="meta-item__label">Hosted by</span><span class="sol-rail__value">@(_summary.Info.Basics.HostingType is { } h ? ProjectDetailCustomer.HostingText(h) : "Not recorded")</span></div>
-                <div class="meta-item"><span class="meta-item__label">BC version</span><span class="sol-rail__value">@(_summary.Info.Basics.BcVersion ?? "Not recorded")</span></div>
-                @if (_summary.Info.Basics.ClientUrl is { } url)
+                <div class="meta-item"><span class="meta-item__label">BC version</span><span class="sol-rail__value">@(_summary.Info.Basics.EffectiveVersion ?? "Not recorded")</span></div>
+                @if (_summary.Info.Basics.EffectiveClientUrl is { } url)
                 {
                     <div class="meta-item"><span class="meta-item__label">Business Central address</span><a class="sol-rail__value" href="@url" target="_blank" rel="noopener noreferrer">@url</a></div>
                 }
