@@ -14,7 +14,9 @@ namespace ALDevToolbox.Services.Palette;
 /// <c>Task.WhenAll</c> here would throw at runtime under exactly the load the
 /// palette produces. The budget the design sets (under 100 ms for an
 /// organisation with a few hundred solutions) is met by each source being one
-/// limited, projected read — not by running them at once.</para>
+/// limited, projected read — not by running them at once. Because they are
+/// serial, one stuck source would hold up every group behind it, which is what
+/// <see cref="SourceBudget"/> exists for.</para>
 ///
 /// <para>Registered concrete and scoped, like every other service here. With no
 /// sources registered it answers <see cref="PaletteSearchResult.Empty"/>,
@@ -38,6 +40,24 @@ public sealed class PaletteSearchService
     /// <see cref="MaxPerGroup"/> rows could end up showing four.
     /// </summary>
     public const int CandidatesPerSource = 24;
+
+    /// <summary>
+    /// How long one source may take before it is dropped from <em>this</em>
+    /// response: the whole budget, handed to one source. A source that spends all
+    /// of it on its own has already broken the promise in
+    /// <c>.design/command-palette.md</c>, "Budget", so it is shed and the user
+    /// gets the other groups now rather than everything late.
+    ///
+    /// <para>It is a fence against a stuck source, not a tight deadline - the
+    /// measurements in that section put the slowest source at 5 ms p95 on the
+    /// seeded fixture and 39 ms at four times its size, so tripping this means
+    /// something is wrong rather than busy.</para>
+    ///
+    /// <para>Enforced with a <see cref="CancellationTokenSource"/> linked to the
+    /// request's token, so the SQL command is actually cancelled rather than
+    /// abandoned to finish against a connection nobody is reading.</para>
+    /// </summary>
+    public static readonly TimeSpan SourceBudget = TimeSpan.FromMilliseconds(100);
 
     private readonly IReadOnlyList<IPaletteSource> _sources;
     private readonly ILogger<PaletteSearchService> _logger;
@@ -70,6 +90,7 @@ public sealed class PaletteSearchService
 
         var startedAt = Stopwatch.GetTimestamp();
         var matchesBySource = new List<(IPaletteSource Source, List<PaletteMatch> Matches)>(_sources.Count);
+        var timings = new List<string>(_sources.Count);
         var asked = 0;
 
         foreach (var source in _sources)
@@ -78,7 +99,38 @@ public sealed class PaletteSearchService
             if (!await source.IsAvailableAsync(user, ct).ConfigureAwait(false)) continue;
 
             asked++;
-            var candidates = await source.SearchAsync(query, CandidatesPerSource, ct).ConfigureAwait(false);
+            var sourceStartedAt = Stopwatch.GetTimestamp();
+            IReadOnlyList<PaletteCandidate>? candidates;
+            // A slice per source, linked to the request's token: whichever fires
+            // first cancels the command, and the two are told apart below by
+            // asking which one it was.
+            using (var slice = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                slice.CancelAfter(SourceBudget);
+                try
+                {
+                    candidates = await source.SearchAsync(query, CandidatesPerSource, slice.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // The source blew its slice. It is dropped from this
+                    // response and never waited on - the other sources have
+                    // already answered or are about to, and a palette showing
+                    // four groups late is worse than one showing three now. The
+                    // id and the elapsed time, never the query: this is the one
+                    // palette line that fires above Debug, so it lands in the
+                    // container log where operations can read it.
+                    _logger.LogWarning(
+                        "Palette source {SourceId} exceeded its {BudgetMs} ms slice ({ElapsedMs} ms) and was dropped from this response",
+                        source.Id, (int)SourceBudget.TotalMilliseconds,
+                        (int)Stopwatch.GetElapsedTime(sourceStartedAt).TotalMilliseconds);
+                    timings.Add($"{source.Id}=dropped");
+                    continue;
+                }
+            }
+
+            timings.Add($"{source.Id}={Stopwatch.GetElapsedTime(sourceStartedAt).TotalMilliseconds:0.0}ms");
             var matches = PaletteRanking.Rank(query, candidates ?? []);
             if (matches.Count > 0) matchesBySource.Add((source, matches));
         }
@@ -116,6 +168,11 @@ public sealed class PaletteSearchService
             "Palette search asked {SourceCount} of {RegisteredCount} sources and returned {ResultCount} rows in {GroupCount} groups (top hit: {HasTop}) in {ElapsedMs} ms",
             asked, _sources.Count, shown, groups.Count, top is not null,
             (int)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+        // Per source, so a palette that feels slow says which source is - and
+        // deliberately query-free, so the line that answers "what is slow" can
+        // be read without reading a customer's name over somebody's shoulder.
+        // What was typed is on the sibling line below, at the same level.
+        _logger.LogDebug("Palette search timings: {Timings}", string.Join(", ", timings));
         _logger.LogDebug("Palette search for {Query} matched {Groups}",
             query.Raw, string.Join(", ", groups.Select(g => $"{g.Id}={g.Items.Count}")));
 

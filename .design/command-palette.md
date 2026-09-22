@@ -249,6 +249,94 @@ storage is unavailable the palette simply shows Go to.
   The partition is the caller's address rather than their user id - `UseRateLimiter`
   runs ahead of `UseAuthentication`, so there is no claim to read at that point.
 
+### What it actually costs (#889)
+
+Measured against a seeded organisation on the Postgres 18 the tests run against,
+through `PaletteSearchService` itself rather than through the sources one at a time:
+**500 Solutions** (varied names, short names and hosting; one in seven Private, half of
+those reachable through a team the caller is on), **1,500 environments**,
+**200 releases** (100 of them produced by Solution builds, so the link the Releases
+source joins through is real, and 100 Microsoft artifact imports carrying a country in
+their dedup key), **300 recipes** with tags, and **1,000 customer contacts**.
+
+Every figure is p50 / p95 in milliseconds, 60 runs after 40 warm-up runs, on a warm
+connection. The range in each cell spans seven queries - `cro`, `cronus prod`,
+`annette`, `26.0 dk`, `posting`, a two-letter query and one that matches nothing - and
+three callers: an org Admin (who bypasses visibility entirely), a member on a team, and
+a member on none.
+
+| Per request | p50 | p95 |
+| --- | --- | --- |
+| The access snapshot, before the first source | 1.0-1.1 | 1.1-1.4 |
+| Solutions | 3.8-4.3 | 4.5-5.3 |
+| Environments | 3.2-3.6 | 3.8-4.4 |
+| Releases | 1.7-2.9 | 1.8-3.4 |
+| Recipes | 0.9-1.2 | 1.1-1.8 |
+| **The whole fan-out** | **11.4-12.9** | **12.4-14.1** |
+
+The whole fan-out sits at about an eighth of its budget, so **every source keeps the
+matching strategy it shipped with**, and no index was added:
+
+- **Solutions - the projection stays, and there is no pre-filter.** 1.2 ms of the 4 ms
+  is Postgres: one scan of 500 rows hash-joined to their contacts, all from cache. The
+  rest is materialising the ~930 rows that come back and folding them in memory, which
+  is what makes `moller` find Møller. An `ILIKE` pre-filter would save about a
+  millisecond and cost that.
+- **Environments - the same, for the same reason.** 1.5 ms in Postgres over 1,500 rows
+  joined to the Solutions the caller may see.
+- **Releases - the per-term `ILIKE` stays.** 0.7 ms in Postgres, most of the rest being
+  one round trip and the plan. The newest-first `Take` keeps the read bounded whatever
+  the term matches.
+- **Recipes - the per-term `ILIKE` stays.** 0.3 ms in Postgres and the cheapest source
+  in the fan-out.
+- **Go to is not a source** and costs the server nothing: it is rendered into the page
+  and filtered in the browser.
+
+**`pg_trgm` was not installed and no index was added.** Every one of those queries reads
+a few hundred to a few thousand rows out of cache, ordered by a column an index already
+covers or sorted in memory in well under a millisecond; an index on a column an `ILIKE
+'%term%'` cannot use would be an index on a guess.
+
+### Where it degrades first
+
+At **four times the fixture** (2,000 Solutions, 6,000 environments, 5,000 releases,
+2,500 builds, 3,000 recipes) the whole fan-out is still inside budget - 49-62 ms p50,
+53-69 ms p95 - but it stops being flat, and the source that moves is **Releases for a
+caller who does not bypass visibility**: 2 ms becomes 26-37 ms, while the same query
+for an Admin stays at 5 ms.
+
+The cause is worth writing down, because it is not the rows: `VisibleReleasePredicate`
+is an anti-join over the locked Solutions, and its row estimate inflates the plan's
+*cost* past Postgres's `jit_above_cost` threshold. Postgres then JIT-compiles the
+statement on every execution - 23 ms of emission on top of 10 ms of actual work, which
+`EXPLAIN (ANALYZE)` reports line by line. The Admin's predicate is `_ => true`, there is
+no anti-join, the estimate stays low, and no JIT happens.
+
+Nothing is being done about it now: it is inside budget, the per-source slice below
+sheds it if it ever is not, and the fix would be to the shared visibility predicate that
+Object Explorer's own release list uses - a change to make on its own evidence, not as a
+side effect of a search box.
+
+### A slice per source
+
+A source that cannot answer in **100 ms** is dropped from *that* response and never
+waited on. The other sources still return, and the palette shows the groups it has.
+
+- 100 ms is the whole budget handed to one source: spending it alone has already broken
+  the promise at the top of this section. It is a fence against a source that is stuck,
+  not a deadline that a busy one trips - the slowest source above is 5 ms at p95, and 39
+  ms at four times the fixture.
+- It is enforced with a `CancellationTokenSource` linked to the request's own token, so
+  the SQL command is really cancelled rather than left running against a connection
+  nobody is reading. A request the browser aborted is still a cancelled request, not a
+  dropped source: it propagates, and the sources behind it are never asked.
+- A drop logs one **Warning** naming the source and the elapsed time. Never the query -
+  that line lands in the container log.
+- Every search logs its per-source timings at **Debug**, on a line that carries no query
+  text, so "the palette feels slow" can be answered with which source is slow without
+  reading a customer's name over somebody's shoulder. What was typed is on the sibling
+  Debug line, as before.
+
 ## States
 
 The list pane always shows exactly one of: recents and Go to (empty query), results,

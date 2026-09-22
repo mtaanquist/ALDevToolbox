@@ -261,4 +261,86 @@ public sealed class PaletteSearchServiceTests
             && m.Contains("contoso", StringComparison.OrdinalIgnoreCase),
             "Debug is where the query text is allowed to be, for a maintainer chasing a bad result");
     }
+
+    [Fact]
+    public async Task Every_source_that_answered_is_timed_on_a_line_that_does_not_carry_the_query()
+    {
+        using var capture = new CapturingLoggerProvider();
+        using var factory = LoggerFactory.Create(builder =>
+        {
+            builder.AddProvider(capture);
+            builder.SetMinimumLevel(LogLevel.Trace);
+        });
+        var solutions = new FakePaletteSource("solutions", "Solutions", PaletteGroupOrder.Solutions,
+            Solution("Contoso Coffee"));
+        var recipes = new FakePaletteSource("recipes", "Recipes", PaletteGroupOrder.Recipes);
+        var service = new PaletteSearchService(
+            new[] { solutions, recipes }, factory.CreateLogger<PaletteSearchService>());
+
+        await service.SearchAsync(Caller, "contoso", CancellationToken.None);
+
+        var timings = capture.Messages.Should().ContainSingle(
+            m => m.StartsWith("Debug:", StringComparison.Ordinal) && m.Contains("timings", StringComparison.Ordinal),
+            "a palette that feels slow has to say which source is").Subject;
+        timings.Should().Contain("solutions=").And.Contain("recipes=")
+            .And.Contain("ms", "the number is what makes the line worth reading");
+        timings.Should().NotContainEquivalentOf("contoso",
+            "this is the line somebody reads while chasing a slow palette, over a shoulder");
+    }
+
+    // ── The per-source slice ────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_source_that_blows_its_slice_is_dropped_and_the_others_still_answer()
+    {
+        using var capture = new CapturingLoggerProvider();
+        using var factory = LoggerFactory.Create(builder =>
+        {
+            builder.AddProvider(capture);
+            builder.SetMinimumLevel(LogLevel.Trace);
+        });
+        // Ordered first, so the assertion is about the stall being shed rather
+        // than about the other source having already answered.
+        var stalled = new FakePaletteSource("solutions", "Solutions", PaletteGroupOrder.Solutions,
+            Solution("Contoso Coffee"))
+        {
+            WaitForCancellation = true,
+        };
+        var recipes = new FakePaletteSource("recipes", "Recipes", PaletteGroupOrder.Recipes,
+            new PaletteCandidate("recipe", "Contoso posting routine", null, "/cookbook/1"));
+        var service = new PaletteSearchService(
+            new[] { stalled, recipes }, factory.CreateLogger<PaletteSearchService>());
+
+        var result = await service.SearchAsync(Caller, "contoso", CancellationToken.None);
+
+        result.Groups.Should().ContainSingle(
+            "a source that cannot answer in its slice is dropped from this response, not waited on")
+            .Which.Id.Should().Be("recipes");
+        stalled.ObservedCancellation.Should().BeTrue(
+            "the slice has to cancel the source's token, or the SQL behind it runs on regardless");
+        capture.Messages.Should().ContainSingle(m => m.StartsWith("Warning:", StringComparison.Ordinal))
+            .Which.Should().Contain("solutions")
+            .And.NotContainEquivalentOf("contoso", "a Warning lands in the container log; the query is not for it");
+    }
+
+    [Fact]
+    public async Task A_request_the_browser_aborted_is_still_a_cancellation_not_a_dropped_source()
+    {
+        // The two look identical from inside the loop - a cancelled token - and
+        // the difference matters: a superseded keystroke must not be answered
+        // with a partial result the script would render.
+        var stalled = new FakePaletteSource("solutions", "Solutions", PaletteGroupOrder.Solutions)
+        {
+            WaitForCancellation = true,
+        };
+        var recipes = new FakePaletteSource("recipes", "Recipes", PaletteGroupOrder.Recipes,
+            new PaletteCandidate("recipe", "Contoso posting routine", null, "/cookbook/1"));
+        using var cts = new CancellationTokenSource();
+
+        var search = Service(stalled, recipes).SearchAsync(Caller, "contoso", cts.Token);
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => search).Should().ThrowAsync<OperationCanceledException>();
+        recipes.SearchCallCount.Should().Be(0, "nothing is owed to a request that is gone");
+    }
 }
