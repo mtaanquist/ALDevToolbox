@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +55,7 @@ public sealed class ArtifactService
                 p.Id,
                 p.Name,
                 p.ShortName,
+                p.Visibility,
                 OwnerName = p.CreatedByUser != null ? p.CreatedByUser.DisplayName : null,
                 RepoCount = p.Repositories.Count,
                 RepoNames = p.Repositories.Select(r => r.DisplayName).ToList(),
@@ -92,6 +94,36 @@ public sealed class ArtifactService
             .GroupBy(c => c.ProjectBuildId)
             .ToDictionary(g => g.Key, g => g.First().CommitHash);
 
+        // The newest time each solution reached its customer's production environment, in
+        // one query rather than one per row. "Reached" is the two terminal successes:
+        // deployed, and handed off - Business Central accepted the upload for a later
+        // window, which is as far as a scheduled delivery is ever watched. Production is
+        // the release pipeline's environment's type, compared the way
+        // BcEnvironmentTypes.IsProduction does, which EF cannot translate. A delivery
+        // whose release pipeline was later removed still happened, so it still counts.
+        // See .design/solution-customer-info.md.
+        var shipped = (await _db.OeProjectDeliveries.AsNoTracking()
+                .Where(d => projectIds.Contains(d.ProjectId)
+                    && (d.Status == ProjectDeliveryStatus.Deployed || d.Status == ProjectDeliveryStatus.HandedOff)
+                    && d.FinishedAt != null
+                    && d.ReleasePipeline!.ProjectEnvironment!.Type.Trim().ToUpper() == "PRODUCTION")
+                .GroupBy(d => d.ProjectId)
+                .Select(g => g
+                    .OrderByDescending(d => d.FinishedAt).ThenByDescending(d => d.Id)
+                    .Select(d => new
+                    {
+                        d.ProjectId,
+                        FinishedAt = d.FinishedAt!.Value,
+                        d.ProjectBuildId,
+                        d.ReleasePipelineId,
+                        d.Status,
+                        ReleasePipelineRemoved = d.ReleasePipeline!.DeletedAt != null,
+                    })
+                    .First())
+                .ToListAsync(ct))
+            .ToDictionary(d => d.ProjectId, d => new DeliverySummary(
+                d.FinishedAt, d.ProjectBuildId, d.ReleasePipelineId, d.Status, d.ReleasePipelineRemoved));
+
         var rows = new List<ProjectArtifactsRow>(projects.Count);
         foreach (var p in projects)
         {
@@ -106,7 +138,11 @@ public sealed class ArtifactService
                 Latest: latest is null ? null : new BuildSummary(
                     latest.Id, latest.Status, latest.BcVersion, latest.Branch, commitShort, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
                 LatestSuccessfulBuildId: latestSuccessful?.Id,
-                RepoNames: p.RepoNames));
+                RepoNames: p.RepoNames)
+            {
+                Visibility = p.Visibility,
+                LastProductionDelivery = shipped.GetValueOrDefault(p.Id),
+            });
         }
 
         foreach (var p in locked)
@@ -115,7 +151,10 @@ public sealed class ArtifactService
                 p.Id, p.Name, ShortName: null, OwnerName: null, RepoCount: 0,
                 Latest: null, LatestSuccessfulBuildId: null,
                 RepoNames: Array.Empty<string>(),
-                IsLocked: true));
+                IsLocked: true)
+            {
+                Visibility = ProjectVisibility.Private,
+            });
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -123,6 +162,7 @@ public sealed class ArtifactService
             var term = search.Trim();
             rows = rows.Where(r =>
                     r.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || (r.ShortName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
                     || (r.OwnerName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
                     || r.RepoNames.Any(n => n.Contains(term, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
@@ -584,7 +624,31 @@ public sealed record ProjectArtifactsRow(
     BuildSummary? Latest,
     int? LatestSuccessfulBuildId,
     IReadOnlyList<string> RepoNames,
-    bool IsLocked = false);
+    bool IsLocked = false)
+{
+    /// <summary>
+    /// Who may see and change the solution: <c>Public</c>, <c>ReadOnly</c> or <c>Private</c>.
+    /// A locked row is always <c>Private</c> - that is why it is locked. Written as its name
+    /// so an assistant reading <c>list_solutions</c> sees a word, not a number.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<ProjectVisibility>))]
+    public ProjectVisibility Visibility { get; init; } = ProjectVisibility.Public;
+
+    /// <summary>
+    /// The newest delivery that reached the customer's production environment, or null
+    /// when nothing has. Empty on a locked row.
+    /// </summary>
+    public DeliverySummary? LastProductionDelivery { get; init; }
+}
+
+/// <summary>
+/// One delivery to a production environment, for a directory cell. <see cref="Status"/> is
+/// <c>deployed</c> (installed, and seen to be) or <c>handed_off</c> (Business Central
+/// accepted it and installs it in a later update window, unobserved by us).
+/// <see cref="ReleasePipelineRemoved"/> is true when the release pipeline it ran through has
+/// since been deleted, so there is no page to link to.
+/// </summary>
+public sealed record DeliverySummary(DateTime FinishedAt, int BuildId, int ReleasePipelineId, string Status, bool ReleasePipelineRemoved = false);
 
 /// <summary>A compact summary of one build for a directory chip.</summary>
 public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, string? Branch, string? CommitShort, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);

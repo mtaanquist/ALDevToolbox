@@ -208,35 +208,70 @@ With modules in, **Customer is the first tab and the one an existing Solution op
 Links that mean another tab say so (`?tab=repositories`, `pipelines`, `bc`, `general`,
 `access`).
 
-### The Solutions list and its customer info (slice 4)
+### The Solutions list and its customer info (slice 4, reshaped in #906)
 
-The list stays narrow - Solution, hosted by, BC version, latest build, owner - and the rest
-follows the chosen row in a rail on the right, as the factboxes did in the AL prototype
-this model came from. It is the support consultant's view: on a call they are scanning
-customers, not editing one, and the answer should not be a page load away.
+The list stays narrow and the rest follows the chosen row in a rail on the right, as the
+factboxes did in the AL prototype this model came from. It is the support consultant's
+view: on a call they are scanning customers, not editing one, and the answer should not be
+a page load away from the list.
 
-- Each row has **Customer info** beside **Open**. It is a link, not a click handler:
-  `/solutions?selected={id}`, keeping whatever search and module filter are in the address.
-  The page therefore stays the plain GET page it was - no circuit, nothing to reconnect -
-  and a list with one customer's summary open is an address that can be sent to a
-  colleague. The Solution's name in the row still opens the Solution.
-- The rail shows the name with **Open solution** and a close link, then hosted by,
-  version and the Business Central address; **Getting in**; **Contacts** with `tel:` and
-  `mailto:` links; **Modules**; **Who knows this customer**. It summarises and links; it
-  never edits. The Customer tab is the only place any of it is changed.
-- It is read only for the selected Solution, through the same view-gated reads the
-  Customer tab uses. Only a row that is on screen and open to the viewer can be selected:
-  a locked row's id in the address is ignored, not answered.
-- `ListPage` gained a `Rail` slot for it, which is the detail frames' `.detail-body`
-  reference rail beside a list: sticky, 280px, under the list below the width where those
-  collapse. A page passes it per render, so no column is reserved while nothing is
-  selected. Everything in the rail wraps in full - a phone number cut off with an ellipsis
-  is no use on a call.
+**Columns.** Five, each something that gets asked on a call:
 
-The Repositories column gave way to Hosted by and BC version; the count is on the Solution.
-The build's own version reads "Built for BC 26.0" so that two bare versions never sit side
-by side - the customer's is the one that gets read out on a call.
-There is no sheet for a list with a rail, so this needs a design pass upstream.
+- **Solution** - the name, linking to the Solution, with the short name beside it in
+  `--ink-3` when one is set: it is how colleagues say the customer aloud.
+- **Hosted by** - the hosting in a word or two; the Customer tab has the sentence.
+- **BC version** - the same resolution as the Customer tab (#907): the production
+  environment's version once a connection has fetched one, the typed value otherwise.
+- **Last shipped** - the date the newest delivery to a *production* environment finished,
+  linking to its release pipeline (`/releases/{id}`, the only page that shows a delivery
+  until #911 adds a build page). Both terminal successes count: `deployed`, and
+  `handed_off` - Business Central accepted the apps and installs them in a later update
+  window. A handed-off date keeps its link but carries a send glyph and "installs later"
+  after it in `--ink-3`, with a hover title saying what happened - visible words, because
+  nobody hovers on a call. A delivery whose release
+  pipeline has since been deleted still counts - the customer got it - but has no link.
+  Nothing yet reads **Never**. A sandbox delivery never counts: that is where it was
+  tried, not where the customer got it.
+- **Visibility** - Public / Read-only / Private, the words the Access tab uses.
+
+The pipeline build's status (the edge keyline and glyph), the Owner column and the per-row
+**Customer info** / **Open** buttons are gone: the last shipped date answers the question
+the build status stood in for, and the row itself is now the way in.
+
+**The row is the selector.** Each row carries an empty link to
+`/solutions?selected={id}` - search and module filter kept - whose `::after` covers the whole
+row, so a click anywhere on it opens the rail. The name and the Last shipped date are lifted
+above that cover and keep their own destinations; they are separate links, never one
+inside another. Keyboard users Tab to the row's link first ("Show customer info for ..."),
+then to the name. The selected row gets `is-selected` and its link `aria-current="true"`.
+It is a link, not a click handler, so the page stays the plain GET page it was - no circuit,
+nothing to reconnect - and a list with one customer's info open is an address that can be
+sent to a colleague. Up/Down between rows would need a circuit; the maintainer chose static
+first and may revisit it.
+
+**The rail is reserved** whenever the list has rows, so the table does not change width on
+every click. With nothing chosen it holds an empty state, "Choose a solution to see its
+customer info". With one chosen it shows the name with **Open solution** and a close link,
+then hosted by, version and the Business Central address; **Getting in**; **Contacts** with
+`tel:` and `mailto:` links; **Modules**; **Who knows this customer**. It summarises and
+links; it never edits. The Customer tab is the only place any of it is changed. Everything
+in it wraps in full - a phone number cut off with an ellipsis is no use on a call.
+
+- The search form carries the selection as a hidden `selected` field, so searching keeps the
+  customer open. If the search hides that row, the rail goes back to its empty state.
+- The rail is read only for the selected Solution, through the same view-gated reads the
+  Customer tab uses. Only a row that is on screen and open to the viewer can be selected: a
+  locked row's id in the address is ignored, not answered. A locked row keeps its name and
+  "Private — visible to its team" and nothing else, and has no row link.
+- The row data is `ArtifactService.ListProjectsAsync`, shared with the `list_solutions` MCP
+  tool: it gained `Visibility` and `LastProductionDelivery`, the latter from one extra query
+  for every row rather than one per row.
+- `ListPage`'s `Rail` slot is the detail frames' `.detail-body` reference rail beside a list:
+  sticky, 280px, under the list below the width where those collapse.
+
+There is no sheet for a list with a rail; the design project's
+`briefs/2026-09-shipped-without-a-sheet.md` tracks it, and
+`handoff/briefs/2026-09-solutions-list-rail.md` has what #906 changed, to fold in upstream.
 
 ## Deliberately out of scope
 

@@ -64,7 +64,9 @@ should settle. It also carries one **correction to `components.css`**: `.modal-b
 mixes from `--ink`, which flips with the theme, so the dark scrim comes out nearly white.
 The app overrides it in `app.css` until the sheet is fixed upstream and re-pulled; delete
 the override then. When a doc in `.design/` says something "needs a design pass upstream",
-that brief is where it is tracked.
+that brief is where it is tracked. The Solutions list's entry has an addendum checked in
+here, `briefs/2026-09-solutions-list-rail.md` (#906: the row as the selector, the rail
+reserved with an empty state, new columns), waiting to be folded into it upstream.
 
 **The command palette** has its own brief, `briefs/2026-09-command-palette.md`, for the
 same reason and written to the same shape: the palette ([#880]-[#888]) shipped without a

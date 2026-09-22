@@ -9,36 +9,31 @@
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 
 @*
-    The Solutions directory: every customer/solution in the org, who owns it, how
-    many repositories it pulls together, and the state of its newest build. This
-    is the setup-and-trigger surface — open a solution to manage its repos and
-    start a build; follow "Builds" to download the compiled .app deliverables in
-    the Artifacts tool. Any signed-in user can create and browse; only a solution's
-    owner (or an admin) can change or build it. See .design/artifacts.md.
+    The Solutions directory: every customer/solution in the org, where it runs, what
+    Business Central it is on, when something last reached its production environment,
+    and who may see it - with the chosen customer's info in a rail beside the list.
+    Any signed-in user can create and browse; a Private solution the viewer is not on
+    shows as a locked, name-only row. See .design/solution-customer-info.md ("The
+    Solutions list and its customer info") and .design/teams-and-visibility.md.
 
-    Named user: a BC consultant who wants to find a customer's solution and either
-    download its latest build or set up a new one. Primary action: New solution.
+    Named user: a support consultant, mid-call, scanning for a customer to see how to
+    get in and who to talk to. Primary action: New solution.
 
-    Archetype 2 (list / browser), table view. The latest build's status is the
-    row's 4px edge keyline plus a leading glyph rather than a pill in a cell —
-    the handoff's one rule for tables. A solution with no build yet gets neither:
-    an absent build is not a status. Only a pipeline's builds count - a
-    pull-request build the GitHub App ran is a check on a pull request, not the
-    state of anything this list offers to download, so a solution without a
-    pipeline shows no status however many of those have failed (the query in
-    ArtifactService is where that line is drawn). Search stays a plain GET form, so the page
-    needs no interactivity and a filtered result stays a shareable URL.
-    See .design/design-migration.md.
+    Archetype 2 (list / browser), table view, with the reference rail. The row is the
+    selector: a link covering the whole row opens the rail (?selected={id}); the name
+    inside it keeps its own link to the solution. Both are links, not click handlers,
+    so the page needs no interactivity and a filtered list with one customer open is
+    an address that can be sent to a colleague.
 *@
 
 <PageTitle>Solutions · AL Workbench</PageTitle>
 
-<ListPage Title="Solutions" SearchForm="true" Rail="@(_summary is null ? null : SummaryRail())" RailLabel="Customer info"
+<ListPage Title="Solutions" SearchForm="true" Rail="@(_summary is null ? NothingChosenRail() : SummaryRail())" RailLabel="Customer info"
           IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(_rows is { Count: 0 })"
           Trail='@([new("Home", "/"), new("Solutions")])'>
     <SubtitleContent>
         One solution per customer: what they run, how to reach them, and the repositories that
-        build their extensions. Customer info shows the access notes, contacts and modules beside the list.
+        build their extensions.
     </SubtitleContent>
     <Actions>
         <a class="btn btn--primary" href="/solutions/new">
@@ -61,11 +56,17 @@
     </Notices>
     <Search>
         <input type="search" name="q" value="@_search" class="input"
-               placeholder="Search by name, owner, or repository..."
+               placeholder="Search by name, short name, owner, or repository..."
                aria-label="Search solutions"
                aria-keyshortcuts="F3" title="Search solutions (F3)" />
     </Search>
     <SearchFormExtras>
+        @* Searching keeps the customer that is open; if the search hides that row, the
+           rail goes back to asking for one. *@
+        @if (_selectedId is { } selectedId)
+        {
+            <input type="hidden" name="selected" value="@selectedId" />
+        }
         @* "Who has Document Capture?" - only once the organisation has a module catalogue.
            Inside the GET form so the answer is a shareable address; choosing one submits
            it, and without scripting Enter in the search box still does. *@
@@ -83,19 +84,17 @@
         }
     </SearchFormExtras>
     <Loading>
-        <table class="data-table data-table--edge">
+        <table class="data-table">
             <thead>
                 <tr>
-                    <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                     <th scope="col">Solution</th>
                     <th scope="col">Hosted by</th>
                     <th scope="col">BC version</th>
-                    <th scope="col">Latest build</th>
-                    <th scope="col">Owner</th>
-                    <th scope="col" class="data-table__actions">Actions</th>
+                    <th scope="col">Last shipped</th>
+                    <th scope="col">Visibility</th>
                 </tr>
             </thead>
-            <tbody><TableSkeletonRows Columns="6" /></tbody>
+            <tbody><TableSkeletonRows Columns="5" /></tbody>
         </table>
         <LoadingBlock Text="Loading solutions..." UnderTable="true" />
     </Loading>
@@ -124,16 +123,14 @@
         </div>
     </NoMatches>
     <ChildContent>
-        <table class="data-table data-table--edge">
+        <table class="data-table">
             <thead>
                 <tr>
-                    <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                     <th scope="col">Solution</th>
                     <th scope="col">Hosted by</th>
                     <th scope="col">BC version</th>
-                    <th scope="col">Latest build</th>
-                    <th scope="col">Owner</th>
-                    <th scope="col" class="data-table__actions">Actions</th>
+                    <th scope="col">Last shipped</th>
+                    <th scope="col">Visibility</th>
                 </tr>
             </thead>
             <tbody>
@@ -142,64 +139,70 @@
                     @if (p.IsLocked)
                     {
                         @* A private solution the viewer isn't on. Its name is here
-                           so it doesn't just vanish — they can see it exists and
-                           ask for access — and nothing else is, because owner,
-                           status and counts all report activity on the customer. *@
+                           so it doesn't just vanish - they can see it exists and
+                           ask for access - and nothing else is, because hosting,
+                           version and deliveries all report on the customer. It
+                           cannot be chosen: there is no customer info to show. *@
                         <tr class="projects__locked" title="Private — visible to its team">
-                            <td class="data-table__col-state">
-                                <Icon Name="lock" Width="14" Height="14" />
+                            <td>
+                                <span class="sol-list__locked-name">
+                                    <Icon Name="lock" Width="14" Height="14" />
+                                    <span>@p.Name</span>
+                                </span>
                             </td>
-                            <td><span>@p.Name</span></td>
                             <td colspan="4">Private — visible to its team</td>
-                            <td class="data-table__actions"></td>
                         </tr>
                     }
                     else
                     {
-                    var rowState = RowClass(p);
-                    <tr class="@rowState">
-                        <td class="data-table__col-state">
-                            @if (p.Latest is { } b1)
-                            {
-                                <RowStateIcon State="@b1.Status" />
-                            }
-                        </td>
-                        <td><a href="@($"/solutions/{p.Id}")"><strong>@p.Name</strong></a></td>
-                        <td>@(_facts.GetValueOrDefault(p.Id)?.HostingType is { } hosting ? ShortHosting(hosting) : "—")</td>
-                        <td>@(_facts.GetValueOrDefault(p.Id)?.BcVersion ?? "—")</td>
-                        <td>
-                            @if (p.Latest is { } b2)
-                            {
-                                @if (!string.IsNullOrEmpty(b2.BcVersion))
+                        var rowState = p.Id == _selectedId ? "sol-list__row is-selected" : "sol-list__row";
+                        var facts = _facts.GetValueOrDefault(p.Id);
+                        <tr class="@rowState">
+                            <td>
+                                @* The row's own link: it covers the whole row (see the stylesheet),
+                                   so a click anywhere but the two links raised above it opens the
+                                   rail. It comes first so Tab reaches "choose" before "open". *@
+                                <a class="sol-list__select" href="@SummaryHref(p.Id)"
+                                   aria-label="@($"Show customer info for {p.Name}")"
+                                   aria-current="@(p.Id == _selectedId ? "true" : null)"></a>
+                                <a class="sol-list__name" href="@($"/solutions/{p.Id}")"><strong>@p.Name</strong></a>
+                                @if (!string.IsNullOrEmpty(p.ShortName))
                                 {
-                                    <span>Built for <span class="code">BC @b2.BcVersion</span></span>
+                                    <span class="sol-list__short" title="Short name">@p.ShortName</span>
+                                }
+                            </td>
+                            <td>@(facts?.HostingType is { } hosting ? ShortHosting(hosting) : "—")</td>
+                            <td>@(facts?.BcVersion ?? "—")</td>
+                            <td>
+                                @if (p.LastProductionDelivery is { } shipped)
+                                {
+                                    var handedOff = shipped.Status == ProjectDeliveryStatus.HandedOff;
+                                    var state = handedOff ? "sol-list__shipped sol-list__shipped--handed-off" : "sol-list__shipped";
+                                    var shippedText = ShippedTitle(shipped);
+                                    @if (shipped.ReleasePipelineRemoved)
+                                    {
+                                        <span class="@state" title="@shippedText">
+                                            @if (handedOff) { <Icon Name="send" Width="12" Height="12" /> }
+                                            <span>@ShippedDate(shipped)</span>
+                                            @if (handedOff) { <span class="sol-list__shipped-note">installs later</span> }
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <a class="@state" href="@($"/releases/{shipped.ReleasePipelineId}")" title="@shippedText">
+                                            @if (handedOff) { <Icon Name="send" Width="12" Height="12" /> }
+                                            <span>@ShippedDate(shipped)</span>
+                                            @if (handedOff) { <span class="sol-list__shipped-note">installs later</span> }
+                                        </a>
+                                    }
                                 }
                                 else
                                 {
-                                    <span class="u-muted">@LabelFor(b2.Status)</span>
+                                    <span class="u-muted">Never</span>
                                 }
-                            }
-                            else
-                            {
-                                <span class="u-muted">No builds yet</span>
-                            }
-                        </td>
-                        <td class="u-muted">@(p.OwnerName ?? "—")</td>
-                        <td class="data-table__actions">
-                            @* The summary is a link, not a click handler: the page stays a plain
-                               GET page, and a list with one customer's summary open is an address
-                               that can be sent to a colleague. *@
-                            <a class="btn btn--sm" href="@SummaryHref(p.Id)" aria-label="@($"Customer info for {p.Name}")"
-                               aria-current="@(p.Id == _selectedId ? "true" : null)">
-                                <Icon Name="eye" Width="14" Height="14" />
-                                <span>Customer info</span>
-                            </a>
-                            <a class="btn btn--sm" href="@($"/solutions/{p.Id}")">
-                                <Icon Name="settings" Width="14" Height="14" />
-                                <span>Open</span>
-                            </a>
-                        </td>
-                    </tr>
+                            </td>
+                            <td>@ProjectDetail.LevelName(p.Visibility)</td>
+                        </tr>
                     }
                 }
             </tbody>
@@ -248,6 +251,16 @@
             _summary = new Summary(row.Name, info, await CustomerModules.GetSolutionModulesAsync(selected));
         }
     }
+
+    /// <summary>
+    /// The rail while nothing is chosen. It is kept rather than collapsed so the table does
+    /// not change width on every click, and it says what the rows are for.
+    /// </summary>
+    private RenderFragment NothingChosenRail() => @<div class="card">
+        <EmptyState Icon="info" Title="Choose a solution to see its customer info">
+            <Text>How to get in, who to call, and which modules they run - without leaving the list.</Text>
+        </EmptyState>
+    </div>;
 
     /// <summary>
     /// The factboxes of the AL prototype this model came from: what support needs about
@@ -352,12 +365,6 @@
         </p>
     </div>;
 
-    private string RowClass(ProjectArtifactsRow p)
-    {
-        var state = p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null;
-        return p.Id == _selectedId ? $"{state} is-selected".Trim() : state ?? string.Empty;
-    }
-
     /// <summary>The list as it is now - search and module filter kept - with one solution's summary open, or closed.</summary>
     private string SummaryHref(int? id)
     {
@@ -388,17 +395,19 @@
         };
     }
 
+    private static string ShippedDate(DeliverySummary shipped) =>
+        shipped.FinishedAt.ToLocalTime().ToString("d MMM yyyy");
+
     /// <summary>
-    /// Fallback for the "Latest build" cell when a build carries no BC version —
-    /// a queued or failed build never got far enough to have one, so the cell
-    /// says which, rather than sitting empty next to a coloured edge.
+    /// The hover text for "Last shipped": when, exactly, and what "handed off" means for a
+    /// delivery that is waiting on Business Central rather than installed.
     /// </summary>
-    private static string LabelFor(string status) => status switch
+    private static string ShippedTitle(DeliverySummary shipped)
     {
-        "ready" => "Ready",
-        "failed" => "Failed",
-        "building" => "Building",
-        "queued" => "Queued",
-        _ => status,
-    };
+        var when = $"{shipped.FinishedAt.ToLocalTime():d MMM yyyy HH:mm} ({RelativeTime.Ago(shipped.FinishedAt)})";
+        var what = shipped.Status == ProjectDeliveryStatus.HandedOff
+            ? $"Handed to Business Central {when}. It accepted the apps and installs them in a later update window."
+            : $"Installed in production {when}.";
+        return shipped.ReleasePipelineRemoved ? what + " Its release pipeline has since been deleted." : what;
+    }
 }

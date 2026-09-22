@@ -320,9 +320,10 @@
     /// A level in one word for the badge. Public is named while creating and not
     /// afterwards, on purpose: a badge on every solution in the list would stop meaning
     /// anything, but on the form where the level is being chosen the default is exactly
-    /// what needs saying out loud.
+    /// what needs saying out loud. The Solutions list's Visibility column uses the same
+    /// words, so a level reads the same everywhere it is shown.
     /// </summary>
-    private static string LevelName(ProjectVisibility visibility) => visibility switch
+    internal static string LevelName(ProjectVisibility visibility) => visibility switch
     {
         ProjectVisibility.Private => "Private",
         ProjectVisibility.ReadOnly => "Read-only",
