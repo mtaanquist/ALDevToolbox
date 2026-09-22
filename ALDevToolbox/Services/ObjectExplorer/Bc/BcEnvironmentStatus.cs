@@ -58,6 +58,37 @@ public static class BcEnvironmentStatus
     public static bool IsSoftDeleted(string? status) =>
         string.Equals(status?.Trim(), SoftDeleted, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// True for a plainly running environment - the one state that needs no word on
+    /// screen, which is why the fleet tables and the command palette both leave it
+    /// unsaid rather than writing "Running" on most rows.
+    /// </summary>
+    public static bool IsRunning(string? status) =>
+        string.Equals(status, Active, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The state in words a consultant would use. Business Central's own tokens
+    /// ("SoftDeleted") are API vocabulary and must not reach the screen, but an
+    /// unrecognised one is still shown rather than swallowed - a state we don't know
+    /// about is exactly the kind of thing someone needs to see.
+    ///
+    /// <para>Here rather than beside the table that first needed it
+    /// (<c>Components/Shared/FleetRowState.cs</c>, which now calls this) because the
+    /// command palette describes the same environment in a result row, and one
+    /// environment must not be in two states depending on where you read it.</para>
+    /// </summary>
+    public static string StatusWord(string? status) =>
+        (status ?? string.Empty).ToLowerInvariant() switch
+        {
+            "active" => "Running",
+            "updating" => "Update in progress",
+            "preparing" => "Being prepared",
+            "suspended" => "Suspended by Microsoft",
+            "softdeleted" => Humanise(status),
+            "" => "State not reported",
+            _ => "In a state we don't recognise",
+        };
+
     /// <summary>Classifies a status string. Null/blank is <see cref="BcEnvironmentReadiness.Unknown"/>.</summary>
     public static BcEnvironmentReadiness Classify(string? status)
     {

@@ -114,15 +114,22 @@ A source provides:
   link, and the short name when the row has one. Those three text fields *are* what was
   matched against. No icon name: the icon is in the `<template>` the kind selects, so it
   never rides the JSON.
+- **Searched-only text**, when a row needs it. A fourth field that is matched against and
+  never shown, for the things support types mid-call that a result must not print back: a
+  customer's Voice account number, their tenant id. A row found that way says in its
+  subtitle *which* field matched, never what was in it, and the field itself is absent
+  from the wire contract, so it cannot reach the browser even by accident. It is not a
+  place for personal data - a contact's name or company may be matched on and named, a
+  phone number or an email address is neither searched nor shown.
 
 Sources return candidates, **not scores**. One shared function ranks everything, so
 ranking cannot drift from source to source.
 
 | Source | Searches | Lands on |
 | --- | --- | --- |
-| Solutions | name, short name | the Solution (its default tab, Customer) |
-| Environments | environment name; the Solution's name and short name as subtitle | the environment page |
-| Releases | release name and version | the release in Object Explorer |
+| Solutions | name, short name; and the customer fields support types mid-call - a contact's name or company, the Voice account number, the tenant id | the Solution (its default tab, Customer) |
+| Environments | environment name; the Solution's name as subtitle and its short name as searched-only text | the environment page |
+| Releases | release label, BC version, country, and the name of the Solution whose build produced it | the release in Object Explorer |
 | Recipes | recipe title and tags | the recipe |
 | Go to | tool and page names | the page |
 
@@ -261,7 +268,15 @@ while it is open, and the selected row is announced (#888).
 ## Deliberately left out
 
 - Commands that write to a tenant, ever (see "What it never does").
-- Searching inside releases, source, or recipe bodies.
+- Searching inside releases, source, or recipe bodies. That includes searching a
+  release's *objects* from the palette (`table 18`, `page customer card`), which
+  #883 raised as a stretch: the palette would have to pick which release the
+  objects came from, and Object Explorer's own search already answers that
+  question once a release is open.
+- Ordering a group by anything but the shared ranking. #883 asked for a
+  Solution's releases newest-first; ranking breaks every tie by title instead,
+  for the reason under "Matching and ranking" - one ranking function, or it
+  drifts per source.
 - Typo tolerance and initials.
 - Server-side recents, pinned items, per-user ranking.
 - From the first version: pipelines, teams, templates and docs pages as sources. Each is
