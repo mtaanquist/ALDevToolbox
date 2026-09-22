@@ -86,6 +86,8 @@ public static class PaletteGroupOrder
     public const int Recipes = 40;
     public const int Templates = 50;
     public const int Teams = 60;
+    public const int People = 70;
+    public const int Docs = 80;
 }
 
 /// <summary>

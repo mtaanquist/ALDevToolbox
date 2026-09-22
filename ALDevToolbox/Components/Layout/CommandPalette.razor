@@ -227,6 +227,27 @@
                and "Contoso" the environment - is then invisible to a screen
                reader. role="group" carries the name; the heading itself is
                aria-hidden so it is not read twice. *@
+            @* A person and a docs section are not remembered as recents: a
+               person's row lands on a row of the Users table and a section on a
+               heading, neither of which is a place Recent could re-check. *@
+            <template data-palette-row="person">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="user" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="doc">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="book-open" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
             <template data-palette-group>
                 <div class="cmdp__group-wrap" role="group">
                     <p class="cmdp__group" aria-hidden="true"></p>

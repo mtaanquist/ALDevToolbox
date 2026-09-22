@@ -2,6 +2,8 @@ using ALDevToolbox.Components.Pages;
 using ALDevToolbox.Components.Pages.Docs;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Palette;
+using System.Runtime.CompilerServices;
 using Bunit;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Diagnostics;
@@ -245,7 +247,18 @@ public sealed class ContentPageTests : IDisposable
         var page = _ctx.Render<SearchDocs>();
 
         var text = page.Find(".prose").TextContent;
-        foreach (var group in new[] { "Solutions", "Environments", "Releases", "Recipes", "Go to" })
+        // Every source's own heading, read off the sources themselves rather than
+        // listed here, so a source added later fails this until the page names it.
+        // Label is a constant on every source, so an uninitialised instance
+        // answers it without the database the source would need to search.
+        var groups = typeof(IPaletteSource).Assembly.GetTypes()
+            .Where(t => typeof(IPaletteSource).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false })
+            .Select(t => ((IPaletteSource)RuntimeHelpers.GetUninitializedObject(t)).Label)
+            .Append("Go to")
+            .ToList();
+        groups.Should().Contain(["Solutions", "People", "Docs"]);
+
+        foreach (var group in groups)
         {
             text.Should().Contain(group,
                 "a group heading the reader cannot look up is a word with no meaning");

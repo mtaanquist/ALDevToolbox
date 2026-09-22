@@ -235,7 +235,10 @@
                 @foreach (var u in _active)
                 {
                     var state = u.Status == UserStatus.Active ? "active" : "archived";
-                    <tr class="@RowStateIcon.RowClass(state) @(_selected.Contains(u.Id) ? "is-selected" : "")">
+                    @* ?user=12 is where the search box lands for a person: that
+                       row is marked and focused (which scrolls it into view). *@
+                    <tr class="@RowStateIcon.RowClass(state) @(_selected.Contains(u.Id) ? "is-selected" : "") @(u.Id == TargetUserId ? "is-target" : "")"
+                        tabindex="@(u.Id == TargetUserId ? "-1" : null)" @ref="_rowRefs[u.Id]">
                         <td class="data-table__col-check">
                             <label class="check">
                                 <input type="checkbox" aria-label="@($"Select {u.DisplayName}")"
@@ -356,6 +359,16 @@
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
+    /// <summary>
+    /// The person the search box sent the admin to: their row is marked and
+    /// focused once the table is on screen. See .design/command-palette.md,
+    /// "Sources".
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "user")] public int? TargetUserId { get; set; }
+
+    private readonly Dictionary<int, ElementReference> _rowRefs = new();
+    private int? _focusedTargetUserId;
+
     private List<(SignupRequest Request, User? User)>? _pending;
     private List<User>? _active;
     private List<(Invite Invite, User? InvitedBy)>? _invites;
@@ -428,6 +441,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Once per target, and only once its row exists: the table renders
+        // after the load, not on the first render. Focus rather than a script:
+        // focusing the row is what scrolls it into view, and it puts a keyboard
+        // or screen-reader user on the person they asked for.
+        if (TargetUserId is int target && _focusedTargetUserId != target
+            && _rowRefs.TryGetValue(target, out var row))
+        {
+            _focusedTargetUserId = target;
+            try { await row.FocusAsync(); }
+            catch (JSException) { /* the row went away mid-render - nothing to focus */ }
+            catch (JSDisconnectedException) { return; }
+        }
+
         if (!firstRender) return;
         var ctx = Http.HttpContext;
         if (ctx is null) return;
