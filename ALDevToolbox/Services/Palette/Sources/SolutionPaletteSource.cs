@@ -100,6 +100,15 @@ public sealed class SolutionPaletteSource : IPaletteSource
             })
             .ToListAsync(ct).ConfigureAwait(false);
 
+        // The version in the subtitle is the one the Solutions list shows: Business
+        // Central's own, for a connected customer with a production environment. A second
+        // small read rather than a correlated one, so the rule lives in one place; it is
+        // the organisation's connected solutions only, and is only ever looked up for a
+        // row the read above already let through.
+        var production = rows.Count == 0
+            ? new Dictionary<int, ProductionEnvironmentFacts>()
+            : await ProjectCustomerInfoService.ReadProductionFactsAsync(_db, null, ct).ConfigureAwait(false);
+
         var candidates = new List<PaletteCandidate>(rows.Count);
         foreach (var row in rows)
         {
@@ -108,7 +117,8 @@ public sealed class SolutionPaletteSource : IPaletteSource
                 // The plain row first, so a solution found by its own name is
                 // described by its hosting rather than by whichever contact
                 // happened to match too.
-                new("solution", row.Name, Describe(row.ShortName, row.HostingType, row.BcVersion),
+                new("solution", row.Name,
+                    Describe(row.ShortName, row.HostingType, production.TryGetValue(row.Id, out var facts) ? facts.Version : row.BcVersion),
                     Href(row.Id), row.ShortName),
             };
 

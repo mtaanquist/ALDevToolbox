@@ -46,10 +46,10 @@ Workspace must keep working with none of them set.
 | Column | Meaning |
 | --- | --- |
 | `hosting_type` | `MicrosoftCloud`, `OurCloud`, `HostingPartner`, `CustomerHardware`. Text, like the other enums on this table. Null means "not said yet". |
-| `bc_version` | What they run, as people say it: "BC 25.3", "NAV 2018 CU12". Free text - it spans fifteen years of version schemes and is for reading, not comparing. |
+| `bc_version` | What they run, as people say it: "BC 25.3", "NAV 2018 CU12". Free text - it spans fifteen years of version schemes and is for reading, not comparing. Hidden while Business Central reports the version (below). |
 | `license_type` | `Purchased`, `Leased`, `Cloud`. |
 | `user_experience` | `Essential`, `Premium`. |
-| `client_url` | Where a person opens the client. |
+| `client_url` | Where a person opens the client. Hidden while Business Central reports the address (below). |
 | `voice_account_number` | Microsoft's **Voice account number** - the customer's account for on-premises licence registration, printed as "Voice ID" in a licence file. Not the partner's MPN id. Kept on every Solution: most customers who have moved online still have one, and it matters for history. Plain text, no link. |
 
 **On-premises is derived, not stored.** A Solution is *online* when `hosting_type` is
@@ -67,6 +67,37 @@ environments for the Solution, rather than silently hiding live ones.
 on-premises customers have one too. It stays the one `bc_tenant_id` column: the Business
 Central tab owns it for an online Solution (changing it there resets the connection), and
 the Customer tab edits it for an on-premises one, where that tab is gone.
+
+**Business Central's version and address win when it has told us them** (#907). Typing a
+version for a customer whose tenant we are connected to is a second copy that goes stale
+at the next update. So a Solution shows the version and the address of its production
+environment, as the mirror last read them (`oe_project_environments.version` and
+`web_client_login_url`, rewritten by every refresh), when all of these hold:
+
+- it is online (`hosting_type` `MicrosoftCloud` or null);
+- its connection is configured - a tenant id and a registration with a stored secret, its
+  own or the organisation's. The same test the nightly refresh uses to pick what to sweep
+  (`ProjectConnectionService.ConfiguredProjects`); it asks whether a secret is stored and
+  never decrypts one;
+- it has a **Production** environment that is still there (not missing, not soft-deleted)
+  and has reported a version or an address. Among several, the first by name.
+
+Only Production counts: a sandbox's version is not what support means by "the customer's
+version", so a sandbox-only tenant keeps what was typed. The address is the login URL
+Microsoft returns for the environment, not a vanity address a customer may also use.
+
+Otherwise - on-premises, no connection yet, no production environment yet - the typed
+values show, exactly as before. The typed columns are **kept, not blanked**, while
+Business Central's win: if the connection is later removed they come back rather than the
+field going empty, and the save leaves both alone in that state, so a form opened before
+the connection was made cannot overwrite them.
+
+One resolution (`ProjectCustomerInfoService.ReadProductionFactsAsync`) serves the Customer
+tab, the Solutions list's column and rail, and the palette's Solution subtitle, so they
+cannot disagree; a list reads it for all its rows in one query. In the editor the two
+inputs give way to read-only rows - the value, and "From the Production environment,
+read 3 hours ago.", with a link to the Business Central tab where it can be refreshed -
+which are the explanation; there is no caption about the mechanism.
 
 ### The Customer tab (slices 1-3)
 

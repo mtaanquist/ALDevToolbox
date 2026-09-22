@@ -8,6 +8,7 @@ using ALDevToolbox.Domain.Navigation;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Services.Palette.Sources;
 using ALDevToolbox.Services.SingleTenant;
 using ALDevToolbox.Services.Tools;
@@ -293,11 +294,17 @@ public sealed partial class PaletteContextService
                 .Where(ProjectAccess.VisibleProjectPredicate(snapshot))
                 .Select(p => new { p.Id, p.Name, p.ShortName, p.HostingType, p.BcVersion })
                 .ToListAsync(ct).ConfigureAwait(false);
+            // The same version the Solutions source and the list show - see
+            // ProjectCustomerInfoService.ReadProductionFactsAsync.
+            var production = rows.Count == 0
+                ? new Dictionary<int, ProductionEnvironmentFacts>()
+                : await ProjectCustomerInfoService.ReadProductionFactsAsync(_db, rows.Select(r => r.Id).ToList(), ct).ConfigureAwait(false);
             foreach (var r in rows)
             {
                 var href = $"/solutions/{r.Id.ToString(CultureInfo.InvariantCulture)}";
+                var version = production.TryGetValue(r.Id, out var facts) ? facts.Version : r.BcVersion;
                 found[href] = new PaletteResultItem(
-                    "solution", r.Name, SolutionPaletteSource.Describe(r.ShortName, r.HostingType, r.BcVersion), href);
+                    "solution", r.Name, SolutionPaletteSource.Describe(r.ShortName, r.HostingType, version), href);
             }
         }
 
