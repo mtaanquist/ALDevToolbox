@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
 @inject IHttpContextAccessor Http
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
 
 @*
@@ -223,7 +224,7 @@
         "first_party" => "First-party",
         "third_party" => "Third-party",
         "cal"         => "C/AL",
-        "solution"     => "Pipeline build",
+        OeRelease.ProjectBuildKind     => "Pipeline build",
         _             => kind,
     };
 
@@ -232,7 +233,7 @@
     private static string FormatStatus(string s, string kind) => s switch
     {
         "ready"                              => "Ready",
-        "ingesting" when kind == "solution"  => "Building...",
+        "ingesting" when kind == OeRelease.ProjectBuildKind  => "Building...",
         "ingesting"                          => "Ingesting...",
         "failed"                             => "Failed",
         _                                    => s,

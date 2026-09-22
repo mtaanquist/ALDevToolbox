@@ -14,6 +14,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerLinks Links
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Explore
 @using System.Web
@@ -584,7 +585,7 @@
 
         // Solution releases were compiled from repositories - surface the distinct
         // source repos (from the build report's provenance) under the title.
-        if (_release.Kind == "solution")
+        if (_release.Kind == OeRelease.ProjectBuildKind)
         {
             var results = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _repoUrls = results
