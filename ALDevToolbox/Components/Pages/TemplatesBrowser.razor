@@ -26,6 +26,7 @@
           Trail='@([new("Home", "/"), new("Templates")])'>
     <Search>
         <input class="input" type="search" placeholder="Filter by name or runtime..."
+               aria-keyshortcuts="F3" title="Filter templates and modules (F3)"
                value="@_query" @oninput="OnSearch" aria-label="Filter templates and modules" />
     </Search>
     <ChildContent>
