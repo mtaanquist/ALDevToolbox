@@ -36,7 +36,8 @@
                placeholder="Search the cookbook..."
                value="@_query"
                @oninput="OnQueryChanged"
-               aria-label="Search the cookbook" />
+               aria-label="Search the cookbook"
+               aria-keyshortcuts="F3" title="Search the cookbook (F3)" />
     </Search>
     <Filters>
         <label class="check @(_includeDeprecated ? "is-checked" : "")">
