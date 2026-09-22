@@ -124,6 +124,37 @@ public sealed class CommandPaletteTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// The three things #888 added to the skeleton, each of which is invisible
+    /// when it breaks: the live region (a removed one takes every "no search
+    /// results" announcement with it and nothing logs), the group wrapper (a
+    /// bare heading inside a listbox is not something a listbox may own), and
+    /// the one link out to the docs.
+    /// </summary>
+    [Fact]
+    public void The_dialog_can_speak_group_and_explain_itself()
+    {
+        _auth.SetAuthorized("user@example.com");
+
+        var cut = _ctx.Render<CommandPalette>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var live = cut.Find("#cmdp-live");
+            live.GetAttribute("aria-live").Should().Be("polite");
+            live.ClassName.Should().Contain("u-sr-only");
+
+            var group = cut.Find("template[data-palette-group]");
+            var content = group is IHtmlTemplateElement t ? (IParentNode)t.Content : group;
+            content.QuerySelector(".cmdp__group-wrap")!.GetAttribute("role").Should().Be("group");
+            content.QuerySelector(".cmdp__group")!.GetAttribute("aria-hidden").Should().Be("true");
+
+            var links = cut.FindAll(".cmdp__foot a");
+            links.Should().ContainSingle("the foot holds at most one thing that is not a key hint");
+            links[0].GetAttribute("href").Should().Be("/docs/search");
+        });
+    }
+
     [Fact]
     public void Every_kind_of_result_row_has_a_template_to_clone()
     {

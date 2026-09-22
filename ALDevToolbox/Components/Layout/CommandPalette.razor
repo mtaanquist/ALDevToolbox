@@ -40,11 +40,16 @@
                         <span class="cmdp__head-icon" aria-hidden="true">
                             <Icon Name="search" Width="17" Height="17" />
                         </span>
+                        @* Short, because it is what a screen reader announces on
+                           every focus. The placeholder is the longer one: it is
+                           read once, by eye, and it is the only thing on an
+                           unfilled palette that says this box finds customers
+                           and not just pages. *@
                         <label class="u-sr-only" for="cmdp-input">Search or jump to</label>
                         <input id="cmdp-input" class="cmdp__input" type="text" role="combobox"
                                autocomplete="off" autocapitalize="off" spellcheck="false"
                                aria-autocomplete="list" aria-expanded="false" aria-controls="cmdp-list"
-                               placeholder="Search or jump to..." />
+                               placeholder="Search solutions, environments, releases - or jump to a page" />
                         @* A real button, not a decorative key cap. It sits where a
                            close control belongs and looks pressable, and at phone
                            width - where the keyboard hints below are hidden and
@@ -59,6 +64,14 @@
                        page index, and that is what a screen reader should hear. *@
                     <div id="cmdp-list" class="cmdp__list" role="listbox" aria-label="Search results and pages"></div>
 
+                    @* What the list says out loud. A screen reader following
+                       aria-activedescendant hears the selected row and nothing
+                       else, so "no search results" and "search is not available"
+                       - which replace the rows rather than being one - would
+                       land in silence. The region is in the page before it ever
+                       has text, which is what makes an announcement fire. *@
+                    <p id="cmdp-live" class="u-sr-only" role="status" aria-live="polite"></p>
+
                     <div class="cmdp__foot">
                         <span class="kbd-hint"><kbd class="kbd">&uarr;</kbd><kbd class="kbd">&darr;</kbd>
                             <span class="kbd-hint__label">to move</span></span>
@@ -66,6 +79,10 @@
                             <span class="kbd-hint__label">to open</span></span>
                         <span class="kbd-hint"><kbd class="kbd">Esc</kbd>
                             <span class="kbd-hint__label">to close</span></span>
+                        @* The one extra thing in the foot, and it is last: a
+                           person who is already typing does not need it, and a
+                           person who opened this by accident does. *@
+                        <a class="cmdp__foot-link" href="/docs/search">How search works</a>
                     </div>
                 </div>
             </div>
@@ -128,8 +145,16 @@
                 </a>
             </template>
 
+            @* A group, not a loose heading. A <p> dropped straight into a
+               role="listbox" is not something a listbox may own, and the
+               grouping - which is the difference between "Contoso" the Solution
+               and "Contoso" the environment - is then invisible to a screen
+               reader. role="group" carries the name; the heading itself is
+               aria-hidden so it is not read twice. *@
             <template data-palette-group>
-                <p class="cmdp__group"></p>
+                <div class="cmdp__group-wrap" role="group">
+                    <p class="cmdp__group" aria-hidden="true"></p>
+                </div>
             </template>
 
             @* The two things the list says when it has nothing to show. The

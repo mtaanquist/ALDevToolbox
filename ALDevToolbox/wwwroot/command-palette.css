@@ -58,12 +58,24 @@
     font-size: var(--text-md);
 }
 
-.cmdp__input::placeholder { color: var(--ink-4); }
-/* The ring belongs to the panel, not to a borderless box inside it. */
+/* --ink-3, not the --ink-4 a placeholder would usually take: the real <label>
+   is clipped, so this line IS the visible label and has to clear 4.5:1 rather
+   than the 3:1 a hint can live with. --ink-4 measures 3.89:1 on --surface. */
+.cmdp__input::placeholder { color: var(--ink-3); }
+
+/* The ring belongs to the panel, not to a borderless box inside it - and it
+   has to actually be drawn there, or suppressing the input's own ring leaves
+   the palette with no focus indicator at all beyond the caret. */
 .cmdp__input:focus { outline: none; }
+.cmdp:has(.cmdp__input:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
 
 /* The close control wears a key cap on a keyboard and an X on a phone, where
-   .cmdp__foot is hidden and there is no Esc key to press. */
+   .cmdp__foot is hidden and there is no Esc key to press. Tab reaches it (it
+   is the dialog's second stop), so it needs the ring and the hover every other
+   button in the system has. */
 .cmdp__close {
     display: flex;
     flex: none;
@@ -73,6 +85,12 @@
     background: none;
     color: var(--ink-3);
     cursor: pointer;
+    transition: color var(--transition-fast);
+}
+.cmdp__close:hover { color: var(--ink); }
+.cmdp__close:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
 }
 .cmdp__close-x { display: none; }
 
@@ -85,10 +103,18 @@
     padding: var(--space-2) 0;
 }
 
+/* role="group" round each group's rows, so the listbox owns options and groups
+   rather than loose paragraphs. Purely structural - the rows were already
+   block-level, so wrapping them changes nothing on screen. */
+.cmdp__group-wrap { display: block; }
+
+/* --ink-3, not the --ink-4 a micro-label would usually take: at 11px uppercase
+   this is small text, and --ink-4 measures 3.89:1 on --surface (light) and
+   4.23:1 (dark), both under 4.5:1. --ink-3 is 5.85:1 and 6.57:1. */
 .cmdp__group {
     margin: 0;
     padding: var(--space-2) var(--space-4) var(--space-1);
-    color: var(--ink-4);
+    color: var(--ink-3);
     font-size: var(--text-2xs);
     font-weight: var(--fw-semibold);
     letter-spacing: .04em;
@@ -139,6 +165,16 @@
    middle-click and Ctrl+click work), but they are not prose. */
 .cmdp-row:hover, .cmdp-row:focus { text-decoration: none; }
 
+/* The rows are tabindex="-1" and the keyboard moves aria-selected rather than
+   focus, so this should never fire. It is here for the case that does: a
+   pointer user who clicks a row and then presses a key before the navigation
+   lands, who would otherwise have a focused element with nothing to show for
+   it. */
+.cmdp-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: calc(var(--focus-offset) * -1);
+}
+
 /* Exactly one row is ever lit. The pointer moves the selection rather than
    drawing a highlight of its own, so the row under the mouse and the row Enter
    would open are never two different rows. */
@@ -157,15 +193,30 @@
 
 /* ---------- the shortcut foot ---------- */
 
+/* --ink-3 throughout, for the reason .cmdp__group gives: 11px is small text,
+   and --ink-4 on --surface-2 measures 3.75:1 (light) / 3.97:1 (dark). The
+   .kbd-hint__label override reaches into pages-power.css, which is byte-locked
+   and sets --ink-4 there; scoping it to the foot leaves the power tools' own
+   hints alone. */
 .cmdp__foot {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: var(--space-4);
     padding: var(--space-2) var(--space-4);
     border-top: 1px solid var(--border);
     background: var(--surface-2);
     font-size: var(--text-2xs);
-    color: var(--ink-4);
+    color: var(--ink-3);
+}
+
+.cmdp__foot .kbd-hint__label { color: var(--ink-3); }
+
+/* Last in the row and pushed to the end: someone already typing does not need
+   it, and someone who opened this by accident does. */
+.cmdp__foot-link {
+    margin-left: auto;
+    color: var(--primary-ink);
 }
 
 /* On a phone the palette is the screen: the scrim has no room to be a hint
@@ -173,7 +224,11 @@
 @media (max-width: 560px) {
     .cmdp-layer { padding: var(--space-3); padding-top: var(--space-5); }
     .cmdp { max-height: 80vh; }
-    .cmdp__foot { display: none; }
+    /* The key hints go and the link stays. This is the width where the palette
+       is the ONLY way to navigate and there is no Ctrl+K to stumble onto, so
+       the one page that explains what the box finds is needed here more than
+       anywhere, not less. */
+    .cmdp__foot .kbd-hint { display: none; }
     .cmdp__close-key { display: none; }
     .cmdp__close-x { display: flex; }
     .cmdp-row__text { flex-direction: column; align-items: flex-start; gap: 0; }
