@@ -22,7 +22,11 @@
     Archetype 2 (list / browser), table view. The latest build's status is the
     row's 4px edge keyline plus a leading glyph rather than a pill in a cell —
     the handoff's one rule for tables. A solution with no build yet gets neither:
-    an absent build is not a status. Search stays a plain GET form, so the page
+    an absent build is not a status. Only a pipeline's builds count - a
+    pull-request build the GitHub App ran is a check on a pull request, not the
+    state of anything this list offers to download, so a solution without a
+    pipeline shows no status however many of those have failed (the query in
+    ArtifactService is where that line is drawn). Search stays a plain GET form, so the page
     needs no interactivity and a filtered result stays a shareable URL.
     See .design/design-migration.md.
 *@

@@ -176,10 +176,23 @@ public sealed class ProjectsBrowserTests : IDisposable
 
         if (status is not null)
         {
+            // A pipeline's build: only those carry the row's status. A build
+            // with no pipeline (a pull-request check) is deliberately not one.
+            var pipeline = new OePipeline
+            {
+                OrganizationId = project.OrganizationId,
+                ProjectId = project.Id,
+                Name = "Default",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            db.OePipelines.Add(pipeline);
+            await db.SaveChangesAsync();
             db.OeProjectBuilds.Add(new OeProjectBuild
             {
                 OrganizationId = project.OrganizationId,
                 ProjectId = project.Id,
+                PipelineId = pipeline.Id,
                 Status = status,
                 BcVersion = bcVersion,
                 StartedAt = DateTime.UtcNow,
