@@ -240,6 +240,47 @@ public sealed class ProjectsBrowserTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// Connects a described customer and gives it a Production environment Business
+    /// Central has reported on (#907). The secret is not a real ciphertext: nothing
+    /// on the list decrypts.
+    /// </summary>
+    private async Task ConnectAsync(int projectId)
+    {
+        await using var ctx = _db.NewContext();
+        var project = await ctx.OeProjects.SingleAsync(p => p.Id == projectId);
+        project.HostingType = ProjectHostingType.MicrosoftCloud;
+        project.BcTenantId = Guid.NewGuid();
+        project.BcClientId = "11111111-2222-3333-4444-555555555555";
+        project.BcClientSecretEncrypted = "not-a-real-ciphertext";
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Production", Type = "Production",
+            Version = "26.1.30000.0", WebClientLoginUrl = "https://businesscentral.dynamics.com/tenant/Production",
+            FetchedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_connected_customers_version_and_address_are_the_ones_business_central_reports()
+    {
+        await SeedProjectAsync("CRONUS Norway", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        var id = await DescribeAsync("CRONUS Norway");
+        await ConnectAsync(id);
+        RequestWith($"?selected={id}");
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tbody tr").Children[3].TextContent.Should().Be("26.1.30000.0");
+            var rail = cut.Find(".detail-body__aside");
+            rail.TextContent.Should().Contain("26.1.30000.0").And.NotContain("NAV 2018 CU12");
+            rail.QuerySelector("a[href='https://businesscentral.dynamics.com/tenant/Production']").Should().NotBeNull();
+        });
+    }
+
     [Fact]
     public async Task Choosing_summary_opens_that_customers_essentials_beside_the_list_as_an_address()
     {
