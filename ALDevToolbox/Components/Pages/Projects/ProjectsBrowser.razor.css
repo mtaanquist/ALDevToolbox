@@ -11,7 +11,33 @@
    report activity on the customer. The name is a plain span, not a link -
    there is nothing behind it for this viewer. */
 .projects__locked td { color: var(--ink-3); }
-.projects__locked td:first-child { color: var(--ink-4); }
+.sol-list__locked-name { display: inline-flex; align-items: center; gap: var(--space-2); }
+.sol-list__locked-name ::deep svg { color: var(--ink-4); }
+
+/* The row is the selector. Its first cell holds an empty link whose ::after covers the
+   whole row, so a click anywhere on it opens the customer info; the name and the
+   "Last shipped" date are lifted above that cover and keep their own destinations.
+   Two separate links, never one inside the other - nested anchors are invalid HTML
+   and browsers split them apart. */
+.sol-list__row { position: relative; }
+.sol-list__select::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
+/* The cover has no box of its own, so its focus ring is drawn on the row it covers. */
+.sol-list__select:focus-visible { outline: none; }
+.sol-list__select:focus-visible::after { box-shadow: inset 0 0 0 2px var(--focus-color); }
+.sol-list__name,
+.sol-list__shipped { position: relative; z-index: 1; }
+
+/* The short name after the name, quieter: it is how colleagues say the customer
+   aloud, and a second way to spot the row. */
+.sol-list__short { margin-left: var(--space-2); color: var(--ink-3); font-size: var(--text-sm); }
+
+.sol-list__shipped { display: inline-flex; align-items: center; gap: var(--space-1); }
+/* Handed off: Business Central has the apps but installs them in a later window, so it
+   is shipped but not yet seen installed. The date stays a link like any other; the glyph
+   and the words after it are a step quieter, and say it without a hover. */
+.sol-list__shipped--handed-off ::deep svg,
+.sol-list__shipped-note { color: var(--ink-3); }
+.sol-list__shipped-note { font-size: var(--text-sm); }
 
 /* The customer summary beside the list. 280px wide, so everything wraps in full - a
    phone number or an address cut off with an ellipsis is no use on a call. */
