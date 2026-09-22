@@ -38,8 +38,8 @@
         button is the way in.
     </p>
     <p>
-        With nothing typed, the box lists every page you can open, so you can
-        browse it like a menu. Start typing and the list narrows.
+        With nothing typed, the box lists a few commands and every page you can
+        open, so you can browse it like a menu. Start typing and the list narrows.
     </p>
     <p>
         On a Solution or an environment, the list starts with that page's own
@@ -127,11 +127,24 @@
         Middle-click or Ctrl-click opens a result in a new tab.
     </p>
 
-    <h2 id="search-safe">It only takes you places</h2>
+    <h2 id="search-commands">Doing things from it</h2>
     <p>
-        Every result is somewhere to go. Nothing you type here publishes,
-        deletes or updates a customer's environment - those actions stay on the
-        pages that own them, behind the confirmation that names the environment.
+        The box can also do a few small things, listed under
+        <strong>Commands</strong>: start a new Solution, workspace or extension,
+        switch to the light or dark theme or follow your computer's, copy the
+        link to the page you are on, refresh an environment page, or sign out.
+        Type what you want to do - <code>new sol</code>, <code>dark</code>,
+        <code>sign out</code> - and press Enter. The New commands open the form;
+        nothing is created until you finish it there.
+    </p>
+
+    <h2 id="search-safe">It never changes a customer's environment</h2>
+    <p>
+        Every result is somewhere to go. Every command either stays inside AL
+        Workbench or, like Refresh, only reads from Business Central. Nothing you
+        type here publishes, deletes or updates a customer's environment - those
+        actions stay on the pages that own them, behind the confirmation that
+        names the environment.
     </p>
     <div class="note note--tip">
         <span class="note__icon"><Icon Name="lightbulb" Width="17" Height="17" /></span>
@@ -139,7 +152,7 @@
         <span class="note__body">
             Typing a customer's name and opening the wrong result costs nothing -
             the back button puts you straight back.
-            Nothing in this box changes anything.
+            Nothing in this box changes a customer's data.
         </span>
     </div>
 
@@ -166,7 +179,8 @@
         new("Opening it", "search-open"),
         new("What it finds", "search-finds"),
         new("Choosing a result", "search-keys"),
-        new("It only takes you places", "search-safe"),
+        new("Doing things from it", "search-commands"),
+        new("It never changes a customer's environment", "search-safe"),
         new("When it comes back empty", "search-nothing"),
     };
 }

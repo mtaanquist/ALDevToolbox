@@ -243,6 +243,169 @@
         return clone(source[0]);
     }
 
+    // ------------------------------------------------------------ Commands
+
+    /**
+     * Every action this file will run. A row naming anything else is not drawn
+     * and cannot be run. Kept equal to PaletteCommands.Actions on the server,
+     * and none of them may write to a customer's tenant - see
+     * .design/command-palette.md, "Commands".
+     */
+    const ACTIONS = ["theme:light", "theme:dark", "theme:system", "copy-link", "sign-out", "refresh"];
+    /** How long "Copied" stays on the row before the palette closes. */
+    const COPIED_MS = 1200;
+
+    /** @param {Element} row @returns {string} */
+    function actionOf(row) {
+        const action = row.getAttribute("data-command-action") || "";
+        return ACTIONS.indexOf(action) >= 0 ? action : "";
+    }
+
+    /** What a re-draw keeps the selection on: a link, or for an act command its action.
+     * @param {Element} row @returns {string|null} */
+    function rowKey(row) {
+        return row.getAttribute("href") || row.getAttribute("data-command-action");
+    }
+
+    /**
+     * The page's own Refresh button, when it has one it is offering right now.
+     * A button that is mid-refresh (disabled) is not offered - pressing it again
+     * would do nothing.
+     * @returns {HTMLButtonElement|null}
+     */
+    function pageRefreshButton() {
+        const el = document.querySelector("[data-page-refresh]");
+        return el instanceof HTMLButtonElement && !el.disabled && el.getClientRects().length > 0 ? el : null;
+    }
+
+    /** @returns {{ current: function(): string, set: function(string): void }|null} */
+    function themeApi() {
+        const aldt = /** @type {any} */ (window).aldt;
+        return aldt && aldt.theme && typeof aldt.theme.set === "function" ? aldt.theme : null;
+    }
+
+    /**
+     * The commands Razor rendered for this person, less the ones this page or
+     * this browser cannot run: Refresh on a page with no Refresh, an action the
+     * script does not know.
+     * @returns {HTMLAnchorElement[]}
+     */
+    function commands() {
+        const tpl = template("#cmdp-commands");
+        if (!tpl) return [];
+        const all = /** @type {HTMLAnchorElement[]} */ (
+            Array.prototype.slice.call(tpl.content.querySelectorAll(".cmdp-row")));
+        return all.filter(function (row) {
+            if (!row.hasAttribute("data-command-action")) return true;
+            const action = actionOf(row);
+            if (!action) return false;
+            if (action === "refresh") return pageRefreshButton() !== null;
+            if (action.indexOf("theme:") === 0) return themeApi() !== null;
+            return true;
+        });
+    }
+
+    /**
+     * A command row ready to draw. The theme row matching the current theme
+     * shows the "Current" line Razor rendered for it, hidden, in place of its
+     * usual one.
+     * @param {HTMLAnchorElement} row @returns {HTMLAnchorElement}
+     */
+    function commandClone(row) {
+        const copy = clone(row);
+        const action = actionOf(copy);
+        const theme = themeApi();
+        if (theme && action.indexOf("theme:") === 0) {
+            swapSubtitle(copy, "data-cmdp-sub-current", action === "theme:" + theme.current());
+        }
+        return copy;
+    }
+
+    /**
+     * Shows one of a row's alternative second lines instead of its usual one.
+     * @param {Element} row @param {string} attribute @param {boolean} on
+     */
+    function swapSubtitle(row, attribute, on) {
+        if (!row.querySelector("[" + attribute + "]")) return;
+        const wanted = on ? attribute : "data-cmdp-sub";
+        const lines = row.querySelectorAll(".cmdp-row__sub");
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line instanceof HTMLElement) line.hidden = !line.hasAttribute(wanted);
+        }
+    }
+
+    /** Commands matching `query`, ranked like "Go to": best tier first, ties in catalogue order.
+     * @param {string} query @returns {HTMLAnchorElement[]} */
+    function matchCommands(query) {
+        const source = commands();
+        const termList = terms(query);
+        // Before anything is typed, only the few marked for it: the box is
+        // opened to jump somewhere, and a dozen commands would push every page
+        // below the fold. The rest are one word away.
+        if (termList.length === 0) {
+            return source
+                .filter(function (row) { return row.hasAttribute("data-cmdp-on-open"); })
+                .map(commandClone);
+        }
+
+        const hits = [];
+        for (let i = 0; i < source.length; i++) {
+            const row = source[i];
+            const points = score(fold(attr(row, "data-search")), fold(attr(row, "data-title")), termList);
+            if (points > 0) hits.push({ row: row, points: points, order: i });
+        }
+        hits.sort(function (a, b) { return b.points - a.points || a.order - b.order; });
+        return hits.map(function (hit) { return commandClone(hit.row); });
+    }
+
+    /**
+     * Runs an act command. Only the actions in ACTIONS exist; anything else is
+     * refused before it gets here and again here. Every one closes the palette
+     * and gives focus back first, so what it does lands on the page, not in the
+     * dialog - except Copy link, which shows "Copied" on its row for a moment
+     * so the person can see it worked.
+     * @param {HTMLElement} row
+     */
+    function runCommand(row) {
+        const action = actionOf(row);
+        if (!action) return;
+
+        if (action === "copy-link") {
+            const address = window.location.href;
+            // Says how it went on the row itself, out loud as well, and closes
+            // only on success: a failed copy has to stay on screen long enough
+            // to be read, and the person then closes it themselves.
+            /** @param {string} which @param {boolean} closeAfter */
+            const report = function (which, closeAfter) {
+                swapSubtitle(row, which, true);
+                const said = row.querySelector("[" + which + "]");
+                const region = live();
+                if (region && said) region.textContent = said.textContent || "";
+                if (closeAfter) window.setTimeout(close, COPIED_MS);
+            };
+            if (!navigator.clipboard) { report("data-cmdp-sub-failed", false); return; }
+            navigator.clipboard.writeText(address).then(
+                function () { report("data-cmdp-sub-done", true); },
+                function () { report("data-cmdp-sub-failed", false); });
+            return;
+        }
+
+        close();
+        if (action.indexOf("theme:") === 0) {
+            const theme = themeApi();
+            if (theme) theme.set(action.substring("theme:".length));
+        } else if (action === "sign-out") {
+            // The top bar's own form: it carries the antiforgery token, and a
+            // POST built here would be a second way to sign out to keep right.
+            const form = document.querySelector("form.signout-form");
+            if (form instanceof HTMLFormElement) form.requestSubmit();
+        } else if (action === "refresh") {
+            const button = pageRefreshButton();
+            if (button) button.click();
+        }
+    }
+
     // ------------------------------------------------------ where you have been
 
     /** An in-app path, and nothing that could leave the app.
@@ -534,6 +697,16 @@
         }
         showClearRecents(recentCount > 0);
 
+        // Commands are local too, so they sit with the other local groups and
+        // search results never land above them. Not counted in `drawn`: a
+        // command is an action, and "New workspace" beside "Workspace" in Go to
+        // is two ways to say one thing, both worth finding.
+        const matchedCommands = matchCommands(query);
+        if (matchedCommands.length > 0) {
+            const into = appendGroup(frag, "Commands");
+            for (let i = 0; i < matchedCommands.length; i++) { into.appendChild(matchedCommands[i]); rowCount++; }
+        }
+
         if (serverResults) {
             const groups = serverResults.groups || [];
             for (let g = 0; g < groups.length; g++) {
@@ -621,7 +794,7 @@
     function redraw(fresh) {
         const field = input();
         const query = field ? field.value.trim() : "";
-        const previous = !fresh && activeIndex >= 0 && rows[activeIndex] ? rows[activeIndex].getAttribute("href") : null;
+        const previous = !fresh && activeIndex >= 0 && rows[activeIndex] ? rowKey(rows[activeIndex]) : null;
 
         render(query);
         reindex();
@@ -629,7 +802,7 @@
         let next = 0;
         if (previous) {
             for (let i = 0; i < rows.length; i++) {
-                if (rows[i].getAttribute("href") === previous) { next = i; break; }
+                if (rowKey(rows[i]) === previous) { next = i; break; }
             }
         }
         select(next);
@@ -886,6 +1059,8 @@
             const row = activeIndex >= 0 ? rows[activeIndex] : null;
             if (!row) return;
             e.preventDefault();
+            // An act command has nowhere to open in a new tab; it just runs.
+            if (row.hasAttribute("data-command-action")) { runCommand(row); return; }
             if (e.ctrlKey || e.metaKey) {
                 if (row.hasAttribute("data-cmdp-remember")) remember(row.getAttribute("href"));
                 window.open(row.href, "_blank", "noopener");
@@ -935,6 +1110,11 @@
         // coming back to - a record, a page from "Go to" - is remembered on the
         // way; a tab of the page you are on is not, its record already is.
         const picked = target.closest(".cmdp-row");
+        if (picked instanceof HTMLElement && picked.hasAttribute("data-command-action")) {
+            e.preventDefault();
+            runCommand(picked);
+            return;
+        }
         if (picked) {
             if (picked.hasAttribute("data-cmdp-remember")) remember(picked.getAttribute("href"));
             close();
