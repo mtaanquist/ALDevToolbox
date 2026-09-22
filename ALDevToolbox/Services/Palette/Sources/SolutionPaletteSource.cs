@@ -189,7 +189,7 @@ public sealed class SolutionPaletteSource : IPaletteSource
     /// by, then the Solutions list's own "Hosted by" and "BC version" columns.
     /// Null when the solution has none of the three, rather than an empty line.
     /// </summary>
-    private static string? Describe(string? shortName, ProjectHostingType? hosting, string? bcVersion)
+    internal static string? Describe(string? shortName, ProjectHostingType? hosting, string? bcVersion)
     {
         var parts = new List<string>(3);
         if (!string.IsNullOrWhiteSpace(shortName)) parts.Add(shortName.Trim());

@@ -1,6 +1,7 @@
 @using ALDevToolbox.Domain.Navigation
 @using ALDevToolbox.Domain.Tools
 @using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services.Palette
 @using ALDevToolbox.Services.SingleTenant
 @using ALDevToolbox.Services.Tools
 @inject IOrganizationContext OrgContext
@@ -79,10 +80,15 @@
                             <span class="kbd-hint__label">to open</span></span>
                         <span class="kbd-hint"><kbd class="kbd">Esc</kbd>
                             <span class="kbd-hint__label">to close</span></span>
-                        @* The one extra thing in the foot, and it is last: a
-                           person who is already typing does not need it, and a
-                           person who opened this by accident does. *@
-                        <a class="cmdp__foot-link" href="/docs/search">How search works</a>
+                        @* The two things in the foot that are not hints, together
+                           at the end: a person who is already typing needs
+                           neither. Clear recents is hidden until there are recents
+                           on screen - a control that clears nothing is a question
+                           nobody asked. *@
+                        <span class="cmdp__foot-end">
+                            <button type="button" class="cmdp__foot-btn" data-cmdp-clear-recents hidden>Clear recents</button>
+                            <a class="cmdp__foot-link" href="/docs/search">How search works</a>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -91,7 +97,7 @@
                template, or the "default" one for a kind it has not been taught
                yet, and fills in the title, the second line and the link. *@
             <template data-palette-row="solution">
-                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
                     <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="folder-git-2" Width="16" Height="16" /></span>
                     <span class="cmdp-row__text">
                         <span class="cmdp-row__title"></span>
@@ -100,7 +106,7 @@
                 </a>
             </template>
             <template data-palette-row="environment">
-                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
                     <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="server" Width="16" Height="16" /></span>
                     <span class="cmdp-row__text">
                         <span class="cmdp-row__title"></span>
@@ -109,7 +115,7 @@
                 </a>
             </template>
             <template data-palette-row="release">
-                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
                     <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="send" Width="16" Height="16" /></span>
                     <span class="cmdp-row__text">
                         <span class="cmdp-row__title"></span>
@@ -118,7 +124,7 @@
                 </a>
             </template>
             <template data-palette-row="recipe">
-                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
                     <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="square-code" Width="16" Height="16" /></span>
                     <span class="cmdp-row__text">
                         <span class="cmdp-row__title"></span>
@@ -163,8 +169,42 @@
                 </a>
             </template>
             <template data-palette-row="goto">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="arrow-right" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            @* The context block's own kinds. A tab of the page you are on and the
+               latest build are not remembered as recents (no data-cmdp-remember):
+               the record they belong to already is, as a visit. *@
+            <template data-palette-row="tab">
                 <a class="cmdp-row" role="option" tabindex="-1" href="/">
                     <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="arrow-right" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="build">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="rocket" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            @* The one row that leaves the app - Business Central and its admin
+               centre - so it opens beside the palette's tab rather than in place
+               of it, like the environment page's own buttons. The script accepts
+               an https link for this kind and for no other. *@
+            <template data-palette-row="external">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" target="_blank" rel="noopener">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="external-link" Width="16" Height="16" /></span>
                     <span class="cmdp-row__text">
                         <span class="cmdp-row__title"></span>
                         <span class="cmdp-row__sub"></span>
@@ -222,7 +262,7 @@
                 {
                     var label = destination.LabelFor(viewer);
                     var subtitle = destination.SubtitleFor(viewer);
-                    <a class="cmdp-row" role="option" tabindex="-1" href="@destination.Href"
+                    <a class="cmdp-row" role="option" tabindex="-1" href="@destination.Href" data-cmdp-remember
                        data-title="@label" data-search="@($"{label} {subtitle}".Trim())">
                         <span class="cmdp-row__icon" aria-hidden="true">
                             <Icon Name="@destination.Icon" Width="16" Height="16" />
@@ -271,21 +311,7 @@
             _canUseEnvironmentOps = await CanUseEnvironmentOpsAsync();
         }
 
-        var orgDisabled = EndpointHelpers.ReadDisabledTools(state.User);
-        var visibleTools = ToolCatalog.All
-            .Select(t => t.Key)
-            .Where(k => ToolAvailability.IsSiteEnabled(k) && !orgDisabled.Contains(k))
-            .ToHashSet();
-
-        _viewer = new NavViewer(
-            IsAuthenticated: true,
-            IsAdmin: state.User.IsInRole("Admin"),
-            IsEditor: state.User.IsInRole("Editor"),
-            IsSiteAdmin: state.User.IsInRole(HttpOrganizationContext.SiteAdminRole),
-            IsSystemOrganization: OrgContext.IsSystemOrganization,
-            SingleTenantMode: SingleTenant.IsEnabled,
-            CanUseEnvironmentOps: _canUseEnvironmentOps,
-            VisibleTools: visibleTools);
+        _viewer = PaletteViewer.For(state.User, OrgContext, SingleTenant, ToolAvailability, _canUseEnvironmentOps);
     }
 
     /// <summary>

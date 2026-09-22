@@ -42,6 +42,14 @@
 
 <PageTitle>@(_header?.Name ?? (Id is null ? "New solution" : "Solution")) · Solutions · AL Workbench</PageTitle>
 
+@* What the command palette opens with on this page: its tabs, its environments
+   and its latest build. Nothing while it is being created - there is no record
+   to be about yet. *@
+@if (Id is { } paletteId)
+{
+    <PaletteContext Kind="ALDevToolbox.Services.Palette.PaletteContextKind.Solution" Id="paletteId" />
+}
+
 <DetailPage IsLoading="@(_loading)"
             LoadingText="Loading solution..."
             IsNotFound="@(_notFound || _providers.Count == 0)"
@@ -142,7 +150,10 @@
         {
             <p class="u-muted">
                 You're viewing this solution. Only its owner@(_header?.OwnerName is { } ownerName ? $" ({ownerName})" : "") or an admin can change or build it — you can still
-                <a href="@($"/pipelines/{Id}")">download its builds</a>.
+                @* The Pipelines list searched for this solution, not /pipelines/{Id}:
+                   that route takes a pipeline's id, so it opened whichever pipeline
+                   happened to share this solution's number - or nothing. *@
+                <a href="@($"/pipelines?q={Uri.EscapeDataString(_header?.Name ?? string.Empty)}")">download its builds</a>.
             </p>
         }
 
@@ -397,18 +408,66 @@
         if (_loadedProject is not null) _loadedProject.Visibility = visibility;
     }
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>
+    /// The solution and the <c>?tab=</c> the page last acted on. The page is reused
+    /// from one address to the next: an enhanced navigation to another solution, or
+    /// to this one with another tab (the command palette's context rows do both),
+    /// keeps this component and hands it new parameters rather than building a new
+    /// one - so the load keys off these rather than off <c>OnInitializedAsync</c>,
+    /// which would only ever have run for the first solution opened.
+    /// </summary>
+    private bool _hasLoaded;
+    private int? _loadedId;
+
+    protected override async Task OnParametersSetAsync()
     {
-        _section = OpenTab?.ToLowerInvariant() switch
+        if (_hasLoaded && _loadedId == Id)
         {
-            "bc" => Section.Bc,
-            "general" => Section.General,
-            "repositories" => Section.Repos,
-            "customer" => Section.Customer,
-            "pipelines" => Section.Pipelines,
-            "access" => Section.Access,
-            _ => Id is null ? Section.General : Section.Customer,
-        };
+            // Same solution, so this is a navigation to it with a ?tab= - even the
+            // one already in the address, because the tabs switch in place without
+            // changing it: someone who clicked across to Repositories and then asks
+            // the palette for General again is asking to move. The edits in progress
+            // stay; the tabs share one model.
+            if (OpenTab is not null) _section = SectionFor(OpenTab);
+            return;
+        }
+
+        _hasLoaded = true;
+        _loadedId = Id;
+        await LoadPageAsync();
+    }
+
+    private Section SectionFor(string? tab) => tab?.ToLowerInvariant() switch
+    {
+        "bc" => Section.Bc,
+        "general" => Section.General,
+        "repositories" => Section.Repos,
+        "customer" => Section.Customer,
+        "pipelines" => Section.Pipelines,
+        "access" => Section.Access,
+        _ => Id is null ? Section.General : Section.Customer,
+    };
+
+    private async Task LoadPageAsync()
+    {
+        // Everything the last solution left behind, for when the page is reused.
+        _loading = true;
+        _notFound = false;
+        _saving = false;
+        _dirty = false;
+        _canManage = false;
+        _canChangeAccess = false;
+        _canPickFromGitHub = false;
+        _message = null;
+        _errors = new();
+        _repoErrors = new();
+        _header = null;
+        _loadedProject = null;
+        _pipelines = new();
+        _accessBaseline = null;
+        _newAccess = new(ProjectVisibility.Public, Array.Empty<int>());
+
+        _section = SectionFor(OpenTab);
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
 
         if (Id is null)

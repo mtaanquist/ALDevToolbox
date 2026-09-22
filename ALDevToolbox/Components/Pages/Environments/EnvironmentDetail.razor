@@ -42,6 +42,10 @@
 
 <PageTitle>@(_env?.Fleet.EnvironmentName ?? "Environment") · AL Workbench</PageTitle>
 
+@* What the command palette opens with on this page: its tabs, the way out to
+   Business Central, and its solution. *@
+<PaletteContext Kind="ALDevToolbox.Services.Palette.PaletteContextKind.Environment" Id="Id" />
+
 <DetailPage IsLoading="@(!_loaded)"
             LoadingText="Loading environment..."
             IsNotFound="@(_loaded && _env is null)"
@@ -1538,9 +1542,7 @@
     }
 
     /// <summary>The admin centre for the customer's tenant. Microsoft has no deep link to one environment.</summary>
-    private string? AdminCentreUrl => Row.TenantId is { } tenant
-        ? $"https://businesscentral.dynamics.com/{tenant:D}/admin"
-        : null;
+    private string? AdminCentreUrl => Row.AdminCentreUrl;
 
     /// <summary>"28.2" from "28.2.41125.0": the part people say out loud.</summary>
     private string CurrentVersionShort()

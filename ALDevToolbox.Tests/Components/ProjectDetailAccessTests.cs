@@ -141,6 +141,61 @@ public sealed class ProjectDetailAccessTests : IDisposable
         return (project.Id, team.Id);
     }
 
+    /// <summary>
+    /// The page tells the command palette what it is about (#887), so the
+    /// palette never has to read the address. See .design/command-palette.md,
+    /// "Where you are".
+    /// </summary>
+    [Fact]
+    public async Task The_page_tells_the_palette_which_solution_it_is()
+    {
+        var (projectId, _) = await SeedAsync();
+
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+
+        var marker = cut.Find("[data-palette-context]");
+        marker.GetAttribute("data-palette-context").Should().Be($"solution:{projectId}");
+        marker.GetAttribute("data-palette-href").Should().Be($"/solutions/{projectId}");
+        marker.HasAttribute("hidden").Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_solution_being_created_tells_the_palette_nothing()
+    {
+        var cut = _ctx.Render<ProjectDetail>();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Create solution"));
+        cut.FindAll("[data-palette-context]").Should().BeEmpty("there is no record to be about yet");
+    }
+
+    /// <summary>
+    /// The palette's context rows land on this page with ?tab=, and an enhanced
+    /// navigation reuses the component rather than building a new one - so a new
+    /// tab in the address has to move the page, not only the first one.
+    /// </summary>
+    [Fact]
+    public async Task A_new_tab_in_the_address_moves_the_page_to_it()
+    {
+        var (projectId, _) = await SeedAsync();
+
+        var nav = _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo($"/solutions/{projectId}?tab=customer");
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        cut.WaitForAssertion(() => ActiveTab(cut).Should().Be("Customer"));
+
+        // What an enhanced navigation does to a page it keeps: new parameters,
+        // same component.
+        nav.NavigateTo($"/solutions/{projectId}?tab=repositories");
+        cut.Render(p => p.Add(c => c.Id, projectId));
+
+        cut.WaitForAssertion(() => ActiveTab(cut).Should().Be("Repositories"));
+    }
+
+    private static string? ActiveTab(IRenderedComponent<ProjectDetail> cut) =>
+        cut.FindAll(".settings__tabs .header-tab.is-active")
+            .Select(t => t.TextContent.Trim())
+            .FirstOrDefault();
+
     [Fact]
     public async Task Someone_who_cannot_manage_the_project_gets_no_access_tab()
     {
