@@ -117,7 +117,7 @@ public sealed class EnvironmentPaletteSource : IPaletteSource
     /// list's own rows do not: writing "Running" on almost every row would
     /// bury the one that says something else.</para>
     /// </summary>
-    private static string? Describe(string projectName, string? type, string? version, string? status)
+    internal static string? Describe(string? projectName, string? type, string? version, string? status)
     {
         var parts = new List<string>(4);
         if (!string.IsNullOrWhiteSpace(projectName)) parts.Add(projectName.Trim());

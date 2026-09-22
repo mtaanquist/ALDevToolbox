@@ -3,7 +3,8 @@ using ALDevToolbox.Services.Palette;
 namespace ALDevToolbox.Endpoints;
 
 /// <summary>
-/// The command palette's one server call: <c>GET /palette/search?q=</c>,
+/// The command palette's server calls: <c>GET /palette/search?q=</c> and
+/// <c>GET /palette/context</c>, both
 /// cookie-authenticated, answering data rather than HTML. See
 /// <c>.design/command-palette.md</c>, "How it is global".
 ///
@@ -27,6 +28,13 @@ internal static class PaletteEndpoints
     public const string SearchPath = PathPrefix + "/search";
 
     /// <summary>
+    /// What the palette shows before anything is typed: the page's context block
+    /// and the recents still worth offering. See
+    /// <see cref="PaletteContextService"/>.
+    /// </summary>
+    public const string ContextPath = PathPrefix + "/context";
+
+    /// <summary>
     /// Per-caller rate-limit policy, registered in
     /// <c>Startup/OperationsRegistration.cs</c> beside the others.
     /// </summary>
@@ -48,6 +56,24 @@ internal static class PaletteEndpoints
             // Results are per-user and change as the organisation does. Nothing
             // downstream should hold one - least of all a shared proxy, where a
             // cached answer would be another tenant's.
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.Json(result);
+        })
+        .RequireAuthorization()
+        .RequireRateLimiting(SearchRateLimitPolicy);
+
+        // One call for both halves, so opening the palette costs one round trip:
+        // ?at=solution:12&recent=/solutions/3&recent=/environments/9. The same
+        // fences as the search - a 401 rather than a redirect (the /palette
+        // prefix), no-store, and the search's rate-limit bucket, since this is
+        // fired on every open.
+        app.MapGet(ContextPath, async (
+            string? at,
+            string[]? recent,
+            PaletteContextService context,
+            HttpContext http) =>
+        {
+            var result = await context.ResolveAsync(http.User, at, recent, http.RequestAborted);
             http.Response.Headers.CacheControl = "no-store";
             return Results.Json(result);
         })

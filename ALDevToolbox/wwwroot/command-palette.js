@@ -28,6 +28,11 @@
      * @typedef {{ id: string, label: string, items: PaletteItem[] }} PaletteGroup */
     /** The whole response. `top` is a single row lifted above every group.
      * @typedef {{ groups: PaletteGroup[], top: (PaletteItem|null) }} PaletteResponse */
+    /** The record the page is about: its name, and its own destinations.
+     * @typedef {{ label: string, items: PaletteItem[] }} PaletteContextBlock */
+    /** What /palette/context answers. `recents` are the remembered links the
+     *  caller may still open, in the order asked, titled by the server.
+     * @typedef {{ context: (PaletteContextBlock|null), recents: PaletteItem[] }} PaletteContextResponse */
 
     /** Milliseconds of quiet before a query is sent. */
     const DEBOUNCE_MS = 120;
@@ -36,6 +41,19 @@
     /** Longer than this and the endpoint answers empty without touching the database. */
     const MAX_QUERY = 100;
     const SEARCH_URL = "/palette/search";
+    const CONTEXT_URL = "/palette/context";
+    /** Where recents live: this browser tab's session, and nowhere else. */
+    const RECENTS_KEY = "aldt-palette-recents";
+    const MAX_RECENTS = 8;
+    /** Longer than any link the palette stores; the server refuses longer too. */
+    const MAX_HREF = 200;
+    /**
+     * How long an open waits for the context block before drawing without it.
+     * Long enough that a local answer lands before the first paint, so the list
+     * does not draw "Go to" and then shove it down; short enough that a slow
+     * answer never leaves the palette looking empty.
+     */
+    const CONTEXT_WAIT_MS = 200;
 
     /** Where focus was when the palette opened, so Esc can put it back. @type {Element|null} */
     let lastFocused = null;
@@ -52,6 +70,19 @@
     /** @type {HTMLAnchorElement[]} */
     let rows = [];
     let activeIndex = -1;
+    /** The context block and checked recents for this open, once they arrive.
+     *  Null until then, and null for good when the request failed - an
+     *  unchecked recent is never drawn. @type {PaletteContextResponse|null} */
+    let contextData = null;
+    /** Every context request carries a number, like the search. */
+    let contextSeq = 0;
+    let contextTimer = 0;
+    /** True between an open and its first draw, while the context is awaited. */
+    let firstPaintPending = false;
+    /** Whether the person has moved the selection since opening. Until they
+     *  have, the context arriving puts the selection on its first row; after,
+     *  their place is kept. */
+    let userMoved = false;
 
     // ---------------------------------------------------------------- lookup
 
@@ -59,10 +90,21 @@
     function list() { return document.getElementById("cmdp-list"); }
     function live() { return document.getElementById("cmdp-live"); }
 
-    /** The one other thing in the dialog that can hold focus. @returns {HTMLElement|null} */
-    function closeButton() {
-        const el = document.querySelector("#cmdp .cmdp__close");
-        return el instanceof HTMLElement ? el : null;
+    /**
+     * Everything in the dialog that Tab may land on, in order: the input, Close,
+     * then the foot's controls when they are on screen (Clear recents is hidden
+     * without recents; the key hints hide at phone width, the link does not).
+     * @returns {HTMLElement[]}
+     */
+    function focusStops() {
+        const found = document.querySelectorAll(
+            "#cmdp-input, #cmdp .cmdp__close, #cmdp .cmdp__foot-btn, #cmdp .cmdp__foot-link");
+        const stops = [];
+        for (let i = 0; i < found.length; i++) {
+            const el = found[i];
+            if (el instanceof HTMLElement && !el.hidden && el.getClientRects().length > 0) stops.push(el);
+        }
+        return stops;
     }
 
     /** @returns {HTMLInputElement|null} */
@@ -201,13 +243,178 @@
         return clone(source[0]);
     }
 
+    // ------------------------------------------------------ where you have been
+
+    /** An in-app path, and nothing that could leave the app.
+     * @param {unknown} href @returns {href is string} */
+    function isLocalHref(href) {
+        return typeof href === "string"
+            && href.length > 0 && href.length <= MAX_HREF
+            && href.charAt(0) === "/" && href.charAt(1) !== "/" && href.charAt(1) !== "\\";
+    }
+
     /**
-     * The rows this browser most recently picked. Deliberately empty: recents
-     * are #887, and nothing is stored anywhere yet. The seam is here so the
-     * empty-query list has one obvious place to grow.
+     * The links this browser tab went to recently, newest first. Links only -
+     * never a title, so no customer name is ever written to storage; the
+     * server titles each one when it re-checks it. Storage can be missing,
+     * full or refused (a private window, a blocked site), and every one of
+     * those reads as "no recents".
+     * @returns {string[]}
+     */
+    function readRecents() {
+        try {
+            const parsed = JSON.parse(window.sessionStorage.getItem(RECENTS_KEY) || "[]");
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter(isLocalHref).slice(0, MAX_RECENTS);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /** @param {string[]} hrefs */
+    function writeRecents(hrefs) {
+        try {
+            if (hrefs.length === 0) window.sessionStorage.removeItem(RECENTS_KEY);
+            else window.sessionStorage.setItem(RECENTS_KEY, JSON.stringify(hrefs.slice(0, MAX_RECENTS)));
+        } catch (e) { /* storage refused: the palette simply has no recents */ }
+    }
+
+    /** Puts `href` at the front of the recents. @param {string|null} href */
+    function remember(href) {
+        if (!isLocalHref(href)) return;
+        const rest = readRecents().filter(function (h) { return h !== href; });
+        writeRecents([href].concat(rest));
+    }
+
+    /**
+     * What the page says it is about, from the one element it renders for the
+     * purpose (PaletteContext.razor). Looked up each time, never cached: an
+     * enhanced navigation swaps the page underneath us.
+     * @returns {{ at: string, href: string }|null}
+     */
+    function pageContext() {
+        const el = document.querySelector("[data-palette-context]");
+        if (!el) return null;
+        const at = el.getAttribute("data-palette-context") || "";
+        const href = el.getAttribute("data-palette-href") || "";
+        if (!at) return null;
+        return { at: at, href: isLocalHref(href) ? href : "" };
+    }
+
+    /** A visit to a solution or an environment counts as having been there,
+     *  however you arrived. */
+    function rememberVisit() {
+        const here = pageContext();
+        if (here && here.href) remember(here.href);
+    }
+
+    /**
+     * Asks the server for this page's context block and which recents may still
+     * be offered. The current page is left out of the recents sent: its context
+     * block already stands for it. Recents the server declined are dropped from
+     * storage too, so a Solution that went Private does not come back the next
+     * time the server is unreachable.
+     */
+    function loadContext() {
+        const here = pageContext();
+        const sent = readRecents().filter(function (h) { return !here || h !== here.href; });
+        const mine = ++contextSeq;
+        contextData = null;
+
+        if (!here && sent.length === 0) {
+            firstPaintPending = false;
+            return;
+        }
+
+        const params = new URLSearchParams();
+        if (here) params.append("at", here.at);
+        for (let i = 0; i < sent.length; i++) params.append("recent", sent[i]);
+
+        firstPaintPending = true;
+        window.clearTimeout(contextTimer);
+        contextTimer = window.setTimeout(function () {
+            if (mine !== contextSeq || !firstPaintPending) return;
+            firstPaintPending = false;
+            if (isOpen()) redraw(true);
+        }, CONTEXT_WAIT_MS);
+
+        fetch(CONTEXT_URL + "?" + params.toString(), {
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" }
+        }).then(function (response) {
+            if (!response.ok) throw new Error("palette context returned " + response.status);
+            return response.json();
+        }).then(function (data) {
+            if (mine !== contextSeq) return;
+            const answer = /** @type {PaletteContextResponse} */ (data || {});
+            contextData = {
+                context: answer.context && Array.isArray(answer.context.items) ? answer.context : null,
+                recents: Array.isArray(answer.recents) ? answer.recents : []
+            };
+            pruneRecents(sent, contextData.recents);
+            settle();
+        }).catch(function () {
+            if (mine !== contextSeq) return;
+            // Nothing is shown that the server has not just vouched for, so a
+            // failed check means no context and no recents - "Go to" still works.
+            contextData = null;
+            settle();
+        });
+
+        function settle() {
+            window.clearTimeout(contextTimer);
+            const fresh = firstPaintPending || !userMoved;
+            firstPaintPending = false;
+            if (isOpen()) redraw(fresh);
+        }
+    }
+
+    /** @param {string[]} sent @param {PaletteItem[]} kept */
+    function pruneRecents(sent, kept) {
+        const keptHrefs = kept.map(function (item) { return item && item.href; });
+        const stored = readRecents();
+        const next = stored.filter(function (h) {
+            return sent.indexOf(h) < 0 || keptHrefs.indexOf(h) >= 0;
+        });
+        if (next.length !== stored.length) writeRecents(next);
+    }
+
+    /** Forgets every recent, on the person's say-so. */
+    function clearRecents() {
+        writeRecents([]);
+        if (contextData) contextData = { context: contextData.context, recents: [] };
+        redraw(true);
+        const field = input();
+        if (field) field.focus();
+    }
+
+    /**
+     * Rows for `items` that match `query` - all of them, in the server's order,
+     * for an empty query; otherwise best tier first under the same
+     * every-term-must-match rule as "Go to", ties kept in the server's order.
+     * Rows whose link is already on screen are skipped, so a recent that is
+     * also in the context block is drawn once.
+     * @param {PaletteItem[]} items @param {string} query @param {Set<string>} drawn
      * @returns {HTMLAnchorElement[]}
      */
-    function recentDestinations() { return []; }
+    function matchItems(items, query, drawn) {
+        const termList = terms(query);
+        const hits = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item || typeof item.href !== "string" || drawn.has(item.href)) continue;
+            let points = 1;
+            if (termList.length > 0) {
+                const title = fold(item.title || "");
+                points = score(title + " " + fold(item.subtitle || ""), title, termList);
+                if (points === 0) continue;
+            }
+            const row = resultRow(item);
+            if (row) hits.push({ row: row, points: points, order: i, href: item.href });
+        }
+        hits.sort(function (a, b) { return b.points - a.points || a.order - b.order; });
+        return hits.map(function (hit) { drawn.add(hit.href); return hit.row; });
+    }
 
     // -------------------------------------------------------------- drawing
 
@@ -245,16 +452,25 @@
     /**
      * One row from the endpoint. The kind picks the template - and only ever a
      * template - so an unknown kind falls back rather than reaching anything
-     * else, and an href that is not an in-app path is refused outright.
+     * else, and an href that is not an in-app path is refused outright. The
+     * one exception is the "external" kind (Business Central and its admin
+     * centre, from an environment's context block), which may carry an https
+     * link and nothing else; its template opens it in a new tab.
      * @param {PaletteItem} item @returns {HTMLAnchorElement|null}
      */
     function resultRow(item) {
         if (!item || typeof item.href !== "string") return null;
-        if (item.href.charAt(0) !== "/" || item.href.charAt(1) === "/") return null;
 
         const kind = typeof item.kind === "string" && /^[a-z0-9-]+$/.test(item.kind) ? item.kind : "default";
+        if (kind === "external") {
+            if (!/^https:\/\/[^/\\]/.test(item.href)) return null;
+        } else if (!isLocalHref(item.href)) {
+            return null;
+        }
+        // An outside link never falls back to the default template: that one
+        // would open it in place of the app.
         const tpl = template('template[data-palette-row="' + kind + '"]')
-            || template('template[data-palette-row="default"]');
+            || (kind === "external" ? null : template('template[data-palette-row="default"]'));
         if (!tpl) return null;
 
         const node = /** @type {DocumentFragment} */ (tpl.content.cloneNode(true));
@@ -277,37 +493,61 @@
         container.textContent = "";
         const frag = document.createDocumentFragment();
         let rowCount = 0;
+        /** Links already drawn, so one place is offered once. "Go to" is not
+         *  counted: it is the whole tool list, and stays whole. @type {Set<string>} */
+        const drawn = new Set();
 
         if (serverState === "unavailable") {
             const block = stateBlock("unavailable", query);
             if (block) frag.appendChild(block);
         }
 
-        if (serverResults) {
-            if (serverResults.top) {
-                const row = resultRow(serverResults.top);
-                if (row) { appendGroup(frag, "Best match").appendChild(row); rowCount++; }
+        if (serverResults && serverResults.top) {
+            const row = resultRow(serverResults.top);
+            if (row) {
+                appendGroup(frag, "Best match").appendChild(row);
+                drawn.add(serverResults.top.href);
+                rowCount++;
             }
+        }
+
+        // Where you are, then where you have been - both filtered here, like
+        // "Go to", so they answer every keystroke at once and sit still above
+        // the search results as those arrive.
+        if (contextData && contextData.context) {
+            const block = contextData.context;
+            const built = matchItems(block.items, query, drawn);
+            if (built.length > 0) {
+                const into = appendGroup(frag, block.label || "This page");
+                for (let i = 0; i < built.length; i++) { into.appendChild(built[i]); rowCount++; }
+            }
+        }
+
+        let recentCount = 0;
+        if (contextData && contextData.recents.length > 0) {
+            const built = matchItems(contextData.recents, query, drawn);
+            if (built.length > 0) {
+                const into = appendGroup(frag, "Recent");
+                for (let i = 0; i < built.length; i++) { into.appendChild(built[i]); rowCount++; }
+            }
+            recentCount = contextData.recents.length;
+        }
+        showClearRecents(recentCount > 0);
+
+        if (serverResults) {
             const groups = serverResults.groups || [];
             for (let g = 0; g < groups.length; g++) {
                 const group = groups[g];
                 const items = (group && group.items) || [];
                 const built = [];
                 for (let i = 0; i < items.length; i++) {
+                    if (!items[i] || drawn.has(items[i].href)) continue;
                     const row = resultRow(items[i]);
-                    if (row) built.push(row);
+                    if (row) { built.push(row); drawn.add(items[i].href); }
                 }
                 if (built.length === 0) continue;
                 const into = appendGroup(frag, (group && group.label) || "Results");
                 for (let i = 0; i < built.length; i++) { into.appendChild(built[i]); rowCount++; }
-            }
-        }
-
-        if (!query) {
-            const recents = recentDestinations();
-            if (recents.length > 0) {
-                const into = appendGroup(frag, "Recent");
-                for (let i = 0; i < recents.length; i++) { into.appendChild(recents[i]); rowCount++; }
             }
         }
 
@@ -358,12 +598,30 @@
         if (region.textContent !== message) region.textContent = message;
     }
 
-    /** Re-draw, keeping the user's place: the row that was selected stays
-     *  selected if it is still on the list. */
-    function redraw() {
+    /** The foot's Clear recents, shown only while there are recents to clear.
+     * @param {boolean} show */
+    function showClearRecents(show) {
+        const button = clearButton();
+        if (button) button.hidden = !show;
+    }
+
+    /** @returns {HTMLButtonElement|null} */
+    function clearButton() {
+        const el = document.querySelector("#cmdp [data-cmdp-clear-recents]");
+        return el instanceof HTMLButtonElement ? el : null;
+    }
+
+    /**
+     * Re-draw, keeping the user's place: the row that was selected stays
+     * selected if it is still on the list. `fresh` starts again at the top
+     * instead - for the context block arriving under a person who has not
+     * moved yet, where "their place" is only the row that happened to be first.
+     * @param {boolean} [fresh]
+     */
+    function redraw(fresh) {
         const field = input();
         const query = field ? field.value.trim() : "";
-        const previous = activeIndex >= 0 && rows[activeIndex] ? rows[activeIndex].getAttribute("href") : null;
+        const previous = !fresh && activeIndex >= 0 && rows[activeIndex] ? rows[activeIndex].getAttribute("href") : null;
 
         render(query);
         reindex();
@@ -422,10 +680,22 @@
         lastFocused = document.activeElement;
         serverResults = null;
         serverState = "ok";
+        userMoved = false;
         field.value = "";
         el.hidden = false;
         field.setAttribute("aria-expanded", "true");
-        redraw();
+        loadContext();
+        if (firstPaintPending) {
+            // Held for the context block, briefly: see CONTEXT_WAIT_MS. The input
+            // is live meanwhile, and typing draws at once.
+            const container = list();
+            if (container) container.textContent = "";
+            rows = [];
+            activeIndex = -1;
+            showClearRecents(false);
+        } else {
+            redraw();
+        }
         field.focus();
     }
 
@@ -435,6 +705,10 @@
         const field = input();
 
         cancel();
+        // A context answer still on its way belongs to this open, not the next.
+        contextSeq++;
+        window.clearTimeout(contextTimer);
+        firstPaintPending = false;
         if (field) {
             field.setAttribute("aria-expanded", "false");
             field.removeAttribute("aria-activedescendant");
@@ -584,30 +858,36 @@
         if (!isOpen()) return;
 
         if (e.key === "Escape") { e.preventDefault(); close(); return; }
-        if (e.key === "ArrowDown") { e.preventDefault(); select(activeIndex + 1); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); select(activeIndex - 1); return; }
-        if (e.key === "Home") { e.preventDefault(); select(0); return; }
-        if (e.key === "End") { e.preventDefault(); select(rows.length - 1); return; }
+        if (e.key === "ArrowDown") { e.preventDefault(); userMoved = true; select(activeIndex + 1); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); userMoved = true; select(activeIndex - 1); return; }
+        if (e.key === "Home") { e.preventDefault(); userMoved = true; select(0); return; }
+        if (e.key === "End") { e.preventDefault(); userMoved = true; select(rows.length - 1); return; }
 
         if (e.key === "Tab") {
-            // Two things in here can hold focus: the input and Close. Tab
-            // cycles between them and never leaves, because outside the scrim
-            // nothing is visible and nothing says where the cursor went. With
-            // only two stops, forwards and backwards are the same move.
+            // Focus cycles through what in here can hold it - the input, Close,
+            // and the foot's Clear recents and docs link when they are showing -
+            // and never leaves, because outside the scrim nothing is visible and
+            // nothing says where the cursor went.
             const field = input();
             if (!field) return;
             e.preventDefault();
-            const closer = closeButton();
-            const target = closer && document.activeElement !== closer ? closer : field;
-            target.focus();
+            const stops = focusStops();
+            const at = stops.indexOf(/** @type {HTMLElement} */(document.activeElement));
+            const step = e.shiftKey ? -1 : 1;
+            const next = at < 0 ? 0 : (at + step + stops.length) % stops.length;
+            (stops[next] || field).focus();
             return;
         }
 
         if (e.key === "Enter") {
+            // Enter on Close or Clear recents is that button's own press, not
+            // "open the selected row" - which is what it used to do on Close.
+            if (document.activeElement !== input()) return;
             const row = activeIndex >= 0 ? rows[activeIndex] : null;
             if (!row) return;
             e.preventDefault();
             if (e.ctrlKey || e.metaKey) {
+                if (row.hasAttribute("data-cmdp-remember")) remember(row.getAttribute("href"));
                 window.open(row.href, "_blank", "noopener");
                 return;
             }
@@ -620,6 +900,8 @@
         if (!isOpen()) return;
         const target = e.target;
         if (!(target instanceof HTMLInputElement) || target.id !== "cmdp-input") return;
+        // Typing draws now, context or not; the block slots in when it lands.
+        firstPaintPending = false;
         scheduleSearch(target.value);
         redraw();
     });
@@ -633,7 +915,7 @@
         const row = target.closest(".cmdp-row");
         if (!row) return;
         const index = rows.indexOf(/** @type {HTMLAnchorElement} */(row));
-        if (index >= 0 && index !== activeIndex) select(index, false);
+        if (index >= 0 && index !== activeIndex) { userMoved = true; select(index, false); }
     });
 
     document.addEventListener("click", function (e) {
@@ -647,9 +929,17 @@
         if (target.closest("[data-cmdp-open]")) return;
 
         if (target.closest("[data-cmdp-close]")) { e.preventDefault(); close(); return; }
+        if (target.closest("[data-cmdp-clear-recents]")) { e.preventDefault(); clearRecents(); return; }
         // A row is a real link: let the browser (and Blazor's enhanced
-        // navigation) follow it, and just get out of the way.
-        if (target.closest(".cmdp-row")) { close(); return; }
+        // navigation) follow it, and just get out of the way. A place worth
+        // coming back to - a record, a page from "Go to" - is remembered on the
+        // way; a tab of the page you are on is not, its record already is.
+        const picked = target.closest(".cmdp-row");
+        if (picked) {
+            if (picked.hasAttribute("data-cmdp-remember")) remember(picked.getAttribute("href"));
+            close();
+            return;
+        }
         if (!target.closest(".cmdp")) close();
     });
 
@@ -678,9 +968,16 @@
         lastFocused = null;
         serverResults = null;
         serverState = "ok";
+        contextSeq++;
+        contextData = null;
+        window.clearTimeout(contextTimer);
+        firstPaintPending = false;
         applyShortcutLabels();
+        rememberVisit();
     });
 
-    // The scripts sit at the end of <body>, so the top bar is already parsed.
+    // The scripts sit at the end of <body>, so the top bar is already parsed -
+    // and so is the page, and with it any context element it rendered.
     applyShortcutLabels();
+    rememberVisit();
 })();

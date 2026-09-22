@@ -250,6 +250,25 @@ public sealed class EnvironmentDetailTests : IDisposable
         return cut;
     }
 
+    /// <summary>
+    /// The page tells the command palette what it is about (#887). It says so on
+    /// every tab, since the palette's context rows land on all five.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("history")]
+    public async Task The_page_tells_the_palette_which_environment_it_is(string? tab)
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+
+        var cut = Render(envId, tab);
+
+        var marker = cut.Find("[data-palette-context]");
+        marker.GetAttribute("data-palette-context").Should().Be($"environment:{envId}");
+        marker.GetAttribute("data-palette-href").Should().Be($"/environments/{envId}");
+    }
+
     [Fact]
     public async Task The_head_meta_row_and_updates_card_come_from_our_own_mirror()
     {

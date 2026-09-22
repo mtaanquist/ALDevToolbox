@@ -24,6 +24,7 @@ public static class PaletteRegistration
     public static IServiceCollection AddPalette(this IServiceCollection services)
     {
         services.AddScoped<PaletteSearchService>();
+        services.AddScoped<PaletteContextService>();
         services.AddScoped<IPaletteSource, SolutionPaletteSource>();
         services.AddScoped<IPaletteSource, EnvironmentPaletteSource>();
         services.AddScoped<IPaletteSource, RecipePaletteSource>();

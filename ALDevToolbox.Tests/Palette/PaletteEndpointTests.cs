@@ -171,6 +171,76 @@ public sealed class PaletteEndpointTests : IDisposable
             "a cached palette answer at a shared proxy would be another tenant's");
     }
 
+    // ── GET /palette/context (#887) ─────────────────────────────────────
+
+    [Fact]
+    public async Task An_anonymous_context_request_is_refused_with_401_not_a_redirect_to_login()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.GetAsync("/palette/context?at=solution:1&recent=/solutions/1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task The_context_answer_has_the_shape_the_script_expects_and_is_never_cached()
+    {
+        using var client = await SignedInClientAsync();
+        var projectId = await SeedSolutionAsync("CRONUS Coffee A/S");
+
+        using var response = await client.GetAsync(
+            $"/palette/context?at=solution:{projectId}"
+            + $"&recent=/solutions/{projectId}&recent=https://evil.example/&recent=/nowhere&recent=/");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue(
+            "the answer names customers and is per-user; a shared proxy must never hold one");
+
+        var json = await ReadJsonAsync(response);
+        var context = json.GetProperty("context");
+        context.GetProperty("label").GetString().Should().Be("CRONUS Coffee A/S");
+        var first = context.GetProperty("items")[0];
+        first.GetProperty("kind").GetString().Should().Be("tab");
+        first.GetProperty("title").GetString().Should().Be("Customer");
+        first.GetProperty("href").GetString().Should().Be($"/solutions/{projectId}?tab=customer");
+
+        json.GetProperty("recents").EnumerateArray()
+            .Select(r => r.GetProperty("href").GetString())
+            .Should().Equal([$"/solutions/{projectId}", "/"],
+                "an href the server does not recognise is dropped, never echoed back");
+    }
+
+    [Fact]
+    public async Task A_context_the_caller_cannot_open_answers_null_rather_than_an_error()
+    {
+        using var client = await SignedInClientAsync();
+
+        using var response = await client.GetAsync("/palette/context?at=solution:987654");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await ReadJsonAsync(response);
+        json.GetProperty("context").ValueKind.Should().Be(JsonValueKind.Null);
+        json.GetProperty("recents").GetArrayLength().Should().Be(0);
+    }
+
+    private async Task<int> SeedSolutionAsync(string name)
+    {
+        await using var seed = _db.NewContext();
+        var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = name,
+            DefaultArtifactCountry = "dk",
+            Visibility = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectVisibility.Public,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        seed.OeProjects.Add(project);
+        await seed.SaveChangesAsync();
+        return project.Id;
+    }
+
     // ── Plumbing ────────────────────────────────────────────────────────
 
     private static async Task<JsonElement> ReadJsonAsync(HttpResponseMessage response)

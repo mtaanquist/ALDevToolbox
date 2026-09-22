@@ -1,8 +1,8 @@
 # The command palette
 
-Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884) and
-the way in, the accessibility pass and the docs (#888) are built; recents and page context
-(#887) and the performance work (#889) are next.** This document is the outcome of #879.
+Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884), the
+way in, the accessibility pass and the docs (#888), the performance work (#889) and page
+context and recents (#887) are built.** This document is the outcome of #879.
 Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
@@ -45,9 +45,11 @@ Instead the palette is three parts:
    templates into the list. It writes no HTML and chooses no class names - it fills
    `textContent` and `href` on clones of what Razor rendered. That keeps the design
    system in one place and takes markup injection off the table.
-3. **One search endpoint.** `GET /palette/search?q=`, a cookie-authenticated minimal API
-   returning data, not HTML. A GET with no side effects, so no antiforgery token; it
-   requires an authenticated user and returns 401 otherwise.
+3. **Two endpoints, both data.** `GET /palette/search?q=`, a cookie-authenticated minimal
+   API returning data, not HTML. A GET with no side effects, so no antiforgery token; it
+   requires an authenticated user and returns 401 otherwise. Its sibling
+   `GET /palette/context` answers what the palette shows before anything is typed - see
+   "Where you are" - under the same rules.
 
 Palette styles live in a global sheet, never a scoped `.razor.css`: Blazor's scope
 attribute is not on script-cloned nodes, so scoped rules would silently not apply. The
@@ -246,11 +248,90 @@ there.
 
 ### An empty query
 
-Opening the palette without typing shows **recent picks**, then the **Go to** list.
-Recents are the last few rows the user chose from the palette, kept in that browser's
-`localStorage` - no table, nothing server-side, nothing shared (#887). They are re-validated by
-being links: a recent the user can no longer open lands on the page's own refusal. If
-storage is unavailable the palette simply shows Go to.
+Opening the palette without typing shows, in order: **the page you are on** (its context
+block, headed by the record's name), **Recent**, then the **Go to** list (#887). Typing
+filters the first two in the browser under the same every-term-must-match rule as Go to,
+so they answer every keystroke at once; they stay above the search results, which arrive
+underneath them without pushing anything that is already on screen. A link is drawn once:
+a recent that is also in the context block, or a search result that is also a recent,
+appears in the first place it would. Go to is not deduplicated against anything - it is
+the whole tool list, and stays whole.
+
+### Where you are
+
+A Solution's page and an environment's page tell the palette what they are about. **The
+page tells the shell; the palette never parses a URL.** Each renders one hidden element,
+`Components/Shared/PaletteContext.razor`:
+
+```html
+<span hidden data-palette-context="solution:12" data-palette-href="/solutions/12"></span>
+```
+
+It is rendered by the page itself, from its route parameter, before the page's own frame.
+The script looks it up each time the palette opens and never holds on to it, which is what
+makes it right after an enhanced navigation (the page's DOM is swapped, the lookup comes
+after) and on a static page alike. `data-palette-context` goes to the server verbatim and
+only the server reads it (`PaletteContextRef`: a known kind, a colon, a positive id, and
+nothing else). `data-palette-href` is the record's own page, which the script remembers as
+a visit and leaves out of Recent while you are standing on it.
+
+What the block offers is the page's own tabs under the page's own conditions - the
+palette may not be a side door to a tab the page would not draw:
+
+| On | Offers |
+| --- | --- |
+| A Solution | Customer, General, Repositories (anyone who can open it); Business Central (whoever manages it, not on-premises); Pipelines (whoever manages it); Access (its owner and the admins); its live environments (the Environments source's own filter, at most eight); its latest build, landing on that build's pipeline (behind the Pipelines tool) |
+| An environment | Overview, Apps, Operations, Sessions, Workbench history; Open in Business Central and Open the admin centre, only when the tenant is known (the page's own condition for its two buttons); its Solution |
+
+The tabs land on `?tab=` for a Solution and on the tab's own address for an environment.
+The Solution page switches its tabs in place without changing the address, so a `?tab=`
+arriving at a page that is already open moves it to that tab, and a navigation to another
+Solution reloads it - enhanced navigation keeps the component and hands it new
+parameters, so the page loads from `OnParametersSetAsync` rather than
+`OnInitializedAsync`, as the environment page already did.
+
+The two links to Microsoft are the only rows that leave the app. They are their own kind,
+`external`, whose template opens them in a new tab like the page's own buttons do; the
+script accepts an `https://` link for that kind and for no other.
+
+A release page does not have a context block yet. Its natural rows ("its modules",
+"Compare with...") are controls inside the page rather than addresses, and the page does
+not prerender, so it is left for when there is a way to land on them.
+
+### Where you have been
+
+Recents are the last **eight** places this browser tab went: rows picked from the palette
+that are places in their own right (a Solution, an environment, a release, a recipe, a Go
+to page - not a tab of the page you were on), and the Solutions and environments visited
+however you got there. They live in **`sessionStorage`** - per browser session, as the
+Upgrades view keeps its state; no table, nothing server-side, nothing shared. Only links
+are stored, never titles, so no customer name is written to the browser's storage.
+
+**A recent is re-checked before it is shown, and one the caller can no longer open is
+dropped, not shown locked.** Opening the palette sends the context and the recents in one
+call - `GET /palette/context?at=solution:12&recent=/solutions/3&recent=/environments/9` -
+and the server answers with the context block and the recents still openable, in the
+order asked, titled by the server (so a renamed Solution shows its new name). Each recent
+is recognised by exactly one strict route pattern - `/solutions/{id}`,
+`/environments/{id}`, `/object-explorer/release/{id}`, `/cookbook/{id}`, or a Go to page's
+exact address - and checked through the rule its page and its palette source use:
+`ProjectAccess.VisibleProjectPredicate`, the environment page's own read,
+`VisibleReleasePredicate`, the recipe filters, and for Go to pages the same gates the list
+is rendered from. Anything that matches no pattern is dropped and never echoed back.
+Recents the server declined are dropped from storage too.
+
+The endpoint carries the search's fences: authenticated, a 401 rather than a redirect (the
+`/palette` prefix), `no-store`, and the search's rate-limit bucket, since it fires on every
+open. No `IgnoreQueryFilters()`.
+
+The palette waits up to 200 ms for that answer before its first draw, so a local answer
+lands before anything is on screen and the list does not draw Go to and then shove it
+down; a slower one draws Go to first and slots the rest in above it, moving the selection
+to the top only if the person has not moved it yet. **If the check fails, there is no
+context and no recents** - nothing is shown that the server has not just vouched for - and
+Go to still works. If storage is unavailable there are simply no recents.
+
+**Clear recents** sits in the foot, and only while there are recents on screen.
 
 ## Budget
 
@@ -359,7 +440,8 @@ waited on. The other sources still return, and the palette shows the groups it h
 
 ## States
 
-The list pane always shows exactly one of: recents and Go to (empty query), results,
+The list pane always shows exactly one of: the context block, recents and Go to (empty
+query - any of the first two may be absent), results,
 "No search results for '...'" when the search came back with nothing, or "Search is not
 available right now" when the request failed. The last two never stack - a failed request
 has already explained the silence, so saying nothing matched on top of it would be a
@@ -370,12 +452,15 @@ While a request is in flight the previous results stay put - no spinner flicker 
 keystroke, and the selected row keeps its place when the new ones arrive.
 
 Keyboard: Up/Down move, Home/End jump to the ends, Enter opens, Ctrl/Cmd+Enter opens in a
-new tab, Esc closes and puts focus back where it was.
+new tab, Esc closes and puts focus back where it was. Enter only opens a row while the
+input has focus; on Close or Clear recents it is that button's own press.
 
-The foot carries those hints and **at most one thing that is not a hint**: a link to
+The foot carries those hints and **at most two things that are not hints**, together at
+its end: **Clear recents**, shown only while there are recents on screen, and a link to
 `/docs/search`, which explains what the palette finds, in the words someone who has never
-used one would use. The foot is hidden at phone width, which is why that page is also in
-the "Go to" list rather than only here.
+used one would use. Both are quiet text in the link colour, so the foot keeps one voice.
+At phone width the key hints go and those two stay; the docs page is also in the "Go to"
+list, for anyone who never looks at the foot.
 
 ### What a screen reader gets
 
@@ -395,9 +480,11 @@ than merely validate:
   permanent visually-hidden `role="status"` in the dialog carries them, and the result
   count when a query is present. It is in the page before it ever has text, which is what
   makes an announcement fire at all.
-- **Focus stays inside, and there are two stops.** The input and the Close button; Tab
-  cycles between them. The input suppresses its own ring and the panel draws one instead,
-  so the borderless box still shows focus.
+- **Focus stays inside.** Tab and Shift+Tab cycle the input, the Close button and the
+  foot's two controls when they are on screen, and never leave the dialog. (It was two
+  stops until #887 put a second control in the foot; a keyboard user has to be able to
+  reach Clear recents.) The input suppresses its own ring and the panel draws one
+  instead, so the borderless box still shows focus.
 
 Contrast was measured against `tokens.css` rather than judged: the group heading, the
 foot and the input's placeholder moved from `--ink-4` to `--ink-3`, because at 11-12px
