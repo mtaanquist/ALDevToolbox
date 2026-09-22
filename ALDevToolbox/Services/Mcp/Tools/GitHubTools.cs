@@ -94,11 +94,10 @@ public sealed class GitHubTools
         "member of that GitHub organisation; a call from someone who is not, or from an account that has " +
         "not connected its GitHub account, is refused and nothing is created. A name the organisation " +
         "already uses is refused too. The repository is registered on a solution only when the " +
-        "organisation has Solutions enabled. When the GitHub organisation only allows changes to the " +
-        "default branch through a pull request, the files are put in one instead of on that branch: " +
-        "openedPullRequest is then true and pullRequestUrl is where they are waiting, and somebody has " +
-        "to merge it before the branch holds the workspace. Use generate_workspace instead when you " +
-        "want the workspace as a ZIP.")]
+        "organisation has Solutions enabled. The files are committed straight to the default branch; " +
+        "if the GitHub organisation's branch rules refuse that, the call is refused with what an owner " +
+        "of the organisation has to allow. Use generate_workspace instead when you want the workspace " +
+        "as a ZIP.")]
     public async Task<RepositoryCreationResult> CreateRepositoryAsync(
         ProjectPlanInput plan,
         [Description("The repository name, without an owner. Letters, digits, hyphens, underscores and full stops, at most 100 characters.")]

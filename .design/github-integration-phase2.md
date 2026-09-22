@@ -175,9 +175,9 @@ ones their team already maintains by hand.
   files" page for both audiences.
 - **Applied in the same commit as the workspace**, on the installation token, then the
   ruleset via `POST /repos/{owner}/{repo}/rulesets`. They arrived as a second commit of
-  their own until issue #811, which had to describe the whole repository in one commit so
-  the default branch could be *created* at it rather than updated; the ordering that
-  matters (files before ruleset) is unchanged. A standards file at a path the generator
+  their own until issue #811 folded them into the workspace commit, whose tree is built
+  from nothing and so has to describe the whole repository; the ordering that matters
+  (files before ruleset) is unchanged. A standards file at a path the generator
   also produced replaces it - the organisation's standard wins over the template.
 - **A ruleset refusal is a warning, not a failure.** By then the repository exists and is
   committed, so the success card says so and names what GitHub refused (typically the

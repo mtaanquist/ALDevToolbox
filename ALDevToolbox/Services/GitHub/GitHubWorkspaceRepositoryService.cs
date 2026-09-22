@@ -12,24 +12,6 @@ using ALDevToolbox.Services.Tools;
 
 namespace ALDevToolbox.Services.GitHub;
 
-/// <summary>
-/// How the generated workspace reached the new repository (issue #811).
-/// </summary>
-public enum GitHubWorkspaceDelivery
-{
-    /// <summary>
-    /// It is on the default branch, in a single initial commit. What happens
-    /// unless the organisation's rules stand in the way.
-    /// </summary>
-    DefaultBranch,
-
-    /// <summary>
-    /// The organisation only allows changes to the default branch through a
-    /// pull request, so the workspace is waiting in one.
-    /// </summary>
-    PullRequest,
-}
-
 /// <summary>What "Create repository" produced, for the success state to render.</summary>
 /// <param name="Repository">The repository that now exists, including the link the user needs next.</param>
 /// <param name="FileCount">How many generated files the repository was filled with.</param>
@@ -67,19 +49,6 @@ public enum GitHubWorkspaceDelivery
 /// committed by the time this can be set, so it is a warning on a success
 /// rather than a failure, the same shape as <paramref name="StandardsWarning"/>.
 /// </param>
-/// <param name="Delivery">
-/// Whether the workspace is on the default branch or waiting in a pull request
-/// (issue #811). The success state says a different thing for each.
-/// </param>
-/// <param name="PullRequestUrl">
-/// The pull request holding the workspace, when there is one - null whenever
-/// <paramref name="Delivery"/> is <see cref="GitHubWorkspaceDelivery.DefaultBranch"/>.
-/// </param>
-/// <param name="DefaultBranchWarning">
-/// What to do on GitHub when the workspace is on its branch but GitHub would
-/// not make that branch the default - or null, which is the usual case. A
-/// warning on a success, like the other two.
-/// </param>
 public sealed record GitHubWorkspaceRepository(
     GitHubRepositorySummary Repository,
     int FileCount,
@@ -90,10 +59,7 @@ public sealed record GitHubWorkspaceRepository(
     int? SolutionId = null,
     string? SolutionName = null,
     bool SolutionCreated = false,
-    string? SolutionWarning = null,
-    GitHubWorkspaceDelivery Delivery = GitHubWorkspaceDelivery.DefaultBranch,
-    string? PullRequestUrl = null,
-    string? DefaultBranchWarning = null);
+    string? SolutionWarning = null);
 
 /// <summary>
 /// Creates a repository in the connected GitHub organisation and puts a freshly
@@ -342,18 +308,11 @@ public sealed class GitHubWorkspaceRepositoryService
             _ => throw Refuse(RepositoryField, NotPermittedMessage(orgLogin)),
         };
 
-        // Asked before anything is written, so the log says what the
-        // organisation's rules were when the repository was filled. It steers
-        // nothing: the fill attempts the direct route regardless and treats
-        // GitHub's own refusal as the authority, because a pull_request rule
-        // governs updating a branch and there is no evidence it governs
-        // creating one - which is precisely the case this flow is built around.
-        await LogBranchRulesAsync(token, repository, ct);
-
         // The organisation's standards ride in the same commit as the generated
-        // files (issue #811), so read them before the fill rather than after it.
+        // files, so read them before the fill rather than after it.
         var standards = await _standards.GetAsync(ct);
-        var fill = await FillAsync(token, repository, plan, files, standards.Files, userId, ct);
+        var standardsFileCount = await FillAsync(
+            token, repository, orgLogin, plan, files, standards.Files, userId, ct);
         var rulesetWarning = await ApplyRulesetAsync(
             token, repository, standards.Ruleset is { IsEmpty: false } configured ? configured : null, ct);
         // Last, because a solution with no repository is the orphan the whole
@@ -366,55 +325,14 @@ public sealed class GitHubWorkspaceRepositoryService
 
         _logger.LogInformation(
             "User {UserId} created the repository {RepoFullName} from workspace '{Workspace}' "
-            + "(template '{Template}', {FileCount} files, {Visibility}, solution {SolutionId}, "
-            + "delivered {Delivery}).",
+            + "(template '{Template}', {FileCount} files, {Visibility}, solution {SolutionId}).",
             userId, repository.FullName, plan.WorkspaceName, plan.TemplateKey, files.Count,
-            isPrivate ? "private" : "public", solution.Id, fill.Delivery);
+            isPrivate ? "private" : "public", solution.Id);
 
         return new GitHubWorkspaceRepository(
             repository, files.Count, archiveName, archiveBytes,
-            fill.StandardsFileCount, rulesetWarning,
-            solution.Id, solution.Name, solution.Created, solution.Warning,
-            fill.Delivery, fill.PullRequestUrl, fill.DefaultBranchWarning);
-    }
-
-    /// <summary>
-    /// Says in the log which rules govern the repository's default branch, so a
-    /// support question about a workspace that arrived as a pull request has an
-    /// answer without a trip to GitHub's settings.
-    ///
-    /// <para>Never fails the flow: GitHub not answering is a fact about the
-    /// read, not about the repository.</para>
-    /// </summary>
-    private async Task LogBranchRulesAsync(
-        string token, GitHubRepositorySummary repository, CancellationToken ct)
-    {
-        IReadOnlyList<string>? types;
-        try
-        {
-            types = await _github.GetBranchRuleTypesAsync(
-                token, repository.Owner, repository.Name, repository.DefaultBranch, ct);
-        }
-        catch (GitHubApiException ex)
-        {
-            _logger.LogInformation(
-                ex, "Could not read the branch rules on {RepoFullName}.", repository.FullName);
-            return;
-        }
-
-        if (types is null)
-        {
-            _logger.LogInformation(
-                "GitHub did not say which rules apply to {Branch} on {RepoFullName}.",
-                repository.DefaultBranch, repository.FullName);
-            return;
-        }
-
-        _logger.LogInformation(
-            "{Branch} on {RepoFullName} is governed by {RuleCount} rule(s): {Rules}. "
-            + "A pull request rule is expected to send the workspace through one.",
-            repository.DefaultBranch, repository.FullName, types.Count,
-            types.Count == 0 ? "none" : string.Join(", ", types));
+            standardsFileCount, rulesetWarning,
+            solution.Id, solution.Name, solution.Created, solution.Warning);
     }
 
     /// <summary>
@@ -524,70 +442,44 @@ public sealed class GitHubWorkspaceRepositoryService
         return (files, archive.FileName, stream.ToArray());
     }
 
-    /// <summary>The throwaway branch the repository's very first commit lands on.</summary>
-    private const string SeedBranch = "aldt/seed";
-
-    /// <summary>The branch a workspace waits on when it has to go through a pull request.</summary>
-    private const string WorkspaceBranch = "aldt/initial-workspace";
-
     /// <summary>
-    /// Fills the new repository with one commit: every generated file plus the
-    /// organisation's standards, on the default branch.
+    /// Fills the new repository with the generated files and the organisation's
+    /// standards, on the default branch, and returns how many standards files
+    /// went in.
     ///
-    /// <para><strong>Why a branch is created rather than updated.</strong> An
-    /// organisation ruleset that requires a pull request applies to a
-    /// repository the moment it exists, and refuses every <em>update</em> of
-    /// the default branch - which is what the workbench used to do, leaving a
-    /// repository holding nothing but the file it had seeded (issue #811).
-    /// Creating the ref at a finished commit is not an update, so the workspace
-    /// arrives whole. It also reads better: one "Initial commit" rather than a
-    /// seed, a workspace commit and a standards commit.</para>
+    /// <para><strong>Two writes, both to the default branch.</strong> The
+    /// first is one file through the Contents API, which creates the
+    /// repository's initial commit and, with it, the default branch: a
+    /// repository created with <c>auto_init: false</c> has no commits, and the
+    /// Git Data API refuses every call on one - <c>409 Conflict: Git Repository
+    /// is empty.</c> - so blobs and trees have nothing to attach to until
+    /// something has committed. Letting GitHub auto-initialise instead would
+    /// plant a README nobody generated, which is the property the repository is
+    /// created empty to protect. The second is the whole workspace as one
+    /// commit on top of the seed, built from a tree that lists everything the
+    /// repository should end up with, and the branch is moved on to it.</para>
     ///
-    /// <para><strong>Why there is still a seed.</strong> A repository created
-    /// with <c>auto_init: false</c> has no commits, and the Git Data API
-    /// refuses every call on one - <c>409 Conflict: Git Repository is
-    /// empty.</c> - so blobs and trees have nothing to attach to. <c>PUT
-    /// /repos/{owner}/{repo}/contents/{path}</c> is the one route that works
-    /// there, because it creates the initial commit itself. It goes to
-    /// <see cref="SeedBranch"/> rather than to the default branch, so the
-    /// default branch is untouched and can be created outright afterwards.
-    /// Letting GitHub auto-initialise instead would plant a README nobody
-    /// generated, which is the property the repository is created empty to
-    /// protect.</para>
-    ///
-    /// <para><strong>Why the default branch is then set.</strong> On a
-    /// repository with no commits, the first branch to receive one becomes the
-    /// default - so after the seed the default branch is
-    /// <see cref="SeedBranch"/>, and pointing it back is a change to a
-    /// repository setting rather than to a ref.</para>
-    ///
-    /// <para><strong>Why this works, and how far that reaches.</strong> The
-    /// ruleset in issue #811 targets <c>~DEFAULT_BRANCH</c>, and from the seed
-    /// until step 4 the default branch is <see cref="SeedBranch"/> - so
-    /// creating <c>refs/heads/main</c> is not an operation on a protected
-    /// branch at all, and the default-branch switch is a repository-settings
-    /// write no branch ruleset governs. Neither step depends on the weaker
-    /// claim that creating a ref is not rule-checked. That claim is only needed
-    /// by a ruleset naming the branch outright (<c>refs/heads/main</c>) rather
-    /// than symbolically, and it has not been verified against a real
-    /// organisation - which is exactly what the fallback below covers.</para>
-    ///
-    /// <para><strong>And if GitHub refuses anyway.</strong> A rule violation on
-    /// either of those two steps falls back to a pull request inside the same
-    /// operation rather than leaving a half-filled repository behind. Both
-    /// routes are equally legitimate under the rule; the difference is only
-    /// which one needs a human to press merge.</para>
+    /// <para><strong>Why a plain update of the default branch is fine.</strong>
+    /// The GitHub App is on the bypass list of the organisation ruleset that
+    /// governs the default branch, so the installation token is exempt from its
+    /// pull-request rule. The earlier shape of this flow (issue #811) went to
+    /// great lengths to never update that branch - a throwaway seed branch, a
+    /// root commit, a ref created outright, a default-branch switch and a
+    /// pull-request fallback - and it was the default-branch switch that kept
+    /// failing. With the bypass in place none of it is needed, and a rule
+    /// violation here means the bypass is missing, which is reported as such
+    /// rather than routed around.</para>
     ///
     /// <para>See <c>.design/github-integration.md</c>, "#622 New workspace".</para>
     /// </summary>
-    private async Task<(int StandardsFileCount, GitHubWorkspaceDelivery Delivery, string? PullRequestUrl, string? DefaultBranchWarning)> FillAsync(
-        string token, GitHubRepositorySummary repository, ProjectPlan plan,
+    private async Task<int> FillAsync(
+        string token, GitHubRepositorySummary repository, string orgLogin, ProjectPlan plan,
         List<GitHubCommitFile> files, IReadOnlyList<GitHubRepositoryStandardFile> standardsFiles,
         int userId, CancellationToken ct)
     {
         var owner = repository.Owner;
         var name = repository.Name;
-        var defaultBranch = repository.DefaultBranch;
+        var branch = repository.DefaultBranch;
 
         var contents = Merge(files, standardsFiles);
         if (ChooseSeed(contents) is not { } seed)
@@ -595,7 +487,7 @@ public sealed class GitHubWorkspaceRepositoryService
             _logger.LogWarning(
                 "The '{Template}' template generated no files, so {RepoFullName} was left empty.",
                 plan.TemplateKey, repository.FullName);
-            return (0, GitHubWorkspaceDelivery.DefaultBranch, null, null);
+            return 0;
         }
 
         // Every commit names the same person: without an author the seed is
@@ -603,19 +495,12 @@ public sealed class GitHubWorkspaceRepositoryService
         // bot rather than by the consultant who asked for it.
         var author = await ResolveAuthorAsync(userId, ct);
 
-        // The seed is expected to create the branch it names, because on an
-        // empty repository there is no branch for it to land on otherwise. If
-        // that turns out not to hold, the default branch takes the seed as it
-        // used to and the pull-request route carries the rest.
-        var seedOnDefaultBranch = false;
+        string seedSha;
         try
         {
-            // Nothing needs the sha it comes back with: the tree below is built
-            // from nothing, and the pull-request route reads the branch head
-            // back from GitHub rather than trusting one computed here.
-            await _github.PutFileAsync(
-                token, owner, name, seed.Path, SeedBranch,
-                "Initial commit", seed.Content, baseSha: null, author: author, ct: ct);
+            seedSha = (await _github.PutFileAsync(
+                token, owner, name, seed.Path, branch,
+                "Initial commit", seed.Content, baseSha: null, author: author, ct: ct)).CommitSha;
         }
         catch (GitHubContentConflictException)
         {
@@ -624,22 +509,9 @@ public sealed class GitHubWorkspaceRepositoryService
             // something else got in first. Same answer as a branch that moved.
             throw RaceRefusal(repository);
         }
-        catch (GitHubApiException ex)
+        catch (GitHubApiException ex) when (ex.IsRuleViolation)
         {
-            _logger.LogWarning(
-                ex, "GitHub would not start {RepoFullName} on {Branch}; seeding {DefaultBranch} instead.",
-                repository.FullName, SeedBranch, defaultBranch);
-            seedOnDefaultBranch = true;
-            try
-            {
-                await _github.PutFileAsync(
-                    token, owner, name, seed.Path, defaultBranch,
-                    "Initial commit", seed.Content, baseSha: null, author: author, ct: ct);
-            }
-            catch (GitHubContentConflictException)
-            {
-                throw RaceRefusal(repository);
-            }
+            throw BypassRefusal(repository, orgLogin, ex);
         }
 
         var blobs = new List<(string Path, string BlobSha)>(contents.Count);
@@ -654,233 +526,53 @@ public sealed class GitHubWorkspaceRepositoryService
         // would make "exactly what we generated" an accident of what happened
         // to be there rather than a fact about the tree.
         var tree = await _github.CreateTreeAsync(token, owner, name, baseTreeSha: null, blobs, ct);
-
-        if (!seedOnDefaultBranch)
-        {
-            var root = await _github.CreateCommitAsync(
-                token, owner, name, "Initial commit", tree, parentSha: null, author: author, ct: ct);
-            var refCreated = false;
-            try
-            {
-                if (!await _github.CreateBranchAsync(token, owner, name, defaultBranch, root, ct))
-                {
-                    // The branch is already there, on a repository created
-                    // seconds ago: something else got in first.
-                    throw RaceRefusal(repository);
-                }
-                refCreated = true;
-                var defaultBranchWarning = await MakeDefaultAsync(token, repository, ct);
-
-                _logger.LogInformation(
-                    "Filled {RepoFullName} with {FileCount} file(s) in one commit on {Branch}.",
-                    repository.FullName, contents.Count, defaultBranch);
-                return (standardsFiles.Count, GitHubWorkspaceDelivery.DefaultBranch, null, defaultBranchWarning);
-            }
-            catch (GitHubApiException ex) when (ex.IsRuleViolation)
-            {
-                _logger.LogWarning(
-                    ex, "The rules on {RepoFullName} would not take the workspace on {Branch} directly; "
-                    + "opening a pull request for it instead.",
-                    repository.FullName, defaultBranch);
-                // Leave nothing half-made: whatever the pull request is built
-                // on, it must not be a default branch this attempt invented.
-                if (refCreated) await _github.DeleteBranchAsync(token, owner, name, defaultBranch, ct);
-            }
-        }
-
-        return (standardsFiles.Count, GitHubWorkspaceDelivery.PullRequest,
-            await OpenPullRequestAsync(token, repository, plan, seed, tree, author, contents.Count, ct), null);
-    }
-
-    /// <summary>
-    /// Makes the branch that now holds the workspace the repository's default
-    /// and removes the throwaway one, returning a sentence for the success
-    /// state when GitHub would not.
-    ///
-    /// <para><strong>A refusal here is a warning, not a failure.</strong> The
-    /// workspace is already whole on its branch, so throwing would report
-    /// "GitHub refused to create the repository" about a repository that
-    /// exists and is full, and skip the solution and the audit entry with it.
-    /// A rule violation is the one exception: it still goes to the caller,
-    /// whose pull-request route puts the repository in shape another way.</para>
-    /// </summary>
-    private async Task<string?> MakeDefaultAsync(
-        string token, GitHubRepositorySummary repository, CancellationToken ct)
-    {
-        var owner = repository.Owner;
-        var name = repository.Name;
-        var branch = repository.DefaultBranch;
-        try
-        {
-            await _github.SetDefaultBranchAsync(token, owner, name, branch, ct);
-        }
-        catch (GitHubApiException ex) when (!ex.IsRuleViolation)
-        {
-            // Refused is not the same as wrong: if the seed never took the
-            // default away, there was nothing to change.
-            GitHubRepositorySummary? current = null;
-            try
-            {
-                current = await _github.GetRepositoryAsync(token, owner, name, ct);
-            }
-            catch (GitHubApiException)
-            {
-            }
-
-            if (!string.Equals(current?.DefaultBranch, branch, StringComparison.Ordinal))
-            {
-                _logger.LogWarning(
-                    ex, "{RepoFullName} holds the workspace on {Branch}, but its default branch is still {Current}.",
-                    repository.FullName, branch, current?.DefaultBranch ?? "(unknown)");
-                // The throwaway branch stays: it is the default, and GitHub
-                // does not delete a default branch.
-                return $"The workspace is on {branch}, but GitHub would not make {branch} the default branch. "
-                    + $"On GitHub, open {repository.FullName} → Settings → General → Default branch, "
-                    + $"switch it to {branch}, then delete the other branch.";
-            }
-        }
-
-        await _github.DeleteBranchAsync(token, owner, name, SeedBranch, ct);
-        return null;
-    }
-
-    /// <summary>
-    /// Puts the workspace on a branch of its own and opens a pull request for
-    /// it - the route for an organisation whose rules refuse everything else
-    /// (issue #811).
-    ///
-    /// <para><strong>The repository is put in its proper shape first.</strong>
-    /// The pull request is aimed at the default branch the repository was
-    /// created with, not at whatever the seed left as the default: a customer
-    /// whose organisation took this route would otherwise be handed a
-    /// repository whose default branch is a throwaway name the workbench made up,
-    /// with no <c>main</c> and a pull request merging into the wrong thing. So
-    /// the real branch is made to exist, made the default, and the throwaway
-    /// one goes - and only then is the workspace put up for review.</para>
-    ///
-    /// <para>The branch is made with a Contents write rather than a ref
-    /// creation, because a ref creation is the operation that was just refused,
-    /// and a Contents write onto the branch is what the workbench did before this
-    /// issue - which the bug report shows this organisation's rules allow (a
-    /// <c>.gitignore</c> did land on <c>main</c>; it was the <em>update</em>
-    /// after it that was refused). A ref creation at the seed commit is tried
-    /// if that fails, and a repository that refuses both is reported rather
-    /// than left in a shape nobody can read.</para>
-    /// </summary>
-    private async Task<string> OpenPullRequestAsync(
-        string token, GitHubRepositorySummary repository, ProjectPlan plan,
-        GitHubCommitFile seed, string treeSha, GitHubCommitAuthor? author, int fileCount,
-        CancellationToken ct)
-    {
-        var owner = repository.Owner;
-        var name = repository.Name;
-        var branch = repository.DefaultBranch;
+        var commit = await _github.CreateCommitAsync(
+            token, owner, name, $"Add the {plan.WorkspaceName} workspace", tree,
+            parentSha: seedSha, author: author, ct: ct);
 
         try
         {
-            var head = await _github.GetBranchHeadShaAsync(token, owner, name, branch, ct);
-            if (head is null)
+            if (!await _github.UpdateBranchAsync(token, owner, name, branch, commit, ct))
             {
-                head = await StartDefaultBranchAsync(token, repository, seed, author, ct);
-            }
-
-            var current = await _github.GetRepositoryAsync(token, owner, name, ct);
-            if (!string.Equals(current?.DefaultBranch, branch, StringComparison.Ordinal))
-            {
-                // Seeding made the throwaway branch the default; the settings
-                // write is not governed by a branch ruleset.
-                await _github.SetDefaultBranchAsync(token, owner, name, branch, ct);
-            }
-            await _github.DeleteBranchAsync(token, owner, name, SeedBranch, ct);
-
-            var commit = await _github.CreateCommitAsync(
-                token, owner, name, $"Add the {plan.WorkspaceName} workspace", treeSha,
-                parentSha: head, author: author, ct: ct);
-            if (!await _github.CreateBranchAsync(token, owner, name, WorkspaceBranch, commit, ct))
-            {
+                // Not a fast-forward from the seed, on a repository created
+                // seconds ago: something else got in first.
                 throw RaceRefusal(repository);
             }
-
-            var pullRequest = await _github.CreatePullRequestAsync(
-                token, owner, name, $"Add the {plan.WorkspaceName} workspace",
-                WorkspaceBranch, branch,
-                $"AL Workbench generated this workspace: {fileCount} "
-                + $"{(fileCount == 1 ? "file" : "files")} for {plan.WorkspaceName}.\n\n"
-                + $"Your GitHub organisation only allows changes to {branch} through a pull request, so "
-                + "the files are here rather than committed straight to it. The workspace is in this "
-                + $"pull request, and {branch} holds only the one file the repository was started with "
-                + "until this is merged.",
-                ct);
-
-            _logger.LogInformation(
-                "Opened pull request {PullRequestUrl} with {FileCount} file(s) for {RepoFullName}, "
-                + "because {Branch} only takes changes through one.",
-                pullRequest.HtmlUrl, fileCount, repository.FullName, branch);
-            return pullRequest.HtmlUrl;
         }
-        catch (GitHubApiException ex)
+        catch (GitHubApiException ex) when (ex.IsRuleViolation)
         {
-            // Both routes refused. What is left on GitHub is one placeholder
-            // file, and the person needs the repository named so they can find
-            // it - not GitHub's wording, which they cannot act on, and not the
-            // name of a branch the workbench invented, which means nothing to
-            // them.
-            _logger.LogWarning(
-                ex, "GitHub refused the pull request holding the workspace for {RepoFullName} too.",
-                repository.FullName);
-            throw Refuse(RepositoryField,
-                $"Your GitHub organisation only allows changes to {repository.DefaultBranch} through a "
-                + "pull request, and GitHub refused the pull request AL Workbench opened as well. "
-                + $"{repository.FullName} was created but is empty apart from a single placeholder file. "
-                + "Use Download ZIP above and push the workspace yourself through a pull request, or "
-                + "delete the repository on GitHub and try again.");
+            throw BypassRefusal(repository, orgLogin, ex);
         }
+
+        _logger.LogInformation(
+            "Filled {RepoFullName} with {FileCount} file(s) on {Branch}.",
+            repository.FullName, contents.Count, branch);
+        return standardsFiles.Count;
     }
 
     /// <summary>
-    /// Brings the repository's real default branch into being on the
-    /// pull-request route, and returns the commit it points at.
-    ///
-    /// <para>Two ways round, in the order most likely to be allowed by the
-    /// rules that sent the flow here: a Contents write onto the branch, which
-    /// is how the workbench used to start a repository, and failing that a ref
-    /// creation at the commit the throwaway branch already holds.</para>
+    /// What to say when the organisation's branch rules refused a write the
+    /// workbench expected to be allowed. The one cause is the GitHub App not
+    /// being on the ruleset's bypass list, which is a setting an owner of the
+    /// GitHub organisation changes - so the message says where that setting
+    /// is, names the repository so the person can find and delete it, and
+    /// says how to try again.
     /// </summary>
-    private async Task<string> StartDefaultBranchAsync(
-        string token, GitHubRepositorySummary repository, GitHubCommitFile seed,
-        GitHubCommitAuthor? author, CancellationToken ct)
+    private PlanValidationException BypassRefusal(
+        GitHubRepositorySummary repository, string orgLogin, GitHubApiException cause)
     {
-        var owner = repository.Owner;
-        var name = repository.Name;
-        var branch = repository.DefaultBranch;
-        try
-        {
-            var written = await _github.PutFileAsync(
-                token, owner, name, seed.Path, branch,
-                "Initial commit", seed.Content, baseSha: null, author: author, ct: ct);
-            return written.CommitSha;
-        }
-        catch (Exception ex) when (ex is GitHubApiException or GitHubContentConflictException)
-        {
-            _logger.LogWarning(
-                ex, "GitHub would not start {Branch} on {RepoFullName} with a file write; "
-                + "pointing it at the commit the throwaway branch holds instead.",
-                branch, repository.FullName);
-        }
-
-        var seedHead = await _github.GetBranchHeadShaAsync(token, owner, name, SeedBranch, ct)
-            ?? throw new GitHubApiException(
-                System.Net.HttpStatusCode.NotFound,
-                "The branch the repository was started on is no longer there.");
-        if (!await _github.CreateBranchAsync(token, owner, name, branch, seedHead, ct))
-        {
-            // Somebody else made it in the meantime; whatever is on it now is
-            // what the pull request will be aimed at.
-            _logger.LogInformation(
-                "{Branch} on {RepoFullName} appeared while the workbench was making it.",
-                branch, repository.FullName);
-        }
-        return seedHead;
+        _logger.LogWarning(
+            cause, "The branch rules on {RepoFullName} refused the workspace on {Branch}; "
+            + "the GitHub App is not allowed to bypass them.",
+            repository.FullName, repository.DefaultBranch);
+        return Refuse(RepositoryField,
+            $"The branch rules in {orgLogin} would not let AL Workbench commit to "
+            + $"{repository.DefaultBranch}. An owner of {orgLogin} can fix that in the GitHub "
+            + "organisation's settings, under Repository → Rulesets: open the ruleset that covers "
+            + $"{repository.DefaultBranch} and add AL Workbench to its bypass list. "
+            + $"{repository.FullName} was created, but the workspace is not in it. Delete "
+            + $"{repository.FullName} on GitHub, then press Create repository again - or use the "
+            + "Download ZIP button and push the workspace yourself.");
     }
 
     /// <summary>
@@ -888,9 +580,8 @@ public sealed class GitHubWorkspaceRepositoryService
     /// them (issue #628): a standard at a path the generator also produced
     /// replaces it, so the organisation's standard wins over the template.
     ///
-    /// <para>One list rather than two commits since issue #811 - the whole
-    /// repository has to be described by a single commit for that commit to be
-    /// the one the default branch is created at.</para>
+    /// <para>One list rather than two commits: the workspace commit's tree is
+    /// built from nothing, so it has to describe the whole repository.</para>
     /// </summary>
     private static List<GitHubCommitFile> Merge(
         List<GitHubCommitFile> generated, IReadOnlyList<GitHubRepositoryStandardFile> standards)
@@ -916,10 +607,10 @@ public sealed class GitHubWorkspaceRepositoryService
     /// Puts the organisation's branch ruleset on the new repository (issue
     /// #628), after its files.
     ///
-    /// <para><strong>Files first, ruleset second.</strong> A ruleset that
-    /// requires a pull request would refuse a direct push to the default
-    /// branch, so creating it before the commit would block the very files it
-    /// is meant to sit alongside.</para>
+    /// <para><strong>Files first, ruleset second.</strong> A repository ruleset
+    /// has no bypass for the app unless an admin adds one, so creating it
+    /// before the commit would block the very files it is meant to sit
+    /// alongside.</para>
     ///
     /// <para><strong>A refusal is a warning.</strong> By the time this runs the
     /// repository exists and carries the workspace, so failing here would leave
@@ -968,8 +659,7 @@ public sealed class GitHubWorkspaceRepositoryService
     /// repository its first commit.
     ///
     /// <para>Chosen rather than taken at random: this file is what a repository
-    /// is left holding if everything after the seed is refused, and what the
-    /// throwaway branch shows to anybody who looks. A README is what
+    /// is left holding if everything after the seed is refused. A README is what
     /// GitHub itself would have put there, and a <c>.gitignore</c> is the next
     /// most ordinary thing to find in an initial commit - but which files a
     /// workspace has is up to the template, so the rule falls back to the first
