@@ -1,8 +1,10 @@
 # The command palette
 
-Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884) and
-the way in, the accessibility pass and the docs (#888) are built; recents and page context
-(#887) and the performance work (#889) are next.** This document is the outcome of #879.
+Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884),
+the way in, the accessibility pass and the docs (#888), the performance work (#889) and
+the first slice of more sources (#885: pipelines, release pipelines, templates, teams) are
+built; recents and page context (#887) and the rest of #885 are next.** This document is
+the outcome of #879.
 Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
@@ -122,12 +124,12 @@ keystroke opens the palette - one decision, not two that could disagree.
 Each source of results is one class implementing one contract, registered in DI. The
 palette knows none of them by name; adding a source is one class and one registration.
 This clears the "no interface until the second implementation" bar on day one - the
-first version ships five.
+first version shipped five, and #885 added four more.
 
 A source provides:
 
 - **An id and a label.** The label is its group heading: Solutions, Environments,
-  Releases, Recipes, Go to.
+  Pipelines, Release pipelines, Releases, Recipes, Templates, Teams, Go to.
 - **A gate.** The role check and feature gate its matching page already has. A caller who
   fails it never has that source asked.
 - **A search.** Query terms and a limit in; candidate rows out - kind, title, subtitle,
@@ -149,9 +151,35 @@ ranking cannot drift from source to source.
 | --- | --- | --- |
 | Solutions | name, short name; and the customer fields support types mid-call - a contact's name or company, the Voice account number, the tenant id | the Solution (its default tab, Customer) |
 | Environments | environment name; the Solution's name as subtitle and its short name as searched-only text | the environment page |
+| Pipelines | pipeline name; the Solution's name and the latest build ("Built 2 days ago", "No builds yet") as subtitle, its short name as searched-only text | the pipeline's builds |
+| Release pipelines | release pipeline name; the Solution's name and the target environment's as subtitle - with the environment's trouble when it is gone or failed, in the Releases page's words - and the Solution's short name as searched-only text | the release pipeline |
 | Releases | release label, BC version, country, and the name of the Solution whose build produced it | the release in Object Explorer |
 | Recipes | recipe title and tags | the recipe |
+| Templates | template name; its key and runtime as subtitle, and "Deprecated" when it is | the template's page |
+| Teams | team name; its member count as subtitle, led by "Your team" for one the caller is on | the team's roster |
 | Go to | tool and page names | the page |
+
+Four decisions in the #885 rows are worth their reasons:
+
+- **"Release pipelines", not the page's heading "Releases".** That word already heads
+  the Object Explorer group, and two groups under one heading say nothing about which is
+  which. The Releases page calls each of its rows a release pipeline, so the word is
+  still the page's.
+- **Every team, not only the caller's.** `/teams` lists the teams you are on, but
+  `/teams/{id}` opens any team's roster for anyone signed in - membership is not a secret
+  inside an organisation - so any team is somewhere the caller can go. The gate is the
+  sidebar's: signed in, nothing more. (#885 had guessed admins and team managers; the pages
+  decide.)
+- **Deprecated templates are offered.** The Templates list shows them, marked, and their
+  page opens; deleted ones are left out as the list leaves them out. The gate is the
+  browser's, not the admin pages'.
+- **No template modules, and no builds as rows of their own.** A module has no page to
+  land on. A build found by its number or branch needs a second row shape and a second
+  landing page; the pipeline's subtitle carries the latest build meanwhile.
+
+All four are small tables - a few rows per Solution, or per organisation - so each
+projects the rows the caller may see and lets the ranking decide, as Solutions and
+Environments do. None pre-filters with `ILIKE`.
 
 **Go to is the one that is not a DI source.** It has no database behind it and its
 whole content is decided by the caller's roles and tool toggles, so Razor renders it
@@ -226,8 +254,8 @@ term first, and that pre-filter is accent-sensitive: `møller` finds a release n
 Møller, `moller` does not. Accepted, and recorded here so the next person does not read
 it as a bug.
 
-Results are **grouped by source in a fixed order** - Solutions, Environments, Releases,
-Recipes, Go to - so a Solution and its environments do not shuffle against each other as
+Results are **grouped by source in a fixed order** - Solutions, Environments, Pipelines,
+Release pipelines, Releases, Recipes, Templates, Teams, Go to - so a Solution and its environments do not shuffle against each other as
 the user types. Within a group, best tier first, ties broken by name:
 
 1. exact match on a Solution's short name - this row alone is lifted above all groups
@@ -426,5 +454,6 @@ it is recorded in the design brief for a decision upstream.
   drifts per source.
 - Typo tolerance and initials.
 - Server-side recents, pinned items, per-user ranking.
-- From the first version: pipelines, teams, templates and docs pages as sources. Each is
-  one class, and #885 adds them once the first five have proved the contract.
+- For now: docs pages, BCQuality articles, translation memory and files, and people as
+  sources, and builds and deliveries as rows of their own. Each is one class, and the rest
+  of #885 adds them; the audit log is a "Go to" entry, never a search target.

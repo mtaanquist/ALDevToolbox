@@ -280,7 +280,7 @@ public sealed class RecipePaletteSourceTests : IDisposable
         return version.Id;
     }
 
-    private static IReadOnlyList<string> RouteTemplates() =>
+    internal static IReadOnlyList<string> RouteTemplates() =>
         typeof(HttpOrganizationContext).Assembly
             .GetTypes()
             .Where(t => typeof(IComponent).IsAssignableFrom(t) && !t.IsAbstract)
