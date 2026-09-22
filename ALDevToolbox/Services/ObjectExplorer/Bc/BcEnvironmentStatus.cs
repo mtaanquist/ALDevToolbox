@@ -86,6 +86,9 @@ public static class BcEnvironmentStatus
             "suspended" => "Suspended by Microsoft",
             "softdeleted" => Humanise(status),
             "" => "State not reported",
+            // Every documented failure ends in "Failed" (UpgradingFailed, ...); Classify
+            // already knows them, so they must not read as a state nobody recognises.
+            _ when Classify(status) == BcEnvironmentReadiness.Failed => Humanise(status),
             _ => "In a state we don't recognise",
         };
 

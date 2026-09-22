@@ -29,6 +29,10 @@ public static class PaletteRegistration
         services.AddScoped<IPaletteSource, EnvironmentPaletteSource>();
         services.AddScoped<IPaletteSource, RecipePaletteSource>();
         services.AddScoped<IPaletteSource, ReleasePaletteSource>();
+        services.AddScoped<IPaletteSource, PipelinePaletteSource>();
+        services.AddScoped<IPaletteSource, ReleasePipelinePaletteSource>();
+        services.AddScoped<IPaletteSource, TeamPaletteSource>();
+        services.AddScoped<IPaletteSource, TemplatePaletteSource>();
         services.AddScoped<IPaletteSource, PersonPaletteSource>();
         services.AddScoped<IPaletteSource, DocsPaletteSource>();
         return services;

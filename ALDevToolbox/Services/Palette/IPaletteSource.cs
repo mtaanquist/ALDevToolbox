@@ -80,8 +80,12 @@ public static class PaletteGroupOrder
 {
     public const int Solutions = 10;
     public const int Environments = 20;
+    public const int Pipelines = 23;
+    public const int ReleasePipelines = 26;
     public const int Releases = 30;
     public const int Recipes = 40;
+    public const int Templates = 50;
+    public const int Teams = 60;
     public const int People = 70;
     public const int Docs = 80;
 }
@@ -96,7 +100,8 @@ public static class PaletteGroupOrder
 /// </summary>
 /// <param name="Kind">
 /// Which <c>&lt;template data-palette-row="..."&gt;</c> the browser clones for
-/// this row: <c>solution</c>, <c>environment</c>, <c>release</c>, <c>recipe</c>.
+/// this row: <c>solution</c>, <c>environment</c>, <c>pipeline</c>,
+/// <c>release-pipeline</c>, <c>release</c>, <c>recipe</c>, <c>template</c>, <c>team</c>.
 /// An unknown kind falls back to the default template rather than failing.
 /// </param>
 /// <param name="Title">The name the user is typing — a solution's name, an environment's name.</param>
