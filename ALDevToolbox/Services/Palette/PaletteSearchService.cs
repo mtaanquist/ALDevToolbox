@@ -57,14 +57,25 @@ public sealed class PaletteSearchService
     /// request's token, so the SQL command is actually cancelled rather than
     /// abandoned to finish against a connection nobody is reading.</para>
     /// </summary>
-    public static readonly TimeSpan SourceBudget = TimeSpan.FromMilliseconds(100);
+    public static readonly TimeSpan DefaultSourceBudget = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// The slice in force for this instance. The app runs on
+    /// <see cref="DefaultSourceBudget"/>; a test that is about what a search finds
+    /// rather than how fast passes a wide one, because a CI runner under load can
+    /// hold a small query past 100 ms and the test would then be asserting on a
+    /// dropped source rather than on the search.
+    /// </summary>
+    public TimeSpan SourceBudget { get; }
 
     private readonly IReadOnlyList<IPaletteSource> _sources;
     private readonly ILogger<PaletteSearchService> _logger;
 
-    public PaletteSearchService(IEnumerable<IPaletteSource> sources, ILogger<PaletteSearchService> logger)
+    public PaletteSearchService(
+        IEnumerable<IPaletteSource> sources, ILogger<PaletteSearchService> logger, TimeSpan? sourceBudget = null)
     {
         ArgumentNullException.ThrowIfNull(sources);
+        SourceBudget = sourceBudget ?? DefaultSourceBudget;
         // Sorted once, here, so the registration order in Startup/ is never what
         // decides the order a user sees. Id breaks a tie so the order is total.
         _sources = sources

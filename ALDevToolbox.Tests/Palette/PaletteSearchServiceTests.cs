@@ -275,7 +275,7 @@ public sealed class PaletteSearchServiceTests
             Solution("Contoso Coffee"));
         var recipes = new FakePaletteSource("recipes", "Recipes", PaletteGroupOrder.Recipes);
         var service = new PaletteSearchService(
-            new[] { solutions, recipes }, factory.CreateLogger<PaletteSearchService>());
+            new[] { solutions, recipes }, factory.CreateLogger<PaletteSearchService>(), TimeSpan.FromSeconds(30));
 
         await service.SearchAsync(Caller, "contoso", CancellationToken.None);
 
