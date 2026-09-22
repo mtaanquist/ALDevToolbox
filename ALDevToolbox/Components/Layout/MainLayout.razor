@@ -61,6 +61,39 @@
                         aria-label="Open menu" title="Menu">
                     <Icon Name="menu" Width="17" Height="17" />
                 </button>
+                @* The palette's other way in. Nobody finds a hotkey by accident,
+                   and on a phone or a tablet there is no hotkey to find - so
+                   this button is the only door and has to survive every width.
+                   It narrows to the magnifier alone below the drawer
+                   breakpoint, where .cmdp-open__label goes sr-only rather than
+                   display:none: clipped text is still in the accessibility
+                   tree, so the icon-only button keeps its name.
+
+                   The key cap says Ctrl here and command-palette.js rewrites it
+                   to Cmd on a Mac - the same one decision that picks which
+                   modifier actually opens the palette, rather than a second
+                   copy of it in Razor. *@
+                <AuthorizeView>
+                    <Authorized>
+                        @* The title earns its place only at rail and phone
+                           width, where the label is clipped and a tablet with a
+                           mouse has nothing else to hover. *@
+                        <button type="button" class="cmdp-open" data-cmdp-open
+                                title="Search or jump to">
+                            <span class="cmdp-open__icon" aria-hidden="true">
+                                <Icon Name="search" Width="15" Height="15" />
+                            </span>
+                            <span class="cmdp-open__label">Search or jump to...</span>
+                            <span class="cmdp-open__keys" aria-hidden="true">
+                                <kbd class="kbd" data-cmdp-mod>Ctrl</kbd><kbd class="kbd">K</kbd>
+                            </span>
+                            @* Read out after the label, so the name is
+                               "Search or jump to..., Ctrl K". The key caps
+                               beside it are decoration and stay hidden. *@
+                            <span class="u-sr-only" data-cmdp-shortcut>, Ctrl K</span>
+                        </button>
+                    </Authorized>
+                </AuthorizeView>
             </div>
             <div class="app__top-cluster">
                 <ThemeToggle />

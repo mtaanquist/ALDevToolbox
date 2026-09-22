@@ -197,6 +197,11 @@ public static class NavDestinations
         // MCP entry that is where you connect one, and two rows carrying the same
         // three words in a different order say nothing about which is which.
         new("How to connect an assistant", "/docs/mcp", "book-open", "Docs"),
+        // The palette's own docs page. In the list as well as in the foot,
+        // because the foot is hidden at phone width - where the palette is the
+        // only way to navigate at all, so it had better be able to explain
+        // itself. Signed-in: the palette never renders for anyone else.
+        new("How search works", "/docs/search", "search", "Docs", Gate: NavGate.SignedIn),
     ];
 
     /// <summary>

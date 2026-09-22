@@ -204,6 +204,7 @@ public sealed class ContentPageTests : IDisposable
     [Theory]
     [InlineData(typeof(WhatsNextDocs))]
     [InlineData(typeof(McpDocs))]
+    [InlineData(typeof(SearchDocs))]
     public void Every_contents_link_points_at_a_heading_on_the_page(Type page)
     {
         // McpDocs reads ?client= off the URL and renders a different block per
@@ -224,6 +225,47 @@ public sealed class ContentPageTests : IDisposable
 
         targets.Should().NotBeEmpty();
         targets.Should().OnlyContain(t => ids.Contains(t));
+    }
+
+    // ---------- /docs/search ----------
+
+    /// <summary>
+    /// The palette's docs page (#888), written for someone who has never used a
+    /// command palette. Two things about it are load-bearing rather than
+    /// decorative: it has to name every group the palette can show - a group
+    /// heading the reader cannot look up is a word with no meaning - and it has
+    /// to say that nothing here changes anything, which is the question a
+    /// person asks before they will type a customer's name into a box they do
+    /// not understand.
+    /// </summary>
+    [Fact]
+    public void The_search_docs_name_every_group_the_palette_can_show()
+    {
+        Navigate("/docs/search");
+        var page = _ctx.Render<SearchDocs>();
+
+        var text = page.Find(".prose").TextContent;
+        foreach (var group in new[] { "Solutions", "Environments", "Releases", "Recipes", "Go to" })
+        {
+            text.Should().Contain(group,
+                "a group heading the reader cannot look up is a word with no meaning");
+        }
+
+        text.Should().Contain("Voice account number").And.Contain("tenant ID",
+            "these are the fields support types mid-call, and the page is where "
+            + "someone learns they can");
+        text.Should().Contain("Ctrl").And.Contain("Cmd").And.Contain("Esc");
+    }
+
+    [Fact]
+    public void The_search_docs_promise_that_nothing_is_changed()
+    {
+        Navigate("/docs/search");
+        var page = _ctx.Render<SearchDocs>();
+
+        page.Find(".prose").TextContent.Should().Contain("changes anything",
+            "no palette result ever writes to a customer's tenant, and the person "
+            + "deciding whether to trust the box is the one who needs to know");
     }
 
     // ---------- /not-found ----------

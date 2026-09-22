@@ -57,6 +57,13 @@
 
     function root() { return document.getElementById("cmdp"); }
     function list() { return document.getElementById("cmdp-list"); }
+    function live() { return document.getElementById("cmdp-live"); }
+
+    /** The one other thing in the dialog that can hold focus. @returns {HTMLElement|null} */
+    function closeButton() {
+        const el = document.querySelector("#cmdp .cmdp__close");
+        return el instanceof HTMLElement ? el : null;
+    }
 
     /** @returns {HTMLInputElement|null} */
     function input() {
@@ -204,14 +211,25 @@
 
     // -------------------------------------------------------------- drawing
 
-    /** @param {DocumentFragment} into @param {string} label */
+    /**
+     * Starts a group and returns the node its rows belong in. The rows go
+     * *inside* a role="group" rather than after a loose heading, because a
+     * listbox may only own options and groups - and because the grouping is
+     * the difference between "Contoso" the Solution and "Contoso" the
+     * environment, which is worth hearing as well as seeing.
+     * @param {DocumentFragment|HTMLElement} into @param {string} label
+     * @returns {DocumentFragment|HTMLElement} where to append this group's rows
+     */
     function appendGroup(into, label) {
         const tpl = template("template[data-palette-group]");
-        if (!tpl) return;
+        if (!tpl) return into;
         const node = /** @type {DocumentFragment} */ (tpl.content.cloneNode(true));
         const heading = node.querySelector(".cmdp__group");
         if (heading) heading.textContent = label;
+        const group = node.querySelector(".cmdp__group-wrap");
+        if (group instanceof HTMLElement) group.setAttribute("aria-label", label);
         into.appendChild(node);
+        return group instanceof HTMLElement ? group : into;
     }
 
     /** @param {string} kind @param {string} query @returns {DocumentFragment|null} */
@@ -268,7 +286,7 @@
         if (serverResults) {
             if (serverResults.top) {
                 const row = resultRow(serverResults.top);
-                if (row) { appendGroup(frag, "Best match"); frag.appendChild(row); rowCount++; }
+                if (row) { appendGroup(frag, "Best match").appendChild(row); rowCount++; }
             }
             const groups = serverResults.groups || [];
             for (let g = 0; g < groups.length; g++) {
@@ -280,26 +298,27 @@
                     if (row) built.push(row);
                 }
                 if (built.length === 0) continue;
-                appendGroup(frag, (group && group.label) || "Results");
-                for (let i = 0; i < built.length; i++) { frag.appendChild(built[i]); rowCount++; }
+                const into = appendGroup(frag, (group && group.label) || "Results");
+                for (let i = 0; i < built.length; i++) { into.appendChild(built[i]); rowCount++; }
             }
         }
 
         if (!query) {
             const recents = recentDestinations();
             if (recents.length > 0) {
-                appendGroup(frag, "Recent");
-                for (let i = 0; i < recents.length; i++) { frag.appendChild(recents[i]); rowCount++; }
+                const into = appendGroup(frag, "Recent");
+                for (let i = 0; i < recents.length; i++) { into.appendChild(recents[i]); rowCount++; }
             }
         }
 
         const matched = matchDestinations(query);
         if (matched.length > 0) {
-            appendGroup(frag, "Go to");
-            for (let i = 0; i < matched.length; i++) { frag.appendChild(matched[i]); rowCount++; }
+            const into = appendGroup(frag, "Go to");
+            for (let i = 0; i < matched.length; i++) { into.appendChild(matched[i]); rowCount++; }
         }
 
-        if (rowCount === 0) {
+        const empty = rowCount === 0;
+        if (empty) {
             // When the search is down we have already said so; "nothing matches"
             // on top of it would be a second sentence about the same silence.
             if (serverState === "ok") {
@@ -307,10 +326,36 @@
                 if (block) frag.appendChild(block);
             }
             const closest = closestDestination(query);
-            if (closest) { appendGroup(frag, "Go to"); frag.appendChild(closest); }
+            if (closest) appendGroup(frag, "Go to").appendChild(closest);
         }
 
         container.appendChild(frag);
+        announce(query, rowCount, empty);
+    }
+
+    /**
+     * What a screen reader is told after a re-draw. Following
+     * aria-activedescendant it hears the selected row and nothing else, so the
+     * two sentences that *replace* the rows would otherwise land in silence,
+     * and so would "seven results" when the list refills under a stationary
+     * cursor. An empty query says nothing: the list is then the page index the
+     * input's own label already described.
+     * @param {string} query @param {number} rowCount @param {boolean} empty
+     */
+    function announce(query, rowCount, empty) {
+        const region = live();
+        if (!region) return;
+
+        let message = "";
+        if (serverState === "unavailable") {
+            message = "Search is not available right now. You can still go to any page.";
+        } else if (empty && query) {
+            message = 'No search results for "' + query + '".';
+        } else if (query) {
+            message = rowCount === 1 ? "1 result." : rowCount + " results.";
+        }
+
+        if (region.textContent !== message) region.textContent = message;
     }
 
     /** Re-draw, keeping the user's place: the row that was selected stays
@@ -394,6 +439,11 @@
             field.setAttribute("aria-expanded", "false");
             field.removeAttribute("aria-activedescendant");
         }
+        // Emptied rather than left holding the last count: the next open starts
+        // on an empty query, which says nothing, and a stale sentence would be
+        // read out the moment anything else touched the region.
+        const region = live();
+        if (region) region.textContent = "";
         if (el instanceof HTMLElement) el.hidden = true;
         activeIndex = -1;
 
@@ -422,6 +472,34 @@
         const platform = (agent.userAgentData && agent.userAgentData.platform)
             || navigator.platform || navigator.userAgent || "";
         return /mac|iphone|ipad|ipod/i.test(platform);
+    }
+
+    /**
+     * Teaches the top bar's button which modifier this machine uses. Razor
+     * renders "Ctrl" because the server cannot know, and the decision itself
+     * lives in isMac() above - the same one line that decides which keystroke
+     * actually opens the palette, rather than a second copy of it in markup
+     * that could disagree.
+     *
+     * The spoken half is a separate, clipped span: the key caps are decoration
+     * (aria-hidden), so without it the button's name would be "Search or jump
+     * to..." and the shortcut would be the one thing a screen-reader user never
+     * heard.
+     */
+    function applyShortcutLabels() {
+        const mac = isMac();
+        const mod = mac ? "Cmd" : "Ctrl";
+
+        const caps = document.querySelectorAll("[data-cmdp-mod]");
+        for (let i = 0; i < caps.length; i++) caps[i].textContent = mod;
+
+        const spoken = document.querySelectorAll("[data-cmdp-shortcut]");
+        for (let i = 0; i < spoken.length; i++) spoken[i].textContent = ", " + mod + " K";
+
+        const openers = document.querySelectorAll("[data-cmdp-open]");
+        for (let i = 0; i < openers.length; i++) {
+            openers[i].setAttribute("aria-keyshortcuts", mac ? "Meta+K" : "Control+K");
+        }
     }
 
     // -------------------------------------------------------------- search
@@ -512,12 +590,16 @@
         if (e.key === "End") { e.preventDefault(); select(rows.length - 1); return; }
 
         if (e.key === "Tab") {
-            // There is one focusable thing in here and it already has focus.
-            // Without this, Tab walks into the page behind the scrim, where
-            // nothing is visible and nothing says where the cursor went.
-            e.preventDefault();
+            // Two things in here can hold focus: the input and Close. Tab
+            // cycles between them and never leaves, because outside the scrim
+            // nothing is visible and nothing says where the cursor went. With
+            // only two stops, forwards and backwards are the same move.
             const field = input();
-            if (field) field.focus();
+            if (!field) return;
+            e.preventDefault();
+            const closer = closeButton();
+            const target = closer && document.activeElement !== closer ? closer : field;
+            target.focus();
             return;
         }
 
@@ -559,11 +641,31 @@
         const target = e.target;
         if (!(target instanceof Element)) return;
 
+        // The opener is outside .cmdp, so the last rule here would read a click
+        // on it as a click on the page behind and close what it just opened.
+        // The listener below owns that button.
+        if (target.closest("[data-cmdp-open]")) return;
+
         if (target.closest("[data-cmdp-close]")) { e.preventDefault(); close(); return; }
         // A row is a real link: let the browser (and Blazor's enhanced
         // navigation) follow it, and just get out of the way.
         if (target.closest(".cmdp-row")) { close(); return; }
         if (!target.closest(".cmdp")) close();
+    });
+
+    // The top bar's way in, and on a phone or a tablet the only one. It runs
+    // the same open() the hotkey does - one code path, so the two can never
+    // disagree about what "open" means. Registered after the handler above so
+    // that handler has already declined the click.
+    document.addEventListener("click", function (e) {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        if (!target.closest("[data-cmdp-open]")) return;
+
+        e.preventDefault();
+        if (isOpen()) { close(); return; }
+        if (!root() || otherOverlayIsOpen()) return;
+        open();
     });
 
     // Enhanced navigation patches the layout, which replaces the palette with a
@@ -576,5 +678,9 @@
         lastFocused = null;
         serverResults = null;
         serverState = "ok";
+        applyShortcutLabels();
     });
+
+    // The scripts sit at the end of <body>, so the top bar is already parsed.
+    applyShortcutLabels();
 })();

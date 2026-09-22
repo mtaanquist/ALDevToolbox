@@ -37,6 +37,7 @@ public sealed class NavCatalogueParityTests
         {
             ["/account"] = "the top bar's user button, which the sidebar has no counterpart for",
             ["/docs/mcp"] = "linked from the MCP page and from the sign-in footer, not from the sidebar",
+            ["/docs/search"] = "linked from the palette's own footer, which is hidden at phone width",
         };
 
     [Fact]

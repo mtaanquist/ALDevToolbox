@@ -1,7 +1,8 @@
 # The command palette
 
-Status: **the shell (#880) and the search backbone (#881) are built; the sources that
-give it something to find (#882-#884) are next.** This document is the outcome of #879.
+Status: **the shell (#880), the search backbone (#881), the first sources (#882-#884) and
+the way in, the accessibility pass and the docs (#888) are built; recents and page context
+(#887) and the performance work (#889) are next.** This document is the outcome of #879.
 Every decision below was made with the maintainer on 2026-09-21.
 
 ## Why
@@ -94,8 +95,27 @@ emitted.
 - Pressing it while the palette is open closes it. Esc closes it. Focus returns to
   whatever had it.
 
-The second way in, for people without the habit or the keyboard, is a visible "Search or
-jump to..." control in the top bar showing the shortcut (#888).
+## The other way in
+
+Nobody finds a hotkey by accident, and on a phone or a tablet there is no hotkey to
+find - so the palette also has a visible control in the top bar, and that control is
+the only door at phone width.
+
+It is drawn as the search field it stands in for, sitting left in `.app__top`: a
+magnifier, "Search or jump to...", and the shortcut as key caps. Clicking it runs the
+same `open()` the hotkey does, so the two cannot drift. It narrows with the shell -
+the key caps go at rail width, where a tablet has no keyboard to hint at, and below the
+drawer breakpoint it is the magnifier alone. The label is *clipped* there rather than
+removed, so the icon-only button still announces as "Search or jump to..., Ctrl K".
+
+`shell.css` is byte-locked and has no slot for it, so its styles live in
+`MainLayout.razor.css`; scoped is safe here because this is the one part of the palette
+Razor renders in place rather than the script cloning. The pattern goes upstream -
+`.design/handoff/briefs/2026-09-command-palette.md` is the brief.
+
+Razor renders "Ctrl", because the server cannot know what the person is typing on. The
+script rewrites it to "Cmd" on a Mac, from the same `isMac()` that decides which
+keystroke opens the palette - one decision, not two that could disagree.
 
 ## Sources
 
@@ -261,9 +281,48 @@ says "no search results" rather than "nothing matches": something below it plain
 While a request is in flight the previous results stay put - no spinner flicker on every
 keystroke, and the selected row keeps its place when the new ones arrive.
 
-Keyboard: Up/Down move, Enter opens, Ctrl/Cmd+Enter opens in a new tab, Esc closes. The
-dialog is a labelled `role="dialog"` with a combobox/listbox pattern, focus is trapped
-while it is open, and the selected row is announced (#888).
+Keyboard: Up/Down move, Home/End jump to the ends, Enter opens, Ctrl/Cmd+Enter opens in a
+new tab, Esc closes and puts focus back where it was.
+
+The foot carries those hints and **at most one thing that is not a hint**: a link to
+`/docs/search`, which explains what the palette finds, in the words someone who has never
+used one would use. The foot is hidden at phone width, which is why that page is also in
+the "Go to" list rather than only here.
+
+### What a screen reader gets
+
+The dialog is a labelled `role="dialog"`, the input is a `role="combobox"` with
+`aria-expanded` / `aria-controls` / `aria-activedescendant`, and the list is a
+`role="listbox"` of `role="option"` rows. Three things make that actually work rather
+than merely validate:
+
+- **Groups are groups.** A heading dropped loose into a listbox is not something a
+  listbox may own, and the grouping - which is the difference between "Contoso" the
+  Solution and "Contoso" the environment - would be invisible. Each group's rows sit
+  inside a `role="group"` carrying the label; the visible heading is `aria-hidden` so it
+  is not read twice.
+- **The two replacing states are spoken.** Following `aria-activedescendant` a reader
+  hears the selected row and nothing else, so "No search results" and "Search is not
+  available" - which replace the rows rather than being one - would land in silence. A
+  permanent visually-hidden `role="status"` in the dialog carries them, and the result
+  count when a query is present. It is in the page before it ever has text, which is what
+  makes an announcement fire at all.
+- **Focus stays inside, and there are two stops.** The input and the Close button; Tab
+  cycles between them. The input suppresses its own ring and the panel draws one instead,
+  so the borderless box still shows focus.
+
+Contrast was measured against `tokens.css` rather than judged: the group heading, the
+foot and the input's placeholder moved from `--ink-4` to `--ink-3`, because at 11-12px
+they are small text and `--ink-4` measures 3.75-4.23:1 in the two themes. The subtitle was
+already `--ink-3` (5.85:1 / 6.57:1) and stands. Motion needs nothing: the palette has no
+transition of its own, and `tokens.css` already neutralises the app's under
+`prefers-reduced-motion`.
+
+The one thing left failing is **not the palette's**: the selected row's `--primary`
+keyline is 2.45:1 against `--surface` in light, under the 3:1 WCAG asks of a state
+indicator - and it is the system's own selection keyline, shared with the sidebar's active
+item, `.data-table` and `.run-row`. Diverging in one sheet would be worse than the defect;
+it is recorded in the design brief for a decision upstream.
 
 ## Deliberately left out
 
