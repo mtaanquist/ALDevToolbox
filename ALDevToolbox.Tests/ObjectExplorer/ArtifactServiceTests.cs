@@ -28,9 +28,10 @@ public sealed class ArtifactServiceTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             projectId = await SeedProjectAsync(ctx, "CRONUS A/S", shortName: "CRO");
+            var pipelineId = await SeedPipelineAsync(ctx, projectId);
             // An older successful build, then a newer failed one.
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc), bcVersion: "26.0", artifactCount: 2);
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 2, 9, 0, 0, DateTimeKind.Utc));
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc), bcVersion: "26.0", artifactCount: 2, pipelineId: pipelineId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 2, 9, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
         }
 
         await using var read = _db.NewContext();
@@ -46,12 +47,55 @@ public sealed class ArtifactServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListProjectsAsync_shows_no_build_status_for_a_solution_without_a_pipeline()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            // What a repository attached to a solution with no pipeline collects:
+            // pull-request builds the GitHub App started, which can fail for
+            // reasons that have nothing to do with the solution (superseded by a
+            // newer push, nothing to compile yet). None of them is a pipeline
+            // build, so none of them is the row's status.
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, DateTime.UtcNow.AddMinutes(-2));
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow.AddMinutes(-1), artifactCount: 1);
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+
+        row.Latest.Should().BeNull("a solution without a pipeline has no build status");
+        row.LatestSuccessfulBuildId.Should().BeNull("nor anything to download as its build");
+    }
+
+    [Fact]
+    public async Task ListProjectsAsync_ignores_pull_request_builds_beside_a_pipelines_own()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            var pipelineId = await SeedPipelineAsync(ctx, projectId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow.AddMinutes(-2), bcVersion: "26.0", pipelineId: pipelineId);
+            // Newer, but not the pipeline's: a failed pull-request build must not
+            // turn the row red.
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, DateTime.UtcNow.AddMinutes(-1));
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+
+        row.Latest!.Status.Should().Be(ProjectBuildStatus.Ready);
+        row.Latest.BcVersion.Should().Be("26.0");
+    }
+
+    [Fact]
     public async Task ListProjectsAsync_includes_the_latest_build_branch_and_representative_commit()
     {
         await using (var ctx = _db.NewContext())
         {
             var projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core", "trade" });
-            var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main");
+            var pipelineId = await SeedPipelineAsync(ctx, projectId);
+            var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main", pipelineId: pipelineId);
             // Two repos: the cell shows the first by display name ("core"), shortened to 7 chars.
             ctx.OeProjectBuildRepoCommits.AddRange(
                 new OeProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "trade", CommitHash = "9999999bbb" },

@@ -443,104 +443,51 @@
                 {
                     <Alert Tone="AlertTone.Success">
                         <span class="u-stack">
-                            @* Two ways this can have gone: straight onto the
-                               default branch, or into a pull request when the
-                               organisation only takes changes there that way
-                               (#811). Both are a success; they ask the person
-                               to do different things next. *@
-                            @if (_createdRepo.Delivery == GitHubWorkspaceDelivery.PullRequest)
-                            {
-                                <span>
-                                    <strong>@_createdRepo.Repository.FullName</strong> is ready.
-                                    Your organisation only allows changes to
-                                    <code class="code">@_createdRepo.Repository.DefaultBranch</code>
-                                    through a pull request, so the @_createdRepo.FileCount workspace
-                                    @(_createdRepo.FileCount == 1 ? "file is" : "files are") waiting in a
-                                    pull request instead. Review and merge it to put the files on
-                                    <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
-                                    @if (_createdRepo.StandardsFileCount > 0)
-                                    {
-                                        <text>
-                                            The files every new repository here starts with are in the
-                                            pull request too, and your organisation's branch rules are
-                                            already set on the repository.
-                                        </text>
-                                    }
-                                </span>
-                            }
-                            else
-                            {
-                                <span>
-                                    <strong>@_createdRepo.Repository.FullName</strong> is ready, with
-                                    @_createdRepo.FileCount @(_createdRepo.FileCount == 1 ? "file" : "files")
-                                    committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
-                                    @if (_createdRepo.StandardsFileCount > 0)
-                                    {
-                                        @* Worded to match what the card
-                                           promised before the button was
-                                           pressed. A bare count of
-                                           "standard files" names
-                                           something this page never
-                                           defined. *@
-                                        <text>
-                                            Your organisation's standard files and branch rules
-                                            were added too.
-                                        </text>
-                                    }
-                                </span>
-                            }
+                            <span>
+                                <strong>@_createdRepo.Repository.FullName</strong> is ready, with
+                                @_createdRepo.FileCount @(_createdRepo.FileCount == 1 ? "file" : "files")
+                                committed to <code class="code">@_createdRepo.Repository.DefaultBranch</code>.
+                                @if (_createdRepo.StandardsFileCount > 0)
+                                {
+                                    @* Worded to match what the card
+                                       promised before the button was
+                                       pressed. A bare count of
+                                       "standard files" names
+                                       something this page never
+                                       defined. *@
+                                    <text>
+                                        Your organisation's standard files and branch rules
+                                        were added too.
+                                    </text>
+                                }
+                            </span>
                             @* The things a consultant does next, side by
                                side. All outline buttons - Download ZIP is
                                still the page's one primary action (#812). *@
                             <span class="ws-repo-actions">
-                                @if (_createdRepo.PullRequestUrl is { Length: > 0 } pullRequestUrl)
-                                {
-                                    @* First, because it is the one thing left
-                                       to do: nothing reaches the branch until
-                                       somebody merges it (#811). *@
-                                    <a class="btn" href="@pullRequestUrl"
-                                       target="_blank" rel="noopener">
-                                        <Icon Name="git-pull-request" Width="15" Height="15" />
-                                        <span>Open the pull request</span>
-                                        <span class="u-sr">(opens in a new tab)</span>
-                                    </a>
-                                }
                                 <a class="btn" href="@_createdRepo.Repository.HtmlUrl"
                                    target="_blank" rel="noopener">
                                     <Icon Name="external-link" Width="15" Height="15" />
                                     <span>Open it on GitHub</span>
                                     <span class="u-sr">(opens in a new tab)</span>
                                 </a>
-                                @if (_createdRepo.Delivery != GitHubWorkspaceDelivery.PullRequest)
-                                {
-                                    @* VS Code's own URL handler: it opens
-                                       VS Code and starts its clone flow.
-                                       Nothing happens on a machine without
-                                       VS Code, which is why the command
-                                       below stays on the card. *@
-                                    <a class="btn" href="@VsCodeCloneUrl(_createdRepo.Repository.CloneUrl)">
-                                        <Icon Name="code" Width="15" Height="15" />
-                                        <span>Clone in VS Code</span>
-                                    </a>
-                                }
+                                @* VS Code's own URL handler: it opens
+                                   VS Code and starts its clone flow.
+                                   Nothing happens on a machine without
+                                   VS Code, which is why the command
+                                   below stays on the card. *@
+                                <a class="btn" href="@VsCodeCloneUrl(_createdRepo.Repository.CloneUrl)">
+                                    <Icon Name="code" Width="15" Height="15" />
+                                    <span>Clone in VS Code</span>
+                                </a>
                             </span>
-                            @if (_createdRepo.Delivery == GitHubWorkspaceDelivery.PullRequest)
-                            {
-                                @* Cloning now would hand them a folder with one
-                                   placeholder file in it, so neither the VS Code
-                                   link nor the clone command belongs here yet. *@
-                                <span>You can clone it once the pull request is merged.</span>
-                            }
-                            else
-                            {
-                                @* A click that opens nothing is the worst
-                                   outcome here, so say what to expect and
-                                   point at the way out of it. *@
-                                <small class="field__hint">
-                                    Your browser will ask to open VS Code. If nothing happens,
-                                    use the command below.
-                                </small>
-                            }
+                            @* A click that opens nothing is the worst
+                               outcome here, so say what to expect and
+                               point at the way out of it. *@
+                            <small class="field__hint">
+                                Your browser will ask to open VS Code. If nothing happens,
+                                use the command below.
+                            </small>
                             @* Where the customer now lives, so the
                                consultant can go straight on to
                                builds and pipelines (#759). *@
@@ -551,31 +498,20 @@
                                     <a href="@($"/solutions/{solutionId}")">@_createdRepo.SolutionName</a>.
                                 </span>
                             }
-                            @if (_createdRepo.Delivery != GitHubWorkspaceDelivery.PullRequest)
-                            {
-                                @* The fallback for a machine without VS
-                                   Code, and for anyone who would rather
-                                   type it. Copy button wired the same
-                                   way the docs pages wire theirs - one
-                                   delegated listener in
-                                   copy-to-clipboard.js, loaded in the
-                                   shell, so this needs no interop. *@
-                                <span class="ws-repo-clone">
-                                    <span class="ws-repo-clone__label">Or clone it yourself:</span>
-                                    <code class="code" id="ws-repo-clone-command">git clone @_createdRepo.Repository.CloneUrl</code>
-                                    <CopyButton Target="#ws-repo-clone-command" />
-                                </span>
-                            }
+                            @* The fallback for a machine without VS
+                               Code, and for anyone who would rather
+                               type it. Copy button wired the same
+                               way the docs pages wire theirs - one
+                               delegated listener in
+                               copy-to-clipboard.js, loaded in the
+                               shell, so this needs no interop. *@
+                            <span class="ws-repo-clone">
+                                <span class="ws-repo-clone__label">Or clone it yourself:</span>
+                                <code class="code" id="ws-repo-clone-command">git clone @_createdRepo.Repository.CloneUrl</code>
+                                <CopyButton Target="#ws-repo-clone-command" />
+                            </span>
                         </span>
                     </Alert>
-                    @if (!string.IsNullOrEmpty(_createdRepo.DefaultBranchWarning))
-                    {
-                        @* The repository is there and holds the files; only
-                           a setting on GitHub is left to change by hand. *@
-                        <Alert Tone="AlertTone.Warn">
-                            <span>@_createdRepo.DefaultBranchWarning</span>
-                        </Alert>
-                    }
                     @if (!string.IsNullOrEmpty(_createdRepo.SolutionWarning))
                     {
                         @* The repository is there and holds the files;
