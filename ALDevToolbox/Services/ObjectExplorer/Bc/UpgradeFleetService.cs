@@ -340,6 +340,16 @@ public sealed record UpgradeFleetRow(
         ? $"https://businesscentral.dynamics.com/{tenant:D}/{Uri.EscapeDataString(EnvironmentName)}"
         : null;
 
+    /// <summary>
+    /// The customer tenant's Business Central admin centre, or null when the tenant is not
+    /// known. Microsoft has no deep link to one environment's page in it. Read by the
+    /// environment page's header and by the command palette's context block, which must
+    /// offer the link exactly when the page does.
+    /// </summary>
+    public string? AdminCentreUrl => TenantId is { } tenant
+        ? $"https://businesscentral.dynamics.com/{tenant:D}/admin"
+        : null;
+
     /// <summary>True for a Production environment — the one the sweep is really about.</summary>
     public bool IsProduction =>
         string.Equals(EnvironmentType, "Production", StringComparison.OrdinalIgnoreCase);

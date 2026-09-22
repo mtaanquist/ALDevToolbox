@@ -212,11 +212,33 @@
 
 .cmdp__foot .kbd-hint__label { color: var(--ink-3); }
 
-/* Last in the row and pushed to the end: someone already typing does not need
-   it, and someone who opened this by accident does. */
-.cmdp__foot-link {
+/* The foot's two controls, pushed together to the end of the row: someone
+   already typing needs neither, and someone who opened this by accident wants
+   the link. */
+.cmdp__foot-end {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
     margin-left: auto;
+}
+
+.cmdp__foot-link { color: var(--primary-ink); }
+
+/* Clear recents: a quiet text button, the same size and ink as the link beside
+   it so the foot keeps one voice. It is a button, not a link - it goes nowhere. */
+.cmdp__foot-btn {
+    padding: 0;
+    border: 0;
+    background: none;
     color: var(--primary-ink);
+    font: inherit;
+    cursor: pointer;
+}
+.cmdp__foot-btn[hidden] { display: none; }
+.cmdp__foot-btn:hover, .cmdp__foot-link:hover { text-decoration: underline; }
+.cmdp__foot-btn:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
 }
 
 /* On a phone the palette is the screen: the scrim has no room to be a hint

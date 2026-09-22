@@ -1,0 +1,29 @@
+@using ALDevToolbox.Services.Palette
+
+@*
+    How a page tells the command palette what it is about. One hidden element,
+    rendered by the page itself, that wwwroot/command-palette.js looks up each
+    time the palette opens - so it is right after an enhanced navigation (the
+    page's DOM is swapped, and the lookup happens after) and on a static page
+    alike, and the palette never has to read the address to work it out.
+
+    data-palette-context is handed to GET /palette/context verbatim; only the
+    server reads it. data-palette-href is the record's own page, which the
+    script remembers as a visit and leaves out of Recent while you are on it.
+    See .design/command-palette.md, "Where you are".
+
+    Rendered from the route parameter, not from the loaded record: a page for a
+    record the caller cannot open still says what it is, and the server answers
+    that with no context at all.
+*@
+<span hidden data-palette-context="@_reference.ToString()" data-palette-href="@_reference.Href"></span>
+
+@code {
+    [Parameter, EditorRequired] public PaletteContextKind Kind { get; set; }
+
+    [Parameter, EditorRequired] public int Id { get; set; }
+
+    private PaletteContextRef _reference;
+
+    protected override void OnParametersSet() => _reference = new PaletteContextRef(Kind, Id);
+}
