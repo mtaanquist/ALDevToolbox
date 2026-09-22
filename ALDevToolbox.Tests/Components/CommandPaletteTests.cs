@@ -91,6 +91,110 @@ public sealed class CommandPaletteTests : IDisposable
         return hrefs;
     }
 
+    /// <summary>
+    /// The Commands rows rendered for whoever is signed in: each one's link, or
+    /// for an act command its action, keyed by label.
+    /// </summary>
+    private Dictionary<string, IElement> CommandRows()
+    {
+        var cut = _ctx.Render<CommandPalette>();
+        Dictionary<string, IElement> rows = [];
+        cut.WaitForAssertion(() =>
+        {
+            var node = cut.Find("#cmdp-commands");
+            var scope = node is IHtmlTemplateElement template ? (IParentNode)template.Content : node;
+            rows = scope.QuerySelectorAll("a.cmdp-row")
+                .ToDictionary(a => a.GetAttribute("data-title") ?? string.Empty);
+            rows.Should().NotBeEmpty("everyone signed in can at least change the theme and sign out");
+        });
+        return rows;
+    }
+
+    [Fact]
+    public void A_plain_user_gets_the_everyday_commands_and_none_of_the_admin_ones()
+    {
+        _auth.SetAuthorized("user@example.com");
+
+        var rows = CommandRows();
+
+        rows.Keys.Should().Contain(["New solution", "New workspace", "New extension", "Suggest a recipe",
+            "Copy link to this page", "Dark theme", "Repository access", "Sign out"]);
+        rows.Keys.Should().NotContain("Import a Business Central release", "importing releases is an Editor's and an Admin's job");
+        rows.Keys.Should().NotContain("Business Central app registration",
+            "the organisation's app registration is an Admin setting");
+        rows["New solution"].GetAttribute("href").Should().Be("/solutions/new");
+        rows["Sign out"].HasAttribute("href").Should().BeFalse(
+            "an act command is not a link: Enter runs it rather than navigating");
+        rows["Sign out"].GetAttribute("data-command-action").Should().Be("sign-out");
+    }
+
+    [Fact]
+    public void An_org_admin_gets_the_admin_commands_too()
+    {
+        _auth.SetAuthorized("admin@example.com");
+        _auth.SetRoles("Admin");
+        _orgCtx.IsSystemOrganization = false;
+
+        var rows = CommandRows();
+
+        rows["Import a Business Central release"].GetAttribute("href").Should().Be("/admin/object-explorer/new");
+        rows["Business Central app registration"].GetAttribute("href")
+            .Should().Be("/admin/administration/business-central");
+    }
+
+    [Fact]
+    public void An_editor_can_import_a_release_but_not_reach_the_app_registration()
+    {
+        _auth.SetAuthorized("editor@example.com");
+        _auth.SetRoles("Editor");
+        _orgCtx.IsSystemOrganization = false;
+
+        var rows = CommandRows();
+
+        rows.Keys.Should().Contain("Import a Business Central release");
+        rows.Keys.Should().NotContain("Business Central app registration");
+    }
+
+    [Fact]
+    public void A_create_command_goes_with_its_tool()
+    {
+        _auth.SetAuthorized("user@example.com");
+        _tools.Disabled.Add(ToolKey.Projects);
+
+        var rows = CommandRows();
+
+        rows.Keys.Should().NotContain("New solution",
+            "with Solutions switched off the form it opens would answer 404");
+        rows.Keys.Should().Contain("New workspace");
+    }
+
+    /// <summary>
+    /// Refresh is rendered for everyone and offered by the script only on a page
+    /// whose own Refresh button carries <c>data-page-refresh</c>; the theme rows
+    /// carry their hidden "Current" line, and Copy link its "Copied" one, so the
+    /// script swaps copy Razor wrote rather than writing its own.
+    /// </summary>
+    [Fact]
+    public void The_act_commands_carry_what_the_script_needs_to_run_them()
+    {
+        _auth.SetAuthorized("user@example.com");
+
+        var rows = CommandRows();
+
+        rows["Refresh"].GetAttribute("data-command-action").Should().Be("refresh");
+        rows.Where(r => r.Value.HasAttribute("data-cmdp-on-open")).Select(r => r.Key).Should()
+            .BeEquivalentTo(["New solution", "Copy link to this page", "Refresh"],
+                "the rest wait for a word, so the pages in Go to stay in view on an empty query "
+                + "- and Sign out is never one Enter away from opening the box");
+        var current = rows["Dark theme"].QuerySelector("[data-cmdp-sub-current]");
+        current.Should().NotBeNull();
+        current!.HasAttribute("hidden").Should().BeTrue();
+        current.TextContent.Should().Be("Current");
+        rows["Copy link to this page"].QuerySelector("[data-cmdp-sub-done]")!.TextContent.Should().Be("Copied");
+        rows.Values.Select(r => r.GetAttribute("data-command-action")).Where(a => a is not null)
+            .Should().OnlyContain(a => ALDevToolbox.Domain.Navigation.PaletteCommands.Actions.Contains(a!));
+    }
+
     [Fact]
     public void Nothing_renders_for_an_anonymous_visitor()
     {

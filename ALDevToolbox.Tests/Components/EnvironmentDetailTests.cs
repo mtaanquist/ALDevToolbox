@@ -715,6 +715,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         _admin.Reads.Should().Be(1);
         cut.Markup.Should().Contain("Sessions read from Business Central",
             "the freshness strip says which half of the page this is");
+        cut.Find(".freshness button").HasAttribute("data-page-refresh").Should().BeTrue(
+            "the command palette offers Refresh only on a page whose Refresh button carries the mark");
     }
 
     /// <summary>
@@ -1030,6 +1032,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         cut.FindAll(".alert--warn").Should().BeEmpty();
         cut.FindAll(".freshness button").Should().BeEmpty(
             "a forced re-read spends the customer's connection, which this person may not do");
+        cut.FindAll("[data-page-refresh]").Should().BeEmpty(
+            "with no button to press, the command palette must not offer Refresh either");
     }
 
     /// <summary>
