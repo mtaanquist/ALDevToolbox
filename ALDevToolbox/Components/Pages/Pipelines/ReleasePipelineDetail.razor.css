@@ -105,6 +105,8 @@
 .rp-rel__cell { font-size: var(--text-sm); color: var(--ink-2); }
 .rp-rel__took { text-align: right; }
 .rp-rel__acts { display: flex; justify-content: flex-end; gap: var(--space-2); }
+/* A release that used Force sync once, while the pipeline stays on Add (#931). */
+.rp-rel__force { color: var(--warning-text); }
 
 .rp-rel__detail {
     display: grid;
@@ -158,6 +160,8 @@
 }
 .rp-next__label { font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2); }
 .rp-next__text { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
+/* "Release again with Force sync" under the suggestion that names it (#931). */
+.rp-next__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 
 /* The raw response, closed until support needs it. */
 .rp-raw { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
@@ -288,6 +292,7 @@
     .rp-rel__build { display: none; }
     .rp-rel__compact { display: block; }
     .rp-rel__phone-acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+    .rp-rel__phone-acts--one { grid-template-columns: 1fr; }
     .rp-rel__phone-acts .btn { height: 44px; justify-content: center; }
     .rp-summary__block--bc { border-left: 0; border-top: 1px solid var(--border); }
     /* On a phone the log wraps rather than scrolls sideways, so a failure line reads whole. */

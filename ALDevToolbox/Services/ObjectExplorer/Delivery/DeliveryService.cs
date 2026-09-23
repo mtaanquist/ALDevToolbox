@@ -87,7 +87,36 @@ public sealed class DeliveryService
     /// <see cref="PlanValidationException"/> on a bad request,
     /// <see cref="ProjectAccessDeniedException"/> when not permitted.
     /// </summary>
-    public async Task<int> ScheduleDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, CancellationToken ct = default)
+    public Task<int> ScheduleDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, CancellationToken ct = default)
+        => CreateDeliveryAsync(releasePipelineId, projectBuildId, scheduledForUtc, forceSyncOnce: false, ct);
+
+    /// <summary>
+    /// Releases a failed delivery's build again, now, through the same release pipeline
+    /// (#931). With <paramref name="forceSyncOnce"/> the new delivery snapshots
+    /// <see cref="BcSyncMode.ForceSync"/> as its own schema sync mode; the pipeline's
+    /// setting is not touched, so the release after this one is back on the pipeline's
+    /// mode. Everything else - access, the environment gate, the build and timing checks -
+    /// is the ordinary release's. Apps the environment already has at the build's version
+    /// are skipped by the run, which is what makes a retry after a partial failure safe.
+    /// The Production acknowledgement is the dialog's, as it is for every release. Throws
+    /// <see cref="PlanValidationException"/> when the delivery is missing or did not fail.
+    /// </summary>
+    public async Task<int> ReleaseAgainAsync(int deliveryId, bool forceSyncOnce, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var failed = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new { d.ReleasePipelineId, d.ProjectBuildId, d.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Delivery", "That release no longer exists.");
+        if (failed.Status != ProjectDeliveryStatus.Failed)
+        {
+            throw Validation("Delivery", "Only a failed release can be released again.");
+        }
+        return await CreateDeliveryAsync(failed.ReleasePipelineId, failed.ProjectBuildId, DateTime.UtcNow, forceSyncOnce, ct);
+    }
+
+    private async Task<int> CreateDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, bool forceSyncOnce, CancellationToken ct)
     {
         var orgId = RequireOrganizationId();
         scheduledForUtc = DateTime.SpecifyKind(scheduledForUtc, DateTimeKind.Utc);
@@ -207,7 +236,8 @@ public sealed class DeliveryService
             EnvironmentName = rp.EnvName,
             DeploymentSchedule = wireSchedule,
             ScheduledByDeliveryWindow = BcDeploymentSchedule.IsOurDeliveryWindow(rp.DeploymentSchedule),
-            SchemaSyncMode = rp.SchemaSyncMode,
+            // A one-time Force sync lives on this delivery only; the pipeline keeps its mode.
+            SchemaSyncMode = forceSyncOnce ? BcSyncMode.ForceSync : rp.SchemaSyncMode,
             ScheduledFor = scheduledForUtc,
             ScheduledOutsideWindow = outsideWindow,
             Status = ProjectDeliveryStatus.Scheduled,
@@ -239,9 +269,10 @@ public sealed class DeliveryService
         }
 
         _logger.LogInformation(
-            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}.",
+            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}{ForceOnce}.",
             delivery.Id, build.Id, rp.Id, rp.EnvName, scheduledForUtc, artifacts.Count,
-            outsideWindow ? " (outside the update window)" : "");
+            outsideWindow ? " (outside the update window)" : "",
+            forceSyncOnce ? " (Force sync, this release only)" : "");
         return delivery.Id;
     }
 
@@ -478,6 +509,18 @@ public sealed class DeliveryService
         delivery.StartedAt = now;
         delivery.UpdatedAt = now;
         Append(log, $"Publishing {delivery.Results.Count} app(s) to {delivery.EnvironmentName}.");
+        if (BcSyncMode.Normalize(delivery.SchemaSyncMode) == BcSyncMode.ForceSync)
+        {
+            // Said once, up front: a reader of the log after a dropped column needs to see
+            // it was asked for, and whether the pipeline asks for it every time (#931).
+            var pipelineMode = await _db.OeReleasePipelines.AsNoTracking()
+                .Where(r => r.Id == delivery.ReleasePipelineId)
+                .Select(r => r.SchemaSyncMode)
+                .FirstOrDefaultAsync(ct);
+            Append(log, BcSyncMode.Normalize(pipelineMode) == BcSyncMode.ForceSync
+                ? "Schema sync: Force sync."
+                : "Schema sync: Force sync, this release only.");
+        }
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
 
@@ -564,6 +607,9 @@ public sealed class DeliveryService
 
         var results = ordered;
         var failedIndex = -1;
+        // Whether anything went up. A run where every app was already on its version
+        // hands nothing to Business Central, so it ends as deployed, not handed off.
+        var uploadedAny = false;
         // The one line the delivery carries when Business Central reported the failure;
         // the detail (its message) stays on the app, so the two never say the same twice.
         string? failureLine = null;
@@ -589,6 +635,21 @@ public sealed class DeliveryService
                 result.Message = "The build's deliverables changed under the delivery.";
                 Append(log, $"FAILED {label}: deliverable missing.");
                 break;
+            }
+
+            // Business Central refuses a version it already has, so an app the environment
+            // is already on is left alone and the run goes on (#931). That is what makes
+            // "Release again" after a partial failure safe: the apps that went in the
+            // first time are not sent twice.
+            if (InstalledMatch(i)?.Version is { Length: > 0 } onVersion
+                && string.Equals(onVersion, result.AppVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Status = ProjectDeliveryResultStatus.Skipped;
+                result.Message = $"Already on {onVersion}.";
+                result.UpdatedAt = DateTime.UtcNow;
+                Append(log, $"Skipped {label}: {delivery.EnvironmentName} already has this version.");
+                await SaveResultAsync(delivery, log, ct);
+                continue;
             }
 
             if (AlreadyWaiting(waiting, appIds[i], result, delivery) is { } waitingRefusal)
@@ -629,6 +690,7 @@ public sealed class DeliveryService
                     installOrUpdateNeededDependencies: true,
                     ct);
 
+                uploadedAny = true;
                 result.OperationId = operation.Id;
                 result.AppId = operation.AppId?.ToString();
                 result.UpdatedAt = DateTime.UtcNow;
@@ -732,6 +794,11 @@ public sealed class DeliveryService
             delivery.FailureMessage = refusal ?? failureLine ?? $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
             Append(log, "Delivery failed.");
         }
+        else if (!uploadedAny)
+        {
+            delivery.Status = ProjectDeliveryStatus.Deployed;
+            Append(log, $"Every app was already on this version in {delivery.EnvironmentName}; nothing to install.");
+        }
         else if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
         {
             // Uploaded and accepted, but the install happens on Business Central's
@@ -816,7 +883,7 @@ public sealed class DeliveryService
 
         if (live is null)
         {
-            return $"Business Central no longer has an environment called '{delivery.EnvironmentName}'. Refresh the environments on the project's Business Central page.";
+            return $"Business Central no longer has an environment called '{delivery.EnvironmentName}'. Refresh the environments on the solution's Business Central page.";
         }
 
         if (env is not null)

@@ -1708,7 +1708,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         var creds = await ResolveCredentialsAsync(project, ct)
             ?? throw new BcApiException(null,
-                "The Business Central connection isn't set up (or its secret can't be decrypted). Re-enter it on the project's Business Central page.");
+                "The Business Central connection isn't set up (or its secret can't be decrypted). Re-enter it on the solution's Business Central page.");
 
         if (creds.ExpiresAt is { } expiry && expiry <= DateTime.UtcNow)
         {

@@ -34,8 +34,9 @@
     Where the sheet draws something the product does not record, the cell is hidden
     rather than filled in: old releases have no per-app timings, no previous version and
     no "uploaded" moment (#929 started recording them), and their skipped apps fall back
-    to "skipped after X failed". "Release again" (#931) and the approval band (#934) are
-    not built yet; the row's action cell and the list's top are where they go.
+    to "skipped after X failed". A failed release can be released again (#931), with Force
+    sync for that one release; the approval band (#934) is not built yet, and the list's
+    top is where it goes.
 *@
 
 <PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Workbench</PageTitle>
@@ -346,6 +347,10 @@
                                 <span class="cell-stack rp-rel__name">
                                     <span class="cell-stack__main rp-rel__title">Release @d.Number <span class="@($"rp-rel__word rp-tone--{state.Tone}")">- @state.Word</span></span>
                                     <span class="cell-stack__sub rp-rel__build">@BuildLine(d)</span>
+                                    @if (OneTimeForceSync(d))
+                                    {
+                                        <span class="cell-stack__sub rp-rel__force">Force sync, this release only</span>
+                                    }
                                     @if (failure is not null)
                                     {
                                         <span class="cell-stack__sub rp-rel__why">
@@ -366,6 +371,10 @@
                                 <span class="rp-rel__cell rp-rel__took u-num">@(Took(d) ?? "-")</span>
                                 <span class="rp-rel__cell">@AppsSummary(d)</span>
                                 <span class="rp-rel__acts">
+                                    @if (CanReleaseAgain(d))
+                                    {
+                                        <button type="button" class="btn btn--sm" @onclick="() => OpenReleaseAgainAsync(d, false)" @onclick:stopPropagation="true">Release again</button>
+                                    }
                                     @if (d.IsScheduled && _canManage)
                                     {
                                         <button type="button" class="btn btn--sm" @onclick="() => OpenReschedule(d)" @onclick:stopPropagation="true">Reschedule</button>
@@ -407,6 +416,14 @@
                                             <div class="rp-next">
                                                 <span class="rp-next__label">Suggested next step</span>
                                                 <span class="rp-next__text">@nextStep</span>
+                                                @if (CanReleaseAgain(d) && SuggestsForceSync(d, failure))
+                                                {
+                                                    <span class="rp-next__acts">
+                                                        <button type="button" class="btn" @onclick="() => OpenReleaseAgainAsync(d, true)">
+                                                            <Icon Name="rotate-cw" Width="15" Height="15" /><span>Release again with Force sync</span>
+                                                        </button>
+                                                    </span>
+                                                }
                                             </div>
                                         }
                                     }
@@ -502,6 +519,12 @@
                                         </details>
                                     }
 
+                                    @if (CanReleaseAgain(d))
+                                    {
+                                        <div class="rp-rel__phone-acts rp-rel__phone-acts--one">
+                                            <button type="button" class="btn" @onclick="() => OpenReleaseAgainAsync(d, false)">Release again</button>
+                                        </div>
+                                    }
                                     @if (d.IsScheduled && _canManage)
                                     {
                                         @* The phone layout's actions: the row's own cell is hidden
@@ -532,6 +555,7 @@
 
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnEditedAsync" />
 <ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
+<ReleaseAgainDialog @ref="_releaseAgainDialog" OnReleased="OnReleasedAsync" />
 <ConfirmDialog @ref="_cancelConfirm" Title="Cancel this release?"
                ConfirmLabel="Cancel release" CancelLabel="Keep it scheduled"
                ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
@@ -604,6 +628,7 @@
 
     private ReleasePipelineEditorDialog? _editor;
     private ReleaseBuildDialog? _releaseDialog;
+    private ReleaseAgainDialog? _releaseAgainDialog;
     private ConfirmDialog? _cancelConfirm;
 
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
@@ -864,6 +889,59 @@
         _openedDefault = false; // the new release is the one to watch
         await ReloadAsync();
         EnsurePolling(); // a release-now delivery is active → start watching
+    }
+
+    // ── Release again (failed releases only, #931) ────────────────────────────
+
+    /// <summary>A failed release can be released again by someone who manages the pipeline.</summary>
+    private bool CanReleaseAgain(DeliveryHistoryRow d) => _canManage && d.Status == ProjectDeliveryStatus.Failed;
+
+    /// <summary>
+    /// The failure's next step offers Force sync only where it is the fix: Business Central
+    /// refused a schema change, and this release did not already use it.
+    /// </summary>
+    private static bool SuggestsForceSync(DeliveryHistoryRow d, FailureView failure) =>
+        failure.Code == BcFailureText.ExtensionChangeFailed
+        && BcSyncMode.Normalize(d.SchemaSyncMode) != BcSyncMode.ForceSync;
+
+    /// <summary>True when this release used Force sync and the pipeline does not: it was asked for once.</summary>
+    private bool OneTimeForceSync(DeliveryHistoryRow d) =>
+        BcSyncMode.Normalize(d.SchemaSyncMode) == BcSyncMode.ForceSync && !IsForceSync;
+
+    private async Task OpenReleaseAgainAsync(DeliveryHistoryRow d, bool forceSync)
+    {
+        if (_releaseAgainDialog is null || _rp is null) return;
+        var source = !string.IsNullOrWhiteSpace(d.BuildReleaseTag)
+            ? $"from release {d.BuildReleaseTag}"
+            : $"from build pipeline \"{SourceName}\"";
+        // What this release left in place at the build's version: the apps it installed
+        // before the failure, and any the environment already had. The run skips them.
+        var alreadyOn = d.Apps
+            .Where(a => a.Status == ProjectDeliveryResultStatus.Completed
+                        || (a.PreviousVersion is { } before && string.Equals(before, a.AppVersion, StringComparison.OrdinalIgnoreCase)))
+            .Select(a => a.AppName)
+            .ToList();
+        await _releaseAgainDialog.OpenAsync(new ReleaseAgainDialog.Request(
+            d.Id, d.ProjectBuildId, source, _rp.Project?.Name ?? "this solution",
+            EnvName, _rp.ProjectEnvironment?.Type,
+            BcDeploymentSchedule.ToWire(_rp.DeploymentSchedule) ?? _rp.DeploymentSchedule,
+            _rp.SchemaSyncMode,
+            d.Apps.Select(a => a.AppName).ToList(),
+            alreadyOn,
+            ReleaseNowOutsideWindow(),
+            Failure(d) is { } failure && SuggestsForceSync(d, failure)), forceSync);
+    }
+
+    /// <summary>
+    /// Releasing again runs now; when the environment has a delivery window that is not
+    /// open, say so, as the Release dialog does for "Now".
+    /// </summary>
+    private string? ReleaseNowOutsideWindow()
+    {
+        var env = _rp?.ProjectEnvironment;
+        if (env is null || !UpdateWindow.IsConfigured(env.UpdateWindowStart, env.UpdateWindowEnd)) return null;
+        if (UpdateWindow.IsWithin(env.UpdateWindowStart, env.UpdateWindowEnd, _tz, DateTime.UtcNow)) return null;
+        return $"{EnvName}'s delivery window ({DeliveryWindow}) isn't open now. Releasing again installs outside the hours agreed with the customer, and the release history will record that.";
     }
 
     // ── Cancel + reschedule (scheduled releases only) ─────────────────────────
@@ -1385,6 +1463,8 @@
                 {
                     return $"Skipped because it depends on {reasons.FailedAppName} {reasons.FailedAppVersion}.";
                 }
+                // The run's own reason, when it gave one: "Already on 2.3.0.118." (#931).
+                if (!string.IsNullOrWhiteSpace(a.Message)) return a.Message;
                 return failed is not null
                     ? $"Skipped after {failed.AppName} failed."
                     : "Not attempted: the release stopped before this app.";

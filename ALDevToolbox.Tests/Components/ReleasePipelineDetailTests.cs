@@ -142,6 +142,77 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_schema_change_failure_releases_again_with_force_sync_for_that_release_only()
+    {
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddHours(-3);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Failed, start, d =>
+        {
+            d.StartedAt = start.AddSeconds(5);
+            d.FinishedAt = start.AddSeconds(212);
+            d.FailureMessage = "Business Central refused a schema change while installing CRONUS Warehouse 2.3.0.118.";
+            d.DiagnosticsLog = "02:03:31  FAILED CRONUS Warehouse 2.3.0.118: Business Central reported the install as failed (ExtensionChangeFailed). "
+                + "A request to the Data Plane Admin Service failed. Http status code: BadRequest Error: "
+                + "{ \"code\": \"ExtensionChangeFailed\", \"message\": \"Feltet 12 er fjernet.\" }\n";
+        },
+        Result(0, "CRONUS Base", ProjectDeliveryResultStatus.Completed, "2.2.0.104", start.AddSeconds(5), start.AddSeconds(53)),
+        Result(1, "CRONUS Warehouse", ProjectDeliveryResultStatus.Failed, "2.2.0.104", start.AddSeconds(53), start.AddSeconds(145)),
+        Result(2, "CRONUS Reports", ProjectDeliveryResultStatus.Skipped, "2.2.0.104", null, null));
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".rp-rel__acts .btn").TextContent.Should().Be("Release again");
+            cut.Find(".rp-next__acts .btn").TextContent.Trim().Should().Be("Release again with Force sync");
+        });
+        cut.WaitForAssertion(() => cut.Find(".rp-next__acts .btn").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#ra-title").TextContent.Should().Be($"Release build #{seed.BuildId} again?");
+            cut.Find(".ra-lead").TextContent.Should().Contain("CRONUS Base is already on this version and is left alone.");
+            cut.Find(".ra-check input").HasAttribute("checked").Should().BeTrue();
+        });
+        cut.WaitForAssertion(() => cut.Find(".check--ack input").Change(true));
+        cut.WaitForAssertion(() => cut.Find(".confirm-dialog__actions .btn--primary").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#ra-title").Should().BeEmpty();
+            cut.FindAll(".rp-rel").Should().HaveCount(2);
+            cut.Find(".rp-rel__force").TextContent.Should().Be("Force sync, this release only");
+        });
+        await using var read = _db.NewContext();
+        var again = await read.OeProjectDeliveries.AsNoTracking().OrderByDescending(d => d.Id).FirstAsync();
+        again.SchemaSyncMode.Should().Be(BcSyncMode.ForceSync);
+        (await read.OeReleasePipelines.AsNoTracking().SingleAsync(r => r.Id == seed.ReleasePipelineId))
+            .SchemaSyncMode.Should().Be(BcSyncMode.Add);
+    }
+
+    [Fact]
+    public async Task An_app_the_environment_already_had_says_so_instead_of_blaming_a_failure()
+    {
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddHours(-1);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Deployed, start, d =>
+        {
+            d.StartedAt = start.AddSeconds(5);
+            d.FinishedAt = start.AddSeconds(90);
+        },
+        Result(0, "CRONUS Base", ProjectDeliveryResultStatus.Skipped, "2.3.0.118", null, null, "Already on 2.3.0.118."),
+        Result(1, "CRONUS Warehouse", ProjectDeliveryResultStatus.Completed, "2.2.0.104", start.AddSeconds(5), start.AddSeconds(80)));
+
+        var cut = Render(seed.ReleasePipelineId);
+        cut.WaitForAssertion(() => cut.Find(".rp-rel__row").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-app__msg").Select(e => e.TextContent).Should().Equal("Already on 2.3.0.118.");
+            cut.FindAll(".rp-rel__acts .btn").Should().BeEmpty("only a failed release is released again");
+        });
+    }
+
+    [Fact]
     public async Task A_failure_Business_Central_reported_shows_its_message_as_given_once_with_the_raw_response_behind_a_fold()
     {
         // As the run stores it since #930: one line on the release, the sentence and the
