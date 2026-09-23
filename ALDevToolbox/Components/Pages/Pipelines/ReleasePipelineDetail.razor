@@ -331,6 +331,7 @@
                     {
                         var state = DeliveryLook(d.Status);
                         var open = _open.Contains(d.Id);
+                        var failure = Failure(d);
                         var rowState = $"rp-rel rp-bar--{state.Tone}{(open ? " is-open" : "")}";
                         <div class="@rowState" @key="d.Id">
                             <div class="rp-rel__row" @onclick="() => ToggleAsync(d)">
@@ -345,6 +346,16 @@
                                 <span class="cell-stack rp-rel__name">
                                     <span class="cell-stack__main rp-rel__title">Release @d.Number <span class="@($"rp-rel__word rp-tone--{state.Tone}")">- @state.Word</span></span>
                                     <span class="cell-stack__sub rp-rel__build">@BuildLine(d)</span>
+                                    @if (failure is not null)
+                                    {
+                                        <span class="cell-stack__sub rp-rel__why">
+                                            <span>@failure.Collapsed</span>
+                                            @if (!string.IsNullOrEmpty(failure.Code))
+                                            {
+                                                <span class="tag" title="Error code from Business Central">@failure.Code</span>
+                                            }
+                                        </span>
+                                    }
                                     <span class="cell-stack__sub rp-rel__compact">@CompactLine(d)</span>
                                 </span>
                                 <span class="cell-stack rp-rel__outcome">
@@ -366,9 +377,38 @@
                             @if (open)
                             {
                                 <div class="rp-rel__detail">
-                                    @if (d.Status == ProjectDeliveryStatus.Failed && !string.IsNullOrWhiteSpace(d.FailureMessage))
+                                    @if (failure is not null)
                                     {
-                                        <Alert Tone="AlertTone.Danger" Class="rp-fail"><span>@d.FailureMessage</span></Alert>
+                                        @* DeliveryRowPanel.dc.html, "Failed, expanded" (#930): our sentence
+                                           from the code, then Business Central's words as given - never
+                                           translated, never mined for details - then what the environment
+                                           has, then what to do. *@
+                                        <div class="rp-what">
+                                            <span class="rp-what__label">What happened</span>
+                                            <p class="rp-what__text">@failure.WhatHappened</p>
+                                            @if (failure.BcMessage is { } said)
+                                            {
+                                                <div class="rp-what__bc">
+                                                    <span class="rp-what__bc-label">Business Central's message, in the environment's language</span>
+                                                    <p class="rp-what__bc-text">@said</p>
+                                                    @if (failure.Clipped)
+                                                    {
+                                                        <span class="rp-what__bc-label">Only the start of this message was kept for this older release.</span>
+                                                    }
+                                                </div>
+                                            }
+                                            @if (failure.FailedApp is { } failedApp && ReportedVersion(failedApp) is { } reported)
+                                            {
+                                                <p class="rp-what__env">@reported</p>
+                                            }
+                                        </div>
+                                        @if (failure.NextStep is { } nextStep)
+                                        {
+                                            <div class="rp-next">
+                                                <span class="rp-next__label">Suggested next step</span>
+                                                <span class="rp-next__text">@nextStep</span>
+                                            </div>
+                                        }
                                     }
                                     else if (InfoSentence(d) is { } info)
                                     {
@@ -426,6 +466,20 @@
                                                 }
                                             </div>
                                         </div>
+                                    }
+
+                                    @if (failure?.Raw is { } raw)
+                                    {
+                                        <details class="rp-raw">
+                                            <summary class="rp-raw__summary">Raw response from Business Central, for support</summary>
+                                            <div class="rp-raw__body">
+                                                <pre class="rp-raw__text" id="@($"rp-raw-{d.Id}")">@SupportText(d, raw)</pre>
+                                                <span class="rp-raw__foot">
+                                                    <CopyButton Target="@($"#rp-raw-{d.Id}")" Label="Copy for support" />
+                                                    <span>Includes the release, the environment and the time.</span>
+                                                </span>
+                                            </div>
+                                        </details>
                                     }
 
                                     @if (LogLines(d) is { Count: > 0 } lines)
@@ -1337,9 +1391,101 @@
             }
             case ProjectDeliveryResultStatus.Scheduled:
                 return a.Message ?? "Business Central installs it with its own update.";
+            case ProjectDeliveryResultStatus.Failed when Failure(d) is { } failure:
+                // "What happened" above already carries why; the app says where it was
+                // left, so the release and the app never say the same thing twice (#930).
+                return failure.FromBusinessCentral
+                    ? a.PreviousVersion is { } still ? $"Not installed. Still on {still}." : "Not installed."
+                    : null;
             default:
                 return string.IsNullOrWhiteSpace(a.Message) ? null : a.Message;
         }
+    }
+
+    /// <param name="Collapsed">The short line on the closed row: "Business Central refused a schema change".</param>
+    /// <param name="Code">Business Central's error code, drawn as a tag beside it; null when there is none.</param>
+    /// <param name="WhatHappened">The opening of the expanded failure, naming the app.</param>
+    /// <param name="BcMessage">Business Central's own message, as given; null when the failure was ours.</param>
+    /// <param name="NextStep">What to do about it; null when the failure was ours and already says.</param>
+    /// <param name="Raw">The text Business Central sent, for support; null when the failure was ours.</param>
+    /// <param name="FailedApp">The app that failed, when one did.</param>
+    /// <param name="FromBusinessCentral">True when Business Central reported the failure, rather than the run refusing to go on.</param>
+    /// <param name="Clipped">True when only the start of the message was stored (releases before #930 were cut at 300 characters).</param>
+    internal sealed record FailureView(
+        string Collapsed, string? Code, string WhatHappened, string? BcMessage, string? NextStep,
+        string? Raw, DeliveryAppRow? FailedApp, bool FromBusinessCentral, bool Clipped = false);
+
+    /// <summary>
+    /// A failed release's text, taken apart for the page (#930). Business Central's
+    /// response is read back from the log line the run wrote for the failed app, which
+    /// keeps it whole; a release stored before #930 has only the long line it kept as its
+    /// failure message, and goes through the same parser so it reads the same way. A
+    /// failure the run raised itself (the environment was busy, the build changed) is
+    /// shown as the run wrote it.
+    /// </summary>
+    private FailureView? Failure(DeliveryHistoryRow d)
+    {
+        if (d.Status != ProjectDeliveryStatus.Failed) return null;
+
+        var failedApp = d.Apps.FirstOrDefault(a => a.Status == ProjectDeliveryResultStatus.Failed);
+        var label = failedApp is null ? null : $"{failedApp.AppName} {failedApp.AppVersion}";
+
+        string? raw = null;
+        if (label is not null)
+        {
+            var marker = $"FAILED {label}: ";
+            raw = LogLines(d).LastOrDefault(l => l.Message.StartsWith(marker, StringComparison.Ordinal))?.Message[marker.Length..];
+        }
+        var stored = string.IsNullOrWhiteSpace(d.FailureMessage) ? null : d.FailureMessage.Trim();
+        var parsed = BcFailureText.Parse(raw);
+        // Before #930 both the log line and the stored failure were clipped; whichever kept
+        // more of Business Central's message is the one to show.
+        if ((!parsed.FromBusinessCentral || parsed.Truncated) && stored is not null)
+        {
+            // Before #930 the release kept "{app} {version} failed: " and the whole response.
+            var legacy = label is not null && stored.StartsWith($"{label} failed: ", StringComparison.Ordinal)
+                ? stored[$"{label} failed: ".Length..]
+                : stored;
+            var fromStored = BcFailureText.Parse(legacy);
+            if (fromStored.FromBusinessCentral
+                && (!parsed.FromBusinessCentral || fromStored.Message.Length > parsed.Message.Length))
+            {
+                parsed = fromStored;
+                raw = legacy;
+            }
+        }
+
+        if (!parsed.FromBusinessCentral)
+        {
+            var ours = stored ?? failedApp?.Message ?? "The release failed.";
+            return new FailureView(ours, null, ours, null, null, null, failedApp, false);
+        }
+
+        var code = parsed.Code.Length > 0 ? parsed.Code : null;
+        var response = raw is null ? null : BcFailureText.WithoutRunPrefix(raw).Trim();
+        var said = string.Join(" ", new[] { parsed.Message, parsed.InnerMessage }.Where(s => s.Length > 0));
+        if (parsed.Truncated && said.Length > 0) said += "...";
+        return new FailureView(
+            BcFailureText.Summary(code),
+            code,
+            BcFailureText.WhatHappened(code, label ?? "the app"),
+            said.Length > 0 ? said : null,
+            BcFailureText.NextStep(code, d.EnvironmentName, BcSyncMode.Normalize(d.SchemaSyncMode) == BcSyncMode.ForceSync),
+            // A clipped response adds nothing to the quote above, so there is no fold for it.
+            string.IsNullOrEmpty(response) || parsed.Truncated ? null : response,
+            failedApp,
+            true,
+            parsed.Truncated);
+    }
+
+    /// <summary>
+    /// What "Copy for support" copies: which release, where and when, then Business
+    /// Central's response as it came. Shown as it is copied, so nothing hidden travels.
+    /// </summary>
+    private string SupportText(DeliveryHistoryRow d, string raw)
+    {
+        var when = d.FinishedAt ?? d.StartedAt ?? d.CreatedAt;
+        return $"Release {d.Number} of \"{_rp?.Name}\" into \"{d.EnvironmentName}\", failed {when.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC\n{raw}";
     }
 
     internal sealed record LogLine(string Time, string Message, bool Error);

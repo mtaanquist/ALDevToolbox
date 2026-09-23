@@ -535,6 +535,9 @@ public sealed class DeliveryService
 
         var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
         var failedIndex = -1;
+        // The one line the delivery carries when Business Central reported the failure;
+        // the detail (its message) stays on the app, so the two never say the same twice.
+        string? failureLine = null;
 
         for (var i = 0; i < results.Count; i++)
         {
@@ -633,7 +636,17 @@ public sealed class DeliveryService
                     failedIndex = i;
                     result.Status = ProjectDeliveryResultStatus.Failed;
                     result.Message = outcome.Message;
-                    Append(log, $"FAILED {label}: {outcome.Message}");
+                    // The log keeps Business Central's text whole, wrapper and JSON included:
+                    // it is what support needs, and what the page parses back (#930).
+                    if (outcome.Failure is { } reported)
+                    {
+                        Append(log, $"FAILED {label}: {BcFailureText.ForLog(reported, outcome.Raw)}");
+                        failureLine = BcFailureText.WhatHappened(reported.Code, label);
+                    }
+                    else
+                    {
+                        Append(log, $"FAILED {label}: {outcome.Message}");
+                    }
                 }
                 result.FinishedAt = DateTime.UtcNow;
                 result.UpdatedAt = result.FinishedAt.Value;
@@ -643,10 +656,21 @@ public sealed class DeliveryService
             {
                 failedIndex = i;
                 result.Status = ProjectDeliveryResultStatus.Failed;
-                result.Message = Short(ex.Message);
+                // A refused upload can carry the same Data Plane Admin Service text as a
+                // failed install; when it names a code, say it the same way.
+                var refused = BcFailureText.Parse(ex.Message);
+                if (refused.Code.Length > 0)
+                {
+                    result.Message = BcFailureText.AppMessage(refused);
+                    failureLine = BcFailureText.WhatHappened(refused.Code, label);
+                }
+                else
+                {
+                    result.Message = Short(ex.Message);
+                }
                 result.FinishedAt = DateTime.UtcNow;
                 result.UpdatedAt = result.FinishedAt.Value;
-                Append(log, $"FAILED {label}: {Short(ex.Message)}");
+                Append(log, $"FAILED {label}: {OneLine(ex.Message)}");
             }
         }
 
@@ -655,7 +679,7 @@ public sealed class DeliveryService
         {
             var failed = results[failedIndex];
             delivery.Status = ProjectDeliveryStatus.Failed;
-            delivery.FailureMessage = $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
+            delivery.FailureMessage = failureLine ?? $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
             Append(log, "Delivery failed.");
         }
         else if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
@@ -763,7 +787,7 @@ public sealed class DeliveryService
                 case BcAppOperationStatus.Succeeded:
                     return new DeploymentOutcome(true, null);
                 case BcAppOperationStatus.Failed:
-                    return new DeploymentOutcome(false, DescribeFailure(operation));
+                    return DescribeFailure(operation);
                 case BcAppOperationStatus.Canceled:
                     return new DeploymentOutcome(false, "The install was cancelled in Business Central.");
                 case BcAppOperationStatus.Skipped:
@@ -780,24 +804,31 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Turns a failed operation into one line for the history. The codes lead because
-    /// <see cref="BcAppOperation.ErrorMessage"/> comes back in the <em>environment's</em>
-    /// language — useful to show, never to branch on.
+    /// Turns a failed operation into what the history stores (#930): the app's message is
+    /// the code's sentence followed by Business Central's own message, verbatim, and the raw
+    /// text goes to the log. The codes lead because <see cref="BcAppOperation.ErrorMessage"/>
+    /// comes back in the <em>environment's</em> language - shown, never branched on. The
+    /// codes the client already read win over the ones parsed from the text.
     /// </summary>
-    private static string DescribeFailure(BcAppOperation operation)
+    private static DeploymentOutcome DescribeFailure(BcAppOperation operation)
     {
-        var codes = new[] { operation.ErrorCode, operation.InnerErrorCode }
-            .Where(c => !string.IsNullOrEmpty(c))
-            .ToList();
-        var detail = codes.Count > 0
-            ? $"Business Central reported the install as failed ({string.Join(" / ", codes)})."
-            : "Business Central reported the install as failed.";
-        return string.IsNullOrWhiteSpace(operation.ErrorMessage)
-            ? detail
-            : Short($"{detail} {operation.ErrorMessage}");
+        var parsed = BcFailureText.Parse(operation.ErrorMessage);
+        var detail = parsed with
+        {
+            Code = string.IsNullOrEmpty(operation.ErrorCode) ? parsed.Code : operation.ErrorCode,
+            InnerCode = string.IsNullOrEmpty(operation.InnerErrorCode) ? parsed.InnerCode : operation.InnerErrorCode,
+        };
+        var raw = string.IsNullOrWhiteSpace(operation.ErrorMessage) ? null : operation.ErrorMessage;
+        return new DeploymentOutcome(false, BcFailureText.AppMessage(detail), detail, raw);
     }
 
-    private sealed record DeploymentOutcome(bool Completed, string? Message);
+    /// <param name="Failure">Set when Business Central reported the install as failed, so the delivery's line is built from its code.</param>
+    /// <param name="Raw">Business Central's text as it came, for the log.</param>
+    private sealed record DeploymentOutcome(bool Completed, string? Message, BcFailureDetail? Failure = null, string? Raw = null);
+
+    /// <summary>A multi-line response folded onto one log line, so the page reads the log a line at a time.</summary>
+    private static string OneLine(string text) =>
+        string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()));
 
     // ── Reads (for delivery history) ──────────────────────────────────────────
 

@@ -630,7 +630,13 @@ short-circuited.
 **Failure detail comes from the codes, never the message.** A failed operation carries `errorMessage`
 localized to the *environment's* language (a real failure came back in Danish) with the structured
 `code` / `innerError.code` embedded in it as JSON. The run keys everything on those codes and carries
-the message through only as display text.
+the message through only as display text. Since #930 one parser (`BcFailureText`) takes that text apart: it drops the
+"A request to the Data Plane Admin Service failed. Http status code: ... Error:" wrapper and reads
+`code`, `message` and `innerError` out of the JSON. The release keeps one line built from the code
+("Business Central refused a schema change while installing X"); the failed app keeps the code's
+sentence followed by Business Central's message verbatim; the diagnostics log keeps the response
+whole. The page reads the log line back through the same parser, so a release stored before #930
+(whose failure message was the long raw line) renders the same way.
 
 ## Services & seams
 
@@ -695,7 +701,10 @@ the message through only as display text.
   to render. The failure sentence names the version the environment had before the run, or what
   the panel cache reports if someone read the environment since. The releases list numbers
   releases per pipeline for display ("Release 49"), shows the newest ten and extends in place
-  with "Show older releases"; a row opens into the stored failure message whole, a step strip
+  with "Show older releases"; a failed row carries the code's short sentence and the code as a tag, and opens into "What
+  happened" (our sentence, then Business Central's message as given in its own labelled block, then
+  what the environment reports installed), a suggested next step, and the raw response behind a
+  fold with "Copy for support" (DeliveryRowPanel.dc.html, section 2; nothing is translated); a step strip
   (only the steps whose moments were recorded), per-app rows with their state word, version
   change, message and duration, and the diagnostics log (UTC, open on failures, with a copy
   button). A skipped app says "Skipped because it depends on X" only when the build's manifests

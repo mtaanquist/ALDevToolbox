@@ -453,7 +453,9 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
     /// <summary>
     /// Digs the structured failure codes out of an operation. Business Central reports them
     /// as a JSON fragment embedded in the (localized) <c>errorMessage</c> text, so the codes
-    /// — not the prose — are the only thing safe to branch on.
+    /// — not the prose — are the only thing safe to branch on. The embedded fragment is read
+    /// by <see cref="ALDevToolbox.Services.ObjectExplorer.Delivery.BcFailureText.Parse"/>, the
+    /// same parser the release page uses on the stored text.
     /// </summary>
     private static (string Code, string InnerCode) ExtractErrorCodes(JsonElement root, string errorMessage)
     {
@@ -461,21 +463,8 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
         var inner = root.TryGetProperty("innerError", out var innerEl) ? Str(innerEl, "code") : string.Empty;
         if (code.Length > 0 || inner.Length > 0) return (code, inner);
 
-        var start = errorMessage.IndexOf('{');
-        var end = errorMessage.LastIndexOf('}');
-        if (start < 0 || end <= start) return (string.Empty, string.Empty);
-
-        try
-        {
-            using var doc = JsonDocument.Parse(errorMessage[start..(end + 1)]);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (string.Empty, string.Empty);
-            var embeddedInner = doc.RootElement.TryGetProperty("innerError", out var ie) ? Str(ie, "code") : string.Empty;
-            return (Str(doc.RootElement, "code"), embeddedInner);
-        }
-        catch (JsonException)
-        {
-            return (string.Empty, string.Empty);
-        }
+        var parsed = ALDevToolbox.Services.ObjectExplorer.Delivery.BcFailureText.Parse(errorMessage);
+        return (parsed.Code, parsed.InnerCode);
     }
 
     // ── JSON readers ──────────────────────────────────────────────────────────

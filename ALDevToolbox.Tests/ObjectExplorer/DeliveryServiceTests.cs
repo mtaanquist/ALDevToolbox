@@ -542,6 +542,38 @@ public sealed class DeliveryServiceTests : IDisposable
             .Contain("ExtensionChangeFailed").And.Contain("TenantSyncFailure");
     }
 
+    [Fact]
+    public async Task RunDeliveryAsync_stores_one_line_on_the_delivery_and_the_detail_on_the_app()
+    {
+        // The shape a real failed install produced (#930): the wrapper, then JSON whose
+        // message is in the environment's language, quotes escaped.
+        const string danish = "Udvidelsen \"CRONUS Core\" kunne ikke installeres, fordi feltet 12 \"Zone Priority\" er fjernet.";
+        const string raw = "A request to the Data Plane Admin Service failed. Http status code: BadRequest Error: "
+            + "{ \"code\": \"ExtensionChangeFailed\", \"message\": \"Udvidelsen \\\"CRONUS Core\\\" kunne ikke installeres, fordi feltet 12 \\\"Zone Priority\\\" er fjernet.\" }";
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        _apps.StatusByApp["CRONUS Core"] = "failed";
+        _apps.FailedErrorMessage = raw;
+
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.Include(d => d.Results).SingleAsync(d => d.Id == deliveryId);
+        var app = delivery.Results.Single();
+
+        delivery.FailureMessage.Should().Be($"Business Central refused a schema change while installing CRONUS Core {app.AppVersion}.",
+            "the delivery carries one line; the detail is the app's");
+        app.Message.Should().Be(
+            "Business Central refused a schema change (a renamed or removed table or field). "
+            + "Release again with Force sync to push it through, or keep the old names. "
+            + "Error code: ExtensionChangeFailed. Business Central's message: " + danish);
+        app.Message.Should().NotContain("Data Plane Admin Service").And.NotContain("{");
+        // The log keeps the response whole, for support and for the page to read back.
+        delivery.DiagnosticsLog.Should().Contain(
+            $"FAILED CRONUS Core {app.AppVersion}: Business Central reported the install as failed (ExtensionChangeFailed). {raw}");
+    }
+
     // ── What the run records for the release page (#929) ──────────────────────
 
     [Fact]
@@ -908,6 +940,13 @@ public sealed class DeliveryServiceTests : IDisposable
         /// <summary>App name to the status its install operation reports. Missing = "succeeded".</summary>
         public Dictionary<string, string> StatusByApp { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// A failed operation's errorMessage exactly as Business Central sent it, with no
+        /// codes read out beforehand - the codes then only exist inside the text (#930).
+        /// Null = the default Danish sentence with the codes alongside.
+        /// </summary>
+        public string? FailedErrorMessage { get; set; }
+
         /// <summary>App names in upload order, so a test can assert dependency order was kept.</summary>
         public List<string> UploadedOrder { get; } = new();
 
@@ -955,7 +994,12 @@ public sealed class DeliveryServiceTests : IDisposable
         {
             var name = _appNameByAppId.GetValueOrDefault(appId, string.Empty);
             var status = StatusByApp.GetValueOrDefault(name, "succeeded");
-            return Task.FromResult<BcAppOperation?>(Operation(appId, status, operationId));
+            var operation = Operation(appId, status, operationId);
+            if (status == "failed" && FailedErrorMessage is { } raw)
+            {
+                operation = operation with { ErrorMessage = raw, ErrorCode = string.Empty, InnerErrorCode = string.Empty };
+            }
+            return Task.FromResult<BcAppOperation?>(operation);
         }
 
         public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(
