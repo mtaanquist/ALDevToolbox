@@ -137,6 +137,36 @@ public static class AppPackageReader
     }
 
     /// <summary>
+    /// Reads only the <c>NavxManifest.xml</c> of an <c>.app</c> - who made it, what it
+    /// is and which version - without walking its symbols or source. For callers that
+    /// need to say which package a stored file is (the missing-dependency report on a
+    /// failed build) and would otherwise parse a whole symbol tree to learn one version
+    /// number. Null when the bytes are not a readable <c>.app</c>: an NEA-encrypted
+    /// package hides its manifest, and a broken upload should cost a sentence in a
+    /// report, not the build.
+    /// </summary>
+    public static async Task<AppManifest?> TryReadManifestAsync(byte[] bytes, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        if (!IsNavxHeader(bytes) || IsNeaEncrypted(bytes)) return null;
+        try
+        {
+            using var zipStream = new MemoryStream(bytes, NavxPrefixLength, bytes.Length - NavxPrefixLength, writable: false);
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+            if (IsReadyToRunWrapper(archive))
+            {
+                await using var inner = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
+                return await TryReadManifestAsync(inner.ToArray(), ct).ConfigureAwait(false);
+            }
+            return ReadManifest(archive, ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FormatException or System.Xml.XmlException or IOException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Per-XLIFF decompressed ceiling for the <c>Translations/</c> walk. BC
     /// base-app language XLIFFs run to ~100&#160;MB; 256&#160;MB is generous
     /// headroom while still tripping a decompression bomb before it fills the

@@ -213,7 +213,11 @@
 
                             @if (_latest.Status == "failed")
                             {
-                                <Alert Tone="AlertTone.Danger"><span>@(_latest.FailureMessage ?? "The build failed. See the build log below.")</span></Alert>
+                                @* When every extension failed, the rows below say why each
+                                   one did; the recorded message would only point elsewhere. *@
+                                <Alert Tone="AlertTone.Danger"><span>@(_latestDetail is { FailedApps.Count: > 0 }
+                                    ? "None of the extensions compiled."
+                                    : _latest.FailureMessage ?? "The build failed. See the build log below.")</span></Alert>
                             }
                             else if (_latestDetail is { Artifacts.Count: > 0 })
                             {
@@ -248,6 +252,35 @@
                             else
                             {
                                 <p class="pb-note">This build produced no downloadable files.</p>
+                            }
+
+                            @* The extensions that did not build. A build where only some
+                               failed still goes ready, so this is the one place a partial
+                               build says so. A failure the solution can fix by supplying a
+                               dependency gets the way to do it beside it (#901). *@
+                            @if (_latestDetail is { FailedApps.Count: > 0 } withFailures)
+                            {
+                                <div class="section-label">@withFailures.FailedApps.Count extension@(withFailures.FailedApps.Count == 1 ? "" : "s") did not build</div>
+                                <div class="sub-rows sub-rows--plain">
+                                    @foreach (var f in withFailures.FailedApps)
+                                    {
+                                        <div class="sub-row">
+                                            <div class="sub-row__stack">
+                                                <span class="sub-row__name">@(string.IsNullOrEmpty(f.AppName) ? "Unnamed extension" : f.AppName)</span>
+                                                <span class="pb-fail__msg">@(string.IsNullOrWhiteSpace(f.Message) ? "No reason was recorded. The build log below has the compiler's output." : f.Message)</span>
+                                            </div>
+                                            @if (f.NeedsSymbols && _canManage)
+                                            {
+                                                <div class="sub-row__acts">
+                                                    <a class="btn btn--sm" href="@($"/solutions/{_header!.ProjectId}?tab=symbols")">
+                                                        <Icon Name="upload" Width="14" Height="14" />
+                                                        <span>Add symbols</span>
+                                                    </a>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
                             }
 
                             @* Where the customer can get these files themselves. A build

@@ -228,6 +228,8 @@ public sealed class ProjectBuildService
             //    becomes a symbol for the apps that depend on it.
             var uploads = new List<AppFileUpload>();
             var artifacts = new List<PendingArtifact>();
+            List<StoredSymbolPackage>? storedSymbols = null;
+            List<InstalledAppFact>? installedApps = null;
             foreach (var app in TopologicalOrder(discovered))
             {
                 ct.ThrowIfCancellationRequested();
@@ -248,8 +250,27 @@ public sealed class ProjectBuildService
                 }
                 if (compiled is null)
                 {
+                    // Name the dependency when that is what stopped it, so the row
+                    // says what to supply rather than pointing at the log.
+                    string? missingMessage = null;
+                    var missing = AlcOutputParser.ParseMissingPackages(compileLog);
+                    if (missing.Count > 0)
+                    {
+                        storedSymbols ??= await ReadStoredSymbolPackagesAsync(projectId, ct).ConfigureAwait(false);
+                        installedApps ??= await ReadInstalledAppsAsync(projectId, ct).ConfigureAwait(false);
+                        var failedSiblings = results
+                            .Where(r => r.Status == ProjectBuildResultStatus.Failed && !string.IsNullOrEmpty(r.AppId))
+                            .Select(r => r.AppId)
+                            .ToList();
+                        missingMessage = MissingDependencyReport.Compose(app.Manifest, missing, storedSymbols, failedSiblings,
+                        [
+                            $"the Business Central {resolved.MajorMinor} ({country}) symbols",
+                            "the repositories' .alpackages folders",
+                            "the symbols stored on this solution",
+                        ], installedApps);
+                    }
                     results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
-                        ProjectBuildResultStatus.Failed, $"Compilation failed (see the build report for {app.Manifest.Name}).",
+                        ProjectBuildResultStatus.Failed, missingMessage ?? $"Compilation failed (see the build report for {app.Manifest.Name}).",
                         RepoUrl: app.Repo.Url, CommitSha: app.Repo.CommitSha, CommitDate: app.Repo.CommitDate));
                     continue;
                 }
@@ -1192,6 +1213,50 @@ public sealed class ProjectBuildService
         _logger.LogWarning("alc failed for {App} (exit {Exit}): {Err}", app.Manifest.Name, result.ExitCode,
             Truncate(string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : result.StdErr, 2000));
         return (null, log);
+    }
+
+    /// <summary>
+    /// The solution's stored symbol packages, identified by their own manifests, for
+    /// the missing-dependency report. Only read when a compile has already failed for
+    /// want of a package, so a green build never pays for it. A stored file that
+    /// cannot be read is skipped - it cannot be the version the build needed either.
+    /// </summary>
+    private async Task<List<StoredSymbolPackage>> ReadStoredSymbolPackagesAsync(int projectId, CancellationToken ct)
+    {
+        var rows = await _db.OeProjectSymbols.AsNoTracking()
+            .Where(s => s.ProjectId == projectId)
+            .Select(s => new { s.FileName, s.Content })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var packages = new List<StoredSymbolPackage>(rows.Count);
+        foreach (var row in rows)
+        {
+            var manifest = await AppPackageReader.TryReadManifestAsync(row.Content, ct).ConfigureAwait(false);
+            if (manifest is null) continue;
+            packages.Add(new StoredSymbolPackage(row.FileName, manifest.AppId, manifest.Publisher, manifest.Name, manifest.Version));
+        }
+        return packages;
+    }
+
+    /// <summary>
+    /// What the solution's Business Central environments last reported installed, from
+    /// the installed-apps mirror rather than the tenant: the build has no business
+    /// holding the customer's credentials, and a mirror a day old still says which
+    /// version of a vendor app the customer runs. Empty for a solution with no
+    /// connection. See <c>.design/solution-customer-info.md</c>, "Modules".
+    /// </summary>
+    private async Task<List<InstalledAppFact>> ReadInstalledAppsAsync(int projectId, CancellationToken ct)
+    {
+        var environments = _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == projectId && e.MissingSince == null)
+            .Where(Bc.EnvironmentQueries.NotSoftDeleted);
+        var rows = await (
+                from e in environments
+                join a in _db.OeEnvironmentApps.AsNoTracking() on e.Id equals a.EnvironmentId
+                select new { e.Name, e.Type, a.AppId, a.Version })
+            .ToListAsync(ct).ConfigureAwait(false);
+        return rows
+            .Select(r => new InstalledAppFact(r.Name, Bc.BcEnvironmentTypes.IsProduction(r.Type), r.AppId, r.Version))
+            .ToList();
     }
 
     // ── Release finalisation ────────────────────────────────────────────

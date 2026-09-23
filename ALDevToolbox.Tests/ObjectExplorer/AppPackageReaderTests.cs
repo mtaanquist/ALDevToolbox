@@ -40,6 +40,38 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public async Task TryReadManifestAsync_reads_who_and_which_version_without_the_symbols()
+    {
+        var bytes = await File.ReadAllBytesAsync(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+
+        var manifest = await AppPackageReader.TryReadManifestAsync(bytes);
+
+        manifest.Should().NotBeNull();
+        manifest!.AppId.Should().Be(Guid.Parse("40d64215-8abc-4d96-87dc-2894e5431115"));
+        manifest.Name.Should().Be("DK Core");
+        manifest.Publisher.Should().Be("Microsoft");
+        manifest.Version.Should().Be("25.18.48229.0");
+    }
+
+    [Fact]
+    public async Task TryReadManifestAsync_looks_inside_a_ready_to_run_wrapper()
+    {
+        var inner = await File.ReadAllBytesAsync(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var wrapped = BuildReadyToRunWrapper(inner, "Microsoft_DK Core_25.18.48229.0.app");
+
+        var manifest = await AppPackageReader.TryReadManifestAsync(wrapped);
+
+        manifest!.Name.Should().Be("DK Core");
+    }
+
+    [Fact]
+    public async Task TryReadManifestAsync_returns_null_for_something_that_is_not_an_app()
+    {
+        (await AppPackageReader.TryReadManifestAsync("not an app at all"u8.ToArray())).Should().BeNull();
+        (await AppPackageReader.TryReadManifestAsync(Array.Empty<byte>())).Should().BeNull();
+    }
+
+    [Fact]
     public async Task ReadAsync_walks_namespace_tree_into_flat_object_list()
     {
         await using var stream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));

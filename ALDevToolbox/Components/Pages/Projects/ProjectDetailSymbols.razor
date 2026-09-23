@@ -1,0 +1,321 @@
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
+@inject ILogger<ProjectDetailSymbols> Log
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+
+@*
+    The Symbols tab of a solution: the dependency packages a build cannot find on
+    its own - another vendor's app the customer's extensions build on - stored once
+    here and used by every later build of the solution. See
+    .design/object-explorer-project-builds.md ("Partial failure, retry, and manual
+    symbols").
+
+    Named user: a BC consultant whose build just failed because it could not find
+    Continia Core. They know what a .app symbol package is and where to download
+    one; they know nothing about how the build assembles its symbols. They arrive
+    from the failed build's "Add symbols" link, upload the package, and build again.
+
+    Owner and admin only, like Pipelines - the page renders the tab only then. The
+    tab still takes CanManage so it never offers a write the service would refuse.
+    Loads its own list: nothing else on the page reads it, and only one tab renders
+    at a time, so it never shares the page's DbContext with a sibling mid-load.
+*@
+
+<div class="form-sec__head">
+    <h2 class="card__title">
+        Symbols
+        @if (_rows is not null)
+        {
+            <StatusPill Tone="muted"><span>@_rows.Count package@(_rows.Count == 1 ? "" : "s")</span></StatusPill>
+        }
+    </h2>
+    @if (CanManage && _rows is { Count: > 0 })
+    {
+        <button type="button" class="btn btn--sm" @onclick="UploadAsync" disabled="@_busy">
+            <Icon Name="upload" Width="14" Height="14" />
+            <span>Upload symbols</span>
+        </button>
+    }
+</div>
+<p class="form-sec__cap">Apps your extensions depend on that are not built in this solution or shipped by Microsoft - another vendor's app, for example. Every build of this solution uses the packages stored here.</p>
+
+@if (_done is { } done)
+{
+    <Alert Tone="AlertTone.Success" Role="status">
+        <span>@done <a href="@($"/solutions/{Id}?tab=pipelines")">Build again</a> to use @(_doneCount == 1 ? "it" : "them").</span>
+    </Alert>
+}
+@if (_error is { } error)
+{
+    <Alert Tone="AlertTone.Danger"><span>@error</span></Alert>
+}
+
+@if (_rows is null)
+{
+    <LoadingBlock Text="Loading symbols..." />
+}
+else if (_rows.Count == 0)
+{
+    <div class="card">
+        <div class="card__body">
+            <EmptyState Icon="package" Title="No symbols stored">
+                <Text>
+                    When a build fails because it can't find an app your extensions depend on,
+                    upload that app's <span class="u-nowrap"><code>.app</code> file</span> here and build again.
+                </Text>
+                <Action>
+                    @if (CanManage)
+                    {
+                        <button type="button" class="btn" @onclick="UploadAsync" disabled="@_busy">
+                            <Icon Name="upload" Width="15" Height="15" />
+                            <span>Upload symbols</span>
+                        </button>
+                    }
+                </Action>
+            </EmptyState>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card card--flush">
+        <div class="sub-rows sub-rows--plain">
+            @foreach (var row in _rows)
+            {
+                <div class="sub-row">
+                    <div class="sub-row__stack">
+                        <span class="sub-row__name">@row.FileName</span>
+                        <span class="sub-row__val" title="@row.CreatedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")">
+                            @FileSize(row.ContentLength) · added @RelativeTime.Ago(row.CreatedAt)
+                        </span>
+                    </div>
+                    @if (CanManage)
+                    {
+                        <div class="sub-row__acts">
+                            <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(row)" disabled="@_busy"
+                                    aria-label="@($"Remove {row.FileName}")">
+                                <Icon Name="trash-2" Width="14" Height="14" />
+                                <span>Remove</span>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* The upload: one or more .app files, read in the browser's own dialog. The confirm
+   stays disabled until at least one readable package is chosen. *@
+<ConfirmDialog @ref="_upload" ConfirmDisabled="@(_chosen.Count == 0 || _reading)">
+    <div class="pd-sym__file">
+        <label class="btn btn--sm btn--file" for="pd-sym-file">
+            <Icon Name="upload" Width="14" Height="14" />
+            <span>@(_chosen.Count == 0 ? "Choose .app files..." : "Choose different files...")</span>
+            <InputFile id="pd-sym-file" OnChange="OnChosenAsync" accept=".app" multiple />
+        </label>
+        @if (_reading)
+        {
+            <span class="u-muted" role="status">Reading...</span>
+        }
+        else if (_chooseError is { } chooseError)
+        {
+            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@chooseError</span>
+        }
+        else if (_chosen.Count == 0)
+        {
+            <span class="u-muted">Choose one or more .app files to continue.</span>
+        }
+    </div>
+    @if (_chosen.Count > 0 && !_reading)
+    {
+        <ul class="pd-sym__chosen">
+            @foreach (var file in _chosen)
+            {
+                <li>@file.FileName - @FileSize(file.Content.Length)</li>
+            }
+        </ul>
+    }
+</ConfirmDialog>
+
+<ConfirmDialog @ref="_confirmRemove" />
+
+@code {
+    /// <summary>The solution the symbols belong to.</summary>
+    [Parameter, EditorRequired] public int Id { get; set; }
+
+    /// <summary>Whether this person may add and remove packages. The page shows the tab only to them.</summary>
+    [Parameter] public bool CanManage { get; set; }
+
+    /// <summary>
+    /// Largest package accepted, the same ceiling Business Central puts on an app. A
+    /// symbol package is far smaller; anything near this is the wrong file.
+    /// </summary>
+    private const long MaxBytes = BcAppManagementClient.MaxAppBytes;
+
+    private const int MaxFiles = 20;
+
+    private List<ProjectSymbolRow>? _rows;
+    private ConfirmDialog? _upload;
+    private ConfirmDialog? _confirmRemove;
+    private List<SupplementalSymbolUpload> _chosen = new();
+    private bool _reading;
+    private bool _busy;
+    private string? _chooseError;
+    private string? _done;
+    private int _doneCount;
+    private string? _error;
+    private int? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Id) return;
+        _loadedFor = Id;
+        _rows = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _rows = await Projects.ListSupplementalSymbolsAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Could not list the stored symbols for solution {ProjectId}.", Id);
+            _rows = new();
+            _error = "Couldn't load the stored symbols. Reload the page to try again.";
+        }
+    }
+
+    private async Task UploadAsync()
+    {
+        if (_upload is null || !CanManage) return;
+        _chosen = new();
+        _chooseError = null;
+        _done = null;
+        _error = null;
+
+        var confirmed = await _upload.OpenAsync(
+            "Upload symbols",
+            "The .app symbol packages of the apps your build could not find. Uploading a file with the same name as a stored one replaces it.",
+            "Upload", "btn", "upload");
+        var files = _chosen;
+        _chosen = new();
+        if (!confirmed || files.Count == 0) return;
+
+        _busy = true;
+        try
+        {
+            var saved = await Projects.AddSupplementalSymbolsAsync(Id, files);
+            _doneCount = saved;
+            _done = saved == 1 ? $"Stored {files[0].FileName}." : $"Stored {saved} symbol packages.";
+            _rows = await Projects.ListSupplementalSymbolsAsync(Id);
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.Values.FirstOrDefault() ?? "Those files could not be stored.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only the solution owner or an admin can change its symbols.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Storing symbols for solution {ProjectId} failed.", Id);
+            _error = "Something went wrong and the files were not stored. Try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OnChosenAsync(InputFileChangeEventArgs e)
+    {
+        _chosen = new();
+        _chooseError = null;
+        if (e.FileCount > MaxFiles)
+        {
+            _chooseError = $"Choose at most {MaxFiles} files at a time.";
+            return;
+        }
+
+        var files = e.GetMultipleFiles(MaxFiles);
+        var wrong = files.FirstOrDefault(f => !f.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase));
+        if (wrong is not null)
+        {
+            _chooseError = $"{wrong.Name} isn't a .app file. Choose the dependency's symbol package.";
+            return;
+        }
+        var tooBig = files.FirstOrDefault(f => f.Size > MaxBytes);
+        if (tooBig is not null)
+        {
+            _chooseError = $"{tooBig.Name} is over 50 MB, which is larger than any symbol package.";
+            return;
+        }
+
+        _reading = true;
+        StateHasChanged();
+        try
+        {
+            var read = new List<SupplementalSymbolUpload>(files.Count);
+            foreach (var file in files)
+            {
+                await using var stream = file.OpenReadStream(MaxBytes);
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                read.Add(new SupplementalSymbolUpload(Path.GetFileName(file.Name), buffer.ToArray()));
+            }
+            _chosen = read;
+        }
+        catch (IOException ex)
+        {
+            Log.LogWarning(ex, "Reading an uploaded symbol package failed.");
+            _chooseError = "Couldn't read one of those files. Choose them again.";
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    private async Task RemoveAsync(ProjectSymbolRow row)
+    {
+        if (_confirmRemove is null || !CanManage) return;
+        _done = null;
+        _error = null;
+        var confirmed = await _confirmRemove.OpenAsync(
+            $"Remove {row.FileName}?",
+            "Builds of this solution stop using it. A build that still needs it will fail until you upload it again.",
+            "Remove", "btn--danger", "trash-2");
+        if (!confirmed) return;
+
+        _busy = true;
+        try
+        {
+            await Projects.DeleteSupplementalSymbolAsync(Id, row.Id);
+            _rows = await Projects.ListSupplementalSymbolsAsync(Id);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only the solution owner or an admin can change its symbols.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Removing symbol {SymbolId} from solution {ProjectId} failed.", row.Id, Id);
+            _error = "Something went wrong and the package was not removed. Try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string FileSize(long bytes) => bytes < 1024 * 1024
+        ? $"{Math.Max(1, bytes / 1024)} KB"
+        : $"{bytes / (1024d * 1024d):0.0} MB";
+}
