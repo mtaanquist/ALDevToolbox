@@ -137,6 +137,25 @@ public static class AppPackageReader
     }
 
     /// <summary>
+    /// Reads only the <c>NavxManifest.xml</c> of an <c>.app</c> - who made it, what it
+    /// is and which version - without walking its symbols or source. For callers that
+    /// need to say which package a stored file is (the missing-dependency report on a
+    /// failed build) and would otherwise parse a whole symbol tree to learn one version
+    /// number. Null when the bytes are not a readable <c>.app</c>: an NEA-encrypted
+    /// package hides its manifest, and a broken upload should cost a sentence in a
+    /// report, not the build.
+    /// </summary>
+    public static Task<AppManifest?> TryReadManifestAsync(byte[] bytes, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ct.ThrowIfCancellationRequested();
+        // The stream overload below does the work; this keeps the in-memory shape
+        // the missing-dependency report reads stored uploads through.
+        using var stream = new MemoryStream(bytes, writable: false);
+        return Task.FromResult(TryReadManifest(stream));
+    }
+
+    /// <summary>
     /// Reads only the <c>NavxManifest.xml</c> of the <c>.app</c> at
     /// <paramref name="path"/>, or <see langword="null"/> when the file is not a
     /// readable, unencrypted <c>.app</c>. For callers that need an app's identity

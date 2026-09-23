@@ -74,7 +74,7 @@ public sealed class PaletteContextServiceTests : IDisposable
         result.Context.Should().NotBeNull();
         result.Context!.Label.Should().Be("CRONUS Coffee A/S");
         Titles(result.Context, "tab").Should().Equal(
-            "Customer", "General", "Repositories", "Business Central", "Pipelines");
+            "Customer", "General", "Repositories", "Business Central", "Pipelines", "Symbols");
         result.Context.Items.Should().OnlyContain(i => !i.Href.Contains("tab=access"));
     }
 
@@ -84,7 +84,7 @@ public sealed class PaletteContextServiceTests : IDisposable
         var result = await ResolveAsync(OwnerId, "User", at: $"solution:{_publicId}");
 
         Titles(result.Context!, "tab").Should().Equal(
-            "Customer", "General", "Repositories", "Business Central", "Pipelines", "Access");
+            "Customer", "General", "Repositories", "Business Central", "Pipelines", "Symbols", "Access");
         result.Context!.Items.Single(i => i.Title == "Access").Href.Should().Be($"/solutions/{_publicId}?tab=access");
     }
 
@@ -121,7 +121,7 @@ public sealed class PaletteContextServiceTests : IDisposable
     {
         var result = await ResolveAsync(OwnerId, "User", at: $"solution:{_onPremId}");
 
-        Titles(result.Context!, "tab").Should().Equal("Customer", "General", "Repositories", "Pipelines", "Access");
+        Titles(result.Context!, "tab").Should().Equal("Customer", "General", "Repositories", "Pipelines", "Symbols", "Access");
     }
 
     [Fact]

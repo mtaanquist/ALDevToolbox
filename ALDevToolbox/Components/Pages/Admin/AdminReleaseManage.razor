@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs ImportJobs
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
@@ -174,7 +175,13 @@
                                         <span>—</span>
                                     }
                                 </td>
-                                <td class="u-muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
+                                <td class="u-muted">
+                                    @(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)
+                                    @if (_projectId is { } solutionId && ALDevToolbox.Services.ObjectExplorer.Projects.MissingDependencyReport.NamesMissingDependency(r.Message))
+                                    {
+                                        <text> </text><a href="@($"/solutions/{solutionId}?tab=symbols")">Add symbols to the solution</a>
+                                    }
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -225,6 +232,10 @@
                     dependency's <code>.app</code> here and rebuild - the symbols are kept with
                     the solution, so future builds use them too. The previous attempt's data is
                     cleared and replaced by the rebuild.
+                    @if (_projectId is { } symbolsFor)
+                    {
+                        <text>The symbols already stored are on the solution's <a href="@($"/solutions/{symbolsFor}?tab=symbols")">Symbols tab</a>.</text>
+                    }
                 </p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/recover-symbols")"
                       enctype="multipart/form-data">
@@ -405,6 +416,9 @@
     private ImportJobOrigin? _origin;
     private List<ProjectBuildResultRow> _buildResults = new();
     private List<ReleaseDependencyRow> _dependencies = new();
+
+    /// <summary>The solution a project-kind release was built from, when the viewer may see it.</summary>
+    private int? _projectId;
     private bool _isPartial;
     private (string Message, bool IsError)? Status { get; set; }
 
@@ -443,6 +457,8 @@
             _buildResults = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
             _dependencies = await ObjectExplorer.GetDependencyReleasesAsync(ReleaseId);
+            // Where the solution's stored symbols live, for the link from a failed row.
+            _projectId = await Artifacts.GetProjectIdForReleaseAsync(ReleaseId);
         }
     }
 

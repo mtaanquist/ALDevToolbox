@@ -165,6 +165,45 @@ public sealed class ArtifactServiceTests : IDisposable
         detail.Logs.Should().ContainSingle();
     }
 
+    /// <summary>
+    /// A partial build goes ready, so the extensions that failed have to be on the
+    /// build itself or the pipeline page shows a clean build. The rows whose reason
+    /// is a dependency the solution can supply are marked so the page can offer the
+    /// way to the Symbols tab (#901).
+    /// </summary>
+    [Fact]
+    public async Task GetBuildDetailAsync_lists_the_extensions_that_did_not_build()
+    {
+        int buildId;
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            var releaseId = await SeedReleaseAsync(ctx);
+            buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, releaseId: releaseId);
+            ctx.OeProjectBuildResults.AddRange(
+                Result(releaseId, "CRONUS Core", ProjectBuildResultStatus.Ingested, null),
+                Result(releaseId, "CRONUS Continia", ProjectBuildResultStatus.Failed,
+                    "Missing dependency: Continia Core by Continia Software, version 12.1.0.0 or later. Looked in ..."),
+                Result(releaseId, "CRONUS Banking", ProjectBuildResultStatus.Failed,
+                    "Compilation failed (see the build report for CRONUS Banking)."));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var detail = await Svc(read).GetBuildDetailAsync(buildId);
+
+        detail!.FailedApps.Should().Equal(
+            new FailedAppRow("CRONUS Banking", "Compilation failed (see the build report for CRONUS Banking).", NeedsSymbols: false),
+            new FailedAppRow("CRONUS Continia",
+                "Missing dependency: Continia Core by Continia Software, version 12.1.0.0 or later. Looked in ...", NeedsSymbols: true));
+
+        static OeProjectBuildResult Result(int releaseId, string app, string status, string? message) => new()
+        {
+            OrganizationId = TestDb.DefaultOrgId, ReleaseId = releaseId, AppName = app, AppId = Guid.NewGuid().ToString(),
+            Status = status, Message = message, CreatedAt = DateTime.UtcNow,
+        };
+    }
+
     [Fact]
     public async Task ListBuildsAsync_surfaces_each_build_head_commit_and_count()
     {

@@ -214,14 +214,15 @@ public sealed class ProjectBuildService
                 ExtractArtifactSymbols(download, symbolsDir);
                 CopyCommittedSymbols(clones.Select(c => c.Dir).ToList(), symbolsDir);
                 // Whatever is still missing comes from Microsoft's public symbol
-                // feeds (#901). Stored uploads are read first so the feed never
-                // fetches an app the operator has deliberately supplied.
+                // feeds, then from the organisation's own earlier builds (#901).
+                // Stored uploads are read first so neither fetches an app the
+                // operator has deliberately supplied.
                 var supplemental = await LoadSupplementalSymbolsAsync(projectId, ct).ConfigureAwait(false);
-                fromFeeds = await ResolveFromSymbolFeedsAsync(discovered, supplemental, symbolsDir, resolved.MajorMinor, country, logs, ct)
+                fromFeeds = await ResolveDependencySymbolsAsync(projectId, discovered, supplemental, symbolsDir, resolved.MajorMinor, country, logs, ct)
                     .ConfigureAwait(false);
                 // Operator-supplied symbols (the manual-symbols recovery path) are
-                // written last so they win over a stale committed/artifact/feed copy
-                // of the same package — the upload is the deliberate fix.
+                // written last so they win over a stale committed/artifact/feed/build
+                // copy of the same package — the upload is the deliberate fix.
                 await WriteSupplementalSymbolsAsync(projectId, supplemental, symbolsDir, ct).ConfigureAwait(false);
                 // 4. Auto-import the parent BC release inline (best-effort) so
                 //    cross-release references into Base App resolve. Reuses the
@@ -244,6 +245,8 @@ public sealed class ProjectBuildService
             //    becomes a symbol for the apps that depend on it.
             var uploads = new List<AppFileUpload>();
             var artifacts = new List<PendingArtifact>();
+            List<StoredSymbolPackage>? storedSymbols = null;
+            List<InstalledAppFact>? installedApps = null;
             foreach (var app in TopologicalOrder(discovered))
             {
                 ct.ThrowIfCancellationRequested();
@@ -264,8 +267,29 @@ public sealed class ProjectBuildService
                 }
                 if (compiled is null)
                 {
+                    // Name the dependency when that is what stopped it, so the row
+                    // says what to supply rather than pointing at the log.
+                    string? missingMessage = null;
+                    var missing = AlcOutputParser.ParseMissingPackages(compileLog);
+                    if (missing.Count > 0)
+                    {
+                        storedSymbols ??= await ReadStoredSymbolPackagesAsync(projectId, ct).ConfigureAwait(false);
+                        installedApps ??= await ReadInstalledAppsAsync(projectId, ct).ConfigureAwait(false);
+                        var failedSiblings = results
+                            .Where(r => r.Status == ProjectBuildResultStatus.Failed && !string.IsNullOrEmpty(r.AppId))
+                            .Select(r => r.AppId)
+                            .ToList();
+                        missingMessage = MissingDependencyReport.Compose(app.Manifest, missing, storedSymbols, failedSiblings,
+                        [
+                            $"the Business Central {resolved.MajorMinor} ({country}) symbols",
+                            "the repositories' .alpackages folders",
+                            "Microsoft's public symbol feeds",
+                            "the builds of this organisation's Public and Read-only solutions",
+                            "the symbols stored on this solution",
+                        ], installedApps);
+                    }
                     results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
-                        ProjectBuildResultStatus.Failed, $"Compilation failed (see the build report for {app.Manifest.Name}).",
+                        ProjectBuildResultStatus.Failed, missingMessage ?? $"Compilation failed (see the build report for {app.Manifest.Name}).",
                         RepoUrl: app.Repo.Url, CommitSha: app.Repo.CommitSha, CommitDate: app.Repo.CommitDate));
                     continue;
                 }
@@ -282,7 +306,7 @@ public sealed class ProjectBuildService
                 // anyway so they can't slip in as a download. See .design/artifacts.md.
                 if (!fileName.EndsWith(".dep.app", StringComparison.OrdinalIgnoreCase))
                 {
-                    artifacts.Add(new PendingArtifact(fileName, app.Manifest.Name, app.Manifest.Version, app.Manifest.Runtime, bytes));
+                    artifacts.Add(new PendingArtifact(fileName, BuildArtifactAppIdBackfill.CanonicalAppId(app.Manifest.Id), app.Manifest.Name, app.Manifest.Version, app.Manifest.Runtime, bytes));
                 }
                 results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
                     ProjectBuildResultStatus.Compiled, null,
@@ -748,6 +772,7 @@ public sealed class ProjectBuildService
                 OrganizationId = build.OrganizationId,
                 ProjectBuildId = build.Id,
                 FileName = Truncate(a.FileName, 400),
+                AppId = a.AppId,
                 AppName = Truncate(a.AppName, 250),
                 AppVersion = Truncate(a.AppVersion, 50),
                 RuntimeVersion = a.Runtime is null ? null : Truncate(a.Runtime, 50),
@@ -1092,16 +1117,18 @@ public sealed class ProjectBuildService
     }
 
     /// <summary>
-    /// Fetches the dependencies nothing else supplied from Microsoft's public
-    /// symbol feeds, and records in the build log where each one came from or why
-    /// it could not be found. An app counts as supplied when the artifact or a
-    /// committed <c>.alpackages/</c> already put it in the symbol dir, when this
-    /// build compiles it, or when a stored upload carries it. Never fails the
-    /// build: an unresolved app fails only the extensions that need it, at
-    /// compile time, as a missing dependency always has.
+    /// Supplies the dependencies nothing else supplied - from Microsoft's public
+    /// symbol feeds first, then from the <c>.app</c>s the organisation's earlier
+    /// builds retained (a PTE another solution builds, #901 Part 3) - and records in
+    /// the build log where each one came from or why it could not be found. An app
+    /// counts as supplied when the artifact or a committed <c>.alpackages/</c>
+    /// already put it in the symbol dir, when this build compiles it, or when a
+    /// stored upload carries it. Never fails the build: an unresolved app fails only
+    /// the extensions that need it, at compile time, as a missing dependency always has.
+    /// Returns the packages the feeds supplied, which Part 4 ingests as vendor releases.
     /// </summary>
-    private async Task<IReadOnlyList<ResolvedSymbolPackage>> ResolveFromSymbolFeedsAsync(
-        IReadOnlyList<DiscoveredApp> discovered, List<SupplementalSymbol> supplemental, string symbolsDir,
+    private async Task<IReadOnlyList<ResolvedSymbolPackage>> ResolveDependencySymbolsAsync(
+        int projectId, IReadOnlyList<DiscoveredApp> discovered, List<SupplementalSymbol> supplemental, string symbolsDir,
         string applicationVersion, string country, List<PendingLog> logs, CancellationToken ct)
     {
         var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1120,6 +1147,60 @@ public sealed class ProjectBuildService
                 g.Select(d => d.Version).OrderByDescending(v => Version.TryParse(v, out var parsed) ? parsed : null).First()))
             .ToList();
 
+        var lines = new List<string>();
+        var fromFeeds = new List<ResolvedSymbolPackage>();
+        var unresolved = new List<UnresolvedSymbol>(
+            await ResolveFromSymbolFeedsAsync(dependencies, symbolsDir, provided, applicationVersion, country, lines, fromFeeds, ct)
+                .ConfigureAwait(false));
+
+        // The feeds only know published apps; a PTE another solution in the
+        // organisation builds is in that solution's retained build output.
+        var fromBuilds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var outcome = await new BuildArtifactSymbolResolver(_db, _logger).ResolveAsync(
+                new BuildArtifactSymbolRequest(projectId, dependencies, symbolsDir, provided, applicationVersion), ct).ConfigureAwait(false);
+            foreach (var hit in outcome.Resolved)
+            {
+                fromBuilds.Add(hit.AppId);
+                var source = hit.ProjectId == projectId
+                    ? $"this solution's build #{hit.BuildId}"
+                    : $"solution {hit.ProjectName}'s build #{hit.BuildId}";
+                lines.Add($"Resolved {hit.AppName} {hit.AppVersion} from {source}.");
+            }
+            // What those apps need in turn and no build carried: the feeds have
+            // not been asked about these yet.
+            if (outcome.TransitiveMisses.Count > 0)
+            {
+                unresolved.AddRange(await ResolveFromSymbolFeedsAsync(
+                    outcome.TransitiveMisses, symbolsDir, provided, applicationVersion, country, lines, fromFeeds, ct).ConfigureAwait(false));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Resolving symbols from earlier builds failed; the build continues with the symbols it already has.");
+            lines.Add($"Could not look up dependencies in earlier builds: {ex.Message}");
+        }
+
+        foreach (var missing in unresolved.Where(u => !fromBuilds.Contains(NormalizeAppId(u.AppId))))
+        {
+            var wanted = missing.MinVersion is null ? string.Empty : $" {missing.MinVersion} or later";
+            lines.Add($"Could not resolve {missing.Name ?? "app"} ({missing.AppId}){wanted}: {missing.Reason}, "
+                + "and no successful build of this solution or of a Public or Read-only solution has it.");
+        }
+        if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
+        return fromFeeds;
+    }
+
+    /// <summary>
+    /// One pass over Microsoft's public symbol feeds: logs a line per package
+    /// fetched, adds what it fetched to <paramref name="resolved"/>, and returns
+    /// what could not be found. Never throws except on cancellation.
+    /// </summary>
+    private async Task<IReadOnlyList<UnresolvedSymbol>> ResolveFromSymbolFeedsAsync(
+        IReadOnlyList<SymbolDependency> dependencies, string symbolsDir, IReadOnlySet<string> provided,
+        string applicationVersion, string country, List<string> lines, List<ResolvedSymbolPackage> resolved, CancellationToken ct)
+    {
         SymbolFeedOutcome outcome;
         try
         {
@@ -1131,22 +1212,16 @@ public sealed class ProjectBuildService
             // The resolver promises not to throw; this keeps that promise from
             // being the only thing between a feed bug and a sunk build.
             _logger.LogWarning(ex, "Symbol feed resolution failed; the build continues with the symbols it already has.");
-            logs.Add(new PendingLog(null, "Symbols", $"Could not look up dependencies on the public symbol feeds: {ex.Message}"));
+            lines.Add($"Could not look up dependencies on the public symbol feeds: {ex.Message}");
             return [];
         }
 
-        var lines = new List<string>();
         foreach (var package in outcome.Resolved)
         {
             lines.Add($"Resolved {package.Name} {package.Version} from the {package.Feed}{(package.FromCache ? " (cached)" : string.Empty)}.");
         }
-        foreach (var missing in outcome.Unresolved)
-        {
-            var wanted = missing.MinVersion is null ? string.Empty : $" {missing.MinVersion} or later";
-            lines.Add($"Could not resolve {missing.Name ?? "app"} ({missing.AppId}){wanted}: {missing.Reason}.");
-        }
-        if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
-        return outcome.Resolved;
+        resolved.AddRange(outcome.Resolved);
+        return outcome.Unresolved;
     }
 
     /// <summary>Copies any third-party symbols the repos committed under <c>.alpackages/</c> into the symbol dir.</summary>
@@ -1378,6 +1453,50 @@ public sealed class ProjectBuildService
         _logger.LogWarning("alc failed for {App} (exit {Exit}): {Err}", app.Manifest.Name, result.ExitCode,
             Truncate(string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : result.StdErr, 2000));
         return (null, log);
+    }
+
+    /// <summary>
+    /// The solution's stored symbol packages, identified by their own manifests, for
+    /// the missing-dependency report. Only read when a compile has already failed for
+    /// want of a package, so a green build never pays for it. A stored file that
+    /// cannot be read is skipped - it cannot be the version the build needed either.
+    /// </summary>
+    private async Task<List<StoredSymbolPackage>> ReadStoredSymbolPackagesAsync(int projectId, CancellationToken ct)
+    {
+        var rows = await _db.OeProjectSymbols.AsNoTracking()
+            .Where(s => s.ProjectId == projectId)
+            .Select(s => new { s.FileName, s.Content })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var packages = new List<StoredSymbolPackage>(rows.Count);
+        foreach (var row in rows)
+        {
+            var manifest = await AppPackageReader.TryReadManifestAsync(row.Content, ct).ConfigureAwait(false);
+            if (manifest is null) continue;
+            packages.Add(new StoredSymbolPackage(row.FileName, manifest.AppId, manifest.Publisher, manifest.Name, manifest.Version));
+        }
+        return packages;
+    }
+
+    /// <summary>
+    /// What the solution's Business Central environments last reported installed, from
+    /// the installed-apps mirror rather than the tenant: the build has no business
+    /// holding the customer's credentials, and a mirror a day old still says which
+    /// version of a vendor app the customer runs. Empty for a solution with no
+    /// connection. See <c>.design/solution-customer-info.md</c>, "Modules".
+    /// </summary>
+    private async Task<List<InstalledAppFact>> ReadInstalledAppsAsync(int projectId, CancellationToken ct)
+    {
+        var environments = _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == projectId && e.MissingSince == null)
+            .Where(Bc.EnvironmentQueries.NotSoftDeleted);
+        var rows = await (
+                from e in environments
+                join a in _db.OeEnvironmentApps.AsNoTracking() on e.Id equals a.EnvironmentId
+                select new { e.Name, e.Type, a.AppId, a.Version })
+            .ToListAsync(ct).ConfigureAwait(false);
+        return rows
+            .Select(r => new InstalledAppFact(r.Name, Bc.BcEnvironmentTypes.IsProduction(r.Type), r.AppId, r.Version))
+            .ToList();
     }
 
     // ── Release finalisation ────────────────────────────────────────────
@@ -1668,7 +1787,7 @@ public sealed class ProjectBuildService
     private sealed record PendingLog(int? RepoId, string Section, string Content);
 
     /// <summary>A compiled deliverable held in memory, before it's persisted as a <see cref="OeProjectBuildArtifact"/>.</summary>
-    private sealed record PendingArtifact(string FileName, string AppName, string AppVersion, string? Runtime, byte[] Content);
+    private sealed record PendingArtifact(string FileName, string? AppId, string AppName, string AppVersion, string? Runtime, byte[] Content);
 
     /// <summary>One parsed compiler diagnostic with its path already made repository-relative, before it becomes a row.</summary>
     private sealed record PendingDiagnostic(int? RepoId, string RelativePath, AlcDiagnostic Diagnostic);

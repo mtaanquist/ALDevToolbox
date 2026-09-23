@@ -548,7 +548,7 @@ public sealed class AlSymbolFeedResolver
     // ── What the build already has ──────────────────────────────────────
 
     /// <summary>The highest version of each app id already in <paramref name="dir"/>.</summary>
-    private static Dictionary<string, Version?> ScanPresent(string dir)
+    internal static Dictionary<string, Version?> ScanPresent(string dir)
     {
         var present = new Dictionary<string, Version?>(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(dir)) return present;

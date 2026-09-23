@@ -502,12 +502,31 @@ public sealed class ArtifactService
         var warningCount = diagnosticCounts
             .Where(c => c.Severity == ProjectBuildDiagnosticSeverity.Warning).Sum(c => c.Count);
 
+        // The extensions that did not build, with the reason the build recorded. A
+        // build with some of these still goes ready, so without them a partial
+        // build reads as a clean one to anyone who never opens the log.
+        var failedApps = new List<FailedAppRow>();
+        if (build.ReleaseId is { } releaseId)
+        {
+            var failed = await _db.OeProjectBuildResults.AsNoTracking()
+                .Where(r => r.ReleaseId == releaseId && r.Status == ProjectBuildResultStatus.Failed)
+                .OrderBy(r => r.AppName)
+                .Select(r => new { r.AppName, r.Message })
+                .ToListAsync(ct);
+            failedApps = failed
+                .Select(r => new FailedAppRow(
+                    r.AppName,
+                    r.Message,
+                    MissingDependencyReport.NamesMissingDependency(r.Message)))
+                .ToList();
+        }
+
         return new BuildDetail(
             build.Id, build.ProjectId, build.ProjectName, build.PipelineId, build.PipelineName,
             build.ReleaseId, build.Status,
             build.BcVersion, build.Branch, build.StartedAt, build.FinishedAt, build.FailureMessage,
             build.StartedBy, repoCommits, changelogGroups, artifacts, logSections,
-            errorCount, warningCount);
+            errorCount, warningCount, failedApps);
     }
 
     /// <summary>The deliverables of a build (metadata only), ordered by file name.</summary>
@@ -718,7 +737,15 @@ public sealed record BuildDetail(
     IReadOnlyList<ArtifactRow> Artifacts,
     IReadOnlyList<LogSectionRow> Logs,
     int ErrorCount = 0,
-    int WarningCount = 0);
+    int WarningCount = 0,
+    IReadOnlyList<FailedAppRow>? FailedApps = null);
+
+/// <summary>
+/// One extension a build could not produce, and why. <see cref="NeedsSymbols"/> is
+/// set when the reason is a dependency the solution has to supply, which is what
+/// puts a way to the solution's Symbols tab beside it.
+/// </summary>
+public sealed record FailedAppRow(string AppName, string? Message, bool NeedsSymbols);
 
 /// <summary>One repository's pinned commit for a build.</summary>
 public sealed record RepoCommitRow(string RepoName, string RepoUrl, string CommitHash, DateTime? CommittedAt);
