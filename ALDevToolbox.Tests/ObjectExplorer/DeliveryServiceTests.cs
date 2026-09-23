@@ -1013,6 +1013,274 @@ public sealed class DeliveryServiceTests : IDisposable
         TargetAppVersion: version, ScheduleKind: schedule, Name: name, Publisher: "CRONUS A/S",
         SyncMode: BcSyncMode.Add, LanguageId: string.Empty, CreatedOn: DateTimeOffset.UtcNow);
 
+    // ── Prepared releases (#934) ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task ProposeReleasesForBuildAsync_prepares_a_proposed_release_that_sends_nothing()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+
+        var prepared = await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+
+        prepared.Should().Be(1);
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.Include(d => d.Results).SingleAsync(d => d.ReleasePipelineId == seed.ReleasePipelineId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Proposed);
+        delivery.ProjectBuildId.Should().Be(seed.BuildId);
+        delivery.TriggeredByUserId.Should().BeNull("nobody has approved it yet");
+        delivery.Results.Select(r => r.AppName).Should().BeEquivalentTo("CRONUS Core", "CRONUS Sales");
+        delivery.DiagnosticsLog.Should().Contain($"Prepared from build #{seed.BuildId}");
+        _queue.Reader.TryRead(out _).Should().BeFalse("a prepared release is never queued");
+        _apps.UploadedOrder.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ProposeReleasesForBuildAsync_leaves_a_pipeline_that_did_not_ask_for_it()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+
+        var prepared = await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+
+        prepared.Should().Be(0);
+        (await _db.NewContext().OeProjectDeliveries.AnyAsync(d => d.ReleasePipelineId == seed.ReleasePipelineId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProposeReleasesForBuildAsync_ignores_pull_request_builds()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await ctx.OeProjectBuilds.Where(b => b.Id == seed.BuildId)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.Trigger, ProjectBuildTrigger.PullRequest));
+
+        (await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ProposeReleasesForBuildAsync_schedules_by_the_delivery_window_rule()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" }, deploymentSchedule: BcDeploymentSchedule.OurDeliveryWindow);
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        // A one-minute window an hour and a half from now: never open while the test runs.
+        var start = TimeOnly.FromDateTime(DateTime.UtcNow.AddMinutes(90));
+        await SetWindowAsync(ctx, seed.EnvironmentId, start, start.AddMinutes(1));
+
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.SingleAsync(d => d.ReleasePipelineId == seed.ReleasePipelineId);
+        delivery.ScheduledFor.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(90), TimeSpan.FromMinutes(2));
+        delivery.ScheduledByDeliveryWindow.Should().BeTrue();
+        delivery.ScheduledOutsideWindow.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProposeReleasesForBuildAsync_replaces_an_unapproved_proposal_from_an_older_build()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        var svc = NewService(ctx);
+        await svc.ProposeReleasesForBuildAsync(seed.BuildId);
+        var newer = await SeedBuildAsync(ctx, seed.ProjectId, seed.BuildPipelineId, ProjectBuildStatus.Ready, new[] { "CRONUS Core" });
+
+        await NewService(_db.NewContext()).ProposeReleasesForBuildAsync(newer);
+
+        await using var read = _db.NewContext();
+        var rows = await read.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).OrderBy(d => d.Id).ToListAsync();
+        rows.Should().HaveCount(2, "a newer build replaces the proposal rather than stacking a queue");
+        rows[0].Status.Should().Be(ProjectDeliveryStatus.Cancelled);
+        rows[0].FinishedAt.Should().NotBeNull();
+        rows[0].DiagnosticsLog.Should().Contain($"Replaced by build #{newer} before anyone approved it.");
+        rows[1].Status.Should().Be(ProjectDeliveryStatus.Proposed);
+        rows[1].ProjectBuildId.Should().Be(newer);
+
+        // Preparing the same build again changes nothing.
+        (await NewService(_db.NewContext()).ProposeReleasesForBuildAsync(newer)).Should().Be(0);
+        // And the history row says what became of the replaced one.
+        var history = await NewService(_db.NewContext()).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
+        history.Single(h => h.Id == rows[0].Id).SetAsideLine.Should().StartWith("Replaced by build #");
+        history.Single(h => h.Id == rows[1].Id).IsProposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EnqueueDueDeliveriesAsync_never_enqueues_a_proposed_release()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+
+        // Long after its time: still nothing, because nobody has approved it.
+        var enqueued = await NewService(_db.NewContext()).EnqueueDueDeliveriesAsync(DateTime.UtcNow.AddDays(3));
+
+        enqueued.Should().Be(0);
+        _queue.Reader.TryRead(out _).Should().BeFalse();
+        // And a worker handed its id anyway would not claim it.
+        var id = await _db.NewContext().OeProjectDeliveries.Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).Select(d => d.Id).SingleAsync();
+        await NewService(_db.NewContext()).RunDeliveryAsync(id);
+        (await _db.NewContext().OeProjectDeliveries.SingleAsync(d => d.Id == id)).Status.Should().Be(ProjectDeliveryStatus.Proposed);
+        _apps.UploadedOrder.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_schedules_it_as_an_ordinary_release_run_by_the_approver()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+        var id = await ctx.OeProjectDeliveries.Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).Select(d => d.Id).SingleAsync();
+        var approver = await SeedUserAsync("K. Jensen");
+        _db.OrgContext.CurrentUserId = approver;
+        _apps.StatusByApp["CRONUS Core"] = "succeeded";
+
+        await NewService(_db.NewContext()).ApproveProposalAsync(id);
+
+        await using (var read = _db.NewContext())
+        {
+            var delivery = await read.OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id);
+            delivery.Status.Should().Be(ProjectDeliveryStatus.Scheduled);
+            delivery.TriggeredByUserId.Should().Be(approver);
+            delivery.ScheduledFor.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1), "an immediate pipeline installs right away once approved");
+            delivery.DiagnosticsLog.Should().Contain("Approved by K. Jensen.");
+        }
+        _queue.Reader.TryRead(out var job).Should().BeTrue("a release due now is queued on approval, like a hand-made one");
+        job!.DeliveryId.Should().Be(id);
+
+        // ...and runs exactly like one, keeping its history above the run's own lines.
+        await NewService(_db.NewContext()).RunDeliveryAsync(id);
+        await using var after = _db.NewContext();
+        var ran = await after.OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id);
+        ran.Status.Should().Be(ProjectDeliveryStatus.Deployed);
+        ran.DiagnosticsLog.Should().Contain("Prepared from build #").And.Contain("Approved by K. Jensen.");
+        var history = await NewService(after).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
+        history.Single().SetAsideLine.Should().BeNull("an approved release is a release");
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_refuses_one_that_was_replaced()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+        var first = await ctx.OeProjectDeliveries.Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).Select(d => d.Id).SingleAsync();
+        var newer = await SeedBuildAsync(ctx, seed.ProjectId, seed.BuildPipelineId, ProjectBuildStatus.Ready, new[] { "CRONUS Core" });
+        await NewService(_db.NewContext()).ProposeReleasesForBuildAsync(newer);
+
+        var act = () => NewService(_db.NewContext()).ApproveProposalAsync(first);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors["Delivery"].Should().Contain("no longer waiting for approval");
+        _queue.Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_is_refused_without_manage_rights()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+        var id = await ctx.OeProjectDeliveries.Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).Select(d => d.Id).SingleAsync();
+        await ctx.OeProjects.Where(p => p.Id == seed.ProjectId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Visibility, ProjectVisibility.ReadOnly));
+        _db.OrgContext.IsSiteAdmin = false;
+        _db.OrgContext.CurrentUserId = await SeedUserAsync("Someone else");
+
+        var approve = () => NewService(_db.NewContext()).ApproveProposalAsync(id);
+        var dismiss = () => NewService(_db.NewContext()).DismissProposalAsync(id, null);
+
+        await approve.Should().ThrowAsync<ProjectAccessDeniedException>();
+        await dismiss.Should().ThrowAsync<ProjectAccessDeniedException>();
+        (await _db.NewContext().OeProjectDeliveries.SingleAsync(d => d.Id == id)).Status.Should().Be(ProjectDeliveryStatus.Proposed);
+    }
+
+    [Fact]
+    public async Task DismissProposalAsync_records_who_and_why()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+        var id = await ctx.OeProjectDeliveries.Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).Select(d => d.Id).SingleAsync();
+        var who = await SeedUserAsync("K. Jensen");
+        _db.OrgContext.CurrentUserId = who;
+
+        await NewService(_db.NewContext()).DismissProposalAsync(id, "  CRONUS asked us to wait\nuntil after month-end  ");
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.AsNoTracking().Include(d => d.Results).SingleAsync(d => d.Id == id);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Cancelled);
+        delivery.Results.Should().OnlyContain(r => r.Status == ProjectDeliveryResultStatus.Skipped && r.Message == "Not sent: the release was dismissed.");
+        delivery.CancelledByUserId.Should().Be(who);
+        delivery.FinishedAt.Should().NotBeNull();
+        delivery.DiagnosticsLog.Should().Contain("Dismissed by K. Jensen: CRONUS asked us to wait until after month-end");
+        var history = await NewService(read).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
+        history.Single().SetAsideLine.Should().Be("Dismissed by K. Jensen: CRONUS asked us to wait until after month-end");
+
+        // Dismissed once is dismissed: a second go is refused rather than written twice.
+        var again = () => NewService(_db.NewContext()).DismissProposalAsync(id, null);
+        await again.Should().ThrowAsync<PlanValidationException>();
+    }
+
+    [Fact]
+    public async Task DismissProposalAsync_refuses_an_overlong_reason()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await PrepareOnNewBuildAsync(ctx, seed.ReleasePipelineId);
+        await NewService(ctx).ProposeReleasesForBuildAsync(seed.BuildId);
+        var id = await ctx.OeProjectDeliveries.Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).Select(d => d.Id).SingleAsync();
+
+        var act = () => NewService(_db.NewContext()).DismissProposalAsync(id, new string('x', DeliveryService.DismissReasonMaxLength + 1));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Reason");
+    }
+
+    [Fact]
+    public async Task A_scheduled_release_cannot_be_approved_or_dismissed()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var id = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(3));
+
+        var approve = () => NewService(_db.NewContext()).ApproveProposalAsync(id);
+        var dismiss = () => NewService(_db.NewContext()).DismissProposalAsync(id, null);
+
+        await approve.Should().ThrowAsync<PlanValidationException>();
+        await dismiss.Should().ThrowAsync<PlanValidationException>();
+    }
+
+    private static async Task PrepareOnNewBuildAsync(AppDbContext ctx, int releasePipelineId) =>
+        await ctx.OeReleasePipelines.Where(r => r.Id == releasePipelineId)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.PrepareReleaseOnNewBuild, true));
+
+    private async Task<int> SeedUserAsync(string displayName)
+    {
+        await using var ctx = _db.NewContext();
+        var user = new ALDevToolbox.Domain.Entities.User
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = $"u{Guid.NewGuid():N}@example.com",
+            PasswordHash = "x",
+            DisplayName = displayName,
+            Role = ALDevToolbox.Domain.Entities.UserRole.User,
+            Status = ALDevToolbox.Domain.Entities.UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        };
+        ctx.Users.Add(user);
+        await ctx.SaveChangesAsync();
+        return user.Id;
+    }
+
     private void DrainQueue()
     {
         while (_queue.Reader.TryRead(out var job)) _queue.Complete(job.DeliveryId);

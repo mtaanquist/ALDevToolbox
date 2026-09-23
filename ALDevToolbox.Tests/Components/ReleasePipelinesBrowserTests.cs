@@ -196,6 +196,33 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task A_release_waiting_for_approval_is_counted_at_the_top_and_needs_attention()
+    {
+        var s = await SeedFleetAsync();
+        await using (var db = _db.NewContext())
+        {
+            var buildId = await db.OeProjectBuilds.Where(b => b.ProjectId == s.ProjectId).Select(b => b.Id).FirstAsync();
+            var waiting = Delivery(s.ProjectId, s.Quiet, buildId, ProjectDeliveryStatus.Proposed, DateTime.UtcNow.AddMinutes(-20), null,
+                ProjectDeliveryResultStatus.Pending);
+            db.OeProjectDeliveries.Add(waiting);
+            await db.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<ReleasePipelinesBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".alert--warn").TextContent.Should().Contain("1 release waiting for approval:").And.Contain("CRONUS to Production");
+            cut.Find(".alert--warn a").GetAttribute("href").Should().Be($"/releases/{s.Quiet}");
+            var row = cut.Find($"table.rp-list__wide tbody tr[data-pipeline='{s.Quiet}']");
+            row.ClassList.Should().Contain("is-draft");
+            row.QuerySelector(".data-table__state")!.GetAttribute("aria-label").Should().Be("Release waiting for approval");
+            row.Children[4].TextContent.Should().Contain("Waiting for approval");
+            cut.FindAll(".pill-tab").Select(t => t.TextContent.Trim()).Should().Contain("Needs attention3");
+        });
+    }
+
     // ── Seeding ──────────────────────────────────────────────────────────────
 
     private sealed record Fleet(int ProjectId, int UatId, int Live, int Failed, int Blocked, int Quiet);

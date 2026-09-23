@@ -82,6 +82,16 @@ public class OeReleasePipeline
     /// </summary>
     public string SchemaSyncMode { get; set; } = BcSyncMode.Add;
 
+    /// <summary>
+    /// When true, a new successful build of <see cref="BuildPipeline"/> prepares a
+    /// release through this pipeline in the <see cref="ProjectDeliveryStatus.Proposed"/>
+    /// state: the build and its apps chosen, the time set by the pipeline's rule, nothing
+    /// sent. A person approves or dismisses it on the pipeline's page; nothing is ever
+    /// approved on its own. Off by default, and only honoured for a pipeline that draws
+    /// from a build pipeline. See <c>.design/saas-delivery.md</c> (#934).
+    /// </summary>
+    public bool PrepareReleaseOnNewBuild { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

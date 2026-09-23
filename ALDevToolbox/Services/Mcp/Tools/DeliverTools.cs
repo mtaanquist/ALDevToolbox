@@ -236,7 +236,7 @@ public sealed class DeliverTools
     // ── Deliveries ──────────────────────────────────────────────────────
 
     [McpServerTool(Name = "list_recent_deliveries", ReadOnly = true)]
-    [Description("Lists deliveries across every solution you can see, newest first: for each, the solution, the release pipeline, the target environment, the build, its status ('scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off', the last meaning Business Central accepted the apps and installs them in its own later window), when it was requested, started and finished, who triggered it, and - for a failed one - the failure message and each app's result. These are the workbench's own records of what it delivered. Use it for 'did the release go alright?' or 'what failed to deploy this week?'; list_deliveries has one release pipeline's full history.")]
+    [Description("Lists deliveries across every solution you can see, newest first: for each, the solution, the release pipeline, the target environment, the build, its status ('proposed'/'scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off': 'proposed' is a release the pipeline prepared from a new build that is waiting for a person to approve it in the web UI, with nothing sent yet; 'handed_off' means Business Central accepted the apps and installs them in its own later window), when it was requested, started and finished, who triggered it, and - for a failed one - the failure message and each app's result. These are the workbench's own records of what it delivered. Use it for 'did the release go alright?' or 'what failed to deploy this week?'; list_deliveries has one release pipeline's full history.")]
     public async Task<IReadOnlyList<RecentDelivery>> ListRecentDeliveriesAsync(
         [Description("Optional status to keep, e.g. 'failed' or 'deployed'.")] string? status = null,
         [Description("Optional date (yyyy-MM-dd, UTC): only deliveries requested on or after it.")] string? since = null,
@@ -389,7 +389,7 @@ public sealed class DeliverTools
     [
         ProjectDeliveryStatus.Scheduled, ProjectDeliveryStatus.Claimed, ProjectDeliveryStatus.Uploading,
         ProjectDeliveryStatus.Installing, ProjectDeliveryStatus.Deployed, ProjectDeliveryStatus.Failed,
-        ProjectDeliveryStatus.Cancelled, ProjectDeliveryStatus.HandedOff,
+        ProjectDeliveryStatus.Cancelled, ProjectDeliveryStatus.HandedOff, ProjectDeliveryStatus.Proposed,
     ];
 
     private static EnvironmentSummary ToSummary(EnvironmentDetailRow row)

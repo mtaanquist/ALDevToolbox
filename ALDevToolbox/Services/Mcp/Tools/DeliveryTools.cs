@@ -22,8 +22,9 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 /// only translates its exceptions into <see cref="McpException"/>. All reads are
 /// org-scoped by the EF query filter and project-scoped by the same authority — a
 /// Private project the caller has no grant on is absent from every list here and
-/// unresolvable by id. Scheduling a future delivery stays a web-only surface for now. See
-/// <c>.design/saas-delivery.md</c> ("MCP parity").
+/// unresolvable by id. Scheduling a future delivery stays a web-only surface for now,
+/// and so does approving or dismissing a release the pipeline prepared (#934): agents
+/// see it as "proposed" and nothing more. See <c>.design/saas-delivery.md</c> ("MCP parity").
 /// </summary>
 [McpServerToolType]
 public sealed class DeliveryTools
@@ -46,7 +47,7 @@ public sealed class DeliveryTools
     }
 
     [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
-    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning solution (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), when installs run (its deployment schedule), and schema sync mode. Pipelines under a private solution you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
+    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning solution (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), when installs run (its deployment schedule), schema sync mode, and whether a new successful build prepares a release for a person to approve (prepareReleaseOnNewBuild; nothing installs until someone approves it in the web UI). Pipelines under a private solution you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
     public async Task<IReadOnlyList<ReleasePipelineRow>> ListReleasePipelinesAsync(
         [Description("Optional solution id to list only that solution's release pipelines.")] int? solutionId = null,
         CancellationToken ct = default)
@@ -64,7 +65,7 @@ public sealed class DeliveryTools
     }
 
     [McpServerTool(Name = "list_deliveries", ReadOnly = true)]
-    [Description("Lists a release pipeline's deliveries, newest first, with per-app outcomes. Each delivery returns its id, status ('scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off', the last meaning Business Central accepted the apps and will install them on its own schedule), the build it published, scheduled/started/finished times, who triggered it, whether it was scheduled outside the environment's update window, any failure message, and each app's install result. Use it to track a publish_build call to completion.")]
+    [Description("Lists a release pipeline's deliveries, newest first, with per-app outcomes. Each delivery returns its id, status ('proposed'/'scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off': 'proposed' is a release the pipeline prepared from a new build that is waiting for a person to approve or dismiss it in the web UI - nothing has been sent, and there is no tool to approve it; 'handed_off' means Business Central accepted the apps and will install them on its own schedule), the build it published, scheduled/started/finished times, who triggered it, whether it was scheduled outside the environment's update window, any failure message, and each app's install result. Use it to track a publish_build call to completion.")]
     public async Task<IReadOnlyList<DeliveryHistoryRow>> ListDeliveriesAsync(
         [Description("Release pipeline id (from list_release_pipelines).")] int releasePipelineId,
         CancellationToken ct = default)

@@ -27,7 +27,9 @@
     no "on every new build" (releases never start on their own), relative times with
     the exact UTC time on hover, Production in the danger tone. The header sort buttons
     are left out; the order is fixed by urgency (shipping now, needs attention,
-    scheduled, the rest, then name). While something is shipping the list re-reads
+    scheduled, the rest, then name); a release prepared from a new build and waiting for
+    someone to approve it (#934) counts as needing attention, and the page opens with a
+    line saying how many there are. While something is shipping the list re-reads
     itself every two seconds, the way the pipeline's own page does, and stops when
     nothing is.
 *@
@@ -61,6 +63,21 @@
         {
             <Alert Tone="AlertTone.Danger">
                 <span>@error</span>
+            </Alert>
+        }
+        @if (WaitingRows.Count > 0)
+        {
+            var waiting = WaitingRows;
+            <Alert Tone="AlertTone.Warn">
+                <span>
+                    <b>@(waiting.Count == 1 ? "1 release" : $"{waiting.Count} releases") waiting for approval:</b>
+                    @for (var i = 0; i < waiting.Count; i++)
+                    {
+                        var w = waiting[i];
+                        @(i == 0 ? " " : ", ")<a href="@($"/releases/{w.Id}")">@w.Name</a>
+                    }.
+                    Open @(waiting.Count == 1 ? "it" : "one") to approve or dismiss it.
+                </span>
             </Alert>
         }
         @foreach (var r in LiveRows)
@@ -480,6 +497,10 @@
         }
     }
 
+    /// <summary>The pipelines holding a release prepared from a new build, waiting for approval (#934).</summary>
+    private List<ReleasePipelineRow> WaitingRows =>
+        (_rows ?? []).Where(r => r.ProposedDelivery is not null).OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
     private IEnumerable<ReleasePipelineRow> LiveRows =>
         (_rows ?? []).Where(r => r.LiveDelivery is not null).OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase);
 
@@ -510,11 +531,13 @@
 
     /// <summary>
     /// The last release failed, or the environment can no longer take one - including
-    /// one being deleted, which leaves the pipeline useless until someone re-points it.
+    /// one being deleted, which leaves the pipeline useless until someone re-points it -
+    /// or a release prepared from a new build is waiting for someone to approve it.
     /// </summary>
     private static bool NeedsAttention(ReleasePipelineRow r) =>
         r.LiveDelivery is null
-        && (EnvironmentBroken(r) || EnvironmentDeleting(r) || r.LastDelivery?.Status == ProjectDeliveryStatus.Failed);
+        && (EnvironmentBroken(r) || EnvironmentDeleting(r) || r.LastDelivery?.Status == ProjectDeliveryStatus.Failed
+            || r.ProposedDelivery is not null);
 
     /// <summary>A release waiting for its time, or one handed to Business Central that it has yet to install.</summary>
     private static bool IsScheduled(ReleasePipelineRow r) =>
@@ -557,6 +580,7 @@
         if (r.EnvironmentMissing) return new("is-failed", "circle-alert", "Environment missing, releases cannot run");
         if (EnvironmentBroken(r)) return new("is-failed", "circle-alert", "Environment failed in Business Central, releases cannot run");
         if (r.LastDelivery?.Status == ProjectDeliveryStatus.Failed) return new("is-failed", "circle-x", "Last release failed");
+        if (r.ProposedDelivery is not null) return new("is-draft", "user", "Release waiting for approval");
         if (r.NextDelivery is not null) return new("is-queued", "clock", "Next release scheduled");
         return r.LastDelivery?.Status switch
         {
@@ -634,6 +658,7 @@
         if (r.EnvironmentMissing) return new("Environment missing. Reconnect it in solution settings.", "rp-tone--danger");
         if (EnvironmentBroken(r)) return new("Environment failed in Business Central.", "rp-tone--danger");
         if (EnvironmentDeleting(r)) return new("Environment is being deleted.", "rp-tone--warning");
+        if (r.ProposedDelivery is { } waiting && r.NextDelivery is null) return new($"Release of build #{waiting.BuildId} waiting for approval.", "rp-tone--warning");
         if (r.SchemaSyncMode == BcSyncMode.ForceSync) return new("Force sync: can drop columns and their data.", "rp-tone--warning");
         return null;
     }
@@ -656,6 +681,12 @@
                 : next.ScheduledBy is { Length: > 0 } by ? $"Scheduled by {by}" : null;
             return new(RelativeTime.Until(next.ScheduledFor), "rp-tone--ink rp-list__strong", sub,
                 next.OutsideWindow ? "rp-tone--warning" : null, RelativeTime.ExactUtc(next.ScheduledFor), Scheduled: true);
+        }
+
+        if (r.ProposedDelivery is { } waiting)
+        {
+            return new("Waiting for approval", "rp-tone--warning rp-list__strong", $"Build #{waiting.BuildId}",
+                Title: $"Prepared {RelativeTime.Ago(waiting.PreparedAt)} from build #{waiting.BuildId}. Open the pipeline to approve or dismiss it.");
         }
 
         if (r.LiveDelivery is null && r.LastDelivery is { Status: ProjectDeliveryStatus.HandedOff } handed)

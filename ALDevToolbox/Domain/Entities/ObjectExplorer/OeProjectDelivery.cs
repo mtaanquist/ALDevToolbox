@@ -131,11 +131,22 @@ public class OeProjectDelivery
 /// <summary>
 /// The lifecycle states a <see cref="OeProjectDelivery"/> moves through:
 /// <c>scheduled → claimed → uploading → installing → deployed | handed_off | failed</c>,
-/// plus <c>scheduled → cancelled</c>. The transitions out of <c>scheduled</c> are atomic
-/// compare-and-set so a claim and a cancel can't both win.
+/// plus <c>scheduled → cancelled</c>, and for a prepared release
+/// <c>proposed → scheduled</c> (approved) or <c>proposed → cancelled</c> (dismissed or
+/// replaced). The transitions out of <c>scheduled</c> and <c>proposed</c> are atomic
+/// compare-and-set so a claim and a cancel, or an approval and a replacement, can't both win.
 /// </summary>
 public static class ProjectDeliveryStatus
 {
+    /// <summary>
+    /// Prepared by the pipeline when a new build succeeded, waiting for a person to
+    /// approve it (#934). Nothing has been sent and nothing will be until someone
+    /// approves it: the scheduler never enqueues this state. Approving moves it to
+    /// <see cref="Scheduled"/>; dismissing it, or a newer build replacing it, moves it to
+    /// <see cref="Cancelled"/>.
+    /// </summary>
+    public const string Proposed = "proposed";
+
     /// <summary>Created and due; the worker hasn't claimed it yet. The only cancellable state.</summary>
     public const string Scheduled = "scheduled";
 

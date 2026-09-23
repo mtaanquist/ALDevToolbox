@@ -4,6 +4,7 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
 @inject ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService PipelinesSvc
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService ReleasePipelinesSvc
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.Organizations.RepositoryProviderPolicyService Config
 @inject ALDevToolbox.Services.Organizations.TeamService Teams
@@ -143,6 +144,22 @@
         {
             <Alert Tone="AlertTone.Danger" Icon="" Block="true">
                 <p>@pageError</p>
+            </Alert>
+        }
+
+        @* A release a pipeline prepared from a new build waits on that pipeline's page
+           for someone to approve it (#934); this is the solution's pointer to it. *@
+        @if (_waitingForApproval.Count > 0)
+        {
+            <Alert Tone="AlertTone.Warn">
+                <span>
+                    <b>@(_waitingForApproval.Count == 1 ? "1 release" : $"{_waitingForApproval.Count} releases") waiting for approval:</b>
+                    @for (var i = 0; i < _waitingForApproval.Count; i++)
+                    {
+                        var w = _waitingForApproval[i];
+                        @(i == 0 ? " " : ", ")<a href="@($"/releases/{w.ReleasePipelineId}")">@w.ReleasePipelineName</a><text> (build #@w.BuildId)</text>
+                    }
+                </span>
             </Alert>
         }
 
@@ -473,6 +490,7 @@
         _header = null;
         _loadedProject = null;
         _pipelines = new();
+        _waitingForApproval = new();
         _accessBaseline = null;
         _newAccess = new(ProjectVisibility.Public, Array.Empty<int>());
 
@@ -536,6 +554,7 @@
             if (solution is null) { _notFound = true; return; }
             _header = await Artifacts.GetProjectHeaderAsync(Id.Value);
             _pipelines = await PipelinesSvc.ListPipelinesAsync(Id.Value);
+            _waitingForApproval = await ReleasePipelinesSvc.ListWaitingForApprovalAsync(Id.Value);
             _loadedProject = solution;
         }
         catch (ProjectAccessDeniedException)
@@ -548,6 +567,9 @@
     }
 
     private OeProject? _loadedProject;
+
+    /// <summary>Releases prepared from a new build and waiting for someone to approve them (#934).</summary>
+    private List<ALDevToolbox.Services.ObjectExplorer.Delivery.ReleaseWaitingForApproval> _waitingForApproval = new();
 
     /// <summary>
     /// Customer information used to be wider than the rest of the page, so that anyone

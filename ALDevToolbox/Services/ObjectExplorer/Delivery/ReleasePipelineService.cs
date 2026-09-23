@@ -89,7 +89,8 @@ public sealed class ReleasePipelineService
                 r.ArtifactSource,
                 r.GithubReleaseRepositoryId,
                 r.GithubReleaseRepository != null ? r.GithubReleaseRepository.DisplayName : null,
-                r.ProjectEnvironment.Status))
+                r.ProjectEnvironment.Status,
+                r.PrepareReleaseOnNewBuild))
             .ToListAsync(ct);
     }
 
@@ -114,10 +115,17 @@ public sealed class ReleasePipelineService
         // The newest release that has finished, one way or another. Ordered by when it
         // finished rather than by id: a release scheduled for tonight is created before
         // one released right now, and finishes after it.
+        // A prepared release that was dismissed or replaced before anyone approved it is
+        // cancelled too, but it never was a release: it would read as "Last release
+        // cancelled" every time a newer build came along (#934).
         var latest = await deliveries
             .Where(d => d.Status == ProjectDeliveryStatus.Deployed
                         || d.Status == ProjectDeliveryStatus.Failed
-                        || d.Status == ProjectDeliveryStatus.Cancelled
+                        || (d.Status == ProjectDeliveryStatus.Cancelled
+                            && !(d.TriggeredByUserId == null
+                                 && d.DiagnosticsLog != null
+                                 && d.DiagnosticsLog.Contains(DeliveryProposalLog.PreparedPrefix)
+                                 && !d.DiagnosticsLog.Contains(DeliveryProposalLog.ApprovedPrefix)))
                         || d.Status == ProjectDeliveryStatus.HandedOff)
             .GroupBy(d => d.ReleasePipelineId)
             .Select(g => g
@@ -193,6 +201,17 @@ public sealed class ReleasePipelineService
                 .First())
             .ToListAsync(ct);
 
+        // The release waiting for approval (#934). A newer build replaces an older one,
+        // so there is at most one per pipeline; the newest wins if two ever overlap.
+        var proposed = await deliveries
+            .Where(d => d.Status == ProjectDeliveryStatus.Proposed)
+            .GroupBy(d => d.ReleasePipelineId)
+            .Select(g => g
+                .OrderByDescending(d => d.Id)
+                .Select(d => new { d.ReleasePipelineId, d.Id, d.ProjectBuildId, d.CreatedAt })
+                .First())
+            .ToListAsync(ct);
+
         // Microsoft's next update for each target, as last mirrored: a release handed
         // to Business Central for "the next update" installs then.
         var environmentIds = rows.Select(r => r.ProjectEnvironmentId).Distinct().ToList();
@@ -204,6 +223,7 @@ public sealed class ReleasePipelineService
         var latestBy = latest.ToDictionary(l => l.ReleasePipelineId);
         var liveBy = live.GroupBy(l => l.ReleasePipelineId).ToDictionary(g => g.Key, g => g.First());
         var nextBy = next.ToDictionary(n => n.ReleasePipelineId);
+        var proposedBy = proposed.ToDictionary(p => p.ReleasePipelineId);
         var updateBy = updates.ToDictionary(u => u.Id);
 
         return rows.Select(r => r with
@@ -218,10 +238,31 @@ public sealed class ReleasePipelineService
             NextDelivery = nextBy.TryGetValue(r.Id, out var n)
                 ? new ReleasePipelineNextDelivery(n.Id, n.ScheduledFor, n.ScheduledOutsideWindow, n.By)
                 : null,
+            ProposedDelivery = proposedBy.TryGetValue(r.Id, out var p)
+                ? new ReleasePipelineProposedDelivery(p.Id, p.ProjectBuildId, p.CreatedAt)
+                : null,
             EnvironmentNextUpdate = updateBy.TryGetValue(r.ProjectEnvironmentId, out var u)
                 ? new EnvironmentNextUpdate(u.BcNextUpdateDate, u.Version, u.BcNextUpdateType)
                 : null,
         }).ToList();
+    }
+
+    /// <summary>
+    /// The releases prepared from a new build and waiting for someone to approve them
+    /// (#934), across one solution's active release pipelines, by pipeline name.
+    /// For the solution page's "1 release waiting for approval". Gated on the solution's
+    /// visibility like the rest of its reads.
+    /// </summary>
+    public async Task<List<ReleaseWaitingForApproval>> ListWaitingForApprovalAsync(int projectId, CancellationToken ct = default)
+    {
+        await _access.EnsureCanViewAsync(projectId, ct);
+        return await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.ProjectId == projectId
+                        && d.Status == ProjectDeliveryStatus.Proposed
+                        && d.ReleasePipeline!.DeletedAt == null)
+            .OrderBy(d => d.ReleasePipeline!.Name).ThenBy(d => d.Id)
+            .Select(d => new ReleaseWaitingForApproval(d.ReleasePipelineId, d.ReleasePipeline!.Name, d.Id, d.ProjectBuildId))
+            .ToListAsync(ct);
     }
 
     /// <summary>A single active release pipeline, or null when not found in this org.</summary>
@@ -256,6 +297,7 @@ public sealed class ReleasePipelineService
             ProjectEnvironmentId = input.ProjectEnvironmentId,
             DeploymentSchedule = v.DeploymentSchedule,
             SchemaSyncMode = v.SchemaSyncMode,
+            PrepareReleaseOnNewBuild = v.PrepareReleaseOnNewBuild,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -285,6 +327,7 @@ public sealed class ReleasePipelineService
         pipeline.ProjectEnvironmentId = input.ProjectEnvironmentId;
         pipeline.DeploymentSchedule = v.DeploymentSchedule;
         pipeline.SchemaSyncMode = v.SchemaSyncMode;
+        pipeline.PrepareReleaseOnNewBuild = v.PrepareReleaseOnNewBuild;
         pipeline.UpdatedAt = DateTime.UtcNow;
         await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated release pipeline {ReleasePipelineId} ({Name}).", pipeline.Id, v.Name);
@@ -450,8 +493,11 @@ public sealed class ReleasePipelineService
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
+        // Preparing a release follows a build pipeline's builds; a pipeline that installs
+        // GitHub releases has no build to follow, so the setting means nothing there.
         return new ValidatedReleasePipeline(
-            name, deploymentSchedule, schemaSyncMode, artifactSource, buildPipelineId, releaseRepositoryId);
+            name, deploymentSchedule, schemaSyncMode, artifactSource, buildPipelineId, releaseRepositoryId,
+            input.PrepareReleaseOnNewBuild && artifactSource == ReleaseArtifactSource.Build);
     }
 
     /// <summary>The normalised values a validated release-pipeline input settles on.</summary>
@@ -461,7 +507,8 @@ public sealed class ReleasePipelineService
         string SchemaSyncMode,
         string ArtifactSource,
         int? BuildPipelineId,
-        int? GithubReleaseRepositoryId);
+        int? GithubReleaseRepositoryId,
+        bool PrepareReleaseOnNewBuild);
 
     /// <summary>
     /// Gates a release-pipeline-keyed read on its project's visibility. One that
@@ -536,7 +583,12 @@ public sealed record ReleasePipelineInput(
     /// </summary>
     string ArtifactSource = ReleaseArtifactSource.Build,
     /// <summary>The solution repository whose Releases this pipeline draws from, when the source is <c>github_release</c>.</summary>
-    int? GithubReleaseRepositoryId = null);
+    int? GithubReleaseRepositoryId = null,
+    /// <summary>
+    /// Prepare a release, for a person to approve, whenever the build pipeline has a new
+    /// successful build (#934). Ignored for a pipeline that installs GitHub releases.
+    /// </summary>
+    bool PrepareReleaseOnNewBuild = false);
 
 /// <summary>List-row projection of a release pipeline with its source and target resolved for display.</summary>
 public sealed record ReleasePipelineRow(
@@ -564,7 +616,12 @@ public sealed record ReleasePipelineRow(
     /// <summary>That repository's display name, for the list and the editor.</summary>
     string? GithubReleaseRepositoryName = null,
     /// <summary>The environment's status as Business Central last reported it, verbatim.</summary>
-    string? EnvironmentStatus = null)
+    string? EnvironmentStatus = null,
+    /// <summary>
+    /// True when a new successful build prepares a release through this pipeline for a
+    /// person to approve (#934). Nothing is installed until someone does.
+    /// </summary>
+    bool PrepareReleaseOnNewBuild = false)
 {
     // ── The delivery summary: filled by ListReleasePipelineOverviewAsync only ──
     //
@@ -582,6 +639,10 @@ public sealed record ReleasePipelineRow(
     /// <summary>The next release waiting for its scheduled time, or null.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ReleasePipelineNextDelivery? NextDelivery { get; init; }
+
+    /// <summary>The release prepared from a new build and waiting for someone to approve it (#934), or null.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ReleasePipelineProposedDelivery? ProposedDelivery { get; init; }
 
     /// <summary>Microsoft's next platform update for the target environment, as last mirrored; null when there is none.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -657,6 +718,14 @@ public sealed record ReleasePipelineLiveDelivery(
 /// <param name="OutsideWindow">True when the person chose a time outside the environment's update window.</param>
 /// <param name="ScheduledBy">Who scheduled it, while the account still exists.</param>
 public sealed record ReleasePipelineNextDelivery(int DeliveryId, DateTime ScheduledFor, bool OutsideWindow, string? ScheduledBy);
+
+/// <summary>One release waiting for approval, as the solution page names it (#934).</summary>
+public sealed record ReleaseWaitingForApproval(int ReleasePipelineId, string ReleasePipelineName, int DeliveryId, int BuildId);
+
+/// <summary>A release prepared from a new build, waiting for someone to approve it (#934).</summary>
+/// <param name="BuildId">The build it would install.</param>
+/// <param name="PreparedAt">When the build succeeded and the release was prepared, UTC.</param>
+public sealed record ReleasePipelineProposedDelivery(int DeliveryId, int BuildId, DateTime PreparedAt);
 
 /// <summary>Microsoft's next platform update for an environment, as last mirrored.</summary>
 /// <param name="Date">When it is set to run, UTC; null when no date is chosen yet.</param>

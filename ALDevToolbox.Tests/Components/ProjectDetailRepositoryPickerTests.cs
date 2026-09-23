@@ -60,6 +60,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         _ctx.Services.AddScoped<CustomerModuleService>();
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddScoped<PipelineService>();
+        _ctx.Services.AddScoped<ReleasePipelineService>();
         _ctx.Services.AddScoped<TeamService>();
         // The Business Central tab's chain has to resolve for the page to render,
         // even though nothing here opens it. None of these clients are called.

@@ -21,6 +21,7 @@ internal sealed class ReleasePipelineConfiguration : IEntityTypeConfiguration<Oe
         entity.Property(e => e.ProjectEnvironmentId).HasColumnName("project_environment_id").IsRequired();
         entity.Property(e => e.DeploymentSchedule).HasColumnName("deployment_schedule").HasMaxLength(50).IsRequired();
         entity.Property(e => e.SchemaSyncMode).HasColumnName("schema_sync_mode").HasMaxLength(50).IsRequired();
+        entity.Property(e => e.PrepareReleaseOnNewBuild).HasColumnName("prepare_release_on_new_build").IsRequired();
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");

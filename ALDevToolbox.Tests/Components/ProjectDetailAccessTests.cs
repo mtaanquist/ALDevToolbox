@@ -52,6 +52,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddScoped<CustomerModuleService>();
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddScoped<PipelineService>();
+        _ctx.Services.AddScoped<ReleasePipelineService>();
         _ctx.Services.AddScoped<TeamService>();
         // ProjectDetail loads the Business Central tab's connection for anyone who
         // can manage the project, so its chain has to resolve even though this test

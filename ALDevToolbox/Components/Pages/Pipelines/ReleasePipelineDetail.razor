@@ -35,8 +35,9 @@
     rather than filled in: old releases have no per-app timings, no previous version and
     no "uploaded" moment (#929 started recording them), and their skipped apps fall back
     to "skipped after X failed". A failed release can be released again (#931), with Force
-    sync for that one release; the approval band (#934) is not built yet, and the list's
-    top is where it goes.
+    sync for that one release. A release the pipeline prepared from a new build (#934)
+    sits in the "Waiting for approval" band at the top of the list, not among the rows:
+    it has not happened, and nothing has been sent.
 *@
 
 <PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Workbench</PageTitle>
@@ -324,13 +325,45 @@
                         </div>
                     </div>
 
-                    <div class="rp-cols" aria-hidden="true">
-                        <span></span><span></span><span>Release</span><span>Outcome</span><span>Started</span><span class="rp-cols__num">Took</span><span>Apps</span><span></span>
-                    </div>
-
-                    @foreach (var d in _deliveries)
+                    @foreach (var p in Proposals)
                     {
-                        var state = DeliveryLook(d.Status);
+                        <div class="rp-approval" @key="p.Id">
+                            <span class="rp-approval__glyph" aria-hidden="true"><Icon Name="user" Width="16" Height="16" /></span>
+                            <div class="rp-approval__body">
+                                <span class="rp-approval__head">
+                                    <span class="rp-approval__eyebrow">Waiting for approval</span>
+                                    <span class="rp-approval__title">Release @p.Number - build #@p.ProjectBuildId</span>
+                                </span>
+                                <span class="rp-approval__text">@ApprovalSentence(p)</span>
+                                @if (_canManage)
+                                {
+                                    <span class="rp-approval__acts">
+                                        <button type="button" class="btn btn--sm" @onclick="() => ApproveAsync(p)" disabled="@_deciding">Approve</button>
+                                        <button type="button" class="btn btn--sm btn--ghost" @onclick="() => DismissAsync(p)" disabled="@_deciding">Dismiss</button>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (_approvalError is { } approvalError)
+                    {
+                        <div class="rp-approval-error"><Alert Tone="AlertTone.Danger"><span>@approvalError</span></Alert></div>
+                    }
+
+                    @if (Rows.Count > 0)
+                    {
+                        <div class="rp-cols" aria-hidden="true">
+                            <span></span><span></span><span>Release</span><span>Outcome</span><span>Started</span><span class="rp-cols__num">Took</span><span>Apps</span><span></span>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="rp-none">Nothing has been installed by this pipeline yet.</p>
+                    }
+
+                    @foreach (var d in Rows)
+                    {
+                        var state = LookOf(d);
                         var open = _open.Contains(d.Id);
                         var failure = Failure(d);
                         var rowState = $"rp-rel rp-bar--{state.Tone}{(open ? " is-open" : "")}";
@@ -350,6 +383,10 @@
                                     @if (OneTimeForceSync(d))
                                     {
                                         <span class="cell-stack__sub rp-rel__force">Force sync, this release only</span>
+                                    }
+                                    @if (d.SetAsideLine is { } setAside)
+                                    {
+                                        <span class="cell-stack__sub rp-rel__why"><span>@setAside</span></span>
                                     }
                                     @if (failure is not null)
                                     {
@@ -559,6 +596,38 @@
 <ConfirmDialog @ref="_cancelConfirm" Title="Cancel this release?"
                ConfirmLabel="Cancel release" CancelLabel="Keep it scheduled"
                ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
+<ConfirmDialog @ref="_approveConfirm" Title="Approve this release?"
+               ConfirmLabel="Approve" CancelLabel="Not yet"
+               ConfirmButtonClass="btn--primary" ConfirmIcon="check"
+               ConfirmDisabled="@(_isProduction && !_approveProdAck)">
+    @if (_isProduction)
+    {
+        <label class="@(_approveProdAck ? "check check--ack is-checked" : "check check--ack")">
+            <input type="checkbox" checked="@_approveProdAck"
+                   @onchange="e => _approveProdAck = (bool)(e.Value ?? false)" />
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+            @if (string.Equals(EnvName, "Production", StringComparison.OrdinalIgnoreCase))
+            {
+                <span>I understand this installs the apps into <b>@CustomerName</b>'s live <b>Production</b> environment.</span>
+            }
+            else
+            {
+                <span>I understand this installs the apps into <b>@EnvName</b>, <b>@CustomerName</b>'s live <b>Production</b> environment.</span>
+            }
+        </label>
+    }
+</ConfirmDialog>
+<ConfirmDialog @ref="_dismissConfirm" Title="Dismiss this release?"
+               ConfirmLabel="Dismiss release" CancelLabel="Keep it"
+               ConfirmButtonClass="btn--primary" ConfirmIcon="x">
+    <div class="field">
+        <label class="field__label" for="rp-dismiss-why">Reason <span class="u-muted">(optional)</span></label>
+        <input id="rp-dismiss-why" type="text" class="input" maxlength="@DeliveryService.DismissReasonMaxLength"
+               placeholder="e.g. CRONUS asked us to wait until after month-end"
+               @bind="_dismissReason" @bind:event="oninput" />
+        <small class="field__hint">Kept with the release in this pipeline's history.</small>
+    </div>
+</ConfirmDialog>
 
 @if (_rescheduleId is not null)
 {
@@ -630,6 +699,14 @@
     private ReleaseBuildDialog? _releaseDialog;
     private ReleaseAgainDialog? _releaseAgainDialog;
     private ConfirmDialog? _cancelConfirm;
+    private ConfirmDialog? _approveConfirm;
+    private ConfirmDialog? _dismissConfirm;
+
+    // The approval band (#934).
+    private bool _deciding;
+    private bool _approveProdAck;
+    private string _dismissReason = string.Empty;
+    private string? _approvalError;
 
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
     private string _tzLabel = "UTC";
@@ -675,6 +752,14 @@
 
     private bool IsEmpty => !_historyLoading && _deliveries.Count == 0;
     private bool IsForceSync => BcSyncMode.Normalize(_rp?.SchemaSyncMode) == BcSyncMode.ForceSync;
+
+    /// <summary>Releases the pipeline prepared from a new build, waiting for someone to approve them (#934). Drawn in the band, not as rows.</summary>
+    private List<DeliveryHistoryRow> Proposals => _deliveries.Where(d => d.IsProposed).ToList();
+
+    /// <summary>The releases list proper: everything but the prepared ones waiting in the band.</summary>
+    private List<DeliveryHistoryRow> Rows => _deliveries.Where(d => !d.IsProposed).ToList();
+
+    private string CustomerName => string.IsNullOrWhiteSpace(_rp?.Project?.Name) ? "this solution" : _rp!.Project!.Name;
 
     /// <summary>A row numbered above 1 at the bottom of the list means the pipeline has older releases.</summary>
     private bool HasOlder => _deliveries.Count > 0 && _deliveries[^1].Number > 1;
@@ -790,7 +875,7 @@
     {
         if (_openedDefault || _deliveries.Count == 0) return;
         _openedDefault = true;
-        var newest = _deliveries[0];
+        if (Rows.FirstOrDefault() is not { } newest) return;
         if (newest.Status == ProjectDeliveryStatus.Failed || newest.IsActive || newest.IsScheduled)
         {
             _open.Add(newest.Id);
@@ -866,7 +951,8 @@
             _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
             _rp.ProjectEnvironment?.MissingSince != null,
             _rp.DeploymentSchedule, _rp.SchemaSyncMode,
-            _rp.ArtifactSource, _rp.GithubReleaseRepositoryId, _rp.GithubReleaseRepository?.DisplayName);
+            _rp.ArtifactSource, _rp.GithubReleaseRepositoryId, _rp.GithubReleaseRepository?.DisplayName,
+            _rp.ProjectEnvironment?.Status, _rp.PrepareReleaseOnNewBuild);
         await _editor.OpenForEditAsync(row);
     }
 
@@ -942,6 +1028,120 @@
         if (env is null || !UpdateWindow.IsConfigured(env.UpdateWindowStart, env.UpdateWindowEnd)) return null;
         if (UpdateWindow.IsWithin(env.UpdateWindowStart, env.UpdateWindowEnd, _tz, DateTime.UtcNow)) return null;
         return $"{EnvName}'s delivery window ({DeliveryWindow}) isn't open now. Releasing again installs outside the hours agreed with the customer, and the release history will record that.";
+    }
+
+    // ── Waiting for approval (#934) ───────────────────────────────────────────
+
+    /// <summary>
+    /// The band's sentence: which build, when it finished, where the release would go and
+    /// when it would install once approved. The time is the pipeline's rule, as approving
+    /// applies it: the next opening of the delivery window, or right away.
+    /// </summary>
+    private string ApprovalSentence(DeliveryHistoryRow p)
+    {
+        var where = _isProduction ? $"the Production environment \"{EnvName}\"" : $"\"{EnvName}\"";
+        var sentence = $"Build #{p.ProjectBuildId} finished {WhenPhrase(p.CreatedAt)} and a release was prepared for {where}.";
+        if (!_canManage)
+        {
+            return sentence + " Someone who manages this solution can approve or dismiss it.";
+        }
+        return sentence + $" Approve it to install it {InstallsWhen()}, or dismiss it.";
+    }
+
+    /// <summary>When an approved release installs, as a phrase: "right away", "in the next delivery window (today at 22:00)".</summary>
+    private string InstallsWhen()
+    {
+        var env = _rp?.ProjectEnvironment;
+        if (BcDeploymentSchedule.IsOurDeliveryWindow(_rp?.DeploymentSchedule)
+            && env is not null && UpdateWindow.IsConfigured(env.UpdateWindowStart, env.UpdateWindowEnd))
+        {
+            var opening = UpdateWindow.NextOpeningUtc(env.UpdateWindowStart, env.UpdateWindowEnd, _tz, DateTime.UtcNow);
+            return opening <= DateTime.UtcNow.AddMinutes(1)
+                ? "right away, while the delivery window is open"
+                : $"in the next delivery window ({WhenPhrase(opening)})";
+        }
+        var wire = BcDeploymentSchedule.ToWire(_rp?.DeploymentSchedule);
+        return wire is null || wire == BcDeploymentSchedule.Immediate
+            ? "right away"
+            : $"with the {DeliveryModeDisplay.Schedule(wire).ToLowerInvariant()}";
+    }
+
+    private async Task ApproveAsync(DeliveryHistoryRow p)
+    {
+        if (_approveConfirm is null || _deciding) return;
+        _approvalError = null;
+        _approveProdAck = false;
+        var apps = p.Apps.Count == 1 ? $"{p.Apps[0].AppName} {p.Apps[0].AppVersion}" : $"{p.Apps.Count} apps ({string.Join(", ", p.Apps.Select(a => a.AppName))})";
+        var where = _isProduction
+            ? $"{CustomerName}'s Production environment \"{EnvName}\""
+            : $"the {EnvType} environment \"{EnvName}\"";
+        var confirmed = await _approveConfirm.OpenAsync(
+            $"Approve release {p.Number}?",
+            $"This installs build #{p.ProjectBuildId}, {apps}, into {where} {InstallsWhen()}. You can still cancel it on this page until it starts.",
+            "Approve", "btn--primary", "check");
+        if (!confirmed) return;
+
+        _deciding = true;
+        try
+        {
+            await Deliveries.ApproveProposalAsync(p.Id);
+            await OnReleasedAsync(p.Id);
+        }
+        catch (PlanValidationException ex)
+        {
+            _approvalError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't approve this release.";
+            await ReloadAsync();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _approvalError = "Only the solution owner or an admin can approve releases here.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to approve delivery {DeliveryId}.", p.Id);
+            _approvalError = "Couldn't approve this release. Try again, and if it keeps failing tell an administrator.";
+        }
+        finally
+        {
+            _deciding = false;
+        }
+    }
+
+    private async Task DismissAsync(DeliveryHistoryRow p)
+    {
+        if (_dismissConfirm is null || _deciding) return;
+        _approvalError = null;
+        _dismissReason = string.Empty;
+        var confirmed = await _dismissConfirm.OpenAsync(
+            $"Dismiss release {p.Number}?",
+            $"Build #{p.ProjectBuildId} won't be installed. The next successful build prepares a new release.",
+            "Dismiss release", "btn--primary", "x");
+        if (!confirmed) return;
+
+        _deciding = true;
+        try
+        {
+            await Deliveries.DismissProposalAsync(p.Id, _dismissReason);
+            await ReloadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _approvalError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't dismiss this release.";
+            await ReloadAsync();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _approvalError = "Only the solution owner or an admin can dismiss releases here.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to dismiss delivery {DeliveryId}.", p.Id);
+            _approvalError = "Couldn't dismiss this release. Try again, and if it keeps failing tell an administrator.";
+        }
+        finally
+        {
+            _deciding = false;
+        }
     }
 
     // ── Cancel + reschedule (scheduled releases only) ─────────────────────────
@@ -1156,6 +1356,12 @@
             return new HealthView("failed", "circle-x", "Last release failed", sentence);
         }
 
+        if (Proposals.FirstOrDefault() is { } waiting)
+        {
+            return new HealthView("draft", "user", "Waiting for approval",
+                $"Release {waiting.Number} (build #{waiting.ProjectBuildId}) was prepared {RelativeTime.Ago(waiting.CreatedAt)} and waits for approval under Releases below. Nothing has been sent to \"{EnvName}\".");
+        }
+
         if (NextRelease is { } next)
         {
             var sentence = $"Release {next.Number} installs into \"{EnvName}\" {WhenPhrase(next.ScheduledFor)}.";
@@ -1199,8 +1405,13 @@
             : null;
     }
 
-    /// <summary>The newest release that has started or finished. Cancelled ones count: they are what happened last.</summary>
-    private DeliveryHistoryRow? LastRelease => _deliveries.FirstOrDefault(d => !d.IsScheduled && !d.IsActive);
+    /// <summary>
+    /// The newest release that has started or finished. Cancelled ones count: they are
+    /// what happened last. A prepared release that is waiting, or that was dismissed or
+    /// replaced before anyone approved it, does not: it never was a release (#934).
+    /// </summary>
+    private DeliveryHistoryRow? LastRelease => _deliveries.FirstOrDefault(d =>
+        !d.IsScheduled && !d.IsActive && !d.IsProposed && d.SetAsideLine is null);
 
     private DeliveryHistoryRow? NextRelease => _deliveries.Where(d => d.IsScheduled).MinBy(d => d.ScheduledFor);
 
@@ -1256,6 +1467,7 @@
     /// <summary>A release's state in the sheet's vocabulary: tone (colour and keyline), glyph, the word.</summary>
     internal static Look DeliveryLook(string status) => status switch
     {
+        ProjectDeliveryStatus.Proposed => new("draft", "user", false, "Waiting for approval"),
         ProjectDeliveryStatus.Scheduled => new("queued", "clock", false, "Scheduled"),
         ProjectDeliveryStatus.Claimed => new("running", "refresh-cw", true, "Claimed"),
         ProjectDeliveryStatus.Uploading => new("running", "refresh-cw", true, "Uploading"),
@@ -1265,6 +1477,17 @@
         ProjectDeliveryStatus.Cancelled => new("cancelled", "x", false, "Cancelled"),
         ProjectDeliveryStatus.HandedOff => new("handed", "send", false, "Handed to Business Central"),
         _ => new("queued", "clock", false, status),
+    };
+
+    /// <summary>
+    /// A row's look. A prepared release that was dismissed or replaced before anyone
+    /// approved it says which, rather than "Cancelled", which reads as a release stopped.
+    /// </summary>
+    private static Look LookOf(DeliveryHistoryRow d) => d.SetAsideLine switch
+    {
+        { } line when line.StartsWith(DeliveryProposalLog.DismissedPrefix, StringComparison.Ordinal) => new("cancelled", "x", false, "Dismissed"),
+        { } line when line.StartsWith(DeliveryProposalLog.ReplacedPrefix, StringComparison.Ordinal) => new("cancelled", "x", false, "Replaced"),
+        _ => DeliveryLook(d.Status),
     };
 
     /// <summary>
@@ -1338,6 +1561,8 @@
     {
         switch (d.Status)
         {
+            case ProjectDeliveryStatus.Cancelled when d.SetAsideLine is { } setAside:
+                return $"{setAside.TrimEnd('.')}. Nothing was sent.";
             case ProjectDeliveryStatus.Cancelled:
                 return d.CancelledByName is { } who
                     ? $"Cancelled by {who} before it started. No app was uploaded."
@@ -1370,6 +1595,18 @@
     /// </summary>
     private List<StepView> Steps(DeliveryHistoryRow d)
     {
+        if (d.SetAsideLine is { } setAside)
+        {
+            var prepared = new List<StepView> { new("Prepared", "queued", When(d.CreatedAt, seconds: true), Exact(d.CreatedAt), "from a new build") };
+            if (d.FinishedAt is { } endedAt)
+            {
+                var word = LookOf(d).Word;
+                prepared.Add(new(word, "cancelled", Clock(endedAt), Exact(endedAt),
+                    word == "Dismissed" && d.CancelledByName is { } dismisser ? $"by {dismisser}" : ""));
+            }
+            return prepared;
+        }
+
         var steps = new List<StepView>
         {
             new("Scheduled", "queued", When(d.ScheduledFor, seconds: true), Exact(d.ScheduledFor),
