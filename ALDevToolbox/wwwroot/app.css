@@ -372,3 +372,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .cust-notes__editor { display: grid; gap: var(--space-4); }
 .cust-notes__label { margin: 0 0 var(--space-1); font-size: var(--text-xs); font-weight: var(--fw-semibold); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
 .cust-notes__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* A table row someone was sent to by address - the search box lands on a person's row
+   of the Users tab as /admin/administration/users?user=12. Marked with the system's own
+   selection keyline, without the fill: the fill is what a ticked row wears, and this
+   row is not ticked. The page focuses the row to bring it into view; the keyline is the
+   mark, so the browser's focus outline on a whole table row is not drawn as well. See
+   .design/command-palette.md, "Sources". */
+.data-table tbody tr.is-target { scroll-margin-top: var(--space-7); }
+.data-table tbody tr.is-target:focus { outline: none; }
+.data-table tbody tr.is-target td:first-child { box-shadow: inset 2px 0 0 var(--primary); }

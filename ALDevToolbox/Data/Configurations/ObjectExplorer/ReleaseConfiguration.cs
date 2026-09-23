@@ -56,7 +56,9 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<OeRelease>
         // Dedup is keyed on the explicit dedup_key, not the (now display-only)
         // label: per-org uniqueness on active rows that carry a key. First-party
         // artifact imports set it (bc-onprem:{Maj}.{Min}:{cc}); manual uploads,
-        // third-party, and project releases leave it null and so never collide.
+        // manual third-party, and project releases leave it null and so never
+        // collide; the vendor symbols a pipeline build ingests set
+        // symbols:{appId}:{version} (#901).
         // This index is the race backstop behind ArtifactReleaseImporter's
         // pre-check that makes the daily sweep idempotent. See
         // .design/roadmap.md ("Harden first-party dedup, then free the label").

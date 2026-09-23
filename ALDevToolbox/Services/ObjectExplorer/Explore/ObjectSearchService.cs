@@ -36,7 +36,8 @@ public sealed class ObjectSearchService
     /// org-filtered <c>OeModuleObjects</c> / <c>OeModuleSymbols</c> query, so a
     /// module from another tenant's chain can't surface a foreign object row.
     /// A parent chain never crosses an org boundary (parents are picked from
-    /// the same org at import time). No <c>IgnoreQueryFilters</c>.</para>
+    /// the same org at import time), and a dependency link is followed only to
+    /// a release in the seed's own org. No <c>IgnoreQueryFilters</c>.</para>
     /// </summary>
     private async Task<IReadOnlyList<long>> ResolveWinningModuleIdsAsync(int releaseId, CancellationToken ct)
     {

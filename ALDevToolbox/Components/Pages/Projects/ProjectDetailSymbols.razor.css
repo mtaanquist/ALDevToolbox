@@ -1,0 +1,22 @@
+/*
+    Scoped chrome for the Symbols tab of the solution settings page. The list is
+    the design system's .sub-rows; only the upload dialog's file line is local,
+    drawn the way the environment page's upload dialog draws its own.
+*/
+
+.pd-sym__file {
+    margin: var(--space-3) 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+}
+
+.pd-sym__chosen {
+    margin: var(--space-3) 0 0;
+    padding-left: var(--space-5);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}

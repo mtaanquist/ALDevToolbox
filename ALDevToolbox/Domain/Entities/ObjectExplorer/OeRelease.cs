@@ -37,9 +37,20 @@ public class OeRelease
     public string Kind { get; set; } = "first_party";
 
     /// <summary>
+    /// The <see cref="Kind"/> of a Release a pipeline build produced. The stored value
+    /// says <c>project</c> and stays that way (see CLAUDE.md, "Solutions in the product,
+    /// Project in the code"): the Solutions rename once rewrote the literal in three
+    /// pages to <c>solution</c>, which matches no row, and every pipeline-build feature
+    /// on them went quiet. Compare against this, never against a literal.
+    /// </summary>
+    public const string ProjectBuildKind = "project";
+
+    /// <summary>
     /// Explicit, source-derived identity for releases that must not import twice —
-    /// currently first-party OnPrem artifacts (<c>bc-onprem:{Maj}.{Min}:{cc}</c>).
-    /// Null when a release isn't deduped (manual uploads, third-party, project),
+    /// first-party OnPrem artifacts (<c>bc-onprem:{Maj}.{Min}:{cc}</c>) and the vendor
+    /// symbols a pipeline build ingests from the public feeds
+    /// (<c>symbols:{appId}:{version}</c>, #901). Null when a release isn't deduped
+    /// (manual uploads, manual third-party imports, project builds),
     /// which is why the unique index is filtered to non-null keys. This is what lets
     /// the <see cref="Label"/> be a pure display string. See
     /// <c>.design/roadmap.md</c> ("Harden first-party dedup, then free the label").

@@ -8,6 +8,12 @@
     .search box - never on a block-level wrapper such as a <form>. With the class on a
     form, the box and its Search button stacked. So when the search submits, the form is
     its own small row and the sizing class stays on the box inside it.
+
+    data-page-search-host is what F3 looks for (wwwroot/search-shortcut.js): it focuses
+    the first input inside it, so every list page gets the shortcut for nothing. This
+    component cannot put attributes on the page's own <input>, so the page writes the
+    hint itself - aria-keyshortcuts="F3" and "(F3)" in the title - and
+    PageSearchShortcutTests fails the build when it forgets.
 *@
 
 <div class="filter-bar">
@@ -16,7 +22,7 @@
         @if (SearchForm)
         {
             <form method="get" action="@SearchFormAction" role="search" class="filter-bar-form">
-                <span class="search filter-bar__search">
+                <span class="search filter-bar__search" data-page-search-host>
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     @Search
                 </span>
@@ -25,7 +31,7 @@
         }
         else
         {
-            <span class="search filter-bar__search">
+            <span class="search filter-bar__search" data-page-search-host>
                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                 @Search
             </span>
@@ -40,7 +46,10 @@
 </div>
 
 @code {
-    /// <summary>The search <c>input</c> alone; the component supplies the box and its icon.</summary>
+    /// <summary>
+    /// The search <c>input</c> alone; the component supplies the box and its icon. Give the
+    /// input <c>aria-keyshortcuts="F3"</c> and a title ending "(F3)": F3 reaches it.
+    /// </summary>
     [Parameter] public RenderFragment? Search { get; set; }
 
     /// <summary>

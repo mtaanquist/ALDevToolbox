@@ -182,6 +182,8 @@ public class AppDbContext : DbContext
     public DbSet<GitHubRepositoryDrift> GitHubRepositoryDrift => Set<GitHubRepositoryDrift>();
     // Object Explorer (.app ingest) — see .design/object-explorer.md.
     public DbSet<OeRelease> OeReleases => Set<OeRelease>();
+    // Vendor Releases a pipeline build resolved symbols from (#901).
+    public DbSet<OeReleaseDependency> OeReleaseDependencies => Set<OeReleaseDependency>();
     public DbSet<OeModule> OeModules => Set<OeModule>();
     public DbSet<OeModuleFile> OeModuleFiles => Set<OeModuleFile>();
     public DbSet<OeFileContent> OeFileContents => Set<OeFileContent>();
@@ -315,6 +317,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<GitHubRepositoryCandidate>(modelBuilder);
         ScopeToOrganization<GitHubRepositoryDrift>(modelBuilder);
         ScopeToOrganization<OeRelease>(modelBuilder);
+        ScopeToOrganization<OeReleaseDependency>(modelBuilder);
         ScopeToOrganization<OeModule>(modelBuilder);
         ScopeToOrganization<OeModuleFile>(modelBuilder);
         ScopeToOrganization<OeModuleObject>(modelBuilder);

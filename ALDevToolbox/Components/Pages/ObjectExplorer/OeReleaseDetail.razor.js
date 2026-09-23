@@ -57,23 +57,6 @@ export function init(dotNetRef) {
             for (const d of open) closeFdrop(d, d.contains(target));
             return;
         }
-        // F3 focuses the search box (overriding the browser's find-next), so a
-        // keyboard-first user can jump back to search from anywhere on the page.
-        if (ev.key === "F3" && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
-            // By id, not by class. This used to select `input.admin-search-input`,
-            // and PR 14c moved the box onto the design layer's `.input` - so the
-            // selector quietly returned null, the handler fell through without
-            // calling preventDefault(), and F3 went to the browser's find-next.
-            // Nothing failed loudly; the Alt+1..4 half of this same handler kept
-            // working, which is what made it look fine.
-            const search = document.getElementById("oe-release-search");
-            if (search) {
-                ev.preventDefault();
-                search.focus();
-                search.select();
-            }
-            return;
-        }
         if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
         const digit = ev.key in SCOPE_BY_DIGIT
             ? ev.key
@@ -97,8 +80,9 @@ export function init(dotNetRef) {
     // The selector here was `details.kind-filter[open]`, and the design-system
     // port renamed the disclosures to `.fdrop` - so it matched nothing and
     // outside-click was silently dead for all three of them (#612). Same
-    // failure shape as the F3 selector above: no error, just a handler walking
-    // an empty list.
+    // failure shape as this page's old F3 selector, which went the same way
+    // before F3 moved to wwwroot/search-shortcut.js: no error, just a handler
+    // walking an empty list.
     outsideClickHandler = (ev) => {
         document.querySelectorAll(FDROP_OPEN).forEach((d) => {
             if (!d.contains(ev.target)) d.removeAttribute("open");

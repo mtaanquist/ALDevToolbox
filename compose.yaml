@@ -63,12 +63,11 @@ services:
     # name below stays `aldevtoolbox` on purpose - Caddy and the volumes resolve it
     # (see CLAUDE.md).
     #
-    # The repository is al-workbench now and releases are published to
-    # ghcr.io/mtaanquist/al-workbench as well. This line moves to that path once
-    # that package exists AND has been made public - GHCR creates it private, and
-    # CI's compose smoke test pulls it anonymously. Until then the old path is
-    # right: every release is mirrored to it (see release.yml).
-    image: ghcr.io/mtaanquist/aldevtoolbox:${ALWORKBENCH_TAG:-${ALDEVTOOLBOX_TAG:-latest}}
+    # The image follows the repository's name, al-workbench. It holds v11.9.1 and
+    # later; a deployment pinned to an older version pulls
+    # ghcr.io/mtaanquist/aldevtoolbox instead, where those still are. Nothing
+    # newer than v11.9.1 is published there.
+    image: ghcr.io/mtaanquist/al-workbench:${ALWORKBENCH_TAG:-${ALDEVTOOLBOX_TAG:-latest}}
     # build: .
     depends_on:
       db:

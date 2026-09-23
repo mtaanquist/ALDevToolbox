@@ -205,6 +205,52 @@ public sealed class ProjectBuildServiceTests
         Decode(header).Should().Be("x-access-token:tok");
     }
 
+    // ── DescribeCloneFailures ───────────────────────────────────────────
+
+    private static readonly CloneCredential Linked = new("ghu_linked", CloneCredentialResolver.ConnectedAccountSource);
+    private static readonly CloneCredential Pat = new("ghp_pasted", CloneCredentialResolver.BuildTokenSource);
+
+    [Fact]
+    public void DescribeCloneFailures_reads_as_git_error_for_a_single_attempt()
+    {
+        var text = ProjectBuildService.DescribeCloneFailures(
+            [(Pat, "fatal: returned error: 403\n")], [Pat]);
+
+        text.Should().Be("fatal: returned error: 403");
+    }
+
+    [Fact]
+    public void DescribeCloneFailures_names_each_credential_when_several_were_tried()
+    {
+        var text = ProjectBuildService.DescribeCloneFailures(
+            [
+                (Linked, "remote: Repository not found.\nfatal: repository not found"),
+                (Pat, "remote: Write access to repository not granted.\nfatal: 403"),
+            ],
+            [Linked, Pat]);
+
+        text.Should().Be(
+            "With the connected GitHub account: remote: Repository not found. fatal: repository not found. " +
+            "With the stored build token: remote: Write access to repository not granted. fatal: 403.");
+    }
+
+    [Fact]
+    public void DescribeCloneFailures_scrubs_every_credential_from_every_attempt()
+    {
+        var text = ProjectBuildService.DescribeCloneFailures(
+            [(Linked, "bad ghp_pasted"), (Pat, "bad ghu_linked")], [Linked, Pat]);
+
+        text.Should().NotContain("ghp_pasted").And.NotContain("ghu_linked");
+    }
+
+    [Fact]
+    public void DescribeCloneFailures_says_so_when_an_attempt_left_no_message()
+    {
+        var text = ProjectBuildService.DescribeCloneFailures([(Linked, ""), (Pat, "fatal: 403")], [Linked, Pat]);
+
+        text.Should().StartWith("With the connected GitHub account: failed without a message.");
+    }
+
     // ── ParseChangelog ──────────────────────────────────────────────────
 
     private const char Us = '\u001f'; // the unit-separator git --pretty emits between fields

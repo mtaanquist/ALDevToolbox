@@ -60,7 +60,8 @@
                        placeholder="Filter by name or object id..."
                        @ref="_searchInputRef"
                        @oninput="OnSearch"
-                       aria-label="Filter this module's objects by name or id" />
+                       aria-label="Filter this module's objects by name or id"
+                       data-page-search aria-keyshortcuts="F3" title="Filter this module's objects (F3)" />
             </span>
             <SelectBox style="width: 190px">
                 @* The AL keywords, not prose: this is the word the grid below

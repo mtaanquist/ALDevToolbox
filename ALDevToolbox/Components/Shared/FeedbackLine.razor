@@ -9,10 +9,7 @@
 
 @if (!string.IsNullOrEmpty(Error))
 {
-    <span class="field-error" role="alert">
-        <Icon Name="circle-alert" Width="13" Height="13" />
-        <span>@Error</span>
-    </span>
+    <FieldError Message="@Error" />
 }
 else if (!string.IsNullOrEmpty(Ok))
 {

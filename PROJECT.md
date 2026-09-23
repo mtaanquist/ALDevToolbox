@@ -27,7 +27,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/ObjectExplorer/`   | By far the largest subsystem, split one folder per tool (below). Only the pieces every one of them uses stay at the folder root: the shared read DTOs (`ObjectExplorerDtos`, `ObjectExplorerCompareDtos`), `ProjectAccess` (the visibility gate every query asks) and `IProcessRunner`/`ProcessRunner` (also used from `Services/BcQuality/`). |
 | `Services/ObjectExplorer/Import/` | Getting releases and modules *in*: the upload/queue/worker chain (`ReleaseImportRequestService` holds the upload form's policy — which ingest path a submission takes, what is staged to disk, and what goes on the queue — so the endpoints only read the form and redirect on the outcome), the `.app`/DVD/artifact readers (`AppPackageReader`, `FolderZipWalker`, `DvdDownloadService`, `BcArtifactService` with `BcArtifactIndex` and `BcVersionComparer`), C/AL and translation ingest, and the release lifecycle that follows (`ReleaseManagementService`, `ObjectExplorerVacuumScheduler`). |
 | `Services/ObjectExplorer/Explore/` | Reading back what was ingested: the object/module/release queries (`ObjectExplorerService`, `ExplorerTreeService`, `ObjectSearchService`), the source viewer, the reference lookups (`ReferenceQueryService`, `ReferenceResolver`, `ReferenceSessionService`), release comparison, and `SourceVisibility`/`ObjectExplorerLinks`. |
-| `Services/ObjectExplorer/Projects/` | Solutions and their repositories: `ProjectService`, discovery (`ProjectDiscoveryService`/`Queue`/`Worker`), builds (`ProjectBuildService`, `ProjectBuildImporter`, `AlCompilerProvisioner`, `AlcOutputParser`) and the build artifacts (`ArtifactService`). |
+| `Services/ObjectExplorer/Projects/` | Solutions and their repositories: `ProjectService`, discovery (`ProjectDiscoveryService`/`Queue`/`Worker`), builds (`ProjectBuildService`, `ProjectBuildImporter`, `AlCompilerProvisioner`, `AlSymbolFeedResolver`, `AlcOutputParser`) and the build artifacts (`ArtifactService`). |
 | `Services/ObjectExplorer/Delivery/` | Pipelines and shipping their output: `PipelineService`, `ReleasePipelineService`, and the delivery chain that publishes a build to a BC environment (`DeliveryService`, `DeliveryQueue`/`Scheduler`/`Worker`). |
 | `Services/ObjectExplorer/Bc/`| Everything that talks to a customer's Business Central tenant: the Admin Center clients, `ProjectConnectionService`, and the Upgrades services (`UpgradeFleetService`, `UpgradeActionService`, `UpgradeActionWorker`, `EnvironmentRefreshScheduler`/`Queue`/`Worker`). The `Bc`-prefixed artifact trio lives in `Import/`, not here, and stays there (#795): the line this folder draws is *whose* Business Central you are talking to. These three fetch Microsoft's public artifact feeds to ingest a release; nothing in `Bc/` is reachable without a customer tenant's credentials. |
 | `Services/Translation/`      | Translator services: translation memory, machine-translation providers and their per-organisation settings (`MachineTranslationSettingsService`), suggestion coordination. |
@@ -38,7 +38,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/GitHub/`           | The GitHub App integration: `GitHubAppClient` (REST, the App JWT and the user-to-server token exchange), `GitHubConnectionService` (the per-organisation connection), `GitHubAccessService` (the per-user account link and the access checks every feature asks), `GitHubRepositoryService` (the shared repository resolver every caller routes through); phase 2 adds the feature services on top - `GitHubRecipeDeliveryService`, `GitHubReleaseService`, `GitHubRepositoryStandardsService`, `RepositoryDiscoveryService` (+ scheduler), `DependencyDriftService`, and the pull-request compile gate (`GitHubWebhookQueue`, `GitHubPullRequestBuildWorker`, `GitHubCheckRunService`) - with `GitHubAppClient` split into per-feature partial files. |
 | `Services/Operations/`       | Running-instance concerns: the health checks behind `/healthz`, `/readyz` and `/healthz/workers` (`DatabaseHealthCheck`, `DataProtectionHealthCheck`, `StartupReadinessHealthCheck`/`State`, `BackgroundWorkerHealthCheck`), `MaintenanceModeState`, `BuildInfo`, `DeploymentIdentity`, and the singleton `SystemSettingsService`. |
 | `Services/Workers/`          | The in-process background-work base classes every queue and scheduler subclasses (`JobQueue`, `QueueDrainWorker`, `PolledScheduler`) and the `WorkerHeartbeat` liveness record they tick. |
-| `Services/Configuration/`    | Deployment configuration read once at startup (`BackupOptions`, `SmtpFallbackOptions`, `AlCompilerOptions`) and passed to the services that need it, rather than each service reaching into the process environment. The env var names stay the operator-facing interface. |
+| `Services/Configuration/`    | Deployment configuration read once at startup (`BackupOptions`, `SmtpFallbackOptions`, `AlCompilerOptions`, `AlSymbolFeedOptions`) and passed to the services that need it, rather than each service reaching into the process environment. The env var names stay the operator-facing interface. |
 | `Services/BcQuality/`, `Services/Cookbook/`, `Services/Diff/`, `Services/SingleTenant/`, `Services/Tools/` | One folder per remaining tool or cross-cutting concern. |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
@@ -206,24 +206,29 @@ old package, `ghcr.io/mtaanquist/aldevtoolbox`, keeps serving the tags it alread
 would never receive a new one, so anything still pulling it would silently stop updating.
 Two things cover the move:
 
-- `release.yml` has a **mirror step** that tags each release at the old path as well. It
-  copies the manifest rather than building twice, and it is `continue-on-error`, so a refusal
-  from the old package can never fail a release. Delete the step once every deployment has
-  moved; it says so in its own comment.
-- `compose.yaml`'s tag variable is `ALWORKBENCH_TAG` with `ALDEVTOOLBOX_TAG` as a permanent
-  fallback, so an `.env` written before the rename keeps pinning what it pinned. It **still
-  pulls the old path**, and has to until the new package exists and is public: CI's compose
-  smoke test pulls the image anonymously, so pointing it at a path that is missing or
-  private fails every pull request (that is what happened the first time). The order is:
-  release once from the renamed repository, make the `al-workbench` package public, then
-  flip the image line.
+- For one release, v11.9.1, `release.yml` had a **mirror step** that also tagged the image at
+  the old path, so the production server kept updating until its compose file had moved. It
+  was deleted once that deploy was confirmed healthy on the new path. The old package holds
+  every version up to and including v11.9.1 and will never receive another.
+- `compose.yaml` pulls the new path, and its tag variable is `ALWORKBENCH_TAG` with
+  `ALDEVTOOLBOX_TAG` as a permanent fallback, so an `.env` written before the rename keeps
+  pinning what it pinned.
+
+**The order mattered, and is worth keeping for next time.** `compose.yaml` could not move in
+the same change as the rename: CI's compose smoke test pulls the image anonymously, and the
+new package did not exist until a release had published it - while releasing needed that
+change merged. So: release once from the renamed repository (v11.9.1) with compose still on
+the old path, check the new package can be pulled without signing in, then flip the image
+line.
 
 The new path only holds releases cut after the rename (v11.9.1 onwards). A deployment
-pinned to an older version must keep the old image path until it upgrades - `latest` and
-anything newer are at both.
+pinned to an older version must keep the old image path until it upgrades; v11.9.1 is the
+one version at both.
 
-A package created by the first push to a new path starts **private**: until somebody makes it
-public in the package's settings, pulls of the new path 404. Old links to the repository,
+The new package came up **public**, inheriting the repository's visibility - not private, as
+this document and the rename PR had both predicted. Check rather than assume:
+`docker logout ghcr.io && docker manifest inspect ghcr.io/mtaanquist/al-workbench:<tag>`.
+Old links to the repository,
 its issues and its pull requests redirect for as long as nothing else takes the old name.
 
 **Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping (10 is the tag the Upgrades work is cut as):

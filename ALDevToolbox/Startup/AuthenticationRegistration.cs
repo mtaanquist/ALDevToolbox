@@ -31,21 +31,31 @@ public static class AuthenticationRegistration
                 options.AccessDeniedPath = "/login";
 
                 // /site-admin/* must return 404, never redirect-to-login or 403 —
-                // a 403 would tell an org admin those routes exist. Both events
-                // short-circuit to 404; status-code re-execute renders the
-                // NotFound page.
-                options.Events.OnRedirectToLogin = NotFoundForSiteAdmin;
-                options.Events.OnRedirectToAccessDenied = NotFoundForSiteAdmin;
+                // a 403 would tell an org admin those routes exist. /palette/*
+                // must return 401, because it is fetched by a script rather than
+                // navigated to. Everything else redirects. Status-code re-execute
+                // renders the NotFound page for the 404.
+                options.Events.OnRedirectToLogin = StatusInsteadOfRedirect;
+                options.Events.OnRedirectToAccessDenied = StatusInsteadOfRedirect;
                 // Re-validate the cookie's role / Status / SiteAdmin snapshot against
                 // the DB on a throttle so a disable or demotion applies within minutes
                 // rather than riding the 30-day cookie to expiry. See issue #412.
                 options.Events.OnValidatePrincipal = ALDevToolbox.Endpoints.CookieSessionRevalidation.ValidateAsync;
 
-                static Task NotFoundForSiteAdmin(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx)
+                static Task StatusInsteadOfRedirect(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx)
                 {
                     if (ctx.Request.Path.StartsWithSegments(HttpOrganizationContext.SiteAdminPathPrefix))
                     {
                         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                        return Task.CompletedTask;
+                    }
+                    // The command palette fetches its results; it never navigates
+                    // to them. A 302 to /login would arrive at the script as a
+                    // 200 page of sign-in HTML, indistinguishable from results —
+                    // 401 is what lets it say the session has expired instead.
+                    if (ctx.Request.Path.StartsWithSegments(PaletteEndpoints.PathPrefix))
+                    {
+                        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         return Task.CompletedTask;
                     }
                     ctx.Response.Redirect(ctx.RedirectUri);

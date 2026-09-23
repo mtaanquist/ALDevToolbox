@@ -106,7 +106,15 @@ public class OeProject
     /// turns off the connection, environments, upgrades and release pipelines. Derived
     /// from <see cref="HostingType"/> so the two can never disagree.
     /// </summary>
-    public bool IsOnPremises => HostingType is not (null or ProjectHostingType.MicrosoftCloud);
+    public bool IsOnPremises => IsOnPremisesHosting(HostingType);
+
+    /// <summary>
+    /// <see cref="IsOnPremises"/> for a hosting value read off a projection, where there
+    /// is no entity to ask. The one definition, so a projected read cannot disagree with
+    /// the page that reads the entity.
+    /// </summary>
+    public static bool IsOnPremisesHosting(ProjectHostingType? hosting) =>
+        hosting is not (null or ProjectHostingType.MicrosoftCloud);
 
     /// <summary>What they run, as people say it ("BC 25.3", "NAV 2018 CU12"). For reading, never compared.</summary>
     public string? BcVersion { get; set; }
@@ -194,8 +202,8 @@ public class OeProject
     /// <summary>
     /// Operator-supplied third-party symbols (<see cref="OeProjectSymbol"/>) the build
     /// merges into the symbol cache — the manual-symbols recovery path for a
-    /// dependency absent from both the repos' <c>.alpackages/</c> and any Microsoft
-    /// artifact. See <c>.design/object-explorer-project-builds.md</c>.
+    /// dependency absent from the repos' <c>.alpackages/</c>, the Microsoft artifact
+    /// and the public symbol feeds. See <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
     public ICollection<OeProjectSymbol> Symbols { get; set; } = new List<OeProjectSymbol>();
 

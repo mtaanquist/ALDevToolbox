@@ -37,9 +37,7 @@
            way, and a dead button with no reason beside it is a dead end. *@
         @if (NameProblem is { } problem)
         {
-            <span id="copy-env-name-help" class="field-error" role="alert">
-                <Icon Name="triangle-alert" Width="13" Height="13" />@problem
-            </span>
+            <FieldError Id="copy-env-name-help" Message="@problem" />
         }
         else
         {

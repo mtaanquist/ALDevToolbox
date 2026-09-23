@@ -61,6 +61,7 @@ internal static class TenantTableCatalog
         "team_members",
         "oe_artifact_versions",
         "oe_releases",
+        "oe_release_dependencies",
         "oe_import_jobs",
         "oe_project_build_results",
         "oe_modules",

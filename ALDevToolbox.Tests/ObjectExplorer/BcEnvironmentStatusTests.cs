@@ -101,4 +101,17 @@ public sealed class BcEnvironmentStatusTests
     {
         BcEnvironmentStatus.IsSoftDeleted(status).Should().Be(expected);
     }
+
+    /// <summary>
+    /// A documented failure state is one we recognise - Classify already calls it
+    /// Failed - so the word shown for it names it rather than shrugging.
+    /// </summary>
+    [Theory]
+    [InlineData("UpgradingFailed", "Upgrading failed")]
+    [InlineData("PreparingFailed", "Preparing failed")]
+    [InlineData("SomethingNew", "In a state we don't recognise")]
+    public void StatusWord_names_a_failure_state_rather_than_calling_it_unrecognised(string status, string expected)
+    {
+        BcEnvironmentStatus.StatusWord(status).Should().Be(expected);
+    }
 }

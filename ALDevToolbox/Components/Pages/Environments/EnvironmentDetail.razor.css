@@ -26,7 +26,8 @@
 }
 
 
-.env-detail__later {
+/* Rendered by FieldError, so it carries no page scope of its own. */
+::deep .env-detail__later {
     margin: var(--space-3) 0 0;
     font-size: var(--text-sm);
 }
