@@ -9,13 +9,15 @@ namespace ALDevToolbox.Services.ObjectExplorer.Projects;
 /// <summary>
 /// Provisions the AL compiler (<c>alc</c>) at runtime rather than baking it into
 /// the image, so a new compiler version never requires an image rebuild. The
-/// compiler ships in the <c>Microsoft.Dynamics.BusinessCentral.Development.Tools.Linux</c>
-/// NuGet package as <c>lib/&lt;tfm&gt;/alc</c>; this service downloads the
-/// <c>.nupkg</c> (a zip), extracts the right target-framework folder into the
-/// <c>app-altool</c> volume, and marks the execute bit — no SDK, no
-/// <c>dotnet tool install</c> (which rejects these packages because they ship
-/// under <c>lib/</c> not <c>tools/</c>). See
-/// <c>.design/object-explorer-project-builds.md</c>.
+/// compiler ships in the <c>Microsoft.Dynamics.BusinessCentral.Development.Tools</c>
+/// NuGet package as a framework-dependent <c>tools/&lt;tfm&gt;/any/alc.dll</c>
+/// that the host's <c>dotnet</c> runs; this service downloads the <c>.nupkg</c>
+/// (a zip), extracts that folder flat into the <c>app-altool</c> volume and
+/// records what it installed - no SDK, no <c>dotnet tool install</c> (which
+/// rejects these packages). Volumes provisioned before #921 hold the
+/// <c>.Linux</c> package's <c>lib/&lt;tfm&gt;/alc</c> apphost instead; that
+/// layout is still recognised and run as it was, so an existing install never
+/// re-downloads. See <c>.design/object-explorer-project-builds.md</c>.
 ///
 /// <para>
 /// Singleton: it owns a shared on-disk resource (the volume) guarded by a
@@ -25,8 +27,21 @@ namespace ALDevToolbox.Services.ObjectExplorer.Projects;
 /// </summary>
 public sealed class AlCompilerProvisioner
 {
-    /// <summary>The cross-platform AL compiler NuGet package id (lower-cased for the flat-container API).</summary>
-    public const string PackageId = "microsoft.dynamics.businesscentral.development.tools.linux";
+    /// <summary>
+    /// The AL compiler NuGet package id (lower-cased for the flat-container API).
+    /// Not the <c>.Linux</c> package: from 18.x that one carries only the code
+    /// analyzers, and the compiler itself is the framework-dependent
+    /// <c>alc.dll</c> in this package (#921).
+    /// </summary>
+    public const string PackageId = "microsoft.dynamics.businesscentral.development.tools";
+
+    /// <summary>
+    /// How many versions, newest first, a provisioning pass tries when no pin is
+    /// set and a package turns out to carry no compiler. Microsoft has shipped
+    /// such packages (#921); a bounded walk finds the newest real one without
+    /// turning an odd feed into a forty-download loop.
+    /// </summary>
+    internal const int MaxCandidates = 3;
 
     private const string IndexUrl =
         "https://api.nuget.org/v3-flatcontainer/" + PackageId + "/index.json";
@@ -72,30 +87,48 @@ public sealed class AlCompilerProvisioner
                 : null;
         }
 
-        var marker = ReadMarker();
-        if (marker is not null && File.Exists(Path.Combine(BinDir, "alc")))
-        {
-            return new AlCompilerInfo(Path.Combine(BinDir, "alc"), marker.Tfm == "net8.0", marker.Version);
-        }
+        if (Installed() is { } installed) return installed;
 
         // Nothing installed yet — provision the target version.
-        string? target;
+        IReadOnlyList<string> candidates;
         try
         {
-            target = PickNewest(await FetchVersionsAsync(ct), _versionPin);
+            candidates = PickCandidates(await FetchVersionsAsync(ct), _versionPin);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "AL compiler is not installed and NuGet is unreachable; project builds are unavailable.");
             return null;
         }
-        if (target is null) return null;
 
-        await ProvisionVersionAsync(target, ct).ConfigureAwait(false);
-        var m = ReadMarker();
-        return m is not null
-            ? new AlCompilerInfo(Path.Combine(BinDir, "alc"), m.Tfm == "net8.0", m.Version)
-            : null;
+        foreach (var version in candidates)
+        {
+            try
+            {
+                await ProvisionVersionAsync(version, ct).ConfigureAwait(false);
+                break;
+            }
+            catch (AlCompilerPackageException ex) when (_versionPin is null)
+            {
+                // A package without a compiler, or one the feed lists but will not
+                // serve, is a feed quirk, not a fault of ours: say so and try the next older one. A pinned version gets no such
+                // leniency - the operator asked for exactly that one.
+                _logger.LogWarning("AL compiler package {Version} is not installable ({Reason}); trying the next older version.",
+                    version, ex.Message);
+            }
+        }
+        return Installed();
+    }
+
+    /// <summary>What the volume holds, in either layout, or null when nothing usable is installed.</summary>
+    private AlCompilerInfo? Installed()
+    {
+        var marker = ReadMarker();
+        if (marker is null) return null;
+        // Markers written before #921 name no entry: those installs are the
+        // .Linux package's apphost.
+        var entry = Path.Combine(BinDir, marker.Entry ?? ApphostEntry);
+        return File.Exists(entry) ? new AlCompilerInfo(entry, marker.Tfm == "net8.0", marker.Version) : null;
     }
 
     /// <summary>
@@ -110,7 +143,7 @@ public sealed class AlCompilerProvisioner
         try
         {
             // Re-check under the lock: another caller may have just installed it.
-            if (ReadMarker()?.Version == version && File.Exists(Path.Combine(BinDir, "alc")))
+            if (ReadMarker()?.Version == version && Installed() is not null)
             {
                 return;
             }
@@ -121,8 +154,19 @@ public sealed class AlCompilerProvisioner
 
             var http = _httpFactory.CreateClient();
             _logger.LogInformation("Provisioning AL compiler {Version} from NuGet.", version);
-            await using var nupkg = await http.GetStreamAsync(url, ct).ConfigureAwait(false);
-            using var buffer = await BufferAsync(nupkg, ct).ConfigureAwait(false);
+            MemoryStream buffer;
+            try
+            {
+                await using var nupkg = await http.GetStreamAsync(url, ct).ConfigureAwait(false);
+                buffer = await BufferAsync(nupkg, ct).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Listed in the index, but the blob is gone: an unlisted or
+                // half-published version. Not ours to install; the next older one may be.
+                throw new AlCompilerPackageException($"AL compiler package {version} is listed but not downloadable (404).", ex);
+            }
+            using var _ = buffer;
             // alc runs with the app's privileges over attacker-influenced source,
             // so verify the download against NuGet's published SHA-512 before
             // extracting/executing it. AL_COMPILER_VERSION should be pinned in
@@ -131,15 +175,14 @@ public sealed class AlCompilerProvisioner
             buffer.Position = 0;
             using var zip = new ZipArchive(buffer, ZipArchiveMode.Read);
 
-            var tfm = PickTfm(zip.Entries.Select(e => e.FullName));
-            if (tfm is null)
-                throw new InvalidOperationException($"AL compiler package {version} has no usable lib/<tfm>/ folder.");
+            var layout = PickLayout(zip.Entries.Select(e => e.FullName))
+                ?? throw new AlCompilerPackageException($"AL compiler package {version} has no tools/<tfm>/any/alc.dll and no lib/<tfm>/alc.");
 
-            // Fresh bin dir, then extract the chosen tfm folder flat into it.
+            // Fresh bin dir, then extract the chosen folder flat into it.
             if (Directory.Exists(BinDir)) Directory.Delete(BinDir, recursive: true);
             Directory.CreateDirectory(BinDir);
 
-            var prefix = $"lib/{tfm}/";
+            var prefix = layout.Prefix;
             var binRoot = Path.GetFullPath(BinDir) + Path.DirectorySeparatorChar;
             foreach (var entry in zip.Entries)
             {
@@ -172,11 +215,11 @@ public sealed class AlCompilerProvisioner
                         | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
             }
 
-            if (!File.Exists(Path.Combine(BinDir, "alc")))
-                throw new InvalidOperationException($"AL compiler package {version} (lib/{tfm}/) did not contain an 'alc' binary.");
+            if (!File.Exists(Path.Combine(BinDir, layout.Entry)))
+                throw new AlCompilerPackageException($"AL compiler package {version} ({prefix}) did not contain '{layout.Entry}'.");
 
-            WriteMarker(new InstalledMarker(version, tfm));
-            _logger.LogInformation("Installed AL compiler {Version} ({Tfm}).", version, tfm);
+            WriteMarker(new InstalledMarker(version, layout.Tfm, layout.Entry));
+            _logger.LogInformation("Installed AL compiler {Version} ({Prefix}{Entry}).", version, prefix, layout.Entry);
         }
         finally
         {
@@ -195,39 +238,73 @@ public sealed class AlCompilerProvisioner
 
     /// <summary>
     /// Picks the version to install: the pin when set (and present), otherwise the
-    /// newest. The NuGet flat-container index lists versions in SemVer-ascending
-    /// order, so the newest — including prerelease — is the last entry.
+    /// newest stable release. The NuGet flat-container index lists versions in
+    /// SemVer-ascending order, so the newest is the last entry.
     /// </summary>
-    public static string? PickNewest(IReadOnlyList<string> versions, string? pin)
-    {
-        if (versions.Count == 0) return null;
-        if (!string.IsNullOrWhiteSpace(pin))
-        {
-            return versions.FirstOrDefault(v => string.Equals(v, pin, StringComparison.OrdinalIgnoreCase));
-        }
-        return versions[^1];
-    }
+    public static string? PickNewest(IReadOnlyList<string> versions, string? pin) =>
+        PickCandidates(versions, pin).FirstOrDefault();
 
     /// <summary>
-    /// Chooses the target-framework folder to extract from the package: prefer
-    /// <c>net10.0</c> (runs natively on the runtime image), else the newest
-    /// <c>net8.0</c>-style folder (runs with roll-forward). Returns the bare tfm
-    /// (e.g. <c>net10.0</c>) or null when no <c>lib/netX/</c> folder exists.
+    /// The versions to try, in order: just the pin when one is set (and present),
+    /// otherwise the newest <see cref="MaxCandidates"/> stable releases, newest
+    /// first, so a package that carries no compiler is skipped for the one before
+    /// it. A prerelease is never picked by default - a beta compiler is a choice
+    /// an operator makes with <c>AL_COMPILER_VERSION</c> - unless the feed holds
+    /// nothing else.
     /// </summary>
-    public static string? PickTfm(IEnumerable<string> entryNames)
+    public static IReadOnlyList<string> PickCandidates(IReadOnlyList<string> versions, string? pin)
     {
-        var tfms = entryNames
-            .Where(n => n.StartsWith("lib/", StringComparison.Ordinal))
-            .Select(n => n.Split('/'))
-            .Where(p => p.Length >= 3 && p[1].StartsWith("net", StringComparison.Ordinal))
-            .Select(p => p[1])
-            .Distinct()
-            .ToList();
-        if (tfms.Count == 0) return null;
-        if (tfms.Contains("net10.0")) return "net10.0";
-        // Otherwise the highest netN.0 (lexical is wrong for net8 vs net10, so order numerically).
-        return tfms.OrderByDescending(ParseNetMajor).First();
+        if (versions.Count == 0) return [];
+        if (!string.IsNullOrWhiteSpace(pin))
+        {
+            var match = versions.FirstOrDefault(v => string.Equals(v, pin, StringComparison.OrdinalIgnoreCase));
+            return match is null ? [] : [match];
+        }
+        var stable = versions.Where(v => !v.Contains('-')).ToList();
+        var pool = stable.Count > 0 ? stable : versions.ToList();
+        pool.Reverse();
+        return pool.Take(MaxCandidates).ToList();
     }
+
+    /// <summary>The apphost the <c>.Linux</c> package shipped up to 17.x; still what older volumes hold.</summary>
+    internal const string ApphostEntry = "alc";
+
+    /// <summary>The framework-dependent compiler the main package ships; run through <c>dotnet</c>.</summary>
+    internal const string FrameworkDependentEntry = "alc.dll";
+
+    /// <summary>
+    /// Finds the compiler in a package: the framework-dependent
+    /// <c>tools/&lt;tfm&gt;/any/alc.dll</c> the main package ships, else the
+    /// <c>lib/&lt;tfm&gt;/alc</c> apphost the <c>.Linux</c> package shipped up to
+    /// 17.x. Within a layout prefers <c>net10.0</c> (runs natively on the runtime
+    /// image), else the highest <c>netN.0</c> (runs with roll-forward). Null when
+    /// the package carries no compiler at all - the 18.x <c>.Linux</c> packages
+    /// are analyzers only (#921).
+    /// </summary>
+    public static CompilerLayout? PickLayout(IEnumerable<string> entryNames)
+    {
+        var names = entryNames.ToList();
+        return Find(names, "tools/", 4, FrameworkDependentEntry, p => $"tools/{p}/any/")
+            ?? Find(names, "lib/", 3, ApphostEntry, p => $"lib/{p}/");
+
+        static CompilerLayout? Find(List<string> names, string root, int depth, string entry, Func<string, string> prefixOf)
+        {
+            var tfms = names
+                .Where(n => n.StartsWith(root, StringComparison.Ordinal))
+                .Select(n => n.Split('/'))
+                .Where(p => p.Length == depth && p[1].StartsWith("net", StringComparison.Ordinal) && p[^1] == entry)
+                .Select(p => p[1])
+                .Distinct()
+                .ToList();
+            if (tfms.Count == 0) return null;
+            // Prefer net10.0; otherwise the highest netN.0 (lexical is wrong for net8 vs net10, so order numerically).
+            var tfm = tfms.Contains("net10.0") ? "net10.0" : tfms.OrderByDescending(ParseNetMajor).First();
+            return new CompilerLayout(prefixOf(tfm), tfm, entry);
+        }
+    }
+
+    /// <summary>Retained for callers that only need the framework folder; see <see cref="PickLayout"/>.</summary>
+    public static string? PickTfm(IEnumerable<string> entryNames) => PickLayout(entryNames)?.Tfm;
 
     private static int ParseNetMajor(string tfm)
     {
@@ -266,10 +343,17 @@ public sealed class AlCompilerProvisioner
 
     /// <summary>
     /// Verifies the downloaded <c>.nupkg</c> against the base64 SHA-512 NuGet
-    /// publishes at the flat-container <c>.nupkg.sha512</c> resource, before the
-    /// package is extracted and <c>alc</c> is run. Refuses to install if the hash
-    /// can't be fetched or doesn't match — without this a yanked-then-republished
-    /// or tampered package would become code execution in the container. See #429.
+    /// publishes for it, before the package is extracted and <c>alc</c> is run.
+    /// Refuses to install if the hash can't be fetched or doesn't match — without
+    /// this a yanked-then-republished or tampered package would become code
+    /// execution in the container. See #429.
+    ///
+    /// <para>The hash comes from the package's registration leaf
+    /// (<c>registration5-gz-semver2/{id}/{version}.json</c> → <c>catalogEntry</c>
+    /// → <c>packageHash</c>), the same place the NuGet client reads it. The
+    /// flat-container <c>.nupkg.sha512</c> resource this used to read answers 404
+    /// on nuget.org for every package now, which silently made every fresh
+    /// provisioning refuse (#921).</para>
     /// </summary>
     private async Task VerifyPackageHashAsync(
         HttpClient http, string nupkgUrl, MemoryStream content, string version, CancellationToken ct)
@@ -277,9 +361,16 @@ public sealed class AlCompilerProvisioner
         string expected;
         try
         {
-            expected = (await http.GetStringAsync(nupkgUrl + ".sha512", ct).ConfigureAwait(false)).Trim();
+            expected = await FetchPublishedHashAsync(http, version, ct).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Downloadable but not registered: a half-published version. Refusing
+            // to install is the point; a skippable refusal lets the walk try the
+            // version before it.
+            throw new AlCompilerPackageException($"AL compiler {version} has no published integrity hash; refusing to install unverified.", ex);
+        }
+        catch (Exception ex) when (ex is not AlCompilerPackageException)
         {
             throw new InvalidOperationException(
                 $"Could not fetch the integrity hash for AL compiler {version}; refusing to install unverified.", ex);
@@ -294,10 +385,63 @@ public sealed class AlCompilerProvisioner
         }
     }
 
+    private const string RegistrationBase = "https://api.nuget.org/v3/registration5-gz-semver2/" + PackageId + "/";
+
+    /// <summary>The base64 SHA-512 from the version's catalog entry. Throws <see cref="AlCompilerPackageException"/> when the entry names no SHA-512.</summary>
+    private static async Task<string> FetchPublishedHashAsync(HttpClient http, string version, CancellationToken ct)
+    {
+        using var leaf = await GetJsonAsync(http, RegistrationBase + version.ToLowerInvariant() + ".json", ct).ConfigureAwait(false);
+        var catalogUrl = leaf.RootElement.GetProperty("catalogEntry").GetString()
+            ?? throw new AlCompilerPackageException($"AL compiler {version} has no catalog entry in its registration.");
+        using var entry = await GetJsonAsync(http, catalogUrl, ct).ConfigureAwait(false);
+        var algorithm = entry.RootElement.TryGetProperty("packageHashAlgorithm", out var a) ? a.GetString() : null;
+        var hash = entry.RootElement.TryGetProperty("packageHash", out var h) ? h.GetString() : null;
+        if (!string.Equals(algorithm, "SHA512", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(hash))
+        {
+            throw new AlCompilerPackageException($"AL compiler {version} publishes no SHA-512 hash (algorithm '{algorithm}').");
+        }
+        return hash.Trim();
+    }
+
+    /// <summary>Reads a JSON document, inflating it when nuget.org serves it gzip-encoded (the registration resource always does).</summary>
+    private static async Task<JsonDocument> GetJsonAsync(HttpClient http, string url, CancellationToken ct)
+    {
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        await using var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        if (response.Content.Headers.ContentEncoding.Contains("gzip"))
+        {
+            await using var inflated = new GZipStream(body, CompressionMode.Decompress);
+            return await JsonDocument.ParseAsync(inflated, cancellationToken: ct).ConfigureAwait(false);
+        }
+        return await JsonDocument.ParseAsync(body, cancellationToken: ct).ConfigureAwait(false);
+    }
+
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
-    private sealed record InstalledMarker(string Version, string Tfm);
+    /// <summary><paramref name="Entry"/> is null on markers written before #921, which installed the apphost.</summary>
+    private sealed record InstalledMarker(string Version, string Tfm, string? Entry = null);
 }
 
-/// <summary>How to invoke the resolved compiler: the <c>alc</c> path and whether it needs roll-forward.</summary>
-public sealed record AlCompilerInfo(string AlcPath, bool NeedsRollForward, string Version);
+/// <summary>Where a package keeps its compiler: the folder to extract flat, its framework, and the file to run.</summary>
+public sealed record CompilerLayout(string Prefix, string Tfm, string Entry);
+
+/// <summary>A downloaded package that is not a compiler - the next older version may be.</summary>
+public sealed class AlCompilerPackageException(string message, Exception? inner = null) : InvalidOperationException(message, inner);
+
+/// <summary>
+/// How to invoke the resolved compiler. <see cref="AlcPath"/> is either the
+/// apphost (<c>.../alc</c>, run directly) or the framework-dependent
+/// <c>.../alc.dll</c>, which the host's <c>dotnet</c> runs; <see cref="FileName"/>
+/// and <see cref="LeadingArguments"/> hide that difference from the build.
+/// </summary>
+public sealed record AlCompilerInfo(string AlcPath, bool NeedsRollForward, string Version)
+{
+    public bool IsFrameworkDependent => AlcPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The process to start: <c>dotnet</c> for a framework-dependent compiler, else the apphost itself.</summary>
+    public string FileName => IsFrameworkDependent ? "dotnet" : AlcPath;
+
+    /// <summary>What goes before the compiler's own arguments: the dll path when <c>dotnet</c> hosts it, else nothing.</summary>
+    public IReadOnlyList<string> LeadingArguments => IsFrameworkDependent ? [AlcPath] : [];
+}
