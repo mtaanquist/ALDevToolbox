@@ -131,6 +131,16 @@
     text-wrap: pretty;
     overflow-wrap: anywhere;
 }
+.rp-cols {
+    height: 34px;
+    background: var(--surface-sunken);
+    border-bottom: 1px solid var(--border);
+    border-right: 4px solid transparent;
+    font-size: var(--text-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--ink-3);
+}
+.rp-cols__num { text-align: right; }
 
 /* "What happened" (section 2): our sentence, Business Central's message in its own
    block, what the environment reports. */

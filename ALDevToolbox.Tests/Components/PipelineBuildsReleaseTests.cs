@@ -1,0 +1,340 @@
+using ALDevToolbox.Components.Pages.Pipelines;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+using ALDevToolbox.Services;
+using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
+using ALDevToolbox.Services.ObjectExplorer.Delivery;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
+using ALDevToolbox.Services.Organizations;
+using ALDevToolbox.Tests.Infrastructure;
+using AwesomeAssertions;
+using Bunit;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace ALDevToolbox.Tests.Components;
+
+/// <summary>
+/// "Release..." on a successful build's row of the build pipeline page (#938): the
+/// shortcut .design/saas-delivery.md describes beside the release pipeline's own
+/// Release action. Named user: a BC consultant looking at a green build who wants it
+/// in the customer's environment without hunting for the release pipeline first.
+///
+/// <para>The row resolves the target and hands over to the same ReleaseBuildDialog the
+/// release pipeline's page opens, with the row's build selected - so everything that
+/// dialog enforces (the Production acknowledgement, the schedule, the secret warning)
+/// still stands. Nothing here releases: Business Central is never reached.</para>
+/// </summary>
+public sealed class PipelineBuildsReleaseTests : IDisposable
+{
+    private readonly TestDb _db = new();
+    private readonly BunitContext _ctx = new();
+
+    private const int OwnerUserId = 9380;
+    private const int ColleagueUserId = 9381;
+
+    public PipelineBuildsReleaseTests()
+    {
+        var auth = _ctx.AddAuthorization();
+        auth.SetAuthorized("owner@example.com");
+
+        _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
+        _ctx.Services.AddScoped<ProjectAccess>();
+        _ctx.Services.AddScoped<ArtifactService>();
+        _ctx.Services.AddScoped<PipelineService>();
+        _ctx.Services.AddScoped<ReleasePipelineService>();
+        _ctx.Services.AddScoped<ProjectDiscoveryService>();
+        _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
+        // The Build button's service. Nothing here builds, so only what it keeps
+        // for itself is real.
+        _ctx.Services.AddScoped(sp => new ProjectBuildImporter(
+            null!, new ALDevToolbox.Services.ObjectExplorer.Import.ReleaseImportQueue(), null!,
+            sp.GetRequiredService<ALDevToolbox.Data.AppDbContext>(), _db.OrgContext,
+            sp.GetRequiredService<ProjectAccess>(), TimeProvider.System,
+            NullLogger<ProjectBuildImporter>.Instance));
+        // The release dialog and the release pipeline editor, and the Business Central
+        // connection they read the secret expiry and environments from. The clients are
+        // never called.
+        _ctx.Services.AddHttpClient();
+        _ctx.Services.AddSingleton<BcTokenService>();
+        _ctx.Services.AddSingleton<BcPanelCache>();
+        _ctx.Services.AddScoped<IBcAdminClient, UnreachableAdminClient>();
+        _ctx.Services.AddScoped<IBcAppManagementClient, UnreachableAppManagementClient>();
+        _ctx.Services.AddScoped<ProjectConnectionService>();
+        _ctx.Services.AddSingleton<IDeliveryTokenSource, UnusedTokenSource>();
+        _ctx.Services.AddSingleton(new DeliveryQueue());
+        _ctx.Services.AddScoped<DeliveryService>();
+        _ctx.Services.AddSingleton(TimeProvider.System);
+        _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddScoped<RepositoryProviderPolicyService>();
+        _db.AddStorageServices(_ctx.Services);
+        _db.AddGitHubServices(_ctx.Services);
+        _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
+            new Microsoft.AspNetCore.Http.HttpContextAccessor());
+        _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+        _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
+        _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
+            typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+
+        using var seed = _db.NewContext();
+        seed.Users.AddRange(NewUser(OwnerUserId, "owner@example.com"), NewUser(ColleagueUserId, "nils@example.com"));
+        seed.SaveChanges();
+        _db.OrgContext.CurrentUserId = OwnerUserId;
+    }
+
+    public void Dispose()
+    {
+        _db.WaitForQueriesToSettle();
+        _ctx.Dispose();
+        _db.Dispose();
+    }
+
+    private static User NewUser(int id, string email) => new()
+    {
+        Id = id,
+        OrganizationId = TestDb.DefaultOrgId,
+        Email = email,
+        PasswordHash = "x",
+        DisplayName = email,
+        Role = UserRole.User,
+        Status = UserStatus.Active,
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    private sealed record Seed(int ProjectId, int PipelineId, int OlderBuildId, int NewerBuildId, int ProductionEnvId, int SandboxEnvId);
+
+    /// <summary>
+    /// A solution with one build pipeline and two successful builds (so "the row's
+    /// build" and "the latest build" can differ), and two environments. Release
+    /// pipelines are added per test.
+    /// </summary>
+    private async Task<Seed> SeedAsync(ProjectVisibility visibility = ProjectVisibility.Public)
+    {
+        await using var ctx = _db.NewContext();
+        var now = DateTime.UtcNow;
+        var project = new OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = "CRONUS Denmark",
+            CreatedByUserId = OwnerUserId,
+            Visibility = visibility,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+
+        var pipeline = new OePipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "CRONUS App",
+            CreatedAt = now, UpdatedAt = now,
+        };
+        ctx.OePipelines.Add(pipeline);
+        var production = new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Production", Type = "Production",
+            FetchedAt = now,
+        };
+        var sandbox = new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "UAT", Type = "Sandbox",
+            FetchedAt = now,
+        };
+        ctx.OeProjectEnvironments.AddRange(production, sandbox);
+        await ctx.SaveChangesAsync();
+
+        var older = await SeedBuildAsync(ctx, project.Id, pipeline.Id, now.AddDays(-2));
+        var newer = await SeedBuildAsync(ctx, project.Id, pipeline.Id, now.AddHours(-1));
+        return new Seed(project.Id, pipeline.Id, older, newer, production.Id, sandbox.Id);
+    }
+
+    private static async Task<int> SeedBuildAsync(ALDevToolbox.Data.AppDbContext ctx, int projectId, int pipelineId, DateTime at)
+    {
+        var build = new OeProjectBuild
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = pipelineId,
+            Status = ProjectBuildStatus.Ready, StartedAt = at, FinishedAt = at.AddMinutes(2),
+        };
+        ctx.OeProjectBuilds.Add(build);
+        await ctx.SaveChangesAsync();
+        ctx.OeProjectBuildArtifacts.Add(new OeProjectBuildArtifact
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = build.Id,
+            FileName = "CRONUS Sales Extension_1.0.0.0.app", AppName = "CRONUS Sales Extension", AppVersion = "1.0.0.0",
+            SizeBytes = 3, Content = new byte[] { 1, 2, 3 }, CreatedAt = at,
+        });
+        await ctx.SaveChangesAsync();
+        return build.Id;
+    }
+
+    private async Task<int> SeedReleasePipelineAsync(Seed seed, string name, int envId)
+    {
+        await using var ctx = _db.NewContext();
+        var now = DateTime.UtcNow;
+        var rp = new OeReleasePipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = seed.ProjectId, Name = name,
+            BuildPipelineId = seed.PipelineId, ProjectEnvironmentId = envId,
+            DeploymentSchedule = BcDeploymentSchedule.Immediate, SchemaSyncMode = BcSyncMode.Add,
+            CreatedAt = now, UpdatedAt = now,
+        };
+        ctx.OeReleasePipelines.Add(rp);
+        await ctx.SaveChangesAsync();
+        return rp.Id;
+    }
+
+    private IRenderedComponent<PipelineBuilds> RenderPage(Seed seed)
+    {
+        var cut = _ctx.Render<PipelineBuilds>(p => p.Add(c => c.PipelineId, seed.PipelineId));
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+        return cut;
+    }
+
+    private static string ReleaseButton(int buildId) => $"button[aria-label='Release build #{buildId}']";
+
+    /// <summary>
+    /// Acts once, inside the wait, then asserts until the render catches up. Each step
+    /// here replaces the dialog it clicked in, so a retry that clicked again would find
+    /// nothing to click - hence the guard rather than a bare click in the lambda.
+    /// </summary>
+    private static void ActThen(IRenderedComponent<PipelineBuilds> cut, Action act, Action assert)
+    {
+        var acted = false;
+        cut.WaitForAssertion(() =>
+        {
+            if (!acted)
+            {
+                act();
+                acted = true;
+            }
+            assert();
+        });
+    }
+
+    [Fact]
+    public async Task With_one_release_pipeline_the_row_opens_the_release_with_that_build_selected()
+    {
+        var seed = await SeedAsync();
+        await SeedReleasePipelineAsync(seed, "CRONUS App → Production", seed.ProductionEnvId);
+        var cut = RenderPage(seed);
+
+        // The older build, so "selected" can't be the dialog's own default of the latest.
+        ActThen(cut,
+            () => cut.Find(ReleaseButton(seed.OlderBuildId)).Click(),
+            () => cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS Denmark — Production"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#pb-rel-title").Should().BeEmpty("one target is a given, so nothing asks which");
+            cut.Find("#rb-build").GetAttribute("value").Should().Be(seed.OlderBuildId.ToString());
+            cut.Markup.Should().Contain("This is the build you chose.");
+            // The dialog's own safeguards travel with it.
+            cut.FindAll(".check--ack").Should().ContainSingle();
+        });
+    }
+
+    [Fact]
+    public async Task With_several_release_pipelines_the_row_asks_which_one_first()
+    {
+        var seed = await SeedAsync();
+        await SeedReleasePipelineAsync(seed, "CRONUS App → Production", seed.ProductionEnvId);
+        await SeedReleasePipelineAsync(seed, "CRONUS App → UAT", seed.SandboxEnvId);
+        var cut = RenderPage(seed);
+
+        ActThen(cut,
+            () => cut.Find(ReleaseButton(seed.NewerBuildId)).Click(),
+            () => cut.Find("#pb-rel-title").TextContent.Should().StartWith($"Release build #{seed.NewerBuildId} from "));
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".modal-layer .sub-row__name").Select(n => n.TextContent.Trim())
+                .Should().Equal("CRONUS App → Production", "CRONUS App → UAT");
+            cut.FindAll("#rb-title").Should().BeEmpty();
+        });
+
+        ActThen(cut,
+            () => cut.Find("button[aria-label='Release through CRONUS App → UAT']").Click(),
+            () => cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS Denmark — UAT"));
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#pb-rel-title").Should().BeEmpty();
+            cut.Find("#rb-build").GetAttribute("value").Should().Be(seed.NewerBuildId.ToString());
+            cut.FindAll(".check--ack").Should().BeEmpty("a sandbox asks for no acknowledgement");
+        });
+
+        // Releasing goes through the dialog's own path, and the page says where to follow it.
+        ActThen(cut,
+            () => cut.Find(".modal-layer .btn--primary").Click(),
+            () => cut.Find(".alert").TextContent.Should().Contain($"Build #{seed.NewerBuildId} is lined up to install into UAT."));
+        cut.Find(".alert a").GetAttribute("href").Should().StartWith("/releases/");
+
+        await using var ctx = _db.NewContext();
+        (await ctx.OeProjectDeliveries.AsNoTracking().SingleAsync()).ProjectBuildId.Should().Be(seed.NewerBuildId);
+    }
+
+    [Fact]
+    public async Task With_no_release_pipeline_the_row_offers_to_set_one_up_and_then_carries_on_to_the_release()
+    {
+        var seed = await SeedAsync();
+        var cut = RenderPage(seed);
+
+        ActThen(cut,
+            () => cut.Find(ReleaseButton(seed.OlderBuildId)).Click(),
+            () => cut.Markup.Should().Contain("CRONUS App isn't set up to install anywhere yet."));
+
+        ActThen(cut,
+            () => cut.Find(".confirm-dialog__actions .btn--primary").Click(),
+            // The source is this build pipeline already.
+            () =>
+            {
+                cut.Find("#rpe-build").GetAttribute("value").Should().Be(seed.PipelineId.ToString());
+                cut.Markup.Should().Contain($"After you create it, you choose when build #{seed.OlderBuildId} installs.");
+            });
+        cut.FindAll("#pb-rel-title").Should().BeEmpty();
+
+        ActThen(cut,
+            () =>
+            {
+                cut.Find("#rpe-name").Change("CRONUS App → UAT");
+                cut.Find("#rpe-env").Change(seed.SandboxEnvId.ToString());
+                cut.Find(".confirm-dialog__actions .btn--primary").Click();
+            },
+            () => cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS Denmark — UAT"));
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#rpe-title").Should().BeEmpty();
+            cut.Find("#rb-build").GetAttribute("value").Should().Be(seed.OlderBuildId.ToString());
+        });
+
+        await using var ctx = _db.NewContext();
+        (await ctx.OeReleasePipelines.AsNoTracking().SingleAsync()).BuildPipelineId.Should().Be(seed.PipelineId);
+    }
+
+    [Fact]
+    public async Task Someone_who_cannot_manage_the_solution_gets_no_release_action()
+    {
+        var seed = await SeedAsync(ProjectVisibility.ReadOnly);
+        await SeedReleasePipelineAsync(seed, "CRONUS App → Production", seed.ProductionEnvId);
+        _db.OrgContext.CurrentUserId = ColleagueUserId;
+
+        var cut = RenderPage(seed);
+
+        cut.WaitForAssertion(() =>
+        {
+            // They can still download - only the release is withheld.
+            cut.FindAll(".data-table__actions a").Should().HaveCount(2);
+            cut.FindAll(".data-table__actions button").Should().BeEmpty();
+        });
+    }
+
+    private sealed class UnusedTokenSource : IDeliveryTokenSource
+    {
+        public Task<BcDeliveryContext> AcquireDeliveryContextAsync(int projectId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+}
