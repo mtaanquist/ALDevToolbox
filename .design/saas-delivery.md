@@ -731,6 +731,30 @@ blocking. Access-gating + validation come from `DeliveryService`/`ProjectAccess`
 only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpException`. Scheduling a
 *future* delivery and the Production extra-confirm stay web-only — the agent path is release-now.
 
+**The Deliver reads (#912):** ten read-only tools in their own class, `DeliverTools`, so the
+area's one write stays in `DeliveryTools` and a test (`DeliverToolsTests`) can walk the new
+class and fail on anything that is not `ReadOnly = true`. `get_solution`, `list_environments`,
+`get_environment`, `list_environment_history`, `list_upgrades`, `list_recent_deliveries`,
+`list_customer_contacts`, `get_customer_access`, `list_customer_knowledge`,
+`list_customer_modules`. The rules they keep:
+
+- **The mirror, never the tenant.** Environment facts come from `oe_project_environments` and
+  `oe_environment_apps` as the nightly sweep or the last Refresh left them, and every output
+  carries the read time of the row it came from (`environmentReadAt`, `nextUpdateReadAt`,
+  `updateWindowReadAt`, `installedAppsReadAt`, `versionReadAt`). Sessions and Business
+  Central's operations log are live reads with the customer's credentials and are not here.
+- **The pages' gates.** Everything goes through the pages' own service methods, so
+  `ProjectAccess.VisibleProjectPredicate` decides what exists; a Private solution the caller
+  is not on is absent, not locked. `list_upgrades` refuses a caller without the
+  environment-updates grant anywhere, as the Upgrades page does, and marks per solution
+  whether they may move the date (`UpdateOpsProjectPredicate`).
+- **Query additions, not page edits.** Four reads had no page method an agent could use:
+  `UpgradeFleetService.ListFleetDetailsAsync` (the fleet with each row's windows, one query
+  rather than one per row) and `ListInstalledAppsAsync` (the installed-apps mirror, through
+  the same visibility join), `ProjectCustomerInfoService.ListCustomersKnownByAsync` (the
+  "which customers does Anne know" direction), and `DeliveryFeedService` (deliveries across
+  solutions; the page reads one release pipeline at a time).
+
 ## Suggested phasing
 
 1. **Connection + auth + Test** (Project columns incl. secret-expiry, secret handling,

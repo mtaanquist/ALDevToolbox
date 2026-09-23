@@ -23,13 +23,24 @@ The admin surface (Editors and Admins) curates the content behind these tools: t
 
 ## MCP server
 
-A Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the workbench's knowledge directly. It exposes 50 tools mirroring the web UI. Most only read, but some write, and a handful act outside the workbench: **`publish_build` publishes a compiled extension to a customer's live Business Central environment**, and **`generate_workspace` / `create_repository` create a repository in the organisation's connected GitHub organisation**, while **`generate_extension`, `add_extension_to_repository`, `apply_recipe` and `open_translation_pr` open pull requests on GitHub** - as the calling user, on a branch of its own, and only in a repository they can already open themselves. `stage_github_release` copies a GitHub Release's app files into the workbench so `publish_build` can deliver them. The rest of the writers stay inside the workbench's own data - `suggest_recipe`, `update_recipe`, `update_recipe_suggestion`, `vote_translation` and `remove_translation`. One more reaches outward without writing: `machine_translate` sends the string to the org's configured third-party translation provider. Weigh that before enabling `/mcp`, and remember that a token an agent holds carries the permissions of the user who issued it.
+A Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the workbench's knowledge directly. It exposes 60 tools mirroring the web UI. Most only read, but some write, and a handful act outside the workbench: **`publish_build` publishes a compiled extension to a customer's live Business Central environment**, and **`generate_workspace` / `create_repository` create a repository in the organisation's connected GitHub organisation**, while **`generate_extension`, `add_extension_to_repository`, `apply_recipe` and `open_translation_pr` open pull requests on GitHub** - as the calling user, on a branch of its own, and only in a repository they can already open themselves. `stage_github_release` copies a GitHub Release's app files into the workbench so `publish_build` can deliver them. The rest of the writers stay inside the workbench's own data - `suggest_recipe`, `update_recipe`, `update_recipe_suggestion`, `vote_translation` and `remove_translation`. One more reaches outward without writing: `machine_translate` sends the string to the org's configured third-party translation provider. Weigh that before enabling `/mcp`, and remember that a token an agent holds carries the permissions of the user who issued it.
 
 - **Templates**: `list_templates`, `get_template`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
 - **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`, `update_recipe`.
 - **Object Explorer**: `list_releases`, `compare_releases`, `compare_release_files`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
-- **Projects and pipelines**: `list_projects`, `list_project_builds`, `get_project_build`, `compare_project_builds`, `list_pipelines`, `list_pipeline_builds`.
-- **Delivery**: `list_release_pipelines`, `list_deliveries`, and `publish_build` (the live publish above).
+- **Solutions and pipelines**: `list_solutions`, `list_solution_builds`, `get_solution_build`, `compare_solution_builds`, `list_pipelines`, `list_pipeline_builds`.
+- **Delivery**: `list_release_pipelines`, `list_deliveries`, `list_github_releases`, `stage_github_release`, and `publish_build` (the live publish above).
+- **Environments and customers** (read-only, from the workbench's mirror - no call reaches a customer's tenant):
+  - `get_solution` - where a customer's Business Central runs, its version and address, and whether it is connected.
+  - `list_environments` - every environment you can see, filterable by solution, type, status, version, storage use and next-update date.
+  - `get_environment` - one environment in full, with its installed apps.
+  - `list_environment_history` - what was done to an environment from the workbench, and by whom.
+  - `list_upgrades` - the Upgrades fleet, grouped by solution (needs the environment-updates permission).
+  - `list_recent_deliveries` - deliveries across solutions, newest first, with why a failed one failed.
+  - `list_customer_contacts` - who to call at a customer, with phone and email (each call is logged).
+  - `get_customer_access` - the "getting in" and hosting notes, and integrations.
+  - `list_customer_knowledge` - who here knows a customer, or which customers a colleague knows.
+  - `list_customer_modules` - which customers have a module, or which modules a customer has.
 - **Translator**: `search_translation_memory`, `machine_translate`, `vote_translation`, `remove_translation`.
 - **Quality guidance**: `search_bcquality`, `get_bcquality_article` — Microsoft's [BCQuality](https://github.com/microsoft/BCQuality) knowledge base (MIT), mirrored into Postgres by a daily background refresh and filterable by target BC version. See [`.design/bcquality.md`](./.design/bcquality.md).
 
