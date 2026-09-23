@@ -1432,7 +1432,7 @@ public sealed class ProjectBuildService
     private async Task<(string? OutFile, string Log)> CompileAsync(DiscoveredApp app, string symbolsDir, AlCompilerInfo compiler, CancellationToken ct)
     {
         var outFile = Path.Combine(symbolsDir, SafeAppFileName(app.Manifest));
-        var args = new List<string>
+        var args = new List<string>(compiler.LeadingArguments)
         {
             "/project:" + app.ProjectDir,
             "/packagecachepath:" + symbolsDir,
@@ -1443,7 +1443,7 @@ public sealed class ProjectBuildService
             ? new Dictionary<string, string> { ["DOTNET_ROLL_FORWARD"] = "LatestMajor" }
             : null;
 
-        var result = await _processRunner.RunAsync(new ProcessRunRequest(compiler.AlcPath, args, app.ProjectDir, env), ct).ConfigureAwait(false);
+        var result = await _processRunner.RunAsync(new ProcessRunRequest(compiler.FileName, args, app.ProjectDir, env), ct).ConfigureAwait(false);
         // alc writes diagnostics to stdout; keep both streams for the build log.
         var log = string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
         if (result.Succeeded && File.Exists(outFile))
