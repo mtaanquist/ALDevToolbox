@@ -145,6 +145,53 @@ public sealed class ReleaseBuildDialogTests : IDisposable
     }
 
     [Fact]
+    public void A_delivery_window_pipeline_defaults_to_the_next_opening_and_says_so()
+    {
+        var now = DateTime.UtcNow;
+        var opens = new TimeOnly(now.AddHours(3).Hour, now.AddHours(3).Minute);
+        var expected = ALDevToolbox.Domain.ValueObjects.ObjectExplorer.UpdateWindow.NextOpeningUtc(
+            opens, opens.AddHours(2), TimeZoneInfo.Utc, now);
+
+        var cut = _ctx.Render<ReleaseBuildDialog>();
+        cut.InvokeAsync(() => cut.Instance.OpenAsync(
+            releasePipelineId: 1,
+            customerName: "CRONUS A/S",
+            envName: "Production",
+            envType: "Sandbox",
+            deploymentSchedule: "OurDeliveryWindow",
+            schemaSyncMode: "Add",
+            builds:
+            [
+                new ReleaseBuildDialog.ReleasableBuildOption(412, "#412", [new ReleaseBuildDialog.ReleasableBuildApp("CRONUS Sales Extension", "1.4.2.0")]),
+            ],
+            timeZone: "UTC",
+            windowStart: opens,
+            windowEnd: opens.AddHours(2))).GetAwaiter().GetResult();
+
+        cut.Find("#rb-when").GetAttribute("value").Should().StartWith(expected.ToString("yyyy-MM-ddTHH:mm"));
+        cut.Find(".rb-when-row + .field__hint").TextContent.Should()
+            .StartWith("Scheduled for the next delivery window, ")
+            .And.Contain($"{opens:HH:mm}, in the solution's time zone");
+        cut.Find(".confirm-dialog__body p b:last-of-type").TextContent.Should().Be("right away",
+            "Business Central is told to install on arrival; the window only decided when we send");
+        cut.Find(".confirm-dialog__actions .btn--primary").TextContent.Should().Contain("Schedule release");
+
+        // "Now" is the explicit way out of the window.
+        cut.WaitForAssertion(() => cut.Find(".rb-when-row .btn").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".rb-when-row + .field__hint").TextContent.Should().NotContain("Scheduled for the next delivery window");
+            cut.Find(".confirm-dialog__actions .btn--primary").TextContent.Should().Contain("Release now");
+            cut.Markup.Should().Contain("delivery window (" + $"{opens:HH:mm}" + "-");
+            cut.Markup.Should().Contain("isn't open now");
+        });
+        // ...and "Next window" puts the window's opening back.
+        cut.WaitForAssertion(() => cut.FindAll(".rb-when-row .btn").Single(b => b.TextContent == "Next window").Click());
+        cut.WaitForAssertion(() =>
+            cut.Find(".rb-when-row + .field__hint").TextContent.Should().StartWith("Scheduled for the next delivery window, "));
+    }
+
+    [Fact]
     public void A_non_production_target_names_the_customer_and_asks_for_no_acknowledgement()
     {
         var cut = OpenedDialog("UAT", envType: "Sandbox");

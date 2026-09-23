@@ -337,6 +337,49 @@ public sealed class DeliveryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_delivery_window_pipeline_records_Immediate_as_sent_and_that_its_rule_chose_the_time()
+    {
+        await using var ctx = _db.NewContext();
+        // Two apps: a deferred schedule would be refused, and the window is not one.
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales" },
+            deploymentSchedule: BcDeploymentSchedule.OurDeliveryWindow);
+        await SetWindowAsync(ctx, seed.EnvironmentId, new TimeOnly(22, 0), new TimeOnly(4, 0)); // UTC project tz
+        var opening = UpdateWindow.NextOpeningUtc(new TimeOnly(22, 0), new TimeOnly(4, 0), TimeZoneInfo.Utc,
+            DateTime.UtcNow.AddHours(1));
+        var byRule = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, opening.AddMinutes(1));
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.SingleAsync(d => d.Id == byRule);
+        delivery.DeploymentSchedule.Should().Be(BcDeploymentSchedule.Immediate,
+            "the window is ours: Business Central is told to install on arrival");
+        delivery.ScheduledByDeliveryWindow.Should().BeTrue();
+        delivery.ScheduledOutsideWindow.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_delivery_window_pipeline_released_now_sends_Immediate_and_records_the_override()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" },
+            deploymentSchedule: BcDeploymentSchedule.OurDeliveryWindow);
+        // A one-minute window that has just closed, so "now" is outside it.
+        var closed = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(-2));
+        await SetWindowAsync(ctx, seed.EnvironmentId, closed, closed.AddMinutes(1));
+        _apps.StatusByApp["CRONUS Core"] = "succeeded";
+
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using var runCtx = _db.NewContext();
+        await NewService(runCtx).RunDeliveryAsync(deliveryId);
+
+        _apps.LastSchedule.Should().Be(BcDeploymentSchedule.Immediate, "our own value never reaches the API");
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Deployed);
+        delivery.ScheduledByDeliveryWindow.Should().BeTrue();
+        delivery.ScheduledOutsideWindow.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task EnqueueDueDeliveriesAsync_enqueues_due_rows_and_skips_future_ones()
     {
         await using var ctx = _db.NewContext();
