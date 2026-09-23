@@ -200,7 +200,8 @@ app). The **New build** action lets the user pick which to build:
   release-import pair — which runs `ProjectBuildService.DiscoverExtensionsForCacheAsync` under the
   requesting user's captured identity (needed so the per-user repo token resolves off-request). The
   discovery itself is a blobless, `--no-checkout`, sparse-`app.json` clone of each repo (fast even on
-  repos whose `.git` is bloated by committed `.alpackages` binaries), walked for `app.json`. The
+  repos whose `.git` history is bloated by the `.alpackages` binaries older repositories committed,
+  before builds fetched third-party symbols from the public feeds), walked for `app.json`. The
   request side (`ProjectDiscoveryService`) gates the enqueue (owner/Admin + existence) and reads the
   cache back. A refresh fires on repo changes (create/update with repos) and from the editor's
   **Refresh** button; the editor polls while a discovery is in flight and auto-triggers a first one

@@ -29,6 +29,18 @@ public static class ObjectExplorerRegistration
         services.AddSingleton(sp => ALDevToolbox.Services.Configuration.AlCompilerOptions
             .FromConfiguration(sp.GetRequiredService<IConfiguration>()));
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Projects.AlCompilerProvisioner>();
+        // Dependency symbols from Microsoft's public AppSource / MSSymbols feeds, cached on
+        // the same app-altool volume; singleton so its cache gate is shared (#901).
+        services.AddSingleton(sp => ALDevToolbox.Services.Configuration.AlSymbolFeedOptions
+            .FromConfiguration(sp.GetRequiredService<IConfiguration>()));
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Projects.AlSymbolFeedResolver>();
+        // Redirects are followed by the resolver itself (the .nupkg answers 303 to a blob
+        // URL), so it can refuse a hop off HTTPS; the handler must not follow them first.
+        services.AddHttpClient(ALDevToolbox.Services.ObjectExplorer.Projects.AlSymbolFeedResolver.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromMinutes(5);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs>();
         // The upload form's policy: which ingest path a submission takes, what gets
         // staged to disk, and what goes on the queue. The endpoints only read the
