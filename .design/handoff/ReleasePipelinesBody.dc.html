@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head" style="flex-wrap: wrap">
+    <div style="min-width: 0; flex: 1 1 320px">
+      <div class="page-head__crumbs"><a href="#">Home</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Releases</span></div>
+      <h2 class="page-head__title">Release pipelines</h2>
+      <p class="page-head__sub">Every release pipeline in your organisation, and what each one shipped last. Times are relative; hover one for the exact time in UTC.</p>
+    </div>
+    <div class="page-head__actions">
+      <sc-if value="{{ head.primary }}" hint-placeholder-val="{{ true }}">
+        <button class="btn btn--primary" type="button"><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New release pipeline</button>
+      </sc-if>
+      <sc-if value="{{ head.disabled }}" hint-placeholder-val="{{ false }}">
+        <button class="btn" type="button" disabled="disabled" title="Create a solution first. A release pipeline always belongs to one."><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New release pipeline</button>
+      </sc-if>
+    </div>
+  </div>
+
+  <sc-if value="{{ is.populated }}" hint-placeholder-val="{{ true }}">
+    <sc-for list="{{ live }}" as="l" hint-placeholder-count="1">
+      <div role="status" style="display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-4); padding: var(--space-3) var(--space-4); background: var(--info-bg); border: 1px solid var(--info); border-left: 4px solid var(--bar-running); border-radius: var(--r)">
+        <span class="spinner spinner--lg" style="border-top-color: var(--info-text)"></span>
+        <div style="display: grid; gap: var(--space-1); min-width: 0">
+          <div style="display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap">
+            <span style="font-size: var(--text-2xs); font-weight: var(--fw-semibold); letter-spacing: .09em; text-transform: uppercase; color: var(--info-text)">Shipping now</span>
+            <span style="font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink)">{{ l.name }}</span>
+          </div>
+          <span style="font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">{{ l.sentence }}</span>
+          <div style="display: flex; align-items: center; gap: var(--space-2); max-width: 420px">
+            <progress class="progress" value="{{ l.progress }}" max="100" style="height: 6px; flex: 1"></progress>
+            <span class="u-num" style="font-size: var(--text-xs); color: var(--info-text); font-weight: var(--fw-medium); white-space: nowrap">{{ l.step }}</span>
+          </div>
+        </div>
+        <a class="btn btn--sm" href="#" style="grid-column: {{ l.btnCol }}">Open release</a>
+      </div>
+    </sc-for>
+
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <div class="filter-bar">
+        <span class="search filter-bar__search"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search pipeline, solution or environment..." /></span>
+        <span class="select-wrap" style="width: 170px"><select class="select" aria-label="Solution"><option>All solutions</option><option>Aarhus Byg</option><option>Consortio IT</option><option>CRONUS International</option><option>Fyn Engros</option><option>Nordwind Trading</option><option>Ostergaard Maskiner</option><option>Skovby Moebler</option><option>Vejle Logistik</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+        <span class="select-wrap" style="width: 170px"><select class="select" aria-label="Environment type"><option>All environments</option><option>Production only</option><option>Sandbox only</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+        <span class="filter-bar__spacer"></span>
+        <div class="pill-tabs">
+          <button class="pill-tab is-active" type="button" onClick="{{ pickTab }}">All<span class="pill-tab__count">8</span></button>
+          <button class="pill-tab" type="button" onClick="{{ pickTab }}">Shipping now<span class="pill-tab__count">1</span></button>
+          <button class="pill-tab" type="button" onClick="{{ pickTab }}">Needs attention<span class="pill-tab__count">2</span></button>
+          <button class="pill-tab" type="button" onClick="{{ pickTab }}">Scheduled<span class="pill-tab__count">3</span></button>
+        </div>
+      </div>
+
+      <table class="data-table data-table--edge" style="table-layout: fixed">
+        <thead><tr>
+          <th class="data-table__col-state" style="width: 44px"><span class="u-sr">State</span></th>
+          <th style="width: 19%"><button class="data-table__sort" type="button">Pipeline<svg data-lucide="chevrons-up-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6.5L8 3.5l3 3M5 9.5l3 3 3-3"></path></svg></button></th>
+          <th style="width: 15%">Environment</th>
+          <th style="width: 19%"><button class="data-table__sort is-sorted" type="button">Delivery<svg data-lucide="arrow-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v9M4.5 8.5L8 12l3.5-3.5"></path></svg></button></th>
+          <th style="width: 15%">Next release</th>
+          <th style="width: 15%">Apps from</th>
+          <th style="width: 13%">Installs</th>
+          <th class="data-table__actions" style="width: 56px"><span class="u-sr">Actions</span></th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+            <tr class="{{ row.trCls }}" style="background: {{ row.bg }}">
+              <td class="data-table__col-state"><span class="data-table__state data-table__state--icon {{ row.spinCls }}" role="img" aria-label="{{ row.status }}" title="{{ row.status }}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ row.ringOp }}"></circle><path d="{{ row.glyph }}"></path></svg></span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-medium)"><a href="#">{{ row.name }}</a></span><span class="cell-stack__sub"><a href="#" style="color: inherit">{{ row.solution }}</a></span></span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main"><a href="#">{{ row.env }}</a></span><span class="cell-stack__sub"><span style="color: {{ row.typeColor }}; font-weight: {{ row.typeWeight }}">{{ row.envType }}</span> - <span style="color: {{ row.healthColor }}">{{ row.health }}</span></span></span></td>
+              <td>
+                <sc-if value="{{ row.live }}" hint-placeholder-val="{{ false }}">
+                  <span class="cell-stack"><span class="cell-stack__main" style="color: var(--info-text); font-weight: var(--fw-semibold)">{{ row.liveText }}</span><span class="cell-stack__sub" style="display: flex; align-items: center; gap: var(--space-2)"><progress class="progress" value="{{ row.progress }}" max="100" style="height: 5px; width: 72px; flex: none"></progress><span>{{ row.liveWhen }}</span></span></span>
+                </sc-if>
+                <sc-if value="{{ row.notLive }}" hint-placeholder-val="{{ true }}">
+                  <span class="cell-stack"><span class="cell-stack__main" style="color: {{ row.outcomeColor }}; font-weight: var(--fw-medium)">{{ row.outcome }}</span><span class="cell-stack__sub">{{ row.outcomeWhen }}</span></span>
+                </sc-if>
+              </td>
+              <td><span class="cell-stack"><span class="cell-stack__main" style="color: {{ row.nextColor }}; font-weight: {{ row.nextWeight }}">{{ row.next }}</span><span class="cell-stack__sub">{{ row.nextSub }}</span></span></td>
+              <td><span style="display: flex; align-items: center; gap: var(--space-2); min-width: 0"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex: none; color: var(--ink-3)"><path d="{{ row.sourceIcon }}"></path></svg><span class="cell-stack"><span class="cell-stack__main">{{ row.source }}</span><span class="cell-stack__sub">{{ row.sourceKind }}</span></span></span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main">{{ row.when }}</span>
+                <sc-if value="{{ row.force }}" hint-placeholder-val="{{ false }}"><span class="cell-stack__sub" style="display: flex; align-items: center; gap: var(--space-1); color: var(--warning-text); font-weight: var(--fw-semibold)" title="Force sync can drop tables and columns, and the data in them, when the new app no longer has them."><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex: none"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.4"></path></svg>Force sync</span></sc-if>
+                <sc-if value="{{ row.addSync }}" hint-placeholder-val="{{ true }}"><span class="cell-stack__sub">Schema sync: Add</span></sc-if>
+              </span></td>
+              <td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-haspopup="menu" aria-label="{{ row.menuLabel }}" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button"><svg class="menu__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.4 2.8l2.8 2.8-7.4 7.4H3v-3.2z"></path></svg>Edit</button><button class="menu__item" type="button"><svg class="menu__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2"></circle><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M3.6 12.4l1.3-1.3M11.1 4.9l1.3-1.3"></path></svg>Solution settings</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button"><svg class="menu__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.4h10.4M6.4 4.4V2.8h3.2v1.6M4.2 4.4l.6 8.8h6.4l.6-8.8"></path></svg>Delete</button></div></span></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </sc-if>
+
+    <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
+      <div style="display: grid; gap: var(--space-2)">
+        <span class="search" style="width: 100%"><svg class="search__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search pipelines..." /></span>
+        <div style="overflow-x: auto; margin: 0 calc(var(--space-1) * -1); padding: 0 var(--space-1)">
+          <div class="pill-tabs" style="width: max-content">
+            <button class="pill-tab is-active" type="button" onClick="{{ pickTab }}">All<span class="pill-tab__count">8</span></button>
+            <button class="pill-tab" type="button" onClick="{{ pickTab }}">Shipping now<span class="pill-tab__count">1</span></button>
+            <button class="pill-tab" type="button" onClick="{{ pickTab }}">Needs attention<span class="pill-tab__count">2</span></button>
+            <button class="pill-tab" type="button" onClick="{{ pickTab }}">Scheduled<span class="pill-tab__count">3</span></button>
+          </div>
+        </div>
+      </div>
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+        <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--border); border-right: 4px solid {{ row.bar }}; background: {{ row.bg }}">
+            <span class="data-table__state data-table__state--icon {{ row.spinCls }}" role="img" aria-label="{{ row.status }}" title="{{ row.status }}" style="color: {{ row.glyphColor }}; padding-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ row.ringOp }}"></circle><path d="{{ row.glyph }}"></path></svg></span>
+            <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-semibold)"><a href="#">{{ row.name }}</a></span><span class="cell-stack__sub">{{ row.solution }} - {{ row.env }} <span style="color: {{ row.typeColor }}; font-weight: {{ row.typeWeight }}">{{ row.envType }}</span></span></span>
+            <span class="ra"><button class="btn btn--icon" type="button" aria-haspopup="menu" aria-label="{{ row.menuLabel }}" style="width: 44px; height: 44px; margin: -10px -10px 0 0" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Edit</button><button class="menu__item" type="button">Solution settings</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button">Delete</button></div></span>
+            <div style="grid-column: 2 / span 2; display: grid; gap: 2px; font-size: var(--text-sm)">
+              <sc-if value="{{ row.live }}" hint-placeholder-val="{{ false }}">
+                <span style="color: var(--info-text); font-weight: var(--fw-semibold)">{{ row.liveText }} - {{ row.liveWhen }}</span>
+                <progress class="progress" value="{{ row.progress }}" max="100" style="height: 5px; margin: 2px 0"></progress>
+              </sc-if>
+              <sc-if value="{{ row.notLive }}" hint-placeholder-val="{{ true }}">
+                <span><span style="color: {{ row.outcomeColor }}; font-weight: var(--fw-medium)">{{ row.outcome }}</span> <span style="color: var(--ink-3)">{{ row.outcomeWhen }}</span></span>
+              </sc-if>
+              <sc-if value="{{ row.hasNext }}" hint-placeholder-val="{{ false }}">
+                <span style="color: var(--ink-2)">Next: <span style="font-weight: var(--fw-medium); color: var(--ink)">{{ row.next }}</span> <span style="color: var(--ink-3)">{{ row.nextSub }}</span></span>
+              </sc-if>
+              <sc-if value="{{ row.warnLine }}" hint-placeholder-val="{{ false }}">
+                <span style="color: {{ row.warnColor }}; font-weight: var(--fw-medium)">{{ row.warnText }}</span>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <div class="pager">
+      <span class="pager__count">8 release pipelines across 8 solutions</span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ is.loading }}" hint-placeholder-val="{{ false }}">
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <div class="filter-bar">
+        <span class="search filter-bar__search"><svg class="search__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search pipeline, solution or environment..." disabled="disabled" /></span>
+        <span class="select-wrap" style="width: 170px"><select class="select" disabled="disabled"><option>All solutions</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+        <span class="select-wrap" style="width: 170px"><select class="select" disabled="disabled"><option>All environments</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+      </div>
+      <table class="data-table data-table--edge" style="table-layout: fixed">
+        <thead><tr><th class="data-table__col-state" style="width: 44px"><span class="u-sr">State</span></th><th style="width: 19%">Pipeline</th><th style="width: 15%">Environment</th><th style="width: 19%">Delivery</th><th style="width: 15%">Next release</th><th style="width: 15%">Apps from</th><th style="width: 13%">Installs</th><th style="width: 56px"><span class="u-sr">Actions</span></th></tr></thead>
+        <tbody>
+          <sc-for list="{{ skel }}" as="s" hint-placeholder-count="5">
+            <tr><td class="data-table__col-state"><span class="skeleton" style="width: 15px; height: 15px; margin: 0 auto"></span></td><td><span style="display: grid; gap: 6px"><span class="skeleton" style="width: {{ s.a }}"></span><span class="skeleton" style="width: 60%; height: 9px"></span></span></td><td><span style="display: grid; gap: 6px"><span class="skeleton" style="width: 55%"></span><span class="skeleton" style="width: {{ s.b }}; height: 9px"></span></span></td><td><span style="display: grid; gap: 6px"><span class="skeleton" style="width: {{ s.b }}"></span><span class="skeleton" style="width: 40%; height: 9px"></span></span></td><td><span class="skeleton" style="width: 50%"></span></td><td><span class="skeleton" style="width: {{ s.a }}"></span></td><td><span class="skeleton" style="width: 60%"></span></td><td></td></tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </sc-if>
+    <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+        <sc-for list="{{ skel }}" as="s" hint-placeholder-count="5">
+          <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--border)"><span class="skeleton" style="width: 15px; height: 15px"></span><span style="display: grid; gap: 7px"><span class="skeleton" style="width: {{ s.a }}"></span><span class="skeleton" style="width: {{ s.b }}; height: 9px"></span><span class="skeleton" style="width: 45%; height: 9px"></span></span></div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <div class="loading-block" style="padding: var(--space-2) 0 0"><span class="spinner"></span><span>Loading release pipelines and their latest releases...</span></div>
+  </sc-if>
+
+  <sc-if value="{{ is.noSolutions }}" hint-placeholder-val="{{ false }}">
+    <div class="card">
+      <div class="empty-state">
+        <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 4.6a1 1 0 0 1 1-1h3l1.4 1.6h4.8a1 1 0 0 1 1 1v5.8a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1z"></path><path d="M8 7.4v3.2M6.4 9h3.2"></path></svg></span>
+        <span class="empty-state__title">No solutions yet</span>
+        <span class="empty-state__text">A release pipeline installs a solution's apps into one of that customer's environments, so it always belongs to a solution. Create the solution for your customer first, then connect its environments.</span>
+        <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New solution</button></span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ is.noPipelines }}" hint-placeholder-val="{{ false }}">
+    <div class="card">
+      <div class="empty-state">
+        <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 9.8L3 13c1.7.4 3-.1 3.7-1"></path><path d="M9.4 6.6c2.4-2.4 4.6-3.2 5.2-2.6.6.6-.2 2.8-2.6 5.2l-3 3-2.6-2.6z"></path><path d="M6.4 9.6L3.8 7l2.6-.6 2.4-.4"></path></svg></span>
+        <span class="empty-state__title">No release pipelines yet</span>
+        <span class="empty-state__text">A release pipeline takes a solution's builds, or a GitHub release, and installs them into one of its environments: right away, at a time you choose, or with the environment's next Business Central update.</span>
+        <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New release pipeline</button></span>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;populated&quot;,&quot;loading&quot;,&quot;no-solutions&quot;,&quot;no-pipelines&quot;],&quot;default&quot;:&quot;populated&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compact&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const IC = {
+  build: 'M3 3.5h4v4H3zM9 8.5h4v4H9zM5 7.5v3a1 1 0 0 0 1 1h3M11 8.5v-3a1 1 0 0 0-1-1H7',
+  repo: 'M4 2.5h7.5a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1.5 1.5 0 0 1 0-3h8.5M4 2.5a1.5 1.5 0 0 0-1.5 1.5v8'
+};
+const ST = {
+  running:   { tr: 'is-running',   bar: 'var(--bar-running)',   color: 'var(--info-text)',    glyph: 'M8 2a6 6 0 0 1 6 6', ring: '.22', spin: true },
+  failed:    { tr: 'is-failed',    bar: 'var(--bar-failed)',    color: 'var(--danger-text)',  glyph: 'M6 6l4 4M10 6l-4 4' },
+  broken:    { tr: 'is-failed',    bar: 'var(--bar-failed)',    color: 'var(--danger-text)',  glyph: 'M8 4.8v3.6M8 10.9v.3' },
+  scheduled: { tr: 'is-queued',    bar: 'var(--bar-queued)',    color: 'var(--ink-3)',        glyph: 'M8 4.8V8l2.2 1.4' },
+  handed:    { tr: 'is-queued',    bar: 'var(--bar-queued)',    color: 'var(--ink-2)',        glyph: 'M5 8h5.6M8.6 5.8L10.8 8l-2.2 2.2' },
+  ok:        { tr: 'is-succeeded', bar: 'var(--bar-succeeded)', color: 'var(--success-text)', glyph: 'M5.5 8.2l1.8 1.8L10.8 6' },
+  cancelled: { tr: 'is-cancelled', bar: 'var(--bar-cancelled)', color: 'var(--ink-3)',        glyph: 'M4.8 11.2l6.4-6.4' }
+};
+const OUT = {
+  deployed:  { text: 'Deployed', color: 'var(--success-text)' },
+  failed:    { text: 'Failed', color: 'var(--danger-text)' },
+  handed:    { text: 'Handed to Business Central', color: 'var(--ink)' },
+  cancelled: { text: 'Cancelled', color: 'var(--ink-3)' }
+};
+const HEALTH = {
+  ready:    { text: 'Ready', color: 'var(--ink-3)' },
+  deleting: { text: 'Being deleted', color: 'var(--warning-text)' },
+  failed:   { text: 'Failed', color: 'var(--danger-text)' },
+  missing:  { text: 'Missing', color: 'var(--danger-text)' }
+};
+
+const DATA = [
+  { name: 'Fyn Engros to UAT', solution: 'Fyn Engros', env: 'UAT', prod: false, health: 'ready', src: 'build', source: 'Fyn Engros main', when: 'Right away', force: false,
+    state: 'running', status: 'Shipping now: installing', liveText: 'Installing 2 of 3 apps', liveWhen: 'started 3 min ago', progress: 66,
+    sentence: 'Installing 2 of 3 apps into UAT (Sandbox) for Fyn Engros. Started 3 minutes ago; the last release here took 6 minutes.',
+    next: 'None scheduled', nextSub: '' },
+  { name: 'Nordwind to Test', solution: 'Nordwind Trading', env: 'Test', prod: false, health: 'ready', src: 'repo', source: 'nordwind/bc-apps', when: 'Right away', force: false,
+    state: 'failed', status: 'Last release failed', out: 'failed', outWhen: 'Last night, 02:14', next: 'None scheduled', nextSub: '' },
+  { name: 'Aarhus Byg to CR', solution: 'Aarhus Byg', env: 'CR', prod: false, health: 'missing', src: 'build', source: 'Aarhus Byg main', when: 'Right away', force: false,
+    state: 'broken', status: 'Environment missing, releases cannot run', out: 'deployed', outWhen: '3 weeks ago', next: 'Blocked', nextSub: 'Environment not found', nextBlocked: true },
+  { name: 'Ostergaard to Staging', solution: 'Ostergaard Maskiner', env: 'Staging', prod: false, health: 'ready', src: 'build', source: 'Ostergaard release', when: 'Delivery window', force: false,
+    state: 'scheduled', status: 'Scheduled for tonight', out: 'deployed', outWhen: '6 days ago', next: 'Tonight, 22:00', nextSub: 'Window 22:00-02:00', hasNext: true },
+  { name: 'CRONUS to Production', solution: 'CRONUS International', env: 'Production', prod: true, health: 'ready', src: 'build', source: 'CRONUS release', when: 'Next major update', force: false,
+    state: 'handed', status: 'Waiting for the Business Central update', out: 'handed', outWhen: '3 days ago', next: '12 Oct, 02:00', nextSub: 'With version 28.4', hasNext: true },
+  { name: 'Consortio to JLE', solution: 'Consortio IT', env: 'JLE', prod: false, health: 'ready', src: 'repo', source: 'consortio/extensions', when: 'Next minor update', force: false,
+    state: 'handed', status: 'Waiting for the Business Central update', out: 'handed', outWhen: 'Yesterday, 16:40', next: 'Next minor update', nextSub: 'No date set yet', hasNext: true },
+  { name: 'Vejle to Dev', solution: 'Vejle Logistik', env: 'Dev', prod: false, health: 'ready', src: 'build', source: 'Vejle main', when: 'Right away', force: true,
+    state: 'ok', status: 'Last release deployed', out: 'deployed', outWhen: '40 minutes ago', next: 'None scheduled', nextSub: '' },
+  { name: 'Skovby to Test', solution: 'Skovby Moebler', env: 'Test', prod: false, health: 'deleting', src: 'build', source: 'Skovby main', when: 'Right away', force: false,
+    state: 'cancelled', status: 'Last release cancelled', out: 'cancelled', outWhen: 'Yesterday, 11:05', next: 'None scheduled', nextSub: 'Releases are refused while the environment is being deleted' }
+];
+
+class Component extends DCLogic {
+  renderVals() {
+    const kind = this.props.kind ?? 'populated';
+    const compact = !!this.props.compact;
+    const rows = DATA.map(r => {
+      const st = ST[r.state];
+      const live = r.state === 'running';
+      const out = OUT[r.out] || {};
+      const h = HEALTH[r.health];
+      const warnText = r.health === 'missing' ? 'Environment missing. Reconnect it in solution settings.' : r.health === 'deleting' ? 'Environment is being deleted.' : r.force ? 'Force sync: can drop columns and their data.' : '';
+      return {
+        ...r,
+        live, notLive: !live,
+        trCls: st.tr, bar: st.bar, glyph: st.glyph, glyphColor: st.color,
+        ringOp: st.ring || '1', spinCls: st.spin ? 'data-table__state--spin' : '',
+        bg: live ? 'var(--info-bg)' : '',
+        envType: r.prod ? 'Production' : 'Sandbox',
+        typeColor: r.prod ? 'var(--danger-text)' : 'inherit',
+        typeWeight: r.prod ? 'var(--fw-semibold)' : 'inherit',
+        health: h.text, healthColor: h.color,
+        outcome: live ? '' : out.text, outcomeColor: out.color, outcomeWhen: r.outWhen,
+        nextColor: r.nextBlocked ? 'var(--danger-text)' : r.hasNext ? 'var(--ink)' : 'var(--ink-4)',
+        nextWeight: r.hasNext || r.nextBlocked ? 'var(--fw-medium)' : 'inherit',
+        sourceIcon: IC[r.src], sourceKind: r.src === 'build' ? 'Build pipeline' : 'GitHub release',
+        addSync: !r.force,
+        warnLine: !!warnText, warnText,
+        warnColor: r.health === 'missing' ? 'var(--danger-text)' : 'var(--warning-text)',
+        menuLabel: 'Actions for ' + r.name
+      };
+    });
+    return {
+      rows,
+      live: rows.filter(r => r.live).map(r => ({ name: r.name, sentence: r.sentence, progress: r.progress, step: '2 of 3 apps', btnCol: compact ? '2' : 'auto' })),
+      wide: !compact,
+      compact,
+      is: { populated: kind === 'populated', loading: kind === 'loading', noSolutions: kind === 'no-solutions', noPipelines: kind === 'no-pipelines' },
+      head: { primary: kind === 'populated' || kind === 'loading', disabled: kind === 'no-solutions' },
+      skel: [{ a: '72%', b: '50%' }, { a: '58%', b: '64%' }, { a: '80%', b: '44%' }, { a: '64%', b: '58%' }, { a: '70%', b: '38%' }],
+      pickTab: e => {
+        const b = e.currentTarget;
+        b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('is-active'));
+        b.classList.add('is-active');
+      },
+      toggleMenu: e => {
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const open = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => { x.classList.remove('is-open'); x.classList.remove('ra--up'); });
+        if (open) return;
+        w.classList.add('is-open');
+        const menu = w.querySelector('.ra__menu');
+        const box = w.closest('.app__content');
+        if (menu && box) {
+          const room = box.getBoundingClientRect().bottom - w.getBoundingClientRect().bottom;
+          w.classList.toggle('ra--up', room < menu.getBoundingClientRect().height + 12);
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

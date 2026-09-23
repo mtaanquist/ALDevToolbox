@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="display: grid; gap: var(--space-6); color: var(--ink-2)">
+
+  <div style="display: grid; gap: var(--space-2)">
+    <p class="section-label" style="margin: 0">1 - Delivery row, collapsed, every state</p>
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden">
+      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+        <div style="display: grid; grid-template-columns: 24px 18px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); min-height: 50px; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); border-right: 4px solid {{ r.bar }}">
+          <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="false" aria-label="Show details for release {{ r.n }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></svg></button>
+          <span class="data-table__state data-table__state--icon {{ r.spinCls }}" role="img" aria-label="{{ r.word }}" title="{{ r.word }}" style="color: {{ r.color }}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ r.ringOp }}"></circle><path d="{{ r.glyph }}"></path></svg></span>
+          <span style="display: grid; gap: 1px; min-width: 0">
+            <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">Release {{ r.n }}</span><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: {{ r.color }}">{{ r.word }}</span></span>
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">{{ r.sentence }}<sc-if value="{{ r.code }}" hint-placeholder-val="{{ false }}"><span class="tag" title="Error code from Business Central">{{ r.code }}</span></sc-if></span>
+          </span>
+          <span style="display: grid; justify-items: end; gap: 1px; font-size: var(--text-sm)"><span style="color: var(--ink-2); white-space: nowrap">{{ r.when }}</span><span class="u-num" style="font-size: var(--text-xs); color: var(--ink-3)">{{ r.took }}</span></span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; gap: var(--space-2)">
+    <p class="section-label" style="margin: 0">2 - Failed, expanded</p>
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; border-right: 4px solid var(--bar-failed)">
+      <div style="display: grid; grid-template-columns: 24px 18px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); min-height: 50px; padding: var(--space-2) var(--space-3); background: var(--surface-sunken)">
+        <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="true" aria-label="Hide details for release 49"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg)"><path d="M6 4l4 4-4 4"></path></svg></button>
+        <span class="data-table__state data-table__state--icon" role="img" aria-label="Failed" style="color: var(--danger-text)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M6 6l4 4M10 6l-4 4"></path></svg></span>
+        <span style="display: grid; gap: 1px; min-width: 0">
+          <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">Release 49</span><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--danger-text)">Failed</span></span>
+          <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--text-sm); color: var(--ink-2)">Business Central refused a schema change<span class="tag" title="Error code from Business Central">ExtensionChangeFailed</span></span>
+        </span>
+        <span style="display: grid; justify-items: end; gap: 1px; font-size: var(--text-sm)"><span style="color: var(--ink-2); white-space: nowrap">Today 02:03</span><span class="u-num" style="font-size: var(--text-xs); color: var(--ink-3)">3m 32s</span></span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); padding: var(--space-4); border-top: 1px solid var(--border); background: var(--surface-sunken)">
+        <div style="display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--bar-failed); border-radius: var(--r)">
+          <span style="font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--danger-text)">What happened</span>
+          <p style="margin: 0; font-size: var(--text-base); line-height: var(--leading-normal); color: var(--ink); text-wrap: pretty">Business Central refused a schema change while installing Contoso Core 28.2.17.126.</p>
+          <div style="display: grid; gap: var(--space-1); padding-left: var(--space-3); border-left: 2px solid var(--border)"><span style="font-size: var(--text-xs); color: var(--ink-3)">Business Central's message, in the environment's language</span><p lang="da" style="margin: 0; font-size: var(--text-sm); color: var(--ink); text-wrap: pretty">Udvidelsen "Contoso Core by CRONUS International 28.2.17.126" kunne ikke installeres, fordi feltet 12 "Zone Priority" i tabel 50110 "Pick Zone" er fjernet, og synkroniseringstilstanden tillader kun tilføjelser.</p></div>
+          <p style="margin: 0; font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">The environment reports Contoso Core 28.2.16.120 installed. Contoso Reports was skipped because it needs Contoso Core 28.2.17.126.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+          <div style="display: grid; gap: 2px">
+            <span style="font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2)">Suggested next step</span>
+            <span style="font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">If the new version removes tables or fields the customer no longer needs, release this build again with Force sync. That deletes those columns and their data in "Test". Otherwise keep them in the app, mark them obsolete, and build again.</span>
+          </div>
+          <span style="display: flex; flex-wrap: wrap; gap: var(--space-2)"><button class="btn" type="button" onClick="{{ openDialog }}"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8"></path><path d="M13.6 2.4v3.2h-3.2"></path></svg>Release again with Force sync</button><a class="btn btn--ghost" href="#">Open build #118</a></span>
+        </div>
+
+        <div style="display: grid; gap: var(--space-2)">
+          <span style="font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2)">Apps in this release</span>
+          <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+            <sc-for list="{{ failApps }}" as="a" hint-placeholder-count="3">
+              <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 2px var(--space-3); align-items: start; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); border-right: 3px solid {{ a.bar }}">
+                <span class="data-table__state data-table__state--icon {{ a.spinCls }}" role="img" aria-label="{{ a.word }}" style="color: {{ a.color }}; padding-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ a.ringOp }}"></circle><path d="{{ a.glyph }}"></path></svg></span>
+                <span style="display: grid; gap: 2px; min-width: 0"><span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">{{ a.name }}</span><span class="u-num" style="font-size: var(--text-sm); color: var(--ink-3)">{{ a.version }}</span></span><sc-if value="{{ a.message }}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--text-sm); color: {{ a.msgColor }}; text-wrap: pretty">{{ a.message }}</span></sc-if></span>
+                <span style="display: grid; justify-items: end; gap: 2px"><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: {{ a.color }}">{{ a.word }}</span><span class="u-num" style="font-size: var(--text-xs); color: var(--ink-3)">{{ a.took }}</span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <details open="{{ rawOpen }}" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+          <summary style="display: flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: var(--space-1) var(--space-3); cursor: pointer; font-size: var(--text-sm); color: var(--ink-3)" onClick="{{ toggleRaw }}"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({{ rawRot }})"><path d="M6 4l4 4-4 4"></path></svg>Raw response from Business Central, for support</summary>
+          <div style="display: grid; gap: var(--space-2); padding: var(--space-3); border-top: 1px solid var(--border)">
+            <pre style="margin: 0; padding: var(--space-3); background: var(--surface-sunken); border-radius: var(--r-control); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; word-break: break-word">{{ raw }}</pre>
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--ink-3)"><button class="btn btn--sm" type="button">Copy for support</button>Includes release 49, the environment ID and the time, 23 Sep 2026 02:03:31.</span>
+          </div>
+        </details>
+
+        <details style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+          <summary style="display: flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: var(--space-1) var(--space-3); cursor: pointer; font-size: var(--text-sm); color: var(--ink-3)"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></svg>Timings and diagnostics log<span style="margin-left: auto" class="u-num">Scheduled 02:00:00 - claimed 02:00:04 - uploaded 02:01:10 - failed 02:03:31</span></summary>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; gap: var(--space-2)">
+    <p class="section-label" style="margin: 0">3 - Per-app sub-row, seven states</p>
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+      <sc-for list="{{ apps }}" as="a" hint-placeholder-count="7">
+        <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 2px var(--space-3); align-items: start; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); border-right: 3px solid {{ a.bar }}">
+          <span class="data-table__state data-table__state--icon {{ a.spinCls }}" role="img" aria-label="{{ a.word }}" style="color: {{ a.color }}; padding-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ a.ringOp }}"></circle><path d="{{ a.glyph }}"></path></svg></span>
+          <span style="display: grid; gap: 2px; min-width: 0"><span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">{{ a.name }}</span><span class="u-num" style="font-size: var(--text-sm); color: var(--ink-3)">{{ a.version }}</span></span><sc-if value="{{ a.message }}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--text-sm); color: {{ a.msgColor }}; text-wrap: pretty">{{ a.message }}</span></sc-if></span>
+          <span style="display: grid; justify-items: end; gap: 2px"><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: {{ a.color }}">{{ a.word }}</span><span class="u-num" style="font-size: var(--text-xs); color: var(--ink-3)">{{ a.took }}</span></span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; gap: var(--space-2)">
+    <p class="section-label" style="margin: 0">4 - "Release again" dialog</p>
+    <div style="display: grid; gap: var(--space-4)">
+      <sc-for list="{{ dialogs }}" as="d" hint-placeholder-count="3">
+        <div style="display: grid; gap: var(--space-1)">
+          <span style="font-size: var(--text-xs); color: var(--ink-3)">{{ d.caption }}</span>
+          <div style="position: relative; display: grid; place-items: center; padding: var(--space-5) var(--space-3); border-radius: var(--r); overflow: hidden">
+            <div class="modal-backdrop"></div>
+            <div class="confirm-dialog confirm-dialog--wide {{ d.dlgCls }}" role="dialog" aria-modal="true" aria-label="{{ d.title }}">
+              <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8"></path><path d="M13.6 2.4v3.2h-3.2"></path></svg></span>
+                <h3 class="confirm-dialog__title" style="padding-top: 5px">{{ d.title }}</h3>
+              </div>
+              <div class="confirm-dialog__body" style="display: grid; gap: var(--space-3)">
+                <p style="margin: 0; text-wrap: pretty">{{ d.lead }}</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2) var(--space-4); padding: var(--space-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-control)">
+                  <span class="meta-item"><span class="meta-item__label">Build</span><span class="meta-item__value">#118 <span class="u-muted">from build pipeline "Test"</span></span></span>
+                  <span class="meta-item"><span class="meta-item__label">Environment</span><span class="meta-item__value">{{ d.env }} <span style="color: {{ d.typeColor }}; font-weight: {{ d.typeWeight }}">{{ d.type }}</span></span></span>
+                  <span class="meta-item"><span class="meta-item__label">Apps</span><span class="meta-item__value">Contoso Core, Contoso Reports</span></span>
+                  <span class="meta-item"><span class="meta-item__label">Installs</span><span class="meta-item__value">Right away</span></span>
+                </div>
+                <label class="check" style="align-items: flex-start"><input type="checkbox" checked="{{ d.force }}" onChange="{{ d.onForce }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="display: grid; gap: 1px"><span style="color: var(--ink); font-size: var(--text-sm); font-weight: var(--fw-medium)">Use Force sync for this release only</span><span style="font-size: var(--text-xs); color: var(--ink-3)">The pipeline stays on Add. The next release goes back to Add.</span></span></label>
+                <sc-if value="{{ d.force }}" hint-placeholder-val="{{ false }}">
+                  <label class="check check--ack"><input type="checkbox" checked="{{ d.ackForce }}" onChange="{{ d.onAckForce }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="color: var(--ink)">I understand Force sync can drop columns and tables, and the data in them, when the new build no longer has them. This cannot be undone.</span></label>
+                </sc-if>
+                <sc-if value="{{ d.prod }}" hint-placeholder-val="{{ false }}">
+                  <label class="check check--ack"><input type="checkbox" checked="{{ d.ackProd }}" onChange="{{ d.onAckProd }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="color: var(--ink)">I understand this installs into Contoso's live Production environment, where people are working now.</span></label>
+                </sc-if>
+                <sc-if value="{{ d.blocked }}" hint-placeholder-val="{{ false }}"><span class="field-warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg>{{ d.blockedText }}</span></sc-if>
+              </div>
+              <div class="confirm-dialog__actions">
+                <button class="btn" type="button">Cancel</button>
+                <button class="btn btn--primary" type="button" disabled="{{ d.blocked }}">Release</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const G = {
+  scheduled: { g: 'M8 4.8V8l2.2 1.4', c: 'var(--ink-3)', bar: 'var(--bar-queued)' },
+  claimed:   { g: 'M8 2a6 6 0 0 1 6 6', c: 'var(--info-text)', bar: 'var(--bar-running)', spin: true },
+  uploading: { g: 'M8 2a6 6 0 0 1 6 6', c: 'var(--info-text)', bar: 'var(--bar-running)', spin: true },
+  installing:{ g: 'M8 2a6 6 0 0 1 6 6', c: 'var(--info-text)', bar: 'var(--bar-running)', spin: true },
+  deployed:  { g: 'M5.5 8.2l1.8 1.8L10.8 6', c: 'var(--success-text)', bar: 'var(--bar-succeeded)' },
+  completed: { g: 'M5.5 8.2l1.8 1.8L10.8 6', c: 'var(--success-text)', bar: 'var(--bar-succeeded)' },
+  failed:    { g: 'M6 6l4 4M10 6l-4 4', c: 'var(--danger-text)', bar: 'var(--bar-failed)' },
+  cancelled: { g: 'M4.8 11.2l6.4-6.4', c: 'var(--ink-3)', bar: 'var(--bar-cancelled)' },
+  skipped:   { g: 'M5.4 8h5.2', c: 'var(--ink-3)', bar: 'var(--bar-cancelled)' },
+  pending:   { g: 'M8 8h0', c: 'var(--ink-4)', bar: 'var(--border)' },
+  handed:    { g: 'M5 8h5.6M8.6 5.8L10.8 8l-2.2 2.2', c: 'var(--ink-2)', bar: 'var(--bar-queued)' }
+};
+const WORD = { scheduled: 'Scheduled', claimed: 'Claimed', uploading: 'Uploading', installing: 'Installing', deployed: 'Deployed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', skipped: 'Skipped', pending: 'Pending', handed: 'Handed to Business Central' };
+const deco = (o) => { const g = G[o.st]; return { ...o, word: WORD[o.st], color: g.c, bar: g.bar, glyph: g.g, ringOp: g.spin ? '.22' : '1', spinCls: g.spin ? 'data-table__state--spin' : '' }; };
+const app = (o) => { const d = deco(o); return { ...d, message: o.message || '', took: o.took || '', msgColor: o.st === 'failed' ? 'var(--danger-text)' : 'var(--ink-3)' }; };
+
+const RAW = 'Contoso Core 28.2.17.126 failed: Business Central reported the install as failed. A request to the Data Plane Admin Service failed. Http status code: BadRequest Error: { "code": "ExtensionChangeFailed", "message": "Udvidelsen \\"Contoso Core by CRONUS International 28.2.17.126\\" kunne ikke installeres, fordi feltet 12 \\"Zone Priority\\" i tabel 50110 \\"Pick Zone\\" er fjernet, og synkroniseringstilstanden tillader kun tilføjelser." }';
+
+class Component extends DCLogic {
+  state = { rawOpen: true, d: { a: { force: false, ackForce: false, ackProd: false }, b: { force: true, ackForce: false, ackProd: false }, c: { force: true, ackForce: true, ackProd: true } } };
+  renderVals() {
+    const set = (id, k) => (e) => { const v = e.target.checked; this.setState(s => ({ d: { ...s.d, [id]: { ...s.d[id], [k]: v } } })); };
+    const DLG = [
+      { id: 'a', caption: 'Sandbox, schema sync left on Add', prod: false, env: 'Test', type: 'Sandbox' },
+      { id: 'b', caption: 'Sandbox, Force sync ticked but not acknowledged: Release is disabled', prod: false, env: 'Test', type: 'Sandbox' },
+      { id: 'c', caption: 'Production, Force sync: both acknowledgements, both ticked', prod: true, env: 'Production', type: 'Production' }
+    ];
+    const dialogs = DLG.map(d => {
+      const s = this.state.d[d.id];
+      const needF = s.force && !s.ackForce, needP = d.prod && !s.ackProd;
+      return {
+        ...d, ...s,
+        title: 'Release build #118 again?',
+        lead: d.prod
+          ? 'This installs build #118 from build pipeline "Test" into Contoso\'s Production environment "Production", right away. Contoso Base is already on this version and is left alone.'
+          : 'This installs build #118 from build pipeline "Test" into the Sandbox environment "Test" for Contoso, right away. Contoso Base is already on this version and is left alone.',
+        dlgCls: d.prod ? 'confirm-dialog--danger' : '',
+        typeColor: d.prod ? 'var(--danger-text)' : 'var(--ink-3)', typeWeight: d.prod ? 'var(--fw-semibold)' : 'normal',
+        blocked: needF || needP,
+        blockedText: needF && needP ? 'Tick both acknowledgements to release.' : 'Tick the acknowledgement to release.',
+        onForce: set(d.id, 'force'), onAckForce: set(d.id, 'ackForce'), onAckProd: set(d.id, 'ackProd')
+      };
+    });
+    return {
+      rows: [
+        { n: 52, st: 'scheduled', sentence: 'Installs tonight at 22:00, in the delivery window', when: 'Today 22:00', took: '-' },
+        { n: 51, st: 'claimed', sentence: 'Picked up, connecting to the environment', when: 'Just now', took: '0m 04s' },
+        { n: 50, st: 'uploading', sentence: 'Uploading app 2 of 3', when: 'Started 08:14', took: '0m 38s' },
+        { n: 50, st: 'installing', sentence: 'Installing Contoso Core, app 2 of 3', when: 'Started 08:14', took: '1m 52s' },
+        { n: 49, st: 'failed', sentence: 'Business Central refused a schema change', code: 'ExtensionChangeFailed', when: 'Today 02:03', took: '3m 32s' },
+        { n: 48, st: 'deployed', sentence: '3 apps installed', when: 'Yesterday 15:02', took: '2m 51s' },
+        { n: 47, st: 'cancelled', sentence: 'Cancelled by K. Jensen before any app was uploaded', when: '20 Sep 11:40', took: '0m 12s' },
+        { n: 46, st: 'handed', sentence: 'Handed over for the next Business Central update', when: '12 Sep 18:10', took: '1m 20s' }
+      ].map(r => ({ ...deco(r), code: r.code || '' })),
+      failApps: [
+        { name: 'Contoso Base', version: '28.2.16.120 to 28.2.17.126', st: 'completed', took: '0m 48s' },
+        { name: 'Contoso Core', version: '28.2.16.120 to 28.2.17.126', st: 'failed', took: '1m 32s', message: 'Not installed. Still on 28.2.16.120.' },
+        { name: 'Contoso Reports', version: '28.2.16.120, not changed', st: 'skipped', message: 'Skipped because it needs Contoso Core 28.2.17.126.' }
+      ].map(app),
+      apps: [
+        { name: 'Contoso Base', version: '28.2.17.126', st: 'pending', message: 'Waits for the upload.' },
+        { name: 'Contoso Base', version: '28.2.17.126', st: 'uploading', took: '0m 21s' },
+        { name: 'Contoso Core', version: '28.2.16.120 to 28.2.17.126', st: 'installing', took: '1m 04s' },
+        { name: 'Contoso Core', version: '28.2.17.126', st: 'scheduled', message: 'Business Central installs it with the update on 12 Oct.' },
+        { name: 'Contoso Base', version: '28.2.16.120 to 28.2.17.126', st: 'completed', took: '0m 48s' },
+        { name: 'Contoso Core', version: '28.2.16.120 to 28.2.17.126', st: 'failed', took: '1m 32s', message: 'Business Central refused a schema change (ExtensionChangeFailed). Still on 28.2.16.120.' },
+        { name: 'Contoso Reports', version: '28.2.16.120, not changed', st: 'skipped', message: 'Skipped because it needs Contoso Core 28.2.17.126.' }
+      ].map(app),
+      raw: RAW,
+      rawOpen: this.state.rawOpen,
+      rawRot: this.state.rawOpen ? '90deg' : '0deg',
+      toggleRaw: (e) => { e.preventDefault(); this.setState(s => ({ rawOpen: !s.rawOpen })); },
+      dialogs,
+      openDialog: () => {}
+    };
+  }
+}
+</script>
+</body>
+</html>
