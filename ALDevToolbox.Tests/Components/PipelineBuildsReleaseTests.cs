@@ -233,7 +233,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         {
             cut.FindAll("#pb-rel-title").Should().BeEmpty("one target is a given, so nothing asks which");
             cut.Find("#rb-build").GetAttribute("value").Should().Be(seed.OlderBuildId.ToString());
-            cut.Markup.Should().Contain("The build you picked is selected.");
+            cut.Markup.Should().Contain("This is the build you chose.");
             // The dialog's own safeguards travel with it.
             cut.FindAll(".check--ack").Should().ContainSingle();
         });
@@ -249,7 +249,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
 
         ActThen(cut,
             () => cut.Find(ReleaseButton(seed.NewerBuildId)).Click(),
-            () => cut.Find("#pb-rel-title").TextContent.Should().Be($"Release build #{seed.NewerBuildId}"));
+            () => cut.Find("#pb-rel-title").TextContent.Should().StartWith($"Release build #{seed.NewerBuildId} from "));
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".modal-layer .sub-row__name").Select(n => n.TextContent.Trim())
@@ -266,6 +266,15 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
             cut.Find("#rb-build").GetAttribute("value").Should().Be(seed.NewerBuildId.ToString());
             cut.FindAll(".check--ack").Should().BeEmpty("a sandbox asks for no acknowledgement");
         });
+
+        // Releasing goes through the dialog's own path, and the page says where to follow it.
+        ActThen(cut,
+            () => cut.Find(".modal-layer .btn--primary").Click(),
+            () => cut.Find(".alert").TextContent.Should().Contain($"Build #{seed.NewerBuildId} is lined up to install into UAT."));
+        cut.Find(".alert a").GetAttribute("href").Should().StartWith("/releases/");
+
+        await using var ctx = _db.NewContext();
+        (await ctx.OeProjectDeliveries.AsNoTracking().SingleAsync()).ProjectBuildId.Should().Be(seed.NewerBuildId);
     }
 
     [Fact]
@@ -276,12 +285,16 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
 
         ActThen(cut,
             () => cut.Find(ReleaseButton(seed.OlderBuildId)).Click(),
-            () => cut.Markup.Should().Contain("Nothing releases this pipeline's builds yet."));
+            () => cut.Markup.Should().Contain("CRONUS App isn't set up to install anywhere yet."));
 
         ActThen(cut,
             () => cut.Find(".confirm-dialog__actions .btn--primary").Click(),
             // The source is this build pipeline already.
-            () => cut.Find("#rpe-build").GetAttribute("value").Should().Be(seed.PipelineId.ToString()));
+            () =>
+            {
+                cut.Find("#rpe-build").GetAttribute("value").Should().Be(seed.PipelineId.ToString());
+                cut.Markup.Should().Contain($"After you create it, you choose when build #{seed.OlderBuildId} installs.");
+            });
         cut.FindAll("#pb-rel-title").Should().BeEmpty();
 
         ActThen(cut,

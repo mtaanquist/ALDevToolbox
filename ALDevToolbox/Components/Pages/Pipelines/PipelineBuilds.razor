@@ -133,7 +133,7 @@
             <Alert Tone="@(note.Sent ? AlertTone.Success : AlertTone.Info)" Role="status">
                 <span>
                     @note.Text
-                    <a href="@($"/releases/{note.ReleasePipelineId}")">Open @note.ReleasePipelineName</a>
+                    <a href="@($"/releases/{note.ReleasePipelineId}")">@note.LinkText</a>
                 </span>
             </Alert>
         }
@@ -587,21 +587,22 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="send" Width="17" Height="17" />
                 </span>
-                <h2 id="pb-rel-title" class="confirm-dialog__title">Release build #@releasing.Id</h2>
+                <h2 id="pb-rel-title" class="confirm-dialog__title">Release build #@releasing.Id from @TimeAgo(releasing.FinishedAt ?? releasing.StartedAt)</h2>
             </div>
             <div class="confirm-dialog__body">
                 @if (_releaseTargets.Count == 0)
                 {
                     <p>
-                        Nothing releases this pipeline's builds yet. Set up a release pipeline to say which
-                        of @(_header?.ProjectName ?? "the solution")'s Business Central environments they go to.
-                        You only do that once; after that, this build goes straight to the release.
+                        @(_header?.Name ?? "This pipeline") isn't set up to install anywhere yet. A release pipeline
+                        says which of @(_header?.ProjectName ?? "the solution")'s Business Central environments its
+                        builds go to, and how installs run. You only set it up once, then you carry on releasing
+                        build #@releasing.Id.
                     </p>
                 }
                 else
                 {
-                    <p>This pipeline's builds go to more than one place. Choose where this one goes.</p>
-                    <div class="sub-rows">
+                    <p>@(_header?.Name ?? "This pipeline")'s builds can go to more than one environment. Where should build #@releasing.Id go?</p>
+                    <div class="sub-rows sub-rows--plain">
                         @foreach (var target in _releaseTargets)
                         {
                             <div class="sub-row">
@@ -612,7 +613,7 @@
                                 <div class="sub-row__acts">
                                     <button type="button" class="btn btn--sm" @onclick="() => ChooseTargetAsync(target)"
                                             disabled="@_openingRelease" aria-label="@($"Release through {target.Name}")">
-                                        <span>Choose</span>
+                                        <span>Release here</span>
                                     </button>
                                 </div>
                             </div>
@@ -661,11 +662,11 @@
     private int? _pendingReleaseBuildId;
     private List<ReleasePipelineRow> _releaseTargets = new();
     /// <summary>The release pipeline the open release dialog sends through, for the note after it.</summary>
-    private (int Id, string Name, int BuildId)? _releasingThrough;
+    private (int Id, string EnvironmentName, int BuildId)? _releasingThrough;
     private ReleaseNote? _releaseNote;
 
     /// <summary>What the page says after a release was set off from here, or couldn't be.</summary>
-    private sealed record ReleaseNote(bool Sent, string Text, int ReleasePipelineId, string ReleasePipelineName);
+    private sealed record ReleaseNote(bool Sent, string Text, int ReleasePipelineId, string LinkText);
 
     private PipelineHeader? _header;
     private List<BuildRow> _builds = new();
@@ -880,7 +881,8 @@
         if (_releaseBuild is not { } build || _releasePipelineEditor is null || _header is null) return;
         _releaseBuild = null;
         _pendingReleaseBuildId = build.Id;
-        await _releasePipelineEditor.OpenForCreateAsync(_header.ProjectId, _header.ProjectName, PipelineId);
+        await _releasePipelineEditor.OpenForCreateAsync(_header.ProjectId, _header.ProjectName, PipelineId,
+            nextStep: $"After you create it, you choose when build #{build.Id} installs.");
     }
 
     /// <summary>The new release pipeline is saved: carry on to releasing the build it was set up for.</summary>
@@ -913,8 +915,8 @@
                 // Saved from the editor with a different source than this pipeline:
                 // this build is not what it releases.
                 _releaseNote = new ReleaseNote(false,
-                    $"{rp.Name} releases from somewhere other than this pipeline, so build #{buildId} can't go through it. Release from its own page instead.",
-                    rp.Id, rp.Name);
+                    $"{rp.Name} takes its apps from somewhere other than this pipeline, so build #{buildId} can't go through it.",
+                    rp.Id, $"Open {rp.Name}");
                 return;
             }
 
@@ -930,9 +932,9 @@
                 secretExpiresAt = null;
             }
 
-            var options = ReleaseBuildDialog.OptionsFrom(_builds, await Artifacts.ListBuildAppsAsync(PipelineId));
-            _releasingThrough = (rp.Id, rp.Name, buildId);
             var env = rp.ProjectEnvironment;
+            var options = ReleaseBuildDialog.OptionsFrom(_builds, await Artifacts.ListBuildAppsAsync(PipelineId));
+            _releasingThrough = (rp.Id, env.Name, buildId);
             await _releaseDialog.OpenAsync(
                 rp.Id, rp.Project?.Name ?? _header?.ProjectName ?? "", env.Name, env.Type,
                 rp.DeploymentSchedule, rp.SchemaSyncMode, options,
@@ -955,9 +957,11 @@
     {
         if (_releasingThrough is { } through)
         {
+            // "Lined up" covers both a release now and one scheduled for later: the
+            // dialog doesn't say which, and the release pipeline's page has the time.
             _releaseNote = new ReleaseNote(true,
-                $"Build #{through.BuildId} is set to release through {through.Name}. Its progress is on the release pipeline's page.",
-                through.Id, through.Name);
+                $"Build #{through.BuildId} is lined up to install into {through.EnvironmentName}.",
+                through.Id, "Follow its progress");
         }
         return Task.CompletedTask;
     }
@@ -969,7 +973,7 @@
             ? target.EnvironmentName
             : $"{target.EnvironmentName} ({target.EnvironmentType})";
         return target.EnvironmentProblem is { } problem
-            ? $"Installs into {env} - that environment is {problem}"
+            ? $"Installs into {env} — that environment is {problem}"
             : $"Installs into {env}";
     }
 
