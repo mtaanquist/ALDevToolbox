@@ -82,7 +82,9 @@
                                 }
                             </select>
                         </SelectBox>
-                        <small class="field__hint">The latest successful build is selected. Older successful builds are available too.</small>
+                        <small class="field__hint">@(_buildChosenForYou
+                            ? "This is the build you chose. You can pick a different one here."
+                            : "The latest successful build is selected. Older successful builds are available too.")</small>
                     </div>
                 }
 
@@ -183,6 +185,9 @@
     private string _schemaSyncMode = string.Empty;
     private List<ReleasableBuildOption> _builds = new();
     private int _buildId;
+    // True when the caller named the build (the build list's "Release..." on one row),
+    // so the hint doesn't claim the latest was picked when it wasn't (#938).
+    private bool _buildChosenForYou;
     // Release-sourced pipelines pick a GitHub release rather than a build; the apps are
     // downloaded and staged as a build at the moment the person releases (#632).
     private bool _fromReleases;
@@ -321,13 +326,17 @@
     /// Opens the dialog for a release pipeline. <paramref name="builds"/> must be its
     /// successful builds (newest first). <paramref name="timeZone"/> is the solution's
     /// IANA tz; <paramref name="windowStart"/>/<paramref name="windowEnd"/> the target
-    /// environment's update window (both null = none).
+    /// environment's update window (both null = none). <paramref name="selectedBuildId"/>
+    /// preselects one of <paramref name="builds"/> - the build list opens the dialog
+    /// from a specific build's row (#938); it falls back to the latest when that build
+    /// is not among them.
     /// </summary>
     public Task OpenAsync(int releasePipelineId, string customerName, string envName, string envType, string deploymentSchedule, string schemaSyncMode,
         IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd,
         DateTime? secretExpiresAt = null,
         IReadOnlyList<GitHubReleaseOption>? releases = null,
-        string? repositoryName = null)
+        string? repositoryName = null,
+        int? selectedBuildId = null)
     {
         _releasePipelineId = releasePipelineId;
         _fromReleases = releases is not null;
@@ -346,7 +355,8 @@
         _deploymentSchedule = deploymentSchedule;
         _schemaSyncMode = schemaSyncMode;
         _builds = builds.ToList();
-        _buildId = _builds.Count > 0 ? _builds[0].Id : 0;
+        _buildChosenForYou = selectedBuildId is { } chosen && _builds.Any(b => b.Id == chosen);
+        _buildId = _buildChosenForYou ? selectedBuildId!.Value : _builds.Count > 0 ? _builds[0].Id : 0;
         _prodAck = false;
         _error = null;
         _releasing = false;
@@ -434,6 +444,53 @@
             _releasing = false;
             _staging = false;
         }
+    }
+
+    /// <summary>
+    /// The picker's options from a build pipeline's builds: the successful ones, newest
+    /// first, each with the apps it carries. Shared by every page that opens this
+    /// dialog for a build pipeline, so the picker reads the same wherever it opens
+    /// (#938).
+    /// </summary>
+    public static List<ReleasableBuildOption> OptionsFrom(
+        IEnumerable<ALDevToolbox.Services.ObjectExplorer.Projects.BuildRow> builds,
+        IReadOnlyDictionary<int, List<ALDevToolbox.Services.ObjectExplorer.Projects.BuildAppRow>> appsByBuild) =>
+        builds
+            .Where(b => b.Status == "ready")
+            .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
+            .Select(b =>
+            {
+                var apps = appsByBuild.TryGetValue(b.Id, out var found) ? found : [];
+                return new ReleasableBuildOption(
+                    b.Id,
+                    OptionLabel(b, apps.Count),
+                    apps.Select(a => new ReleasableBuildApp(a.AppName, a.AppVersion)).ToList());
+            })
+            .ToList();
+
+    /// <summary>
+    /// The picker label for one releasable build: what it is, not just when it ran.
+    /// A consultant picking a build for a customer's live tenant needs the branch,
+    /// the commit it was built at and how many apps it carries (#714) - e.g.
+    /// "#412 · main @a3f9c21 · 3 apps · built 29 Aug 14:21". Parts the build has no
+    /// value for are dropped rather than shown empty.
+    /// </summary>
+    public static string OptionLabel(ALDevToolbox.Services.ObjectExplorer.Projects.BuildRow b, int appCount)
+    {
+        var parts = new List<string> { $"#{b.Id}" };
+
+        var source = string.Join(" ", new[]
+        {
+            b.Branch,
+            string.IsNullOrEmpty(b.HeadCommitShort) ? null : $"@{b.HeadCommitShort}",
+        }.Where(s => !string.IsNullOrEmpty(s)));
+        if (!string.IsNullOrEmpty(source)) parts.Add(source);
+
+        if (appCount > 0) parts.Add(appCount == 1 ? "1 app" : $"{appCount} apps");
+        if (!string.IsNullOrEmpty(b.BcVersion)) parts.Add($"BC {b.BcVersion}");
+        parts.Add("built " + (b.FinishedAt ?? b.StartedAt).ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+
+        return string.Join(" · ", parts);
     }
 
     /// <summary>A successful build offered in the picker, with the apps it would install.</summary>

@@ -135,6 +135,10 @@
     text-wrap: pretty;
     overflow-wrap: anywhere;
 }
+.rp-next__label { font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2); }
+.rp-next__text { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
+/* "Release again with Force sync" under the suggestion that names it (#931). */
+.rp-next__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 
 /* "What happened" (section 2): our sentence, Business Central's message in its own
    block, what the environment reports. */

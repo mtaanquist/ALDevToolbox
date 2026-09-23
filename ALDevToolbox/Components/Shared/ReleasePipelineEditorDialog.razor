@@ -37,6 +37,10 @@
                 <h2 id="rpe-title" class="confirm-dialog__title">@(_editing ? "Edit release pipeline" : "New release pipeline")</h2>
             </div>
             <div class="confirm-dialog__body">
+                @if (_nextStep is { } nextStep)
+                {
+                    <p>@nextStep</p>
+                }
                 @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
                 {
                     <div class="field">
@@ -283,6 +287,7 @@
     private int _projectId;
     private string? _projectName;
     private int? _releasePipelineId;
+    private string? _nextStep;
 
     private string _name = string.Empty;
 
@@ -373,10 +378,17 @@
         }
     }
 
-    /// <summary>Opens the dialog to create a new release pipeline under a fixed solution.</summary>
-    public async Task OpenForCreateAsync(int projectId, string projectName)
+    /// <summary>
+    /// Opens the dialog to create a new release pipeline under a fixed solution.
+    /// <paramref name="buildPipelineId"/> fills in the source when the person came
+    /// from that build pipeline's page (#938); <paramref name="nextStep"/> says what
+    /// follows the save when this is one step of a longer task.
+    /// </summary>
+    public async Task OpenForCreateAsync(int projectId, string projectName, int? buildPipelineId = null, string? nextStep = null)
     {
         Reset();
+        _buildPipelineId = buildPipelineId ?? 0;
+        _nextStep = nextStep;
         _pickProject = false;
         _projectId = projectId;
         _projectName = projectName;
@@ -440,6 +452,7 @@
         _environments = null;
         _releaseRepositories = null;
         _projectName = null;
+        _nextStep = null;
     }
 
     private async Task OnProjectChosenAsync(ChangeEventArgs e)

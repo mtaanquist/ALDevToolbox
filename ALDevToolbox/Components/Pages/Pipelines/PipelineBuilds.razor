@@ -5,6 +5,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService Pipelines
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildImporter Builds
+@inject ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject NavigationManager Nav
 @inject ILogger<PipelineBuilds> Log
 @inject IServiceScopeFactory ScopeFactory
@@ -12,6 +14,7 @@
 @using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
     One pipeline's builds: the Build action (runs the pipeline's saved extension
@@ -22,6 +25,13 @@
     objects" deep-link here. While a build is in flight the page polls so the status
     flips Building -> Ready live. Editing which extensions are built is "Edit
     pipeline" (the shared PipelineEditorDialog). See .design/artifacts.md.
+
+    A successful build's row carries "Release...", the shortcut .design/saas-delivery.md
+    describes (#938): it resolves which release pipeline takes this pipeline's builds
+    (straight on when one does, a chooser when several do, the release pipeline editor
+    with this pipeline filled in when none does) and opens the same ReleaseBuildDialog
+    the release pipeline's page opens, with this build selected. The canonical Release
+    action stays on the release pipeline.
 
     Named user: a BC consultant cutting a customer build. Primary action: Build. Repo
     editing and solution deletion live in the Solutions tool (/solutions/{id}).
@@ -116,6 +126,16 @@
         @if (_buildError is { } be)
         {
             <Alert Tone="AlertTone.Danger"><span>@be</span></Alert>
+        }
+
+        @if (_releaseNote is { } note)
+        {
+            <Alert Tone="@(note.Sent ? AlertTone.Success : AlertTone.Info)" Role="status">
+                <span>
+                    @note.Text
+                    <a href="@($"/releases/{note.ReleasePipelineId}")">@note.LinkText</a>
+                </span>
+            </Alert>
         }
 
         @if (_builds.Count == 0)
@@ -419,6 +439,14 @@
                                             }
                                             else if (b.ArtifactCount > 0)
                                             {
+                                                @if (b.Status == "ready" && _canManage)
+                                                {
+                                                    <button type="button" class="btn btn--sm" @onclick="() => StartReleaseAsync(b)"
+                                                            disabled="@_openingRelease" aria-label="@($"Release build #{b.Id}")">
+                                                        <Icon Name="send" Width="13" Height="13" />
+                                                        <span>Release...</span>
+                                                    </button>
+                                                }
                                                 <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
                                                     <Icon Name="download" Width="13" Height="13" />
                                                     <span>Download .zip</span>
@@ -544,6 +572,68 @@
 </DetailPage>
 
 <PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineSavedAsync" />
+<ReleasePipelineEditorDialog @ref="_releasePipelineEditor" OnSaved="OnReleasePipelineCreatedAsync" />
+<ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
+
+@* Which release pipeline a build goes through, when that isn't a given: several take
+   this pipeline's builds, or none does yet. One is a given, and skips this. *@
+@if (_releaseBuild is { } releasing)
+{
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="pb-rel-title"
+         tabindex="-1" @onkeydown="OnChooserKeyDown" @ref="_chooserRoot">
+        <div class="modal-backdrop" @onclick="CloseChooser" aria-hidden="true"></div>
+        <div class="confirm-dialog" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="send" Width="17" Height="17" />
+                </span>
+                <h2 id="pb-rel-title" class="confirm-dialog__title">Release build #@releasing.Id from @TimeAgo(releasing.FinishedAt ?? releasing.StartedAt)</h2>
+            </div>
+            <div class="confirm-dialog__body">
+                @if (_releaseTargets.Count == 0)
+                {
+                    <p>
+                        @(_header?.Name ?? "This pipeline") isn't set up to install anywhere yet. A release pipeline
+                        says which of @(_header?.ProjectName ?? "the solution")'s Business Central environments its
+                        builds go to, and how installs run. You only set it up once, then you carry on releasing
+                        build #@releasing.Id.
+                    </p>
+                }
+                else
+                {
+                    <p>@(_header?.Name ?? "This pipeline")'s builds can go to more than one environment. Where should build #@releasing.Id go?</p>
+                    <div class="sub-rows sub-rows--plain">
+                        @foreach (var target in _releaseTargets)
+                        {
+                            <div class="sub-row">
+                                <div class="sub-row__stack">
+                                    <span class="sub-row__name">@target.Name</span>
+                                    <span class="sub-row__val">@TargetLine(target)</span>
+                                </div>
+                                <div class="sub-row__acts">
+                                    <button type="button" class="btn btn--sm" @onclick="() => ChooseTargetAsync(target)"
+                                            disabled="@_openingRelease" aria-label="@($"Release through {target.Name}")">
+                                        <span>Release here</span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="confirm-dialog__actions">
+                <button type="button" class="btn" @onclick="CloseChooser">Cancel</button>
+                @if (_releaseTargets.Count == 0)
+                {
+                    <button type="button" class="btn btn--primary" @onclick="SetUpReleasePipelineAsync">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Set up a release pipeline</span>
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
 <ConfirmDialog @ref="_deleteConfirm" Title="Delete pipeline?"
                ConfirmLabel="Delete pipeline" ConfirmButtonClass="btn--danger" ConfirmIcon="trash-2" />
 
@@ -559,6 +649,24 @@
 
     private PipelineEditorDialog? _editor;
     private ConfirmDialog? _deleteConfirm;
+
+    // "Release..." on a build row (#938).
+    private ReleasePipelineEditorDialog? _releasePipelineEditor;
+    private ReleaseBuildDialog? _releaseDialog;
+    private ElementReference _chooserRoot;
+    private bool _focusChooser;
+    private bool _openingRelease;
+    /// <summary>The build whose release target is being chosen; the chooser is open while set.</summary>
+    private BuildRow? _releaseBuild;
+    /// <summary>The build a release pipeline is being set up for, carried across the editor.</summary>
+    private int? _pendingReleaseBuildId;
+    private List<ReleasePipelineRow> _releaseTargets = new();
+    /// <summary>The release pipeline the open release dialog sends through, for the note after it.</summary>
+    private (int Id, string EnvironmentName, int BuildId)? _releasingThrough;
+    private ReleaseNote? _releaseNote;
+
+    /// <summary>What the page says after a release was set off from here, or couldn't be.</summary>
+    private sealed record ReleaseNote(bool Sent, string Text, int ReleasePipelineId, string LinkText);
 
     private PipelineHeader? _header;
     private List<BuildRow> _builds = new();
@@ -692,6 +800,181 @@
         {
             _starting = false;
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusChooser && _releaseBuild is not null)
+        {
+            _focusChooser = false;
+            try { await _chooserRoot.FocusAsync(); }
+            catch { /* detached */ }
+        }
+    }
+
+    /// <summary>
+    /// "Release..." on a successful build's row: finds the release pipelines that take
+    /// this build pipeline's builds and goes straight to the release dialog when there
+    /// is exactly one; otherwise the chooser asks which, or offers to set one up.
+    /// A release pipeline that draws from GitHub releases is not a target for a build.
+    /// </summary>
+    private async Task StartReleaseAsync(BuildRow build)
+    {
+        if (_openingRelease || _header is null) return;
+        _openingRelease = true;
+        _buildError = null;
+        _releaseNote = null;
+        try
+        {
+            var targets = (await Releases.ListReleasePipelinesAsync(_header.ProjectId))
+                .Where(r => r.BuildPipelineId == PipelineId && r.ArtifactSource == ReleaseArtifactSource.Build)
+                .ToList();
+            if (targets.Count == 1)
+            {
+                await OpenReleaseDialogAsync(targets[0].Id, build.Id);
+                return;
+            }
+            _releaseTargets = targets;
+            _releaseBuild = build;
+            _focusChooser = true;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _buildError = "Only the solution owner or an admin can release this solution's builds.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Reading release pipelines failed for build pipeline {PipelineId}.", PipelineId);
+            _buildError = "Couldn't read this solution's release pipelines. Try again in a moment.";
+        }
+        finally
+        {
+            _openingRelease = false;
+        }
+    }
+
+    private async Task ChooseTargetAsync(ReleasePipelineRow target)
+    {
+        if (_releaseBuild is not { } build || _openingRelease) return;
+        _openingRelease = true;
+        try
+        {
+            _releaseBuild = null;
+            await OpenReleaseDialogAsync(target.Id, build.Id);
+        }
+        finally
+        {
+            _openingRelease = false;
+        }
+    }
+
+    private void CloseChooser() => _releaseBuild = null;
+
+    private void OnChooserKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Esc") CloseChooser();
+    }
+
+    /// <summary>No release pipeline takes these builds yet: open the editor with this build pipeline as its source.</summary>
+    private async Task SetUpReleasePipelineAsync()
+    {
+        if (_releaseBuild is not { } build || _releasePipelineEditor is null || _header is null) return;
+        _releaseBuild = null;
+        _pendingReleaseBuildId = build.Id;
+        await _releasePipelineEditor.OpenForCreateAsync(_header.ProjectId, _header.ProjectName, PipelineId,
+            nextStep: $"After you create it, you choose when build #{build.Id} installs.");
+    }
+
+    /// <summary>The new release pipeline is saved: carry on to releasing the build it was set up for.</summary>
+    private async Task OnReleasePipelineCreatedAsync(int releasePipelineId)
+    {
+        if (_pendingReleaseBuildId is not { } buildId) return;
+        _pendingReleaseBuildId = null;
+        await OpenReleaseDialogAsync(releasePipelineId, buildId);
+    }
+
+    /// <summary>
+    /// Opens the release dialog for one release pipeline with <paramref name="buildId"/>
+    /// selected, fed exactly as the release pipeline's own page feeds it: the target
+    /// environment and its update window, the solution's timezone, when the Business
+    /// Central secret lapses, and this pipeline's successful builds with their apps.
+    /// </summary>
+    private async Task OpenReleaseDialogAsync(int releasePipelineId, int buildId)
+    {
+        if (_releaseDialog is null) return;
+        try
+        {
+            var rp = await Releases.GetReleasePipelineAsync(releasePipelineId);
+            if (rp?.ProjectEnvironment is null)
+            {
+                _buildError = "That release pipeline no longer exists. Try again.";
+                return;
+            }
+            if (rp.ArtifactSource != ReleaseArtifactSource.Build || rp.BuildPipelineId != PipelineId)
+            {
+                // Saved from the editor with a different source than this pipeline:
+                // this build is not what it releases.
+                _releaseNote = new ReleaseNote(false,
+                    $"{rp.Name} takes its apps from somewhere other than this pipeline, so build #{buildId} can't go through it.",
+                    rp.Id, $"Open {rp.Name}");
+                return;
+            }
+
+            // The secret in use may be the organisation's rather than the solution's
+            // own, so the expiry warning asks the connection.
+            DateTime? secretExpiresAt = null;
+            try
+            {
+                secretExpiresAt = (await Connection.GetConnectionAsync(rp.ProjectId))?.EffectiveSecretExpiresAt;
+            }
+            catch (ProjectAccessDeniedException)
+            {
+                secretExpiresAt = null;
+            }
+
+            var env = rp.ProjectEnvironment;
+            var options = ReleaseBuildDialog.OptionsFrom(_builds, await Artifacts.ListBuildAppsAsync(PipelineId));
+            _releasingThrough = (rp.Id, env.Name, buildId);
+            await _releaseDialog.OpenAsync(
+                rp.Id, rp.Project?.Name ?? _header?.ProjectName ?? "", env.Name, env.Type,
+                rp.DeploymentSchedule, rp.SchemaSyncMode, options,
+                rp.Project?.BcTimeZone, env.UpdateWindowStart, env.UpdateWindowEnd,
+                secretExpiresAt,
+                selectedBuildId: buildId);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _buildError = "Only the solution owner or an admin can release this solution's builds.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Opening the release dialog failed for release pipeline {ReleasePipelineId}.", releasePipelineId);
+            _buildError = "Couldn't open the release. Try again in a moment.";
+        }
+    }
+
+    private Task OnReleasedAsync(int _)
+    {
+        if (_releasingThrough is { } through)
+        {
+            // "Lined up" covers both a release now and one scheduled for later: the
+            // dialog doesn't say which, and the release pipeline's page has the time.
+            _releaseNote = new ReleaseNote(true,
+                $"Build #{through.BuildId} is lined up to install into {through.EnvironmentName}.",
+                through.Id, "Follow its progress");
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A release target's environment as the chooser shows it, with anything that would stop a release.</summary>
+    private static string TargetLine(ReleasePipelineRow target)
+    {
+        var env = target.EnvironmentName.Equals(target.EnvironmentType, StringComparison.OrdinalIgnoreCase)
+            ? target.EnvironmentName
+            : $"{target.EnvironmentName} ({target.EnvironmentType})";
+        return target.EnvironmentProblem is { } problem
+            ? $"Installs into {env} — that environment is {problem}"
+            : $"Installs into {env}";
     }
 
     private async Task EditPipelineAsync()
