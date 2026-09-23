@@ -183,6 +183,35 @@
             </section>
         }
 
+        @if (_dependencies.Count > 0)
+        {
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Third-party dependencies</h2></div>
+                <div class="card__body">
+                <p class="form-sec__cap">
+                    Apps from other publishers that this build depends on. Their symbols were downloaded
+                    from Microsoft automatically so the build could compile - there's nothing you need to do.
+                    Open one to browse its objects; there's no source code to read.
+                </p>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>App</th><th>Version</th><th>Publisher</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in _dependencies)
+                        {
+                            <tr>
+                                <td><a href="@($"/object-explorer/release/{d.ReleaseId}")">@(d.AppName ?? d.Label)</a></td>
+                                <td class="u-muted">@(d.AppVersion ?? "—")</td>
+                                <td class="u-muted">@(string.IsNullOrEmpty(d.Publisher) ? "—" : d.Publisher)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+            </section>
+        }
+
         @if (_release.Kind == OeRelease.ProjectBuildKind && _release.DeletedAt is null
              && (_release.Status == "ready" || _release.Status == "failed")
              && _buildResults.Any(r => r.Status == "failed"))
@@ -375,6 +404,7 @@
     private ReleaseDetail? _release;
     private ImportJobOrigin? _origin;
     private List<ProjectBuildResultRow> _buildResults = new();
+    private List<ReleaseDependencyRow> _dependencies = new();
     private bool _isPartial;
     private (string Message, bool IsError)? Status { get; set; }
 
@@ -412,6 +442,7 @@
         {
             _buildResults = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
+            _dependencies = await ObjectExplorer.GetDependencyReleasesAsync(ReleaseId);
         }
     }
 

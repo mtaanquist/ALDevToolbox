@@ -33,6 +33,7 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "build-feed-tests-" + Guid.NewGuid().ToString("N"));
     private readonly FakeSymbolFeeds _http = new();
     private readonly FakeToolchain _tools;
+    private readonly FakePackage _core;
 
     public ProjectBuildSymbolFeedTests()
     {
@@ -41,7 +42,7 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
         File.WriteAllText(alc, "fake");
         _tools = new FakeToolchain(alc);
         _http.Fallback = ArtifactCdn;
-        _http.Add("appsource", CoreSymbols, CoreId, "Continia Core", "29.0.0.199323", application: "29.0.0");
+        _core = _http.Add("appsource", CoreSymbols, CoreId, "Continia Core", "29.0.0.199323", application: "29.0.0");
     }
 
     public void Dispose()
@@ -118,6 +119,93 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
         _tools.SeenVersions["CRONUS Continia Extension"][CoreId].Should().Be("28.0.0.7", "the upload is the deliberate override");
         _http.Requests.Should().NotContain(r => r.Contains(CoreId, StringComparison.OrdinalIgnoreCase),
             "an app a stored upload supplies is never fetched");
+    }
+
+    // ── Part 4: the vendor package lands in the Object Explorer ──────────
+
+    [Fact]
+    public async Task The_vendor_package_is_ingested_once_and_linked_to_every_build_that_resolved_it()
+    {
+        _core.SymbolReferenceJson = ReleaseDependencyChainTests.Symbols(("Codeunits", 70000, "Continia Document Handler", "Run"));
+        var (projectId, firstRelease, firstBuild) = await SeedAsync();
+
+        await BuildAsync(projectId, firstRelease);
+        var (secondRelease, _) = await AddBuildAsync(projectId);
+        await BuildAsync(projectId, secondRelease);
+
+        await using var read = _db.NewContext();
+        var microsoftId = await read.OeReleases.AsNoTracking()
+            .Where(r => r.DedupKey == "bc-onprem:29.0:dk").Select(r => r.Id).SingleAsync();
+        var vendor = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Kind == "third_party");
+        vendor.DedupKey.Should().Be($"symbols:{CoreId}:29.0.0.199323");
+        vendor.Label.Should().Be("Continia Core 29.0.0.199323 (symbols)");
+        vendor.ParentReleaseId.Should().Be(microsoftId, "the vendor sits on the Microsoft release the build resolved");
+        vendor.Status.Should().Be("ready");
+        (await read.OeModuleObjects.AsNoTracking().Where(o => o.Module!.ReleaseId == vendor.Id).Select(o => o.Name).ToListAsync())
+            .Should().Equal("Continia Document Handler");
+        (await LinksAsync(firstRelease)).Should().Equal(vendor.Id);
+        (await LinksAsync(secondRelease)).Should().Equal(vendor.Id);
+        (await SymbolsLogAsync(firstBuild)).Should().Contain("Added Continia Core 29.0.0.199323 (symbols) to the Object Explorer.");
+    }
+
+    [Fact]
+    public async Task A_rebuild_replaces_the_releases_dependency_links()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+        await BuildAsync(projectId, releaseId);
+        await using (var seed = _db.NewContext())
+        {
+            // A link an earlier build left that this one no longer needs.
+            var stale = await seed.OeReleases.Where(r => r.DedupKey == "bc-onprem:29.0:dk").Select(r => r.Id).SingleAsync();
+            seed.OeReleaseDependencies.Add(new OeReleaseDependency
+            {
+                OrganizationId = TestDb.DefaultOrgId, ReleaseId = releaseId, DependencyReleaseId = stale, CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await BuildAsync(projectId, releaseId);
+
+        await using var read = _db.NewContext();
+        var vendorId = await read.OeReleases.AsNoTracking().Where(r => r.Kind == "third_party").Select(r => r.Id).SingleAsync();
+        (await LinksAsync(releaseId)).Should().Equal(vendorId);
+    }
+
+    private async Task<List<int>> LinksAsync(int releaseId)
+    {
+        await using var read = _db.NewContext();
+        return await read.OeReleaseDependencies.AsNoTracking()
+            .Where(d => d.ReleaseId == releaseId).Select(d => d.DependencyReleaseId).ToListAsync();
+    }
+
+    /// <summary>A second pipeline build of the same solution, into its own project release.</summary>
+    private async Task<(int ReleaseId, int BuildId)> AddBuildAsync(int projectId)
+    {
+        await using var seed = _db.NewContext();
+        var now = DateTime.UtcNow;
+        var release = new OeRelease
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Label = "CRONUS",
+            Kind = "project",
+            Status = "ingesting",
+            ImportedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        seed.OeReleases.Add(release);
+        await seed.SaveChangesAsync();
+        var build = new OeProjectBuild
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = projectId,
+            ReleaseId = release.Id,
+            Status = ProjectBuildStatus.Queued,
+            StartedAt = now,
+        };
+        seed.OeProjectBuilds.Add(build);
+        await seed.SaveChangesAsync();
+        return (release.Id, build.Id);
     }
 
     // ── Harness ────────────────────────────────────────────────────────
