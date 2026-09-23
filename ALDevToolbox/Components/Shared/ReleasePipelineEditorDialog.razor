@@ -293,10 +293,15 @@
         }
     }
 
-    /// <summary>Opens the dialog to create a new release pipeline under a fixed solution.</summary>
-    public async Task OpenForCreateAsync(int projectId, string projectName)
+    /// <summary>
+    /// Opens the dialog to create a new release pipeline under a fixed solution.
+    /// <paramref name="buildPipelineId"/> fills in the source when the person came
+    /// from that build pipeline's page (#938).
+    /// </summary>
+    public async Task OpenForCreateAsync(int projectId, string projectName, int? buildPipelineId = null)
     {
         Reset();
+        _buildPipelineId = buildPipelineId ?? 0;
         _pickProject = false;
         _projectId = projectId;
         _projectName = projectName;
