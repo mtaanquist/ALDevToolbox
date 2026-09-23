@@ -8,8 +8,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// <inheritdoc cref="IBcAppManagementClient"/>
 public sealed class BcAppManagementClient : IBcAppManagementClient
 {
-    /// <summary>The API's own cap on an uploaded package. Checked locally so an oversized build fails fast instead of after a long upload.</summary>
-    /// <summary>The largest extension package Business Central accepts.</summary>
+    /// <summary>The largest extension package Business Central accepts. Checked locally so an oversized build fails fast instead of after a long upload.</summary>
     public const int MaxAppBytes = 50 * 1024 * 1024;
 
     private readonly IHttpClientFactory _httpFactory;

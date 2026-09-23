@@ -10,9 +10,9 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// is deployed to several environments (test in Sandbox, promote the identical
 /// artifact to Production). Reads as <em>"Release Contoso App on Production."</em>
 /// Org-scoped via the standard query filter; soft-deleted; management rights come
-/// from the parent project's owner via <c>ProjectAccess</c>. Scheduling a delivery of
-/// a chosen build (and the publish flow itself) lands in a later slice — this entity
-/// is the config it reads. See <c>.design/saas-delivery.md</c>.
+/// from the parent project's owner via <c>ProjectAccess</c>. A release of a chosen
+/// build is an <see cref="OeProjectDelivery"/>; this entity is the config each one
+/// snapshots when it is created. See <c>.design/saas-delivery.md</c>.
 /// </summary>
 public class OeReleasePipeline
 {
@@ -64,7 +64,7 @@ public class OeReleasePipeline
     public int? GithubReleaseRepositoryId { get; set; }
     public OeProjectRepository? GithubReleaseRepository { get; set; }
 
-    /// <summary>The target environment (carries the chosen company and the Production/Sandbox type).</summary>
+    /// <summary>The target environment (and with it the Production/Sandbox type and the delivery window).</summary>
     public int ProjectEnvironmentId { get; set; }
     public OeProjectEnvironment? ProjectEnvironment { get; set; }
 

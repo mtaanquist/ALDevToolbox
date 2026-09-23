@@ -684,12 +684,4 @@
             _ => $"on {d.CreatedAt:yyyy-MM-dd}",
         };
     }
-
-    private static string Initials(string name)
-    {
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length == 0) return "?";
-        var first = char.ToUpperInvariant(parts[0][0]);
-        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
-    }
 }
