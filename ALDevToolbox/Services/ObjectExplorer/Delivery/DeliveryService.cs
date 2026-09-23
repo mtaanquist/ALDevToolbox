@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
@@ -1044,6 +1045,13 @@ public sealed record DeliveryHistoryRow(
     public string? BuildReleaseTag { get; init; }
 
     /// <summary>The run's secret-free log, <c>HH:mm:ss  message</c> lines in UTC. Null until the run starts.</summary>
+    /// <summary>
+    /// The run's own log, for the page's diagnostics block. Kept out of the MCP
+    /// serialisation: list_deliveries would otherwise carry every run's log on
+    /// every call, and an assistant that needs it has the failure text and the
+    /// per-app results already.
+    /// </summary>
+    [JsonIgnore]
     public string? DiagnosticsLog { get; init; }
 
     /// <summary>True while the delivery is still working (so the page keeps polling).</summary>
