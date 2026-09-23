@@ -641,8 +641,8 @@ the message through only as display text.
 - **`BcTokenService`** — singleton, in-memory token cache + client-credentials flow.
 - **`ProjectConnectionService`** — writes/reads the connection config; owns the secret (encrypt on
   write, never return it), the Test-connection action, the environment fetch. Access-gated.
-- **`ReleasePipelineService`** — CRUD over `OeReleasePipeline` (name, source build pipeline, target
-  environment, version/sync modes, default time). Access-gated like `PipelineService`.
+- **`ReleasePipelineService`** — CRUD over `OeReleasePipeline` (name, source build pipeline or GitHub
+  repository, target environment, deployment schedule, schema sync mode). Access-gated like `PipelineService`.
 - **`DeliveryService`** — creates an `OeProjectDelivery` when the user schedules a release of a chosen
   build (no auto-on-build in v1); converts the picked local date+time to a UTC `scheduled_for` using
   the project's timezone; owns the atomic cancel/claim transitions. **As built:** the engine slice
@@ -670,8 +670,8 @@ the message through only as display text.
   the question the row has to answer is "is this environment safe to deploy to right now".
 - **Release pipelines:** a listable surface alongside Build pipelines (own icon — e.g. `rocket` for
   build stays, a `send`/`upload-cloud` for release), with a create/edit dialog: name, source build
-  pipeline, target environment (picker), version mode, schema sync mode (Force Sync behind a confirm),
-  default publish time.
+  pipeline or GitHub repository, target environment (picker), when installs run, schema sync mode
+  (Force sync behind an acknowledgement).
 - **Schedule a release:** lives on the **Release pipeline** — a "Release" action that's enabled once
   the source Build pipeline has a *successful* build. It defaults to the **latest successful build**
   (with the option to pick an older one), then "pick the date+time" (prefilled to the **next opening
@@ -768,7 +768,8 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
   GDAP) are separate outcomes with separate remedies. GDAP is *not* assumed: the same connection
   serves the maintainer's own tenant, where no delegated-admin relationship exists at all. Manual
   entry is a fallback.
-- **Version mode:** all three offered; default **`Current version`**.
+- **Deployment schedule:** `Immediate` (default), `NextMinorUpdate` and `NextMajorUpdate` offered;
+  `UpdateWindow` is supported by the engine and deliberately not in the picker (see *Open questions*).
 - **Trigger model:** no auto-publish in v1. The user explicitly schedules a delivery for a concrete
   date+time; it then runs automatically at that time, and is **cancellable until a worker claims it**.
 - **Per-environment update window (revised):** each `OeProjectEnvironment` carries a recurring daily

@@ -17,8 +17,8 @@
     run / how they reconcile schema. Force sync is gated behind an explicit
     acknowledgement because it can drop columns. Opened imperatively via
     OpenForCreateAsync / OpenForEditAsync; raises OnSaved with the release pipeline id.
-    Scheduling a delivery (the "Release" action) lands in a later slice — this dialog
-    only configures the reusable target. See .design/saas-delivery.md.
+    Releasing a build (the "Release" action) lives on the pipeline's own page — this
+    dialog only configures the reusable target. See .design/saas-delivery.md.
 
     Named user: a BC consultant who has connected a customer's environment and wants a
     reusable "publish this build to Production" target.

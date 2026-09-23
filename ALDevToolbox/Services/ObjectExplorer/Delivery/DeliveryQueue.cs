@@ -13,10 +13,10 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 /// the source of truth; this channel just carries the id + captured identity.
 ///
 /// <para>
-/// In this slice a delivery runs immediately on enqueue — there is no time-based
-/// scheduler (that, plus the cancel/claim race and restart-resume of <em>queued</em>
-/// rows, is a later slice). The in-memory dedupe keyed on delivery id stops a
-/// double-click from enqueuing the same delivery twice.
+/// <see cref="DeliveryScheduler"/> enqueues a delivery when its scheduled time comes
+/// (a release-now is simply due at once), and on its first sweep fails the rows a
+/// restart interrupted. The in-memory dedupe keyed on delivery id stops the scheduler
+/// and a double-click from enqueuing the same delivery twice.
 /// </para>
 /// </summary>
 public sealed class DeliveryQueue : JobQueue<DeliveryJob, int>

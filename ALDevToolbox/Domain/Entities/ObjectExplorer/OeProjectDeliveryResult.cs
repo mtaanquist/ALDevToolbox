@@ -3,8 +3,8 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <summary>
 /// The outcome of publishing one <c>.app</c> within a <see cref="OeProjectDelivery"/> —
 /// the per-app analogue of <see cref="OeProjectBuildResult"/>. Records the app's
-/// identity, the BC <c>extensionUpload</c> id the run created for it, the deployment
-/// result, and a short secret-free message. Org-scoped (denormalised from the parent
+/// identity, the App Management operation id the install created for it, the
+/// deployment result, and a short secret-free message. Org-scoped (denormalised from the parent
 /// delivery). See <c>.design/saas-delivery.md</c> ("Delivery").
 /// </summary>
 public class OeProjectDeliveryResult

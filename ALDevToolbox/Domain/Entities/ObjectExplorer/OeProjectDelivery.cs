@@ -6,13 +6,13 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <summary>
 /// One run of a <see cref="OeReleasePipeline"/> — the analogue of a
 /// <see cref="OeProjectBuild"/> for the publish side. Created when a user releases a
-/// specific build to the release pipeline's target environment; the worker then
-/// uploads, installs, and polls each app via the BC automation API. The target
-/// details (environment, company, modes) are <em>snapshotted</em> at creation so
-/// later edits to the release pipeline don't rewrite history. Org-scoped via the
-/// standard query filter. Scheduling (a future date+time, the cancel/claim race) is
-/// a later slice; in this slice a delivery is created and enqueued to run
-/// immediately. See <c>.design/saas-delivery.md</c> ("Delivery").
+/// specific build to the release pipeline's target environment, for now or for a
+/// later time; <see cref="DeliveryScheduler"/> enqueues it when it is due and the
+/// worker then uploads, installs, and polls each app through the Business Central
+/// App Management API. The target details (environment, schedule, sync mode) are
+/// <em>snapshotted</em> at creation so later edits to the release pipeline don't
+/// rewrite history. Org-scoped via the standard query filter. See
+/// <c>.design/saas-delivery.md</c> ("Delivery").
 /// </summary>
 public class OeProjectDelivery
 {
@@ -43,7 +43,7 @@ public class OeProjectDelivery
 
     // ── Snapshot of the target at creation (immune to later release-pipeline edits) ──
 
-    /// <summary>The target environment name (keys the automation API URL).</summary>
+    /// <summary>The target environment name (keys the App Management API URL).</summary>
     public string EnvironmentName { get; set; } = string.Empty;
 
     /// <summary>When BC installs the upload (App Management <c>deploymentSchedule</c>). One of <see cref="BcDeploymentSchedule"/>.</summary>
@@ -97,10 +97,9 @@ public class OeProjectDelivery
 
 /// <summary>
 /// The lifecycle states a <see cref="OeProjectDelivery"/> moves through:
-/// <c>scheduled → claimed → uploading → installing → deployed | failed</c>, plus
-/// <c>scheduled → cancelled</c>. The transitions out of <c>scheduled</c> are atomic
-/// compare-and-set so a claim and a cancel can't both win (the cancel surface is a
-/// later slice; the claim is here).
+/// <c>scheduled → claimed → uploading → installing → deployed | handed_off | failed</c>,
+/// plus <c>scheduled → cancelled</c>. The transitions out of <c>scheduled</c> are atomic
+/// compare-and-set so a claim and a cancel can't both win.
 /// </summary>
 public static class ProjectDeliveryStatus
 {

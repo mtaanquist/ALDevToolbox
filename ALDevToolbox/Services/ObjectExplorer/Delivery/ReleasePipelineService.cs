@@ -16,9 +16,8 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 /// pipelines (build-once-deploy-many). Management rights come from the parent
 /// project's owner via <see cref="ProjectAccess"/>. Org-scoped via the EF query
 /// filter; mutations run inside an authenticated request. Validation throws
-/// <see cref="PlanValidationException"/> with field-keyed errors. Scheduling a
-/// delivery and the publish flow itself land in a later slice. See
-/// <c>.design/saas-delivery.md</c>.
+/// <see cref="PlanValidationException"/> with field-keyed errors. Releasing a build
+/// is <see cref="DeliveryService"/>'s job. See <c>.design/saas-delivery.md</c>.
 /// </summary>
 public sealed class ReleasePipelineService
 {
@@ -183,9 +182,8 @@ public sealed class ReleasePipelineService
     /// <summary>
     /// Validates the input against its project (which must exist and be manageable),
     /// the per-project name uniqueness rule, the source build pipeline and target
-    /// environment (both must belong to the same project, and the environment must
-    /// have a company picked so a delivery can actually publish), and the version /
-    /// schema-sync modes. Returns the normalised values. Throws
+    /// environment (both must belong to the same project, and the environment's status
+    /// must not block installs), and the deployment schedule and schema-sync mode. Returns the normalised values. Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
     private async Task<ValidatedReleasePipeline> ValidateAsync(

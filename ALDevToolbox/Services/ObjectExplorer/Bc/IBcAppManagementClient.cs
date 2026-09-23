@@ -71,10 +71,6 @@ public interface IBcAppManagementClient
         CancellationToken ct = default);
 
     /// <summary>
-    /// Lists PTE versions uploaded and waiting for their window. Fetched on demand — there
-    /// is deliberately no background poller for these.
-    /// </summary>
-    /// <summary>
     /// Lists newer versions available for the environment's installed <em>Marketplace</em>
     /// apps. Per-tenant extensions are not included — the endpoint is global-app only —
     /// so this never answers "is there a new version of the app we ship".
@@ -85,6 +81,10 @@ public interface IBcAppManagementClient
         string environmentName,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Lists PTE versions uploaded and waiting for their window. Fetched on demand — there
+    /// is deliberately no background poller for these.
+    /// </summary>
     Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(
         string accessToken,
         string applicationFamily,
