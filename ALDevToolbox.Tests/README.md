@@ -122,6 +122,30 @@ public sealed class MyServiceTests : IDisposable
 For audit-interceptor tests use `TestDb.NewContextWithAudit(interceptor)`
 so the same write path the application uses runs in the test.
 
+### Component tests over a database
+
+A bUnit test whose page reads the database through a scoped `AppDbContext`
+has to stop the page before the fixture drops the database, and a page that
+polls or chains several queries is usually still busy when the test method
+returns. Two things make that safe (`EnvironmentDetailTests` is the worked
+example, from #895, #905 and #924):
+
+- Tear the renderer down with `await _ctx.Renderer.DisposeAsync()`, not
+  `DisposeComponentsAsync()`. bUnit's component-only dispose clears its list
+  of root components right after posting the detach to the dispatcher, so
+  when the dispatcher is busy with one of the page's loads at that moment the
+  posted work finds nothing to detach and the page lives on. The renderer's
+  own dispose walks every component on the dispatcher, behind whatever the
+  page is doing, and waits for each component's `DisposeAsync`.
+- Give the page a `DisposeAsync` that cancels its reads and waits for the
+  last call to finish, so the renderer's dispose returning means nothing of
+  the page's is still on the wire. `EnvironmentDetail.razor`'s `Read` /
+  `Write` helpers are the shape.
+
+Then `_db.WaitForQueriesToSettle()`, dispose the context's services, and only
+then `_db.Dispose()`. The settle (`InFlightCommandTracker`) is the second
+line, not the first: it covers a command a dying call is still disposing.
+
 ### Builders
 
 Builders return entities ready for `_db.NewContext().Add(...)`. They set
