@@ -88,9 +88,9 @@
     <Actions>
         @if (_artifactProjectId is { } pid)
         {
-            <a class="btn btn--sm" href="@($"/pipelines/{pid}")">
+            <a class="btn btn--sm" href="@($"/solutions/{pid}")">
                 <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to artifact</span>
+                <span>Back to the solution</span>
             </a>
         }
         <AuthorizeView Roles="Admin,Editor">

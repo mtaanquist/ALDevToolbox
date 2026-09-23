@@ -484,13 +484,13 @@ public sealed class GitHubReleaseService
                 OwnerId = r.Project!.CreatedByUserId,
             })
             .FirstOrDefaultAsync(ct)
-            ?? throw Validation("ReleasePipeline", "This release pipeline no longer exists.");
+            ?? throw Validation("ReleasePipeline", "This deployment pipeline no longer exists.");
 
         await _access.EnsureCanManageAsync(rp.ProjectId, rp.OwnerId, ct);
 
         if (rp.ArtifactSource != ReleaseArtifactSource.GithubRelease)
         {
-            throw Validation("ArtifactSource", "This release pipeline releases builds from a build pipeline, not GitHub releases.");
+            throw Validation("ArtifactSource", "This deployment pipeline deploys builds from a build pipeline, not GitHub releases.");
         }
         // The repository row can go while the pipeline still draws from Releases:
         // removing a repository from the solution nulls it. Saying the pipeline is
@@ -498,12 +498,12 @@ public sealed class GitHubReleaseService
         if (rp.GithubReleaseRepositoryId is null)
         {
             throw Validation("GithubReleaseRepositoryId",
-                "This release pipeline no longer names a repository; pick one on the release pipeline.");
+                "This deployment pipeline no longer names a repository; pick one on the deployment pipeline.");
         }
         if (rp.RepositoryProvider != RepositoryProvider.GitHub
             || !TryParseRepository(rp.RepositoryUrl, out var owner, out var name))
         {
-            throw Validation("GithubReleaseRepositoryId", "The repository this release pipeline draws from is not a GitHub repository.");
+            throw Validation("GithubReleaseRepositoryId", "The repository this deployment pipeline draws from is not a GitHub repository.");
         }
 
         var connection = await _connection.GetStatusAsync(ct);

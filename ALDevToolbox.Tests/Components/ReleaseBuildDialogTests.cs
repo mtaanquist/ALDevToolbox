@@ -123,7 +123,7 @@ public sealed class ReleaseBuildDialogTests : IDisposable
     {
         var cut = OpenedDialog("Production");
 
-        cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS A/S — Production");
+        cut.Find("#rb-title").TextContent.Should().Be("Deploy to CRONUS A/S — Production");
 
         var ack = cut.Find(".check--ack").TextContent;
         ack.Should().Contain("CRONUS A/S");
@@ -174,14 +174,14 @@ public sealed class ReleaseBuildDialogTests : IDisposable
             .And.Contain($"{opens:HH:mm}, in the solution's time zone");
         cut.Find(".confirm-dialog__body p b:last-of-type").TextContent.Should().Be("right away",
             "Business Central is told to install on arrival; the window only decided when we send");
-        cut.Find(".confirm-dialog__actions .btn--primary").TextContent.Should().Contain("Schedule release");
+        cut.Find(".confirm-dialog__actions .btn--primary").TextContent.Should().Contain("Schedule deployment");
 
         // "Now" is the explicit way out of the window.
         cut.WaitForAssertion(() => cut.Find(".rb-when-row .btn").Click());
         cut.WaitForAssertion(() =>
         {
             cut.Find(".rb-when-row + .field__hint").TextContent.Should().NotContain("Scheduled for the next delivery window");
-            cut.Find(".confirm-dialog__actions .btn--primary").TextContent.Should().Contain("Release now");
+            cut.Find(".confirm-dialog__actions .btn--primary").TextContent.Should().Contain("Deploy now");
             cut.Markup.Should().Contain("delivery window (" + $"{opens:HH:mm}" + "-");
             cut.Markup.Should().Contain("isn't open now");
         });
@@ -196,7 +196,7 @@ public sealed class ReleaseBuildDialogTests : IDisposable
     {
         var cut = OpenedDialog("UAT", envType: "Sandbox");
 
-        cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS A/S — UAT");
+        cut.Find("#rb-title").TextContent.Should().Be("Deploy to CRONUS A/S — UAT");
         cut.FindAll(".check--ack").Should().BeEmpty();
     }
 
@@ -256,8 +256,8 @@ public sealed class ReleaseBuildDialogTests : IDisposable
             repositoryName: "cronus-customer"));
 
         cut.FindAll("#rb-release").Should().BeEmpty();
-        cut.Markup.Should().Contain("No release on cronus-customer has an .app file attached yet.");
-        cut.Markup.Should().Contain("Publish a release with the compiled apps attached");
+        cut.Markup.Should().Contain("No GitHub release on cronus-customer has an .app file attached yet.");
+        cut.Markup.Should().Contain("Publish a GitHub release with the compiled apps attached");
         cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
     }
 
@@ -282,17 +282,17 @@ public sealed class ReleaseBuildDialogTests : IDisposable
     {
         var cut = OpenedReleaseAgain("Test", "Sandbox", forceSync: false);
 
-        cut.Find("#ra-title").TextContent.Should().Be("Release build #118 again?");
+        cut.Find("#ra-title").TextContent.Should().Be("Deploy build #118 again?");
         cut.Find(".ra-lead").TextContent.Should().Be(
             "This installs build #118 from build pipeline \"Test\" into the Sandbox environment \"Test\" for CRONUS A/S, right away. "
             + "CRONUS Base is already on this version and is left alone.");
         cut.Find(".ra-facts").TextContent.Should().Contain("CRONUS Base, CRONUS Core, CRONUS Reports").And.Contain("Right away").And.Contain("Test Sandbox");
         cut.Find(".ra-check input").HasAttribute("checked").Should().BeFalse("Force sync is off unless asked for");
-        cut.Find(".ra-check").TextContent.Should().Contain("The pipeline stays on Add. The next release goes back to Add.");
+        cut.Find(".ra-check").TextContent.Should().Contain("The pipeline stays on Add. The next deployment goes back to Add.");
         cut.FindAll(".check--ack").Should().BeEmpty();
         cut.FindAll(".confirm-dialog--danger").Should().BeEmpty();
         var release = cut.Find(".confirm-dialog__actions .btn--primary");
-        release.TextContent.Trim().Should().Be("Release");
+        release.TextContent.Trim().Should().Be("Deploy");
         release.HasAttribute("disabled").Should().BeFalse();
     }
 
@@ -303,7 +303,7 @@ public sealed class ReleaseBuildDialogTests : IDisposable
 
         cut.Find(".ra-check input").HasAttribute("checked").Should().BeTrue("the failure's Force sync button pre-ticks it");
         cut.Find(".check--ack").TextContent.Should().Contain("I understand Force sync can drop columns and permanently lose data in this environment.");
-        cut.Find(".field-warn").TextContent.Should().Contain("Tick the acknowledgement to release.");
+        cut.Find(".field-warn").TextContent.Should().Contain("Tick the acknowledgement to deploy.");
         cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
 
         cut.WaitForAssertion(() => cut.Find(".check--ack input").Change(true));
@@ -325,12 +325,12 @@ public sealed class ReleaseBuildDialogTests : IDisposable
         var acks = cut.FindAll(".check--ack");
         acks.Should().HaveCount(2);
         acks[1].TextContent.Should().Contain("CRONUS A/S").And.Contain("live").And.Contain("Production");
-        cut.Find(".field-warn").TextContent.Should().Contain("Tick both acknowledgements to release.");
+        cut.Find(".field-warn").TextContent.Should().Contain("Tick both acknowledgements to deploy.");
 
         cut.WaitForAssertion(() => cut.FindAll(".check--ack input")[0].Change(true));
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".field-warn").TextContent.Should().Contain("Tick the acknowledgement to release.");
+            cut.Find(".field-warn").TextContent.Should().Contain("Tick the acknowledgement to deploy.");
             cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
         });
         cut.WaitForAssertion(() => cut.FindAll(".check--ack input")[1].Change(true));

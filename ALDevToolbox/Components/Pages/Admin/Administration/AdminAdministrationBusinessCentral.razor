@@ -86,7 +86,7 @@
 
                 <SettingRow Name="Secret expires">
                     <HintContent>
-                        Entra shows this when you create the secret (it lasts at most two years). Once it has passed, solutions stop connecting and releases to customers are refused.
+                        Entra shows this when you create the secret (it lasts at most two years). Once it has passed, solutions stop connecting and deployments to customers are refused.
                     </HintContent>
                     <ChildContent>
                         <input id="org-bc-expiry" type="date" class="input" style="max-width:220px" @bind="_expires" disabled="@_saving"
@@ -259,7 +259,7 @@
             "Remove your organisation's app registration?",
             (_view.SolutionsUsingIt == 0
                 ? "No solution uses it yet."
-                : StopsConnecting(_view.SolutionsUsingIt) + " to Business Central until a new one is saved, and releases to those customers are refused.")
+                : StopsConnecting(_view.SolutionsUsingIt) + " to Business Central until a new one is saved, and deployments to those customers are refused.")
             + " The stored secret is deleted.",
             "Remove it", "btn--danger");
         if (!confirmed) return;

@@ -98,9 +98,9 @@ public sealed class ArtifactService
         // one query rather than one per row. "Reached" is the two terminal successes:
         // deployed, and handed off - Business Central accepted the upload for a later
         // window, which is as far as a scheduled delivery is ever watched. Production is
-        // the release pipeline's environment's type, compared the way
+        // the deployment pipeline's environment's type, compared the way
         // BcEnvironmentTypes.IsProduction does, which EF cannot translate. A delivery
-        // whose release pipeline was later removed still happened, so it still counts.
+        // whose deployment pipeline was later removed still happened, so it still counts.
         // See .design/solution-customer-info.md.
         var shipped = (await _db.OeProjectDeliveries.AsNoTracking()
                 .Where(d => projectIds.Contains(d.ProjectId)
@@ -664,10 +664,16 @@ public sealed record ProjectArtifactsRow(
 /// One delivery to a production environment, for a directory cell. <see cref="Status"/> is
 /// <c>deployed</c> (installed, and seen to be) or <c>handed_off</c> (Business Central
 /// accepted it and installs it in a later update window, unobserved by us).
-/// <see cref="ReleasePipelineRemoved"/> is true when the release pipeline it ran through has
-/// since been deleted, so there is no page to link to.
+/// <see cref="ReleasePipelineRemoved"/> is true when the deployment pipeline it ran through has
+/// since been deleted, so there is no page to link to. <c>list_solutions</c> hands this to
+/// agents, so the pipeline fields carry the product's word on the wire.
 /// </summary>
-public sealed record DeliverySummary(DateTime FinishedAt, int BuildId, int ReleasePipelineId, string Status, bool ReleasePipelineRemoved = false);
+public sealed record DeliverySummary(
+    DateTime FinishedAt,
+    int BuildId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("deploymentPipelineId")] int ReleasePipelineId,
+    string Status,
+    [property: System.Text.Json.Serialization.JsonPropertyName("deploymentPipelineRemoved")] bool ReleasePipelineRemoved = false);
 
 /// <summary>A compact summary of one build for a directory chip.</summary>
 public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, string? Branch, string? CommitShort, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);

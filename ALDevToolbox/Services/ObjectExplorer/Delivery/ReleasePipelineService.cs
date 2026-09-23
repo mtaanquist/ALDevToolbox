@@ -16,7 +16,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 /// pipelines (build-once-deploy-many). Management rights come from the parent
 /// project's owner via <see cref="ProjectAccess"/>. Org-scoped via the EF query
 /// filter; mutations run inside an authenticated request. Validation throws
-/// <see cref="PlanValidationException"/> with field-keyed errors. Releasing a build
+/// <see cref="PlanValidationException"/> with field-keyed errors. Deploying a build
 /// is <see cref="DeliveryService"/>'s job. See <c>.design/saas-delivery.md</c>.
 /// </summary>
 public sealed class ReleasePipelineService
@@ -40,7 +40,7 @@ public sealed class ReleasePipelineService
     /// <summary>
     /// True when the current user may manage <paramref name="releasePipelineId"/> — i.e.
     /// they may manage its parent project (owner or org Admin / SiteAdmin). False when
-    /// the release pipeline no longer exists.
+    /// the deployment pipeline no longer exists.
     /// </summary>
     public async Task<bool> CanManageAsync(int releasePipelineId, CancellationToken ct = default)
     {
@@ -52,7 +52,7 @@ public sealed class ReleasePipelineService
     }
 
     /// <summary>
-    /// Active release pipelines for the current org, optionally scoped to one project,
+    /// Active deployment pipelines for the current org, optionally scoped to one project,
     /// each with its target environment and source build-pipeline name resolved for
     /// display. Ordered by name.
     /// </summary>
@@ -66,7 +66,7 @@ public sealed class ReleasePipelineService
         }
         else
         {
-            // A release pipeline inherits its project's visibility.
+            // A deployment pipeline inherits its project's visibility.
             var visible = ProjectAccess.VisibleProjectPredicate(await _access.GetSnapshotAsync(ct));
             query = query.Where(r => _db.OeProjects.Where(visible).Any(v => v.Id == r.ProjectId));
         }
@@ -96,7 +96,7 @@ public sealed class ReleasePipelineService
 
     /// <summary>
     /// <see cref="ListReleasePipelinesAsync"/> for the whole org, with each row's
-    /// deliveries summed up for the Releases list: the newest finished release, the
+    /// deliveries summed up for the Deployment pipelines list: the newest finished deployment, the
     /// one running now (with how far through its apps it is, and how long the last
     /// successful one here took), the next one waiting for its time, and Microsoft's
     /// next update for the target environment. A fixed handful of queries for the
@@ -112,11 +112,11 @@ public sealed class ReleasePipelineService
         var deliveries = _db.OeProjectDeliveries.AsNoTracking()
             .Where(d => pipelineIds.Contains(d.ReleasePipelineId));
 
-        // The newest release that has finished, one way or another. Ordered by when it
-        // finished rather than by id: a release scheduled for tonight is created before
-        // one released right now, and finishes after it.
-        // A dismissed prepared release (#934) is left out on purpose: it never was a
-        // release, and would read as the last one every time a newer build came along.
+        // The newest deployment that has finished, one way or another. Ordered by when it
+        // finished rather than by id: a deployment scheduled for tonight is created before
+        // one deployed right now, and finishes after it.
+        // A dismissed prepared deployment (#934) is left out on purpose: it never was a
+        // deployment, and would read as the last one every time a newer build came along.
         var latest = await deliveries
             .Where(d => d.Status == ProjectDeliveryStatus.Deployed
                         || d.Status == ProjectDeliveryStatus.Failed
@@ -159,8 +159,8 @@ public sealed class ReleasePipelineService
             })
             .ToListAsync(ct);
 
-        // How long the last successful release took, for the live band's "the last
-        // release here took 6 minutes". Only asked for pipelines that are shipping.
+        // How long the last successful deployment took, for the live band's "the last
+        // deployment here took 6 minutes". Only asked for pipelines that are shipping.
         var livePipelineIds = live.Select(l => l.ReleasePipelineId).Distinct().ToList();
         var previous = new Dictionary<int, TimeSpan>();
         if (livePipelineIds.Count > 0)
@@ -178,7 +178,7 @@ public sealed class ReleasePipelineService
             foreach (var t in took) previous[t.ReleasePipelineId] = t.FinishedAt!.Value - t.StartedAt!.Value;
         }
 
-        // The next release waiting for its time.
+        // The next deployment waiting for its time.
         var next = await deliveries
             .Where(d => d.Status == ProjectDeliveryStatus.Scheduled)
             .GroupBy(d => d.ReleasePipelineId)
@@ -196,7 +196,7 @@ public sealed class ReleasePipelineService
                 .First())
             .ToListAsync(ct);
 
-        // The release waiting for approval (#934). A newer build replaces an older one,
+        // The deployment waiting for approval (#934). A newer build replaces an older one,
         // so there is at most one per pipeline; the newest wins if two ever overlap.
         var proposed = await deliveries
             .Where(d => d.Status == ProjectDeliveryStatus.Proposed)
@@ -207,7 +207,7 @@ public sealed class ReleasePipelineService
                 .First())
             .ToListAsync(ct);
 
-        // Microsoft's next update for each target, as last mirrored: a release handed
+        // Microsoft's next update for each target, as last mirrored: a deployment handed
         // to Business Central for "the next update" installs then.
         var environmentIds = rows.Select(r => r.ProjectEnvironmentId).Distinct().ToList();
         var updates = await _db.OeProjectEnvironments.AsNoTracking()
@@ -243,9 +243,9 @@ public sealed class ReleasePipelineService
     }
 
     /// <summary>
-    /// The releases prepared from a new build and waiting for someone to approve them
-    /// (#934), across one solution's active release pipelines, by pipeline name.
-    /// For the solution page's "1 release waiting for approval". Gated on the solution's
+    /// The deployments prepared from a new build and waiting for someone to approve them
+    /// (#934), across one solution's active deployment pipelines, by pipeline name.
+    /// For the solution page's "1 deployment waiting for approval". Gated on the solution's
     /// visibility like the rest of its reads.
     /// </summary>
     public async Task<List<ReleaseWaitingForApproval>> ListWaitingForApprovalAsync(int projectId, CancellationToken ct = default)
@@ -260,7 +260,7 @@ public sealed class ReleasePipelineService
             .ToListAsync(ct);
     }
 
-    /// <summary>A single active release pipeline, or null when not found in this org.</summary>
+    /// <summary>A single active deployment pipeline, or null when not found in this org.</summary>
     public async Task<OeReleasePipeline?> GetReleasePipelineAsync(int id, CancellationToken ct = default)
     {
         await EnsureCanViewReleasePipelineAsync(id, ct);
@@ -273,7 +273,7 @@ public sealed class ReleasePipelineService
             .FirstOrDefaultAsync(ct);
     }
 
-    /// <summary>Creates a release pipeline under a project. Returns the new id.</summary>
+    /// <summary>Creates a deployment pipeline under a project. Returns the new id.</summary>
     public async Task<int> CreateReleasePipelineAsync(ReleasePipelineInput input, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
@@ -299,20 +299,20 @@ public sealed class ReleasePipelineService
         _db.OeReleasePipelines.Add(pipeline);
         await SaveTranslatingNameClashAsync(ct);
 
-        _logger.LogInformation("Created release pipeline {ReleasePipelineId} ({Name}) for project {ProjectId} → environment {EnvironmentId}.",
+        _logger.LogInformation("Created deployment pipeline {ReleasePipelineId} ({Name}) for project {ProjectId} → environment {EnvironmentId}.",
             pipeline.Id, v.Name, input.ProjectId, input.ProjectEnvironmentId);
         return pipeline.Id;
     }
 
-    /// <summary>Updates a release pipeline's name, source, target, and modes.</summary>
+    /// <summary>Updates a deployment pipeline's name, source, target, and modes.</summary>
     public async Task UpdateReleasePipelineAsync(int id, ReleasePipelineInput input, CancellationToken ct = default)
     {
         RequireOrganizationId();
         var pipeline = await _db.OeReleasePipelines
             .FirstOrDefaultAsync(r => r.Id == id && r.DeletedAt == null, ct)
-            ?? throw Validation("Name", "This release pipeline no longer exists.");
+            ?? throw Validation("Name", "This deployment pipeline no longer exists.");
 
-        // A release pipeline can't move between projects; validate against its own.
+        // A deployment pipeline can't move between projects; validate against its own.
         var v = await ValidateAsync(input with { ProjectId = pipeline.ProjectId }, existingId: id, ct);
 
         pipeline.Name = v.Name;
@@ -325,16 +325,16 @@ public sealed class ReleasePipelineService
         pipeline.PrepareReleaseOnNewBuild = v.PrepareReleaseOnNewBuild;
         pipeline.UpdatedAt = DateTime.UtcNow;
         await SaveTranslatingNameClashAsync(ct);
-        _logger.LogInformation("Updated release pipeline {ReleasePipelineId} ({Name}).", pipeline.Id, v.Name);
+        _logger.LogInformation("Updated deployment pipeline {ReleasePipelineId} ({Name}).", pipeline.Id, v.Name);
     }
 
-    /// <summary>Soft-deletes a release pipeline.</summary>
+    /// <summary>Soft-deletes a deployment pipeline.</summary>
     public async Task SoftDeleteReleasePipelineAsync(int id, CancellationToken ct = default)
     {
         RequireOrganizationId();
         var pipeline = await _db.OeReleasePipelines
             .FirstOrDefaultAsync(r => r.Id == id && r.DeletedAt == null, ct)
-            ?? throw Validation("Name", "This release pipeline no longer exists.");
+            ?? throw Validation("Name", "This deployment pipeline no longer exists.");
 
         var ownerId = await _db.OeProjects.AsNoTracking()
             .Where(p => p.Id == pipeline.ProjectId)
@@ -345,7 +345,7 @@ public sealed class ReleasePipelineService
         pipeline.DeletedAt = DateTime.UtcNow;
         pipeline.UpdatedAt = pipeline.DeletedAt.Value;
         await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Soft-deleted release pipeline {ReleasePipelineId}.", id);
+        _logger.LogInformation("Soft-deleted deployment pipeline {ReleasePipelineId}.", id);
     }
 
     /// <summary>
@@ -365,7 +365,7 @@ public sealed class ReleasePipelineService
             .FirstOrDefaultAsync(ct);
         if (owner is null)
         {
-            throw Validation("Project", "Choose a project for this release pipeline.");
+            throw Validation("Project", "Choose a solution for this deployment pipeline.");
         }
         await _access.EnsureCanManageAsync(input.ProjectId, owner.CreatedByUserId, ct);
 
@@ -374,7 +374,7 @@ public sealed class ReleasePipelineService
         var name = (input.Name ?? string.Empty).Trim();
         if (name.Length == 0)
         {
-            errors["Name"] = "Give the release pipeline a name.";
+            errors["Name"] = "Give the deployment pipeline a name.";
         }
         else if (name.Length > 200)
         {
@@ -389,13 +389,13 @@ public sealed class ReleasePipelineService
                                && r.Name.ToLower() == name.ToLower(), ct);
             if (clash)
             {
-                errors["Name"] = "Another release pipeline in this project already uses this name.";
+                errors["Name"] = "Another deployment pipeline in this solution already uses this name.";
             }
         }
 
         // The artifact source: exactly one of the two, and the one named must belong
         // to this project. A pipeline that named both would leave "what does this
-        // release install" with two answers.
+        // deployment install" with two answers.
         var artifactSource = string.IsNullOrWhiteSpace(input.ArtifactSource)
             ? ReleaseArtifactSource.Build
             : input.ArtifactSource;
@@ -403,7 +403,7 @@ public sealed class ReleasePipelineService
         int? releaseRepositoryId = null;
         if (!ReleaseArtifactSource.IsValid(artifactSource))
         {
-            errors["ArtifactSource"] = "Choose where this release's apps come from.";
+            errors["ArtifactSource"] = "Choose where this pipeline's apps come from.";
         }
         else if (artifactSource == ReleaseArtifactSource.Build)
         {
@@ -414,7 +414,7 @@ public sealed class ReleasePipelineService
                                && p.ProjectId == input.ProjectId, ct);
             if (!buildPipelineOk)
             {
-                errors["BuildPipelineId"] = "Choose a build pipeline to release from.";
+                errors["BuildPipelineId"] = "Choose a build pipeline to deploy from.";
             }
             else
             {
@@ -430,7 +430,7 @@ public sealed class ReleasePipelineService
                                    && r.Provider == RepositoryProvider.GitHub, ct);
             if (!repositoryOk)
             {
-                errors["GithubReleaseRepositoryId"] = "Choose one of this solution's GitHub repositories to release from.";
+                errors["GithubReleaseRepositoryId"] = "Choose one of this solution's GitHub repositories to deploy from.";
             }
             else
             {
@@ -488,14 +488,14 @@ public sealed class ReleasePipelineService
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        // Preparing a release follows a build pipeline's builds; a pipeline that installs
+        // Preparing a deployment follows a build pipeline's builds; a pipeline that installs
         // GitHub releases has no build to follow, so the setting means nothing there.
         return new ValidatedReleasePipeline(
             name, deploymentSchedule, schemaSyncMode, artifactSource, buildPipelineId, releaseRepositoryId,
             input.PrepareReleaseOnNewBuild && artifactSource == ReleaseArtifactSource.Build);
     }
 
-    /// <summary>The normalised values a validated release-pipeline input settles on.</summary>
+    /// <summary>The normalised values a validated deployment-pipeline input settles on.</summary>
     private sealed record ValidatedReleasePipeline(
         string Name,
         string DeploymentSchedule,
@@ -506,7 +506,7 @@ public sealed class ReleasePipelineService
         bool PrepareReleaseOnNewBuild);
 
     /// <summary>
-    /// Gates a release-pipeline-keyed read on its project's visibility. One that
+    /// Gates a deployment-pipeline-keyed read on its project's visibility. One that
     /// doesn't exist passes; the read below returns nothing on its own.
     /// </summary>
     private async Task EnsureCanViewReleasePipelineAsync(int releasePipelineId, CancellationToken ct)
@@ -532,7 +532,7 @@ public sealed class ReleasePipelineService
         }
         catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
         {
-            throw Validation("Name", "Another release pipeline in this project already uses this name.");
+            throw Validation("Name", "Another deployment pipeline in this solution already uses this name.");
         }
     }
 
@@ -541,7 +541,7 @@ public sealed class ReleasePipelineService
 
     /// <summary>
     /// Throws a friendly <see cref="McpException"/> when the id isn't an active
-    /// release pipeline the caller can see, instead of silently returning an
+    /// deployment pipeline the caller can see, instead of silently returning an
     /// empty history. Two fences: the org query filter, and the owning project's
     /// visibility. A pipeline under a Private project the caller has no grant on
     /// answers "not found", the same as an id in another org. Relocated here
@@ -557,13 +557,13 @@ public sealed class ReleasePipelineService
             .AnyAsync(r => r.Id == releasePipelineId && r.DeletedAt == null, ct);
         if (!exists)
         {
-            throw new McpException($"Release pipeline {releasePipelineId} was not found. Call list_release_pipelines to see available pipelines.");
+            throw new McpException($"Deployment pipeline {releasePipelineId} was not found. Call list_deployment_pipelines to see available pipelines.");
         }
     }
 
 }
 
-/// <summary>Form-post shape for a release pipeline: project, name, source build pipeline, target environment, and modes.</summary>
+/// <summary>Form-post shape for a deployment pipeline: project, name, source build pipeline, target environment, and modes.</summary>
 public sealed record ReleasePipelineInput(
     int ProjectId,
     string Name,
@@ -580,17 +580,17 @@ public sealed record ReleasePipelineInput(
     /// <summary>The solution repository whose Releases this pipeline draws from, when the source is <c>github_release</c>.</summary>
     int? GithubReleaseRepositoryId = null,
     /// <summary>
-    /// Prepare a release, for a person to approve, whenever the build pipeline has a new
+    /// Prepare a deployment, for a person to approve, whenever the build pipeline has a new
     /// successful build (#934). Ignored for a pipeline that installs GitHub releases.
     /// </summary>
     bool PrepareReleaseOnNewBuild = false);
 
-/// <summary>List-row projection of a release pipeline with its source and target resolved for display.</summary>
+/// <summary>List-row projection of a deployment pipeline with its source and target resolved for display.</summary>
 public sealed record ReleasePipelineRow(
     int Id,
     int ProjectId,
     /// <summary>
-    /// The owning project's name. Added when the Releases browser moved onto the
+    /// The owning project's name. Added when the Deployment pipelines browser moved onto the
     /// list archetype: its table needs a Project column, and until this existed
     /// the page could only link the literal word "Project".
     /// </summary>
@@ -613,29 +613,31 @@ public sealed record ReleasePipelineRow(
     /// <summary>The environment's status as Business Central last reported it, verbatim.</summary>
     string? EnvironmentStatus = null,
     /// <summary>
-    /// True when a new successful build prepares a release through this pipeline for a
-    /// person to approve (#934). Nothing is installed until someone does.
+    /// True when a new successful build prepares a deployment through this pipeline for a
+    /// person to approve (#934). Nothing is installed until someone does. Serialised under
+    /// the product's word, because <c>list_deployment_pipelines</c> hands this row to agents.
     /// </summary>
+    [property: System.Text.Json.Serialization.JsonPropertyName("prepareDeploymentOnNewBuild")]
     bool PrepareReleaseOnNewBuild = false)
 {
     // ── The delivery summary: filled by ListReleasePipelineOverviewAsync only ──
     //
-    // Not serialised: list_release_pipelines hands this record to agents as it is,
-    // and there these would always be null, which would read as "never released".
+    // Not serialised: list_deployment_pipelines hands this record to agents as it is,
+    // and there these would always be null, which would read as "never deployed".
 
-    /// <summary>The newest release through this pipeline that has finished, or null when none has.</summary>
+    /// <summary>The newest deployment through this pipeline that has finished, or null when none has.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ReleasePipelineLastDelivery? LastDelivery { get; init; }
 
-    /// <summary>The release shipping through this pipeline right now, or null.</summary>
+    /// <summary>The deployment shipping through this pipeline right now, or null.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ReleasePipelineLiveDelivery? LiveDelivery { get; init; }
 
-    /// <summary>The next release waiting for its scheduled time, or null.</summary>
+    /// <summary>The next deployment waiting for its scheduled time, or null.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ReleasePipelineNextDelivery? NextDelivery { get; init; }
 
-    /// <summary>The release prepared from a new build and waiting for someone to approve it (#934), or null.</summary>
+    /// <summary>The deployment prepared from a new build and waiting for someone to approve it (#934), or null.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ReleasePipelineProposedDelivery? ProposedDelivery { get; init; }
 
@@ -644,18 +646,18 @@ public sealed record ReleasePipelineRow(
     public EnvironmentNextUpdate? EnvironmentNextUpdate { get; init; }
 
     /// <summary>
-    /// Why nothing can be released through this pipeline at all, in a few words, or null
+    /// Why nothing can be deployed through this pipeline at all, in a few words, or null
     /// when it can. Not a busy environment: that passes on its own. An environment that
     /// is gone, being removed, or failed does not, and a pipeline aimed at one is broken
     /// until somebody re-points it - so the list says so instead of looking healthy
-    /// until the next release is refused.
+    /// until the next deployment is refused.
     /// </summary>
     public string? EnvironmentProblem => DescribeEnvironmentProblem(EnvironmentMissing, EnvironmentStatus);
 
     /// <summary>
     /// <see cref="EnvironmentProblem"/> for a caller holding the two facts rather
-    /// than a whole row - the command palette's release-pipeline source, which has
-    /// to say what the Releases page says, in the same words.
+    /// than a whole row - the command palette's deployment-pipeline source, which has
+    /// to say what the Deployment pipelines page says, in the same words.
     /// </summary>
     public static string? DescribeEnvironmentProblem(bool environmentMissing, string? environmentStatus) =>
         environmentMissing
@@ -668,27 +670,27 @@ public sealed record ReleasePipelineRow(
             };
 }
 
-/// <summary>The newest finished release through a pipeline, as the Releases list shows it.</summary>
+/// <summary>The newest finished deployment through a pipeline, as the Deployment pipelines list shows it.</summary>
 /// <param name="At">When it finished (deployed, failed, cancelled or handed over), UTC.</param>
-/// <param name="FailedAppName">The first app that failed, when the release failed on one.</param>
-/// <param name="DeploymentSchedule">When the release told Business Central to install, snapshotted at release time.</param>
+/// <param name="FailedAppName">The first app that failed, when the deployment failed on one.</param>
+/// <param name="DeploymentSchedule">When the deployment told Business Central to install, snapshotted at deployment time.</param>
 public sealed record ReleasePipelineLastDelivery(
     int DeliveryId, string Status, DateTime At, string? FailedAppName, string DeploymentSchedule);
 
 /// <summary>
-/// A release shipping right now: what the app in hand is doing, which app it is and
+/// A deployment shipping right now: what the app in hand is doing, which app it is and
 /// how many are done. The engine sends one app at a time, so "app 2 of 3" is the
 /// first app still uploading or installing.
 /// </summary>
 /// <param name="Phase">The in-hand app's state (uploading / installing), or null before the first upload.</param>
-/// <param name="CurrentApp">1-based position of the app in hand; 0 when the release lists no apps.</param>
+/// <param name="CurrentApp">1-based position of the app in hand; 0 when the deployment lists no apps.</param>
 /// <param name="StartedAt">When the run started (or was claimed, before the first upload), UTC.</param>
-/// <param name="PreviousDuration">How long the last successful release through the same pipeline took, when there was one.</param>
+/// <param name="PreviousDuration">How long the last successful deployment through the same pipeline took, when there was one.</param>
 public sealed record ReleasePipelineLiveDelivery(
     int DeliveryId, string Status, string? Phase, int CurrentApp, int AppsDone, int AppCount,
     DateTime? StartedAt, TimeSpan? PreviousDuration)
 {
-    /// <summary>Counts the per-app states of a running release, in publish order, into the live summary.</summary>
+    /// <summary>Counts the per-app states of a running deployment, in publish order, into the live summary.</summary>
     public static ReleasePipelineLiveDelivery From(
         int deliveryId, string status, DateTime? startedAt, IReadOnlyList<string> apps, TimeSpan? previousDuration)
     {
@@ -708,18 +710,18 @@ public sealed record ReleasePipelineLiveDelivery(
     }
 }
 
-/// <summary>The next release through a pipeline waiting for its scheduled time.</summary>
+/// <summary>The next deployment through a pipeline waiting for its scheduled time.</summary>
 /// <param name="ScheduledFor">When it is due, UTC.</param>
 /// <param name="OutsideWindow">True when the person chose a time outside the environment's update window.</param>
 /// <param name="ScheduledBy">Who scheduled it, while the account still exists.</param>
 public sealed record ReleasePipelineNextDelivery(int DeliveryId, DateTime ScheduledFor, bool OutsideWindow, string? ScheduledBy);
 
-/// <summary>One release waiting for approval, as the solution page names it (#934).</summary>
+/// <summary>One deployment waiting for approval, as the solution page names it (#934).</summary>
 public sealed record ReleaseWaitingForApproval(int ReleasePipelineId, string ReleasePipelineName, int DeliveryId, int BuildId);
 
-/// <summary>A release prepared from a new build, waiting for someone to approve it (#934).</summary>
+/// <summary>A deployment prepared from a new build, waiting for someone to approve it (#934).</summary>
 /// <param name="BuildId">The build it would install.</param>
-/// <param name="PreparedAt">When the build succeeded and the release was prepared, UTC.</param>
+/// <param name="PreparedAt">When the build succeeded and the deployment was prepared, UTC.</param>
 public sealed record ReleasePipelineProposedDelivery(int DeliveryId, int BuildId, DateTime PreparedAt);
 
 /// <summary>Microsoft's next platform update for an environment, as last mirrored.</summary>

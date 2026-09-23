@@ -20,7 +20,7 @@
 .pd-env-note { margin-top: var(--space-1); font-size: var(--text-xs); }
 
 /* The delivery slot colliding with Microsoft's maintenance hours. A warning tone
-   rather than a danger one: the release is not broken, it is aimed at a time the
+   rather than a danger one: the deployment is not broken, it is aimed at a time the
    environment will refuse. Icon plus text, never colour alone. */
 .pd-env-note--warn {
     display: inline-flex;

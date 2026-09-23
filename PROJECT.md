@@ -28,7 +28,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Services/ObjectExplorer/Import/` | Getting releases and modules *in*: the upload/queue/worker chain (`ReleaseImportRequestService` holds the upload form's policy — which ingest path a submission takes, what is staged to disk, and what goes on the queue — so the endpoints only read the form and redirect on the outcome), the `.app`/DVD/artifact readers (`AppPackageReader`, `FolderZipWalker`, `DvdDownloadService`, `BcArtifactService` with `BcArtifactIndex` and `BcVersionComparer`), C/AL and translation ingest, and the release lifecycle that follows (`ReleaseManagementService`, `ObjectExplorerVacuumScheduler`). |
 | `Services/ObjectExplorer/Explore/` | Reading back what was ingested: the object/module/release queries (`ObjectExplorerService`, `ExplorerTreeService`, `ObjectSearchService`), the source viewer, the reference lookups (`ReferenceQueryService`, `ReferenceResolver`, `ReferenceSessionService`), release comparison, and `SourceVisibility`/`ObjectExplorerLinks`. |
 | `Services/ObjectExplorer/Projects/` | Solutions and their repositories: `ProjectService`, discovery (`ProjectDiscoveryService`/`Queue`/`Worker`), builds (`ProjectBuildService`, `ProjectBuildImporter`, `AlCompilerProvisioner`, `AlSymbolFeedResolver`, `AlcOutputParser`) and the build artifacts (`ArtifactService`). |
-| `Services/ObjectExplorer/Delivery/` | Pipelines and shipping their output: `PipelineService`, `ReleasePipelineService`, and the delivery chain that publishes a build to a BC environment (`DeliveryService`, `DeliveryQueue`/`Scheduler`/`Worker`). |
+| `Services/ObjectExplorer/Delivery/` | Pipelines and shipping their output: `PipelineService`, `ReleasePipelineService`, and the delivery chain that deploys a build to a BC environment (`DeliveryService`, `DeliveryQueue`/`Scheduler`/`Worker`). |
 | `Services/ObjectExplorer/Bc/`| Everything that talks to a customer's Business Central tenant: the Admin Center clients, `ProjectConnectionService`, and the Upgrades services (`UpgradeFleetService`, `UpgradeActionService`, `UpgradeActionWorker`, `EnvironmentRefreshScheduler`/`Queue`/`Worker`). The `Bc`-prefixed artifact trio lives in `Import/`, not here, and stays there (#795): the line this folder draws is *whose* Business Central you are talking to. These three fetch Microsoft's public artifact feeds to ingest a release; nothing in `Bc/` is reachable without a customer tenant's credentials. |
 | `Services/Translation/`      | Translator services: translation memory, machine-translation providers and their per-organisation settings (`MachineTranslationSettingsService`), suggestion coordination. |
 | `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
@@ -80,7 +80,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `templates-and-seeding.md` — TOML schema and the seed contract.
 - `auth-and-audit.md` — how the password gate and audit interceptor work.
 - `teams-and-visibility.md` — teams, their managers, and the per-project visibility model they grant.
-- `saas-delivery.md` — publishing a build to a Business Central SaaS environment: the BC connection, release pipelines, deliveries, and the two update windows.
+- `saas-delivery.md` — publishing a build to a Business Central SaaS environment: the BC connection, deployment pipelines (the `OeReleasePipeline` entity), deployments (`OeProjectDelivery`), and the two update windows.
 - `environment-updates.md` — the Upgrades fleet page: the team-scoped grant, the mirrored next platform update, the two date writes, and the actions-and-history table behind them.
 - `ui-design.md` — page layout, copy, components to factor out.
 - `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
@@ -101,7 +101,7 @@ subsystem, start here rather than in `domain-model.md`:
 | Teams and per-project visibility                                      | `teams-and-visibility.md`                                   |
 | Object Explorer: releases, modules, objects, symbols (`oe_*`)          | `object-explorer.md`                                        |
 | Projects, repos, pipeline builds (`oe_project_*`)                      | `object-explorer-project-builds.md`                         |
-| Deliveries and release pipelines                                       | `saas-delivery.md`                                          |
+| Deployments and deployment pipelines                                   | `saas-delivery.md`                                          |
 | BC environments, upgrade actions, the fleet page                       | `environment-updates.md`                                    |
 | Translations and the translation memory (`oe_module_translations`, memory tables) | `object-explorer.md` (the translations section)  |
 | Cookbook recipes                                                       | `cookbook.md`                                               |
@@ -194,14 +194,14 @@ The MCP server (`Services/Mcp/Tools/*Tools.cs`) is a parallel front-end on the s
 
 - **A read-only area gets a read-only class, and a test that says so.** The Deliver
   area's reads (#912) live in `DeliverTools`, apart from `DeliveryTools` where the one
-  write (`publish_build`) sits behind its own gate. `DeliverToolsTests` walks the class
+  write (`deploy_build`) sits behind its own gate. `DeliverToolsTests` walks the class
   and fails if any public method is not an `[McpServerTool(ReadOnly = true)]`, so a write
   added there by accident is a red build. Its ten tools, one line each:
   `get_solution` (hosting, version, address, connection, environments in a line),
   `list_environments` (the fleet with solution/type/status/version/storage/next-update
   filters), `get_environment` (one environment with its installed apps),
   `list_environment_history` (the Workbench history), `list_upgrades` (the Upgrades fleet,
-  behind the environment-updates grant), `list_recent_deliveries` (deliveries across
+  behind the environment-updates grant), `list_recent_deployments` (deployments across
   solutions), `list_customer_contacts` (contacts with phone and email, each call logged),
   `get_customer_access` (getting-in and hosting notes, integrations),
   `list_customer_knowledge` (who knows a customer, or which customers a colleague knows)

@@ -1,6 +1,6 @@
 @*
     Upload one extension package to a Business Central environment: an app another
-    company built and sent over, which no pipeline here can release. Shared by the
+    company built and sent over, which no pipeline here can deploy. Shared by the
     environment page and the Environments list's row menu.
 
     The dialog only collects the answer - which file, and when. The caller sends it
@@ -79,7 +79,7 @@
                 ? $"Upload an app to {environmentName}, a production environment?"
                 : $"Upload an app to {environmentName}?",
             $"For an app another company built and sent you as a .app file. It installs into {projectName}'s "
-            + "Business Central as it is; nothing here checks what it does. Apps you build yourself go through Releases instead.",
+            + "Business Central as it is; nothing here checks what it does. Apps you build yourself go through Deployments instead.",
             "Upload and install", "btn--danger");
         var bytes = _bytes;
         _bytes = null;

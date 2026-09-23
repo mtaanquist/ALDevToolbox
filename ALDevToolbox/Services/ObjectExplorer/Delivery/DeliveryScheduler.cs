@@ -7,7 +7,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 
 /// <summary>
 /// Hosted service that enqueues <em>scheduled</em> deliveries when their time comes —
-/// the time-based half of SaaS delivery (the immediate "Release now" path enqueues
+/// the time-based half of SaaS delivery (the immediate "Deploy now" path enqueues
 /// straight from the request). Mirrors <see cref="ReleaseAutoImportScheduler"/>: poll
 /// on a short interval, enumerate active orgs, and do the per-org work inside that org's
 /// <see cref="AmbientOrganizationScope"/> so the EF query filter behaves exactly as in a

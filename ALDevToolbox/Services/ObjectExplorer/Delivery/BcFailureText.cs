@@ -211,7 +211,7 @@ public static class BcFailureText
     };
 
     /// <summary>
-    /// The one line for a failed release, naming the app: "Business Central refused a
+    /// The one line for a failed deployment, naming the app: "Business Central refused a
     /// schema change while installing CRONUS Core 28.2.17.126." Stored as the delivery's
     /// failure message and opens "What happened" on the page.
     /// </summary>
@@ -229,7 +229,7 @@ public static class BcFailureText
     public static string Sentence(string? code) => code switch
     {
         ExtensionChangeFailed => "Business Central refused a schema change (a renamed or removed table or field). "
-            + "Release again with Force sync to push it through, or keep the old names.",
+            + "Deploy again with Force sync to push it through, or keep the old names.",
         { Length: > 0 } => $"Business Central refused the install ({code}).",
         _ => "Business Central reported the install as failed.",
     };
@@ -252,16 +252,16 @@ public static class BcFailureText
 
     /// <summary>
     /// The suggested next step for a failure Business Central reported, in the words of
-    /// the delivery row sheet. <paramref name="forceSync"/> says the release already used
+    /// the delivery row sheet. <paramref name="forceSync"/> says the deployment already used
     /// Force sync, so suggesting it again would be no help.
     /// </summary>
     public static string NextStep(string? code, string environmentName, bool forceSync) => code switch
     {
         ExtensionChangeFailed when forceSync =>
-            "This release already used Force sync, and Business Central still refused the change. "
+            "This deployment already used Force sync, and Business Central still refused the change. "
             + "Its message above says what it refused; change the app and build again.",
         ExtensionChangeFailed =>
-            "If the new version removes tables or fields the customer no longer needs, release this build again with Force sync. "
+            "If the new version removes tables or fields the customer no longer needs, deploy this build again with Force sync. "
             + $"That deletes those columns and their data in \"{environmentName}\". Otherwise keep them in the app, mark them obsolete, and build again.",
         _ => "Business Central's message above says what it refused. If it does not say what to change, copy the response below for support.",
     };

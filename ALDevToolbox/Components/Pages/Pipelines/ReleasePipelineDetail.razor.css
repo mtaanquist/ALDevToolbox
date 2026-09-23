@@ -1,5 +1,5 @@
 /*
-    Scoped chrome for one release pipeline (.design/handoff/ReleasePipelineBody.dc.html,
+    Scoped chrome for one deployment pipeline (.design/handoff/ReleasePipelineBody.dc.html,
     issue #929). The sheet draws its layout with inline styles over the design system's
     classes; they are named here instead, one rule per drawn style, with the tokens the
     sheet used. No colour is new: every tone below is the sheet's own state map
@@ -73,7 +73,7 @@
 .rp-env-type { color: var(--ink-3); }
 .rp-env-type--prod { color: var(--danger-text); font-weight: var(--fw-semibold); }
 
-/* ── Releases list ────────────────────────────────────────────────────────── */
+/* ── Deployments list ────────────────────────────────────────────────────────── */
 .rp-releases { overflow: hidden; }
 
 /* One grid for the header and every collapsed row, so the columns line up. */
@@ -109,7 +109,7 @@
 .rp-rel__cell { font-size: var(--text-sm); color: var(--ink-2); }
 .rp-rel__took { text-align: right; }
 .rp-rel__acts { display: flex; justify-content: flex-end; gap: var(--space-2); }
-/* A release that used Force sync once, while the pipeline stays on Add (#931). */
+/* A deployment that used Force sync once, while the pipeline stays on Add (#931). */
 .rp-rel__force { color: var(--warning-text); }
 
 .rp-rel__detail {
@@ -137,7 +137,7 @@
 }
 .rp-next__label { font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2); }
 .rp-next__text { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
-/* "Release again with Force sync" under the suggestion that names it (#931). */
+/* "Deploy again with Force sync" under the suggestion that names it (#931). */
 .rp-next__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 
 /* "What happened" (section 2): our sentence, Business Central's message in its own
@@ -168,7 +168,7 @@
 }
 .rp-next__label { font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2); }
 .rp-next__text { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
-/* "Release again with Force sync" under the suggestion that names it (#931). */
+/* "Deploy again with Force sync" under the suggestion that names it (#931). */
 .rp-next__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 
 /* The raw response, closed until support needs it. */
@@ -309,7 +309,7 @@
     .rp-log__t { text-indent: 0; }
 }
 
-/* ── Waiting for approval (#934): the band above the newest release ───────── */
+/* ── Waiting for approval (#934): the band above the newest deployment ───────── */
 .rp-approval {
     display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-3);
     padding: var(--space-3) var(--space-4); background: var(--warning-bg);

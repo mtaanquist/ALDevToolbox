@@ -47,7 +47,7 @@ public sealed class ReleasePipelinePaletteSourceTests : PaletteSourceVisibilityT
         row.Kind.Should().Be("release-pipeline");
         row.Title.Should().Be("Ship to production");
         row.Subtitle.Should().Be($"{VisibleName} - Production");
-        row.Href.Should().MatchRegex(@"^/releases/\d+$");
+        row.Href.Should().MatchRegex(@"^/pipelines/deployments/\d+$");
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class ReleasePipelinePaletteSourceTests : PaletteSourceVisibilityT
 
     [Fact]
     public void The_link_points_at_a_page_that_exists() =>
-        RecipePaletteSourceTests.RouteTemplates().Should().Contain("/releases/{Id:int}",
+        RecipePaletteSourceTests.RouteTemplates().Should().Contain("/pipelines/deployments/{Id:int}",
             "the palette's link is a dead end unless a page claims that route");
 
     [Fact]

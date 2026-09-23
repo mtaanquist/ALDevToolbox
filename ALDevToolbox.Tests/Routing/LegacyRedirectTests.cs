@@ -44,7 +44,7 @@ public sealed class LegacyRedirectTests : IDisposable
     [Theory]
     // Redirect-only pages.
     [InlineData("/compare", "/diff")]
-    [InlineData("/artifacts", "/pipelines")]
+    [InlineData("/artifacts", "/pipelines/builds")]
     [InlineData("/artifacts/7", "/solutions/7")]
     [InlineData("/admin/configuration", "/admin/administration/identity")]
     [InlineData("/admin/configuration/identity", "/admin/administration/identity")]
@@ -76,6 +76,10 @@ public sealed class LegacyRedirectTests : IDisposable
     [InlineData("/admin/snippets/12", "/admin/cookbook/12")]
     [InlineData("/admin/snippets/suggestions", "/admin/cookbook/suggestions")]
     [InlineData("/api/snippets/12/download", "/api/cookbook/12/download")]
+    [InlineData("/releases", "/pipelines/deployments")]
+    [InlineData("/releases/12", "/pipelines/deployments/12")]
+    [InlineData("/pipelines", "/pipelines/builds")]
+    [InlineData("/pipelines?q=cronus", "/pipelines/builds?q=cronus")]
     public async Task A_legacy_route_still_redirects_to_its_current_route(string oldRoute, string newRoute)
     {
         await SeedAdminAsync();

@@ -1,4 +1,4 @@
-@page "/pipelines"
+@page "/pipelines/builds"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
@@ -27,15 +27,15 @@
     See .design/design-migration.md.
 *@
 
-<PageTitle>Pipelines · AL Workbench</PageTitle>
+<PageTitle>Build pipelines · AL Workbench</PageTitle>
 
-<ListPage Title="Pipelines" SearchForm="true"
+<ListPage Title="Build pipelines" SearchForm="true"
           IsLoading="@(_rows is null)" IsEmpty="@(_totalCount == 0)" HasNoMatches="@(Visible.Count == 0)"
-          Trail='@([new("Home", "/"), new("Pipelines")])'>
+          Trail='@([new("Home", "/"), new("Build pipelines")])'>
     <SubtitleContent>
-        A pipeline compiles a chosen set of a solution's extensions into downloadable
-        <span class="u-nowrap"><code>.app</code> files</span> — make one per environment
-        (Production, Test, ...).
+        A build pipeline compiles a chosen set of a solution's extensions into downloadable
+        <span class="u-nowrap"><code>.app</code> files</span>. To install them into one of the
+        customer's environments, add a deployment pipeline under Deployments.
     </SubtitleContent>
     @* ListPage shows this only while there are pipelines. When there are none, the
        empty-state card carries the single, guided call to action - so there is no
@@ -44,7 +44,7 @@
     <Actions>
         <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
             <Icon Name="plus" Width="16" Height="16" />
-            <span>New pipeline</span>
+            <span>New build pipeline</span>
         </button>
     </Actions>
     @* A plain GET form, so the search survives a reload and stays a shareable URL.
@@ -79,7 +79,7 @@
         </div>
         @if (!string.IsNullOrEmpty(_search))
         {
-            <a class="btn btn--sm" href="/pipelines">Clear search</a>
+            <a class="btn btn--sm" href="/pipelines/builds">Clear search</a>
         }
     </Trailing>
     <Loading>
@@ -97,7 +97,7 @@
         <div class="card">
             @if (_projectOptions.Count > 0)
             {
-                <EmptyState Icon="rocket" Title="No pipelines yet">
+                <EmptyState Icon="rocket" Title="No build pipelines yet">
                     <Text>
                         A pipeline picks which of a solution's extensions to compile. Create one to
                         start producing downloadable <code>.app</code> files.
@@ -105,14 +105,14 @@
                     <Action>
                         <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
                             <Icon Name="plus" Width="15" Height="15" />
-                            <span>New pipeline</span>
+                            <span>New build pipeline</span>
                         </button>
                     </Action>
                 </EmptyState>
             }
             else
             {
-                <EmptyState Icon="rocket" Title="No pipelines yet">
+                <EmptyState Icon="rocket" Title="No build pipelines yet">
                     <Text>
                         A pipeline compiles the code in a solution (a customer), so the first step is
                         creating that solution and pointing it at its repositories. Once a solution
@@ -139,7 +139,7 @@
                     }
                     else
                     {
-                        <a class="btn" href="/pipelines">Clear filters</a>
+                        <a class="btn" href="/pipelines/builds">Clear filters</a>
                     }
                 </Action>
             </EmptyState>

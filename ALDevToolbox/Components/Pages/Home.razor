@@ -116,8 +116,8 @@
                 Tile(ToolKey.ObjectExplorer, "Object Explorer", "Browse BC releases, modules, objects, and source files.", "search", "/object-explorer", ObjectExplorerMeta)),
             Group("Deliver",
                 Tile(ToolKey.Projects, "Solutions", "Point a customer's Git repositories at AL Workbench and build them into .app files.", "folder-git-2", "/solutions", ProjectsMeta),
-                Tile(ToolKey.Pipelines, "Pipelines", "Compile some or all of a solution's extensions, and watch the build as it happens.", "rocket", "/pipelines"),
-                Tile(ToolKey.Releases, "Releases", "Publish a build to a customer's Business Central environment.", "send", "/releases")),
+                Tile(ToolKey.Pipelines, "Build pipelines", "Compile some or all of a solution's extensions, and watch the build as it happens.", "rocket", "/pipelines/builds"),
+                Tile(ToolKey.Releases, "Deployment pipelines", "Deploy a build to a customer's Business Central environment.", "send", "/pipelines/deployments")),
             Group("Work with text",
                 Tile(ToolKey.Translator, "Translator", "Edit an XLIFF file's translation units, filter by state, and fill the gaps.", "languages", "/translator"),
                 // Diff works without an account - link it directly, no lock.

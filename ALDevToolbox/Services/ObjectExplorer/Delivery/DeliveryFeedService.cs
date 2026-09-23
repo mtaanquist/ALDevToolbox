@@ -8,10 +8,10 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 /// Deliveries across every solution the caller can see, newest first - the question
 /// "what failed to deploy this week?" that the per-pipeline history in
 /// <see cref="DeliveryService.ListDeliveryHistoryAsync"/> cannot answer without being
-/// asked once per release pipeline. Read-only, and reached through
+/// asked once per deployment pipeline. Read-only, and reached through
 /// <see cref="ProjectAccess.VisibleProjectPredicate"/> like the fleet reads, so a Private
 /// solution the caller is not on contributes nothing. Its only caller today is the
-/// <c>list_recent_deliveries</c> MCP tool. See <c>.design/saas-delivery.md</c>, "MCP parity".
+/// <c>list_recent_deployments</c> MCP tool. See <c>.design/saas-delivery.md</c>, "MCP parity".
 /// </summary>
 public sealed class DeliveryFeedService
 {

@@ -123,11 +123,11 @@ public static class BcEnvironmentStatus
         return Classify(status) switch
         {
             BcEnvironmentReadiness.Busy =>
-                $"Business Central reports {name} as {shown} right now, so it can't take an install. Wait for it to finish, then release again.",
+                $"Business Central reports {name} as {shown} right now, so it can't take an install. Wait for it to finish, then deploy again.",
             BcEnvironmentReadiness.Deleting =>
                 $"Business Central reports {name} as {shown} — it's being removed. Pick another environment.",
             BcEnvironmentReadiness.Failed =>
-                $"Business Central reports {name} as {shown} — the environment is in a failed state in Business Central. Sort it out in the admin center, then release again.",
+                $"Business Central reports {name} as {shown} — the environment is in a failed state in Business Central. Sort it out in the admin center, then deploy again.",
             _ => null,
         };
     }

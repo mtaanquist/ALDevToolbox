@@ -1,5 +1,5 @@
 /*
-    Scoped chrome for the "Release again" dialog (DeliveryRowPanel.dc.html, section 4).
+    Scoped chrome for the "Deploy again" dialog (DeliveryRowPanel.dc.html, section 4).
     The dialog, the checks and the facts' label/value pairs are the design system's;
     what is left is the sunken facts box, the environment type beside its name, and a
     check whose label carries a title and a caption.

@@ -80,12 +80,16 @@ public static class ToolCatalog
         new ToolDescriptor(ToolKey.Projects, "Solutions",
             "Set up customer solutions and point them at their repositories.",
             new[] { "/solutions", "/projects", "/environments" }),
-        new ToolDescriptor(ToolKey.Pipelines, "Pipelines",
+        // Deployment pipelines live under /pipelines/deployments, inside the build
+        // pipelines' own prefix. ToolAccessGate takes the longest prefix that matches,
+        // so they stay behind their own toggle. The keys keep their old names for the
+        // same reason as ToolKey.Projects above; "/releases" stays for its redirect.
+        new ToolDescriptor(ToolKey.Pipelines, "Build pipelines",
             "Build a solution's extensions and track their build pipelines.",
             new[] { "/pipelines", "/artifacts" }),
-        new ToolDescriptor(ToolKey.Releases, "Releases",
-            "Publish builds and deliver them to Business Central environments.",
-            new[] { "/releases" }),
+        new ToolDescriptor(ToolKey.Releases, "Deployment pipelines",
+            "Deploy builds to Business Central environments.",
+            new[] { "/pipelines/deployments", "/releases" }),
         new ToolDescriptor(ToolKey.Translator, "Translator",
             "Translate AL apps and manage XLIFF files.",
             new[] { "/translator" }),

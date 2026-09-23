@@ -39,7 +39,7 @@ public static class RelativeTime
 
     /// <summary>
     /// The same phrasing looking forward ("in 3 hours"), for something scheduled.
-    /// A time already past reads "any moment now": a scheduled release that is due
+    /// A time already past reads "any moment now": a scheduled deployment that is due
     /// is about to be picked up, not late.
     /// </summary>
     public static string Until(DateTime utc)

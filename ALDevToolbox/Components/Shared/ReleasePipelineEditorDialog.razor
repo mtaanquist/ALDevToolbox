@@ -12,12 +12,12 @@
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
-    Create / edit a release pipeline: name it, pick the source build pipeline whose
+    Create / edit a deployment pipeline: name it, pick the source build pipeline whose
     builds it publishes, the target Business Central environment, and when installs
     run / how they reconcile schema. Force sync is gated behind an explicit
     acknowledgement because it can drop columns. Opened imperatively via
-    OpenForCreateAsync / OpenForEditAsync; raises OnSaved with the release pipeline id.
-    Releasing a build (the "Release" action) lives on the pipeline's own page — this
+    OpenForCreateAsync / OpenForEditAsync; raises OnSaved with the deployment pipeline id.
+    Deploying a build (the "Deploy" action) lives on the pipeline's own page — this
     dialog only configures the reusable target. See .design/saas-delivery.md.
 
     Named user: a BC consultant who has connected a customer's environment and wants a
@@ -34,7 +34,7 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="send" Width="17" Height="17" />
                 </span>
-                <h2 id="rpe-title" class="confirm-dialog__title">@(_editing ? "Edit release pipeline" : "New release pipeline")</h2>
+                <h2 id="rpe-title" class="confirm-dialog__title">@(_editing ? "Edit deployment pipeline" : "New deployment pipeline")</h2>
             </div>
             <div class="confirm-dialog__body">
                 @if (_nextStep is { } nextStep)
@@ -67,7 +67,7 @@
 
                 @if (_pickProject && _projectId == 0)
                 {
-                    <p>Choose a customer solution to set up a release for.</p>
+                    <p>Choose a customer solution to set up a deployment pipeline for.</p>
                 }
                 else if (_loading)
                 {
@@ -79,7 +79,7 @@
                 else if (_buildPipelines is { Count: 0 } && _releaseRepositories is not { Count: > 0 })
                 {
                     <p>
-                        This solution has no build pipeline yet. A release publishes compiled apps, so
+                        This solution has no build pipeline yet. A deployment installs compiled apps, so
                         create a build pipeline first on the
                         <a href="@($"/solutions/{_projectId}?tab=pipelines")">solution's Pipelines tab</a>.
                     </p>
@@ -98,7 +98,7 @@
                         <label class="field__label" for="rpe-name">Name</label>
                         <input id="rpe-name" type="text" class="input" maxlength="200" @bind="_name"
                                disabled="@_saving" placeholder="e.g. CRONUS App to Production" />
-                        <small class="field__hint">Name it for what it publishes and where, so a colleague can tell your release pipelines apart.</small>
+                        <small class="field__hint">Name it for what it publishes and where, so a colleague can tell your deployment pipelines apart.</small>
                     </div>
 
                     @if (_releaseRepositories is { Count: > 0 })
@@ -118,7 +118,7 @@
                     @if (_artifactSource == ReleaseArtifactSource.GithubRelease)
                     {
                         <div class="field">
-                            <label class="field__label" for="rpe-repo">Repository to release from</label>
+                            <label class="field__label" for="rpe-repo">Repository to deploy from</label>
                             <SelectBox>
                                 <select id="rpe-repo" class="select" @bind="_releaseRepositoryId" @bind:after="SuggestName" disabled="@_saving">
                                     <option value="0">Choose a repository...</option>
@@ -134,7 +134,7 @@
                     else if (_buildPipelines is { Count: > 0 })
                     {
                         <div class="field">
-                            <label class="field__label" for="rpe-build">Build pipeline to release from</label>
+                            <label class="field__label" for="rpe-build">Build pipeline to deploy from</label>
                             <SelectBox>
                                 <select id="rpe-build" class="select" @bind="_buildPipelineId" @bind:after="SuggestName" disabled="@_saving">
                                     <option value="0">Choose a build pipeline...</option>
@@ -144,7 +144,7 @@
                                     }
                                 </select>
                             </SelectBox>
-                            <small class="field__hint">Its successful builds are what this release publishes.</small>
+                            <small class="field__hint">Its successful builds are what this pipeline deploys.</small>
                         </div>
                     }
                     else
@@ -172,7 +172,7 @@
                                 }
                             </select>
                         </SelectBox>
-                        <small class="field__hint">Where the apps are installed — every app in the build goes to this one. Each environment's status is shown: you can pick one that's busy, but releases to it are refused until Business Central reports it ready.</small>
+                        <small class="field__hint">Where the apps are installed — every app in the build goes to this one. Each environment's status is shown: you can pick one that's busy, but deployments to it are refused until Business Central reports it ready.</small>
                     </div>
 
                     <div class="field">
@@ -251,9 +251,9 @@
                                 <input type="checkbox" checked="@_prepareOnNewBuild" disabled="@_saving"
                                        @onchange="e => _prepareOnNewBuild = (bool)(e.Value ?? false)" />
                                 <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                                <span>Prepare a release when a new build succeeds</span>
+                                <span>Prepare a deployment when a new build succeeds</span>
                             </label>
-                            <small class="field__hint">The release waits on this pipeline's page until someone approves it. A newer build replaces one still waiting. Nothing is installed before then.</small>
+                            <small class="field__hint">The deployment waits on this pipeline's page until someone approves it. A newer build replaces one still waiting. Nothing is installed before then.</small>
                         </div>
                     }
                 }
@@ -267,7 +267,7 @@
                 <button type="button" class="btn" @onclick="Cancel" disabled="@_saving">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(!CanSave)">
                     <Icon Name="@(_editing ? "save" : "plus")" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : _editing ? "Save release pipeline" : "Create release pipeline")</span>
+                    <span>@(_saving ? "Saving..." : _editing ? "Save deployment pipeline" : "Create deployment pipeline")</span>
                 </button>
             </div>
         </div>
@@ -275,7 +275,7 @@
 }
 
 @code {
-    /// <summary>Raised with the saved release pipeline's id after a successful create/edit.</summary>
+    /// <summary>Raised with the saved deployment pipeline's id after a successful create/edit.</summary>
     [Parameter] public EventCallback<int> OnSaved { get; set; }
 
     private bool _open;
@@ -344,14 +344,14 @@
             if (BcDeploymentSchedule.IsOurDeliveryWindow(_deploymentSchedule))
             {
                 return ChosenEnvironment is { } env && ChosenEnvironmentHasWindow
-                    ? $"Releases are scheduled for the next opening of the delivery window agreed with the customer for {env.Name} ({env.UpdateWindowStart:HH:mm}-{env.UpdateWindowEnd:HH:mm}, solution's time zone). This is not Business Central's own update window. The person releasing can still choose to release now."
-                    : "Releases default to the next opening of the environment's delivery window.";
+                    ? $"Deployments are scheduled for the next opening of the delivery window agreed with the customer for {env.Name} ({env.UpdateWindowStart:HH:mm}-{env.UpdateWindowEnd:HH:mm}, solution's time zone). This is not Business Central's own update window. The person releasing can still choose to release now."
+                    : "Deployments default to the next opening of the environment's delivery window.";
             }
             return BcDeploymentSchedule.Normalize(_deploymentSchedule) switch
             {
                 BcDeploymentSchedule.NextMinorUpdate => "Hands the app to Business Central, which installs it with the environment's next minor update.",
                 BcDeploymentSchedule.NextMajorUpdate => "Hands the app to Business Central, which installs it with the environment's next major update.",
-                _ => "Installs as soon as the release is sent.",
+                _ => "Installs as soon as the deployment is sent.",
             };
         }
     }
@@ -379,7 +379,7 @@
     }
 
     /// <summary>
-    /// Opens the dialog to create a new release pipeline under a fixed solution.
+    /// Opens the dialog to create a new deployment pipeline under a fixed solution.
     /// <paramref name="buildPipelineId"/> fills in the source when the person came
     /// from that build pipeline's page (#938); <paramref name="nextStep"/> says what
     /// follows the save when this is one step of a longer task.
@@ -397,7 +397,7 @@
         await LoadProjectAsync();
     }
 
-    /// <summary>Opens the dialog to create a new release pipeline, letting the user pick the solution.</summary>
+    /// <summary>Opens the dialog to create a new deployment pipeline, letting the user pick the solution.</summary>
     public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> solutions)
     {
         Reset();
@@ -411,7 +411,7 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>Opens the dialog to edit an existing release pipeline.</summary>
+    /// <summary>Opens the dialog to edit an existing deployment pipeline.</summary>
     public async Task OpenForEditAsync(ReleasePipelineRow row)
     {
         Reset();
@@ -546,14 +546,14 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _saveError = "Only the solution owner or an admin can manage this solution's releases.";
+            _saveError = "Only the solution owner or an admin can manage this solution's deployment pipelines.";
             _buildPipelines = new();
             _environments = new();
             _releaseRepositories = null;
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Loading release-pipeline options failed for solution {ProjectId}.", _projectId);
+            Log.LogError(ex, "Loading deployment pipeline options failed for solution {ProjectId}.", _projectId);
             _saveError = "Couldn't load the solution's build pipelines and environments.";
             _buildPipelines = new();
             _environments = new();
@@ -605,16 +605,16 @@
         }
         catch (PlanValidationException ex)
         {
-            _saveError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't save the release pipeline.";
+            _saveError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't save the deployment pipeline.";
         }
         catch (ProjectAccessDeniedException)
         {
-            _saveError = "Only the solution owner or an admin can manage this solution's releases.";
+            _saveError = "Only the solution owner or an admin can manage this solution's deployment pipelines.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to save release pipeline for solution {ProjectId}.", _projectId);
-            _saveError = "Couldn't save the release pipeline.";
+            Log.LogError(ex, "Failed to save deployment pipeline for solution {ProjectId}.", _projectId);
+            _saveError = "Couldn't save the deployment pipeline.";
         }
         finally
         {

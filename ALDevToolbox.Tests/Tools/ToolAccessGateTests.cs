@@ -81,6 +81,38 @@ public sealed class ToolAccessGateTests : IDisposable
     }
 
     [Fact]
+    public async Task Deployment_pipelines_answer_to_their_own_toggle_inside_the_build_pipelines_prefix()
+    {
+        // /pipelines/deployments sits under the build pipelines' /pipelines prefix, so the
+        // gate has to take the longest match: switching deployments off must hide them
+        // (and their old /releases address) without taking the build pipelines with them.
+        await DisableToolsAsync(ToolKey.Releases);
+
+        using var factory = new EndpointFactory(_db);
+        using var client = factory.CreateClient();
+
+        (await client.GetAsync("/pipelines/deployments")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/pipelines/deployments/3")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/releases")).StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "the legacy path must not answer for a tool that is switched off");
+        (await client.GetAsync("/pipelines/builds")).StatusCode.Should().Be(HttpStatusCode.Redirect,
+            "build pipelines are a different tool, still on: signed out, they send you to sign in");
+    }
+
+    [Fact]
+    public async Task Switching_build_pipelines_off_leaves_deployment_pipelines_reachable()
+    {
+        await DisableToolsAsync(ToolKey.Pipelines);
+
+        using var factory = new EndpointFactory(_db);
+        using var client = factory.CreateClient();
+
+        (await client.GetAsync("/pipelines/builds")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/pipelines/7")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/pipelines/deployments")).StatusCode.Should().Be(HttpStatusCode.Redirect);
+    }
+
+    [Fact]
     public async Task Enabled_tool_routes_are_not_404d()
     {
         await DisableToolsAsync(ToolKey.Piper);

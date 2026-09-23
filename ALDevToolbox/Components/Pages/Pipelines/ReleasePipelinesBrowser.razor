@@ -1,4 +1,4 @@
-@page "/releases"
+@page "/pipelines/deployments"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
@@ -12,10 +12,10 @@
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
-    The Releases landing: every release pipeline across the org's solutions, and what
-    each one is shipping, shipped last and ships next. A release pipeline is a reusable
+    The Deployment pipelines landing: every deployment pipeline across the org's solutions, and what
+    each one is shipping, shipped last and ships next. A deployment pipeline is a reusable
     "install this build pipeline's apps into this Business Central environment" target.
-    Create one here, or edit/remove an existing one; releasing a build happens on the
+    Create one here, or edit/remove an existing one; deploying a build happens on the
     pipeline's own page. See .design/saas-delivery.md.
 
     Named user: a BC consultant looking after several customers' environments, who opens
@@ -24,36 +24,36 @@
 
     Built to .design/handoff/PageReleasePipelines.dc.html / ReleasePipelinesBody.dc.html,
     with the adaptations in .design/handoff/briefs/2026-09-release-pipelines-review.md:
-    no "on every new build" (releases never start on their own), relative times with
+    no "on every new build" (deployments never start on their own), relative times with
     the exact UTC time on hover, Production in the danger tone. The header sort buttons
     are left out; the order is fixed by urgency (shipping now, needs attention,
-    scheduled, the rest, then name); a release prepared from a new build and waiting for
+    scheduled, the rest, then name); a deployment prepared from a new build and waiting for
     someone to approve it (#934) counts as needing attention, and the page opens with a
     line saying how many there are. While something is shipping the list re-reads
     itself every two seconds, the way the pipeline's own page does, and stops when
     nothing is.
 *@
 
-<PageTitle>Release pipelines · AL Workbench</PageTitle>
+<PageTitle>Deployment pipelines · AL Workbench</PageTitle>
 
-<ListPage Title="Release pipelines"
-          Subtitle="Every release pipeline in your organisation, and what each one shipped last. Times are relative; hover one for the exact time in UTC."
+<ListPage Title="Deployment pipelines"
+          Subtitle="Every deployment pipeline in your organisation, and what each one deployed last. Times are relative; hover one for the exact time in UTC."
           IsLoading="@(_rows is null)" IsEmpty="@(_rows is { Count: 0 })" HasNoMatches="@(_rows is { Count: > 0 } && Visible.Count == 0)"
           FiltersWhileLoading="true" ShowActions="@(_rows is null || _rows.Count > 0 || _projectOptions.Count == 0)"
-          Trail='@([new("Home", "/"), new("Releases")])'>
+          Trail='@([new("Home", "/"), new("Deployment pipelines")])'>
     <Actions>
         @if (_rows is { Count: 0 } && _projectOptions.Count == 0)
         {
-            <button type="button" class="btn" disabled title="Create a solution first. A release pipeline always belongs to one.">
+            <button type="button" class="btn" disabled title="Create a solution first. A deployment pipeline always belongs to one.">
                 <Icon Name="plus" Width="16" Height="16" />
-                <span>New release pipeline</span>
+                <span>New deployment pipeline</span>
             </button>
         }
         else
         {
             <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
                 <Icon Name="plus" Width="16" Height="16" />
-                <span>New release pipeline</span>
+                <span>New deployment pipeline</span>
             </button>
         }
     </Actions>
@@ -70,11 +70,11 @@
             var waiting = WaitingRows;
             <Alert Tone="AlertTone.Warn">
                 <span>
-                    <b>@(waiting.Count == 1 ? "1 release" : $"{waiting.Count} releases") waiting for approval:</b>
+                    <b>@(waiting.Count == 1 ? "1 deployment" : $"{waiting.Count} deployments") waiting for approval:</b>
                     @for (var i = 0; i < waiting.Count; i++)
                     {
                         var w = waiting[i];
-                        @(i == 0 ? " " : ", ")<a href="@($"/releases/{w.Id}")">@w.Name</a>
+                        @(i == 0 ? " " : ", ")<a href="@($"/pipelines/deployments/{w.Id}")">@w.Name</a>
                     }.
                     Open @(waiting.Count == 1 ? "it" : "one") to approve or dismiss it.
                 </span>
@@ -103,7 +103,7 @@
                         }
                     </div>
                 </div>
-                <a class="btn btn--sm rp-live__open" href="@($"/releases/{r.Id}")">View progress</a>
+                <a class="btn btn--sm rp-live__open" href="@($"/pipelines/deployments/{r.Id}")">View progress</a>
             </div>
         }
     </Notices>
@@ -111,8 +111,8 @@
     <Search>
         <input type="search" class="input" placeholder="Search pipeline, solution or environment..."
                @bind="_search" @bind:event="oninput" disabled="@(_rows is null)"
-               aria-label="Search release pipelines"
-               aria-keyshortcuts="F3" title="Search release pipelines (F3)" />
+               aria-label="Search deployment pipelines"
+               aria-keyshortcuts="F3" title="Search deployment pipelines (F3)" />
     </Search>
     <Filters>
         <SelectBox style="width: 170px">
@@ -155,32 +155,32 @@
                 <th class="data-table__col-state"><span class="u-sr">State</span></th>
                 <th class="rp-list__col-pipeline">Pipeline</th>
                 <th class="rp-list__col-env">Environment</th>
-                <th class="rp-list__col-delivery">Delivery</th>
-                <th class="rp-list__col-next">Next release</th>
+                <th class="rp-list__col-delivery">Last deployment</th>
+                <th class="rp-list__col-next">Next deployment</th>
                 <th class="rp-list__col-source">Apps from</th>
                 <th class="rp-list__col-installs">Installs</th>
                 <th class="data-table__actions rp-list__col-actions"><span class="u-sr">Actions</span></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="7" Rows="5" /></tbody>
         </table>
-        <LoadingBlock Text="Loading release pipelines and their latest releases..." UnderTable="true" />
+        <LoadingBlock Text="Loading deployment pipelines and their latest deployments..." UnderTable="true" />
     </Loading>
 
     <Empty>
         <div class="card">
             @if (_projectOptions.Count > 0)
             {
-                <EmptyState Icon="send" Title="No release pipelines yet">
+                <EmptyState Icon="send" Title="No deployment pipelines yet">
                     <Text>
-                        A release pipeline installs a solution's builds, or a GitHub release, into one
-                        of its environments. Nothing installs on its own: when you release a build, it
+                        A deployment pipeline installs a solution's builds, or a GitHub release, into one
+                        of its environments. Nothing installs on its own: when you deploy a build, it
                         goes in right away, at a time you choose, or with the environment's next
                         Business Central update.
                     </Text>
                     <Action>
                         <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
                             <Icon Name="plus" Width="15" Height="15" />
-                            <span>New release pipeline</span>
+                            <span>New deployment pipeline</span>
                         </button>
                     </Action>
                 </EmptyState>
@@ -189,7 +189,7 @@
             {
                 <EmptyState Icon="folder-plus" Title="No solutions yet">
                     <Text>
-                        A release pipeline installs a solution's apps into one of that customer's
+                        A deployment pipeline installs a solution's apps into one of that customer's
                         environments, so it always belongs to a solution. Create the solution for your
                         customer first, then connect its environments.
                     </Text>
@@ -206,7 +206,7 @@
 
     <NoMatches>
         <div class="card">
-            <EmptyState Icon="funnel-x" Title="No release pipelines match">
+            <EmptyState Icon="funnel-x" Title="No deployment pipelines match">
                 <Text>Nothing matches these filters. Clear them to see all @(_rows?.Count ?? 0).</Text>
                 <Action>
                     <button type="button" class="btn" @onclick="ClearFilters">Clear filters</button>
@@ -222,8 +222,8 @@
                     <th class="data-table__col-state"><span class="u-sr">State</span></th>
                     <th scope="col" class="rp-list__col-pipeline">Pipeline</th>
                     <th scope="col" class="rp-list__col-env">Environment</th>
-                    <th scope="col" class="rp-list__col-delivery">Delivery</th>
-                    <th scope="col" class="rp-list__col-next">Next release</th>
+                    <th scope="col" class="rp-list__col-delivery">Last deployment</th>
+                    <th scope="col" class="rp-list__col-next">Next deployment</th>
                     <th scope="col" class="rp-list__col-source">Apps from</th>
                     <th scope="col" class="rp-list__col-installs">Installs</th>
                     <th scope="col" class="data-table__actions rp-list__col-actions"><span class="u-sr">Actions</span></th>
@@ -244,7 +244,7 @@
                         </td>
                         <td>
                             <span class="cell-stack">
-                                <span class="cell-stack__main rp-list__name"><a href="@($"/releases/{r.Id}")">@r.Name</a></span>
+                                <span class="cell-stack__main rp-list__name"><a href="@($"/pipelines/deployments/{r.Id}")">@r.Name</a></span>
                                 <span class="cell-stack__sub"><a class="rp-list__quiet" href="@($"/solutions/{r.ProjectId}")">@r.ProjectName</a></span>
                             </span>
                         </td>
@@ -291,7 +291,7 @@
                             }
                             else
                             {
-                                <span class="rp-list__none">Nothing released yet</span>
+                                <span class="rp-list__none">Nothing deployed yet</span>
                             }
                         </td>
                         <td>
@@ -364,7 +364,7 @@
                         <Icon Name="@state.Icon" Width="15" Height="15" />
                     </span>
                     <span class="cell-stack rp-card__head">
-                        <span class="cell-stack__main rp-card__name"><a href="@($"/releases/{r.Id}")">@r.Name</a></span>
+                        <span class="cell-stack__main rp-card__name"><a href="@($"/pipelines/deployments/{r.Id}")">@r.Name</a></span>
                         <span class="cell-stack__sub">
                             @r.ProjectName - @r.EnvironmentName
                             <span class="@(IsProduction(r) ? "rp-list__prod" : null)">@r.EnvironmentType</span>
@@ -399,7 +399,7 @@
                         }
                         else
                         {
-                            <span class="rp-list__none">Nothing released yet</span>
+                            <span class="rp-list__none">Nothing deployed yet</span>
                         }
                         @if (next.Scheduled)
                         {
@@ -429,8 +429,8 @@
 </ListPage>
 
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnSavedAsync" />
-<ConfirmDialog @ref="_deleteConfirm" Title="Delete release pipeline?"
-               ConfirmLabel="Delete release pipeline" ConfirmButtonClass="btn--danger" ConfirmIcon="trash-2" />
+<ConfirmDialog @ref="_deleteConfirm" Title="Delete deployment pipeline?"
+               ConfirmLabel="Delete deployment pipeline" ConfirmButtonClass="btn--danger" ConfirmIcon="trash-2" />
 
 @code {
     private List<ReleasePipelineRow>? _rows;
@@ -497,7 +497,7 @@
         }
     }
 
-    /// <summary>The pipelines holding a release prepared from a new build, waiting for approval (#934).</summary>
+    /// <summary>The pipelines holding a deployment prepared from a new build, waiting for approval (#934).</summary>
     private List<ReleasePipelineRow> WaitingRows =>
         (_rows ?? []).Where(r => r.ProposedDelivery is not null).OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -530,22 +530,22 @@
         r.LiveDelivery is not null ? 0 : NeedsAttention(r) ? 1 : IsScheduled(r) ? 2 : 3;
 
     /// <summary>
-    /// The last release failed, or the environment can no longer take one - including
+    /// The last deployment failed, or the environment can no longer take one - including
     /// one being deleted, which leaves the pipeline useless until someone re-points it -
-    /// or a release prepared from a new build is waiting for someone to approve it.
+    /// or a deployment prepared from a new build is waiting for someone to approve it.
     /// </summary>
     private static bool NeedsAttention(ReleasePipelineRow r) =>
         r.LiveDelivery is null
         && (EnvironmentBroken(r) || EnvironmentDeleting(r) || r.LastDelivery?.Status == ProjectDeliveryStatus.Failed
             || r.ProposedDelivery is not null);
 
-    /// <summary>A release waiting for its time, or one handed to Business Central that it has yet to install.</summary>
+    /// <summary>A deployment waiting for its time, or one handed to Business Central that it has yet to install.</summary>
     private static bool IsScheduled(ReleasePipelineRow r) =>
         r.LiveDelivery is null && !EnvironmentBroken(r)
         && (r.NextDelivery is not null || r.LastDelivery?.Status == ProjectDeliveryStatus.HandedOff);
 
     /// <summary>
-    /// An environment gone from Business Central, or failed there: no release will
+    /// An environment gone from Business Central, or failed there: no deployment will
     /// run until someone sorts it out. One being deleted is said in its own words
     /// instead - there is nothing to sort out, only a pipeline to re-point.
     /// </summary>
@@ -561,7 +561,7 @@
         {
             var rows = Visible;
             var solutions = rows.Select(r => r.ProjectId).Distinct().Count();
-            return $"{rows.Count} release pipeline{(rows.Count == 1 ? "" : "s")} across {solutions} solution{(solutions == 1 ? "" : "s")}";
+            return $"{rows.Count} deployment pipeline{(rows.Count == 1 ? "" : "s")} across {solutions} solution{(solutions == 1 ? "" : "s")}";
         }
     }
 
@@ -571,23 +571,23 @@
 
     /// <summary>
     /// The row's keyline, glyph and the words behind the glyph. The mapping is the
-    /// sheet's: a handed-off release is still waiting on Business Central, so it takes
+    /// sheet's: a handed-off deployment is still waiting on Business Central, so it takes
     /// the queued keyline, not a success.
     /// </summary>
     private static RowState StateOf(ReleasePipelineRow r)
     {
         if (r.LiveDelivery is { } live) return new("is-running", "refresh-cw", "Shipping now: " + LiveText(live), Spin: true);
-        if (r.EnvironmentMissing) return new("is-failed", "circle-alert", "Environment missing, releases cannot run");
-        if (EnvironmentBroken(r)) return new("is-failed", "circle-alert", "Environment failed in Business Central, releases cannot run");
-        if (r.LastDelivery?.Status == ProjectDeliveryStatus.Failed) return new("is-failed", "circle-x", "Last release failed");
-        if (r.ProposedDelivery is not null) return new("is-draft", "user", "Release waiting for approval");
-        if (r.NextDelivery is not null) return new("is-queued", "clock", "Next release scheduled");
+        if (r.EnvironmentMissing) return new("is-failed", "circle-alert", "Environment missing, deployments cannot run");
+        if (EnvironmentBroken(r)) return new("is-failed", "circle-alert", "Environment failed in Business Central, deployments cannot run");
+        if (r.LastDelivery?.Status == ProjectDeliveryStatus.Failed) return new("is-failed", "circle-x", "Last deployment failed");
+        if (r.ProposedDelivery is not null) return new("is-draft", "user", "Deployment waiting for approval");
+        if (r.NextDelivery is not null) return new("is-queued", "clock", "Next deployment scheduled");
         return r.LastDelivery?.Status switch
         {
             ProjectDeliveryStatus.HandedOff => new("is-queued", "send", "Waiting for the Business Central update"),
-            ProjectDeliveryStatus.Deployed => new("is-succeeded", "circle-check", "Last release deployed"),
-            ProjectDeliveryStatus.Cancelled => new("is-cancelled", "x", "Last release cancelled"),
-            _ => new("rp-list__idle", "circle-dashed", "Nothing released yet"),
+            ProjectDeliveryStatus.Deployed => new("is-succeeded", "circle-check", "Last deployment succeeded"),
+            ProjectDeliveryStatus.Cancelled => new("is-cancelled", "x", "Last deployment cancelled"),
+            _ => new("rp-list__idle", "circle-dashed", "Nothing deployed yet"),
         };
     }
 
@@ -613,7 +613,7 @@
             var ago = RelativeTime.Ago(started);
             sentence += ago == "just now" ? " Started just now" : $" Started {ago}";
             sentence += live.PreviousDuration is { } took
-                ? $"; the last release here took {RelativeTime.Duration(took)}."
+                ? $"; the last deployment here took {RelativeTime.Duration(took)}."
                 : ".";
         }
         return sentence;
@@ -658,7 +658,7 @@
         if (r.EnvironmentMissing) return new("Environment missing. Reconnect it in solution settings.", "rp-tone--danger");
         if (EnvironmentBroken(r)) return new("Environment failed in Business Central.", "rp-tone--danger");
         if (EnvironmentDeleting(r)) return new("Environment is being deleted.", "rp-tone--warning");
-        if (r.ProposedDelivery is { } waiting && r.NextDelivery is null) return new($"Release of build #{waiting.BuildId} waiting for approval.", "rp-tone--warning");
+        if (r.ProposedDelivery is { } waiting && r.NextDelivery is null) return new($"Deployment of build #{waiting.BuildId} waiting for approval.", "rp-tone--warning");
         if (r.SchemaSyncMode == BcSyncMode.ForceSync) return new("Force sync: can drop columns and their data.", "rp-tone--warning");
         return null;
     }
@@ -666,8 +666,8 @@
     private sealed record NextRelease(string Text, string Tone, string? Sub = null, string? SubTone = null, string? Title = null, bool Scheduled = false, string? SubHref = null);
 
     /// <summary>
-    /// The Next release cell. Releases never start on their own, so without a
-    /// scheduled one it is "None scheduled" - except for a release already handed to
+    /// The Next deployment cell. Deployments never start on their own, so without a
+    /// scheduled one it is "None scheduled" - except for a deployment already handed to
     /// Business Central, which installs with the environment's next update.
     /// </summary>
     private static NextRelease NextOf(ReleasePipelineRow r)
@@ -705,7 +705,7 @@
         }
 
         return EnvironmentDeleting(r)
-            ? new("None scheduled", "rp-list__none", "Releases are refused while the environment is being deleted", "rp-tone--warning")
+            ? new("None scheduled", "rp-list__none", "Deployments are refused while the environment is being deleted", "rp-tone--warning")
             : new("None scheduled", "rp-list__none");
     }
 
@@ -719,7 +719,7 @@
 
     private static bool FromGitHub(ReleasePipelineRow r) => r.ArtifactSource == ReleaseArtifactSource.GithubRelease;
 
-    /// <summary>What a release pipeline draws from: its build pipeline, or the repository whose releases it installs (#632).</summary>
+    /// <summary>What a deployment pipeline draws from: its build pipeline, or the repository whose GitHub releases it installs (#632).</summary>
     private static string SourceName(ReleasePipelineRow r) =>
         FromGitHub(r) ? r.GithubReleaseRepositoryName ?? "a GitHub repository" : r.BuildPipelineName;
 
@@ -775,9 +775,9 @@
     {
         if (_deleteConfirm is null) return;
         var confirmed = await _deleteConfirm.OpenAsync(
-            "Delete release pipeline?",
-            $"Delete \"{row.Name}\"? This removes the release target. Build pipelines and past builds are untouched.",
-            "Delete release pipeline");
+            "Delete deployment pipeline?",
+            $"Delete \"{row.Name}\"? This removes the deployment target. Build pipelines and past builds are untouched.",
+            "Delete deployment pipeline");
         if (!confirmed) return;
 
         _error = null;
@@ -790,7 +790,7 @@
         {
             // Silently logging left the row on screen with no explanation - the person
             // is entitled to know their delete did not happen.
-            Log.LogError(ex, "Failed to delete release pipeline {ReleasePipelineId}.", row.Id);
+            Log.LogError(ex, "Failed to delete deployment pipeline {ReleasePipelineId}.", row.Id);
             _error = $"Couldn't delete \"{row.Name}\". Try again, and if it keeps failing tell an administrator.";
         }
     }
@@ -831,7 +831,7 @@
         catch (ObjectDisposedException) when (token.IsCancellationRequested) { /* torn down mid-poll */ }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Release list poll failed.");
+            Log.LogError(ex, "Deployment pipeline list poll failed.");
         }
         finally
         {

@@ -7,14 +7,14 @@
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 
 @*
-    "Release again" for a failed release (issue #931; DeliveryRowPanel.dc.html, section 4):
+    "Deploy again" for a failed deployment (issue #931; DeliveryRowPanel.dc.html, section 4):
     the same build, through the same pipeline, right now, with an optional Force sync for
-    this one release. The pipeline's own setting is not touched. Apps the environment is
+    this one deployment. The pipeline's own setting is not touched. Apps the environment is
     already on at this version are left alone by the run, and the dialog names them so
     nobody expects them to be sent twice. Opened imperatively; raises OnReleased with the
     new delivery's id.
 
-    Named user: an ops engineer whose release to a customer's environment just failed,
+    Named user: an ops engineer whose deployment to a customer's environment just failed,
     deciding whether to push the same build through once more.
 *@
 
@@ -28,7 +28,7 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="rotate-cw" Width="17" Height="17" />
                 </span>
-                <h2 id="ra-title" class="confirm-dialog__title">Release build #@r.BuildId again?</h2>
+                <h2 id="ra-title" class="confirm-dialog__title">Deploy build #@r.BuildId again?</h2>
             </div>
             <div class="confirm-dialog__body ra-body">
                 <p class="ra-lead">@Lead</p>
@@ -71,13 +71,13 @@
                                @onchange="e => SetForce((bool)(e.Value ?? false))" />
                         <span class="check__box ra-check__box"><Icon Name="check" Width="12" Height="12" /></span>
                         <span class="ra-check__text">
-                            <span class="ra-check__title">Use Force sync for this release only</span>
-                            <span class="ra-check__hint">The pipeline stays on @PipelineMode. The next release goes back to @PipelineMode.</span>
+                            <span class="ra-check__title">Use Force sync for this deployment only</span>
+                            <span class="ra-check__hint">The pipeline stays on @PipelineMode. The next deployment goes back to @PipelineMode.</span>
                         </span>
                     </label>
                     @if (r.FailedOnSchemaChange && !_force)
                     {
-                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />The last release failed because Business Central refused a schema change. Without Force sync this release will most likely fail the same way.</span>
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />The last deployment failed because Business Central refused a schema change. Without Force sync this deployment will most likely fail the same way.</span>
                     }
                     @if (_force)
                     {
@@ -121,7 +121,7 @@
                 <button type="button" class="btn" @onclick="Cancel" disabled="@_releasing">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="ReleaseAsync" disabled="@(!CanRelease)">
                     <Icon Name="send" Width="14" Height="14" />
-                    <span>@(_releasing ? "Releasing..." : "Release")</span>
+                    <span>@(_releasing ? "Deploying..." : "Deploy")</span>
                 </button>
             </div>
         </div>
@@ -129,31 +129,31 @@
 }
 
 @code {
-    /// <summary>Raised with the new delivery's id once the release is queued.</summary>
+    /// <summary>Raised with the new delivery's id once the deployment is queued.</summary>
     [Parameter] public EventCallback<int> OnReleased { get; set; }
 
     /// <summary>
-    /// What the dialog shows and releases.
+    /// What the dialog shows and deploys.
     /// </summary>
-    /// <param name="DeliveryId">The failed release to release again.</param>
+    /// <param name="DeliveryId">The failed deployment to deploy again.</param>
     /// <param name="BuildId">The build it installed.</param>
     /// <param name="BuildSource">Where the build came from, read after its number: "from build pipeline \"Test\"".</param>
     /// <param name="CustomerName">The solution's name, which says whose environment this is.</param>
     /// <param name="EnvironmentName">The target environment.</param>
     /// <param name="EnvironmentType">"Production" or "Sandbox" as Business Central reports it.</param>
-    /// <param name="WireSchedule">When Business Central installs, as the release will send it.</param>
+    /// <param name="WireSchedule">When Business Central installs, as the deployment will send it.</param>
     /// <param name="PipelineSyncMode">The pipeline's own schema sync mode.</param>
     /// <param name="Apps">The build's apps, in order.</param>
-    /// <param name="AlreadyOn">The apps the environment already has at this build's version, which the release leaves alone.</param>
-    /// <param name="OutsideWindowWarning">Set when releasing now falls outside the environment's delivery window.</param>
-    /// <param name="FailedOnSchemaChange">True when Business Central refused a schema change, so releasing again without Force sync will likely fail the same way.</param>
+    /// <param name="AlreadyOn">The apps the environment already has at this build's version, which the deployment leaves alone.</param>
+    /// <param name="OutsideWindowWarning">Set when deploying now falls outside the environment's delivery window.</param>
+    /// <param name="FailedOnSchemaChange">True when Business Central refused a schema change, so deploying again without Force sync will likely fail the same way.</param>
     public sealed record Request(
         int DeliveryId, int BuildId, string BuildSource, string CustomerName,
         string EnvironmentName, string? EnvironmentType, string WireSchedule, string PipelineSyncMode,
         IReadOnlyList<string> Apps, IReadOnlyList<string> AlreadyOn, string? OutsideWindowWarning = null,
         bool FailedOnSchemaChange = false)
     {
-        /// <summary>True when the pipeline already uses Force sync, so there is nothing to turn on for one release.</summary>
+        /// <summary>True when the pipeline already uses Force sync, so there is nothing to turn on for one deployment.</summary>
         public bool PipelineUsesForceSync => BcSyncMode.Normalize(PipelineSyncMode) == BcSyncMode.ForceSync;
     }
 
@@ -179,8 +179,8 @@
     private bool CanRelease => !_releasing && _request is not null && !NeedsForceAck && !NeedsProdAck;
 
     private string? BlockedText => NeedsForceAck && NeedsProdAck
-        ? "Tick both acknowledgements to release."
-        : NeedsForceAck || NeedsProdAck ? "Tick the acknowledgement to release." : null;
+        ? "Tick both acknowledgements to deploy."
+        : NeedsForceAck || NeedsProdAck ? "Tick the acknowledgement to deploy." : null;
 
     /// <summary>
     /// The sheet's opening sentence: what goes where, when, and which apps stay as they
@@ -222,7 +222,7 @@
 
     /// <summary>
     /// Opens the dialog. <paramref name="forceSync"/> pre-ticks the one-time Force sync,
-    /// as the failure's "Release again with Force sync" button does; the acknowledgement
+    /// as the failure's "Deploy again with Force sync" button does; the acknowledgement
     /// under it is never pre-ticked.
     /// </summary>
     public Task OpenAsync(Request request, bool forceSync = false)
@@ -268,16 +268,16 @@
         }
         catch (PlanValidationException ex)
         {
-            _error = ex.Errors.Values.FirstOrDefault() ?? "Couldn't start the release.";
+            _error = ex.Errors.Values.FirstOrDefault() ?? "Couldn't start the deployment.";
         }
         catch (ProjectAccessDeniedException)
         {
-            _error = "Only the solution owner or an admin can release this solution's builds.";
+            _error = "Only the solution owner or an admin can deploy this solution's builds.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to release delivery {DeliveryId} again.", r.DeliveryId);
-            _error = "Couldn't start the release.";
+            Log.LogError(ex, "Failed to deploy delivery {DeliveryId} again.", r.DeliveryId);
+            _error = "Couldn't start the deployment.";
         }
         finally
         {

@@ -446,7 +446,7 @@
         _ => "connected",
     };
 
-    /// <summary>Reads a machine-cased status as a sentence; shared with the release-pipeline editor.</summary>
+    /// <summary>Reads a machine-cased status as a sentence; shared with the deployment-pipeline editor.</summary>
     private static string HumaniseStatus(string? status) => BcEnvironmentStatus.Humanise(status);
 
     /// <summary>
@@ -482,7 +482,7 @@
 
     /// <summary>
     /// Pill tone for an environment's Business Central status, so a consultant can tell
-    /// at a glance whether a release will go through. Classification lives in
+    /// at a glance whether a deployment will go through. Classification lives in
     /// <see cref="BcEnvironmentStatus"/> — the same one the delivery gate uses, so the
     /// badge and the refusal never disagree.
     /// </summary>
@@ -532,7 +532,7 @@
     }
 
     /// <summary>
-    /// Warns when the delivery window overlaps Microsoft's update window — a release
+    /// Warns when the delivery window overlaps Microsoft's update window — a deployment
     /// aimed into Microsoft's maintenance hours is exactly what the environment-status
     /// check then refuses, and finding that out at 22:00 is worse than seeing it here.
     /// </summary>
@@ -549,7 +549,7 @@
             DateTime.UtcNow);
 
         return clash
-            ? "Overlaps Business Central's update window - a release landing then is refused while the environment is updating."
+            ? "Overlaps Business Central's update window - a deployment landing then is refused while the environment is updating."
             : null;
     }
 
