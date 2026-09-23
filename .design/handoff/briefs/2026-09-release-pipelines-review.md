@@ -101,6 +101,22 @@ Until those land, the port hides the cell rather than inventing a value.
   the screenshot in the brief. Replace them with CRONUS / Contoso before the sheet is
   shared further.
 
+## Addendum: the third sheet (delivery row, failure text, "Release again" dialog)
+
+`DeliveryRowPanel.dc.html` and its section in `Components.dc.html`, reviewed after the third
+prompt. Everything above about that panel stands (the translated-error claim, byte
+progress, "Cancelled by", per-app timings and version change, the customer names). Two more:
+
+- **"KT Base is already on this version and is left alone."** The engine has no such
+  skip: a release sends every app in the build, and Business Central refuses a PTE
+  version it already holds. So "Release again" after a partial failure would fail on the
+  app that succeeded the first time. The sentence is right and the engine is wrong; it is
+  added to issue #931 as a requirement (skip apps whose installed version already matches,
+  and say so on the row). Keep the sentence.
+- **"Open build 2.3.0.118"** becomes "Open build #118", as in item 2 above.
+- The components sheet's eyebrow still reads "AL Dev Toolbox - design system - step 2".
+  Design-side only, but the product is AL Workbench.
+
 ## Port notes
 
 - List page: `ListPage` frame with its Search, Filters and Trailing slots and the
