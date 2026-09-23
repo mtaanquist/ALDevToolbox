@@ -11,9 +11,10 @@
 @*
     Release a build through a release pipeline: pick which successful build to publish
     (defaults to the latest), pick when (prefilled to the next opening of the target
-    environment's update window, or now if it has none), confirm a Production target,
-    and release. "Release now" runs immediately; a future time is enqueued by the
-    DeliveryScheduler when due. Picking a time outside the window is allowed but
+    environment's delivery window, or now if it has none), confirm a Production target,
+    and release. A pipeline set to install in the delivery window says so beside the
+    time, and "Now" is the explicit way out of it. "Release now" runs immediately; a
+    future time is enqueued by the DeliveryScheduler when due. Picking a time outside the window is allowed but
     recorded. Times are shown in the customer's timezone. Opened imperatively; raises
     OnReleased with the new delivery id. See .design/saas-delivery.md.
 
@@ -34,9 +35,9 @@
             </div>
             <div class="confirm-dialog__body">
                 <p>
-                    Uploads the build's apps to <b>@_envName</b> in <b>@_customerName</b>'s Business Central.
+                    Uploads the build's apps to <b>@_envName</b> in <b>@_customerName</b>'s Business Central@(IsImmediate ? "" : " at the time below").
                     Business Central installs them
-                    <b>@DeliveryModeDisplay.Schedule(_deploymentSchedule).ToLowerInvariant()</b>@(_schemaSyncMode == BcSyncMode.ForceSync ? ", using Force sync (which can drop columns)" : "").
+                    <b>@DeliveryModeDisplay.Schedule(BcDeploymentSchedule.ToWire(_deploymentSchedule) ?? _deploymentSchedule).ToLowerInvariant()</b>@(_schemaSyncMode == BcSyncMode.ForceSync ? ", using Force sync (which can drop columns)" : "").
                 </p>
 
                 @if (_fromReleases && _releases.Count == 0)
@@ -90,17 +91,17 @@
                     <div class="rb-when-row">
                         <input id="rb-when" type="datetime-local" class="input" @bind="_scheduledLocal" @bind:event="oninput" disabled="@_releasing" />
                         <button type="button" class="btn btn--sm" @onclick="SetNow" disabled="@_releasing">Now</button>
-                    </div>
-                    <small class="field__hint">
-                        Time is in the customer's timezone (@_tzLabel).
-                        @if (_hasWindow)
+                        @if (_hasWindow && _scheduledLocal != _windowOpeningLocal)
                         {
-                            <text> Update window @WindowLabel; prefilled to its next opening.</text>
+                            <button type="button" class="btn btn--sm" @onclick="SetNextOpening" disabled="@_releasing">Next window</button>
                         }
-                    </small>
+                    </div>
+                    <small class="field__hint">@WhenHint</small>
                     @if (_hasWindow && IsOutsideWindow)
                     {
-                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />This is outside the customer's agreed update window. It will still run at the time you pick - the release history will show it ran outside the window.</span>
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />@(IsImmediate
+                            ? $"{_envName}'s delivery window ({WindowLabel}) isn't open now. Releasing now installs outside the hours agreed with the customer, and the release history will record that."
+                            : $"This time is outside {_envName}'s delivery window ({WindowLabel}). It will still run then, and the release history will record that it ran outside the window.")</span>
                     }
                     @if (SecretWarning is { } secretWarn)
                     {
@@ -200,9 +201,54 @@
     private TimeOnly? _winEnd;
     private bool _hasWindow;
     private DateTime _scheduledLocal; // Unspecified kind = customer-tz wall-clock
+    private DateTime _windowOpeningLocal; // the prefilled next opening, same kind as _scheduledLocal
     private DateTime? _secretExpiresAt; // UTC instant the BC client secret lapses, if known
 
     private string WindowLabel => _hasWindow ? $"{_winStart:HH:mm}-{_winEnd:HH:mm}" : "";
+
+    /// <summary>True when the release pipeline is set to install in the environment's delivery window.</summary>
+    private bool ByDeliveryWindow => BcDeploymentSchedule.IsOurDeliveryWindow(_deploymentSchedule);
+
+    /// <summary>
+    /// The line under the time. For a pipeline that installs in the delivery window it
+    /// says where the time came from while the time is still the window's next opening;
+    /// once the person picks another time (or Now) it reverts to the plain line, and the
+    /// outside-the-window warning takes over when that applies.
+    /// </summary>
+    private string WhenHint
+    {
+        get
+        {
+            if (ByDeliveryWindow && !_hasWindow)
+            {
+                return $"This pipeline installs in {_envName}'s delivery window, but the environment no longer has one, so pick a time. Time is in the solution's time zone ({_tzLabel}).";
+            }
+            var atOpening = _scheduledLocal == _windowOpeningLocal;
+            if (ByDeliveryWindow && atOpening)
+            {
+                return IsImmediate
+                    ? $"{_envName}'s delivery window ({WindowLabel}) is open now, so this releases right away."
+                    : $"Scheduled for the next delivery window, {DayAndTime(_windowOpeningLocal)}, in the solution's time zone ({_tzLabel}).";
+            }
+            if (!_hasWindow) return $"Time is in the solution's time zone ({_tzLabel}).";
+            return atOpening
+                ? $"Time is in the solution's time zone ({_tzLabel}). Delivery window {WindowLabel}; prefilled to its next opening."
+                : $"Time is in the solution's time zone ({_tzLabel}). Delivery window {WindowLabel}.";
+        }
+    }
+
+    /// <summary>"today 22:00", "tomorrow 02:00" or "Thursday 02:00", counted in the customer's time zone.</summary>
+    private string DayAndTime(DateTime local)
+    {
+        var today = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _tz).Date;
+        var day = (local.Date - today).Days switch
+        {
+            0 => "today",
+            1 => "tomorrow",
+            _ => local.ToString("dddd", System.Globalization.CultureInfo.InvariantCulture),
+        };
+        return $"{day} {local:HH:mm}";
+    }
 
     /// <summary>The apps the currently-picked build would install, shown before the confirm.</summary>
     private IReadOnlyList<ReleasableBuildApp> SelectedApps =>
@@ -315,12 +361,15 @@
         // as a customer-tz wall-clock for the datetime-local input.
         var prefillUtc = UpdateWindow.NextOpeningUtc(windowStart, windowEnd, _tz, DateTime.UtcNow);
         _scheduledLocal = Trim(TimeZoneInfo.ConvertTimeFromUtc(prefillUtc, _tz));
+        _windowOpeningLocal = _scheduledLocal;
 
         _open = true;
         _focusPending = true;
         StateHasChanged();
         return Task.CompletedTask;
     }
+
+    private void SetNextOpening() => _scheduledLocal = _windowOpeningLocal;
 
     private void SetNow() => _scheduledLocal = Trim(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _tz));
 

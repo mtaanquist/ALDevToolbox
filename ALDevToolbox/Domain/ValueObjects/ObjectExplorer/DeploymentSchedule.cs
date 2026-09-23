@@ -4,8 +4,10 @@ namespace ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 /// Wire values for the <c>deploymentSchedule</c> field of the Admin Center
 /// <c>pteInstall</c> endpoint — <em>when</em> Business Central installs the package
 /// it has accepted. These are the strings the API expects, and they're what a release
-/// pipeline stores, so nothing has to map between the two; the user-facing labels are
-/// a separate concern, in <see cref="DeliveryModeDisplay"/>.
+/// pipeline stores, so nothing has to map between the two — with one exception,
+/// <see cref="OurDeliveryWindow"/>, which is ours and which <see cref="ToWire"/> turns
+/// into <see cref="Immediate"/> before anything reaches Business Central. The
+/// user-facing labels are a separate concern, in <see cref="DeliveryModeDisplay"/>.
 /// <para>
 /// The API constrains the value by whether the app is already installed in the
 /// environment: a brand-new PTE must use <see cref="Immediate"/> or
@@ -26,7 +28,20 @@ public static class BcDeploymentSchedule
     /// <summary>Defer to the environment's next major platform update.</summary>
     public const string NextMajorUpdate = "NextMajorUpdate";
 
-    /// <summary>Every accepted wire value, in the order the API documents them.</summary>
+    /// <summary>
+    /// <em>Not a wire value.</em> A release pipeline set to this starts its installs in
+    /// the target environment's <em>delivery window</em> — the slot agreed with the
+    /// customer and stored on the environment (<c>UpdateWindowStart</c> /
+    /// <c>UpdateWindowEnd</c>). The window only decides <em>when we send</em>: a release
+    /// defaults to its next opening, and what goes to Business Central is
+    /// <see cref="Immediate"/>, run at that time. It has nothing to do with
+    /// <see cref="UpdateWindow"/>, which is Microsoft's window and Microsoft's decision.
+    /// Never send this string to the API; go through <see cref="ToWire"/>.
+    /// See <c>.design/saas-delivery.md</c> ("Deployment schedules").
+    /// </summary>
+    public const string OurDeliveryWindow = "OurDeliveryWindow";
+
+    /// <summary>Every accepted wire value, in the order the API documents them. <see cref="OurDeliveryWindow"/> is not one.</summary>
     public static readonly IReadOnlyList<string> All = [Immediate, UpdateWindow, NextMinorUpdate, NextMajorUpdate];
 
     /// <summary>
@@ -39,8 +54,25 @@ public static class BcDeploymentSchedule
     /// Whether to offer it is an open product question; until it's answered, it isn't
     /// pickable.
     /// </para>
+    /// <para>
+    /// <see cref="OurDeliveryWindow"/> is pickable only when the target environment has a
+    /// delivery window set; <c>ReleasePipelineService</c> enforces that.
+    /// </para>
     /// </summary>
-    public static readonly IReadOnlyList<string> Pickable = [Immediate, NextMinorUpdate, NextMajorUpdate];
+    public static readonly IReadOnlyList<string> Pickable = [Immediate, OurDeliveryWindow, NextMinorUpdate, NextMajorUpdate];
+
+    /// <summary>True when <paramref name="value"/> is <see cref="OurDeliveryWindow"/> (case-insensitive).</summary>
+    public static bool IsOurDeliveryWindow(string? value) =>
+        string.Equals(value?.Trim(), OurDeliveryWindow, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What a release pipeline's stored schedule becomes on the wire: its canonical API
+    /// spelling, <see cref="Immediate"/> for <see cref="OurDeliveryWindow"/> (the window
+    /// chose the time, and Business Central installs on arrival), or <c>null</c> for a
+    /// value the API would refuse.
+    /// </summary>
+    public static string? ToWire(string? value) =>
+        IsOurDeliveryWindow(value) ? Immediate : Normalize(value);
 
     /// <summary>
     /// Anything other than <see cref="Immediate"/> hands the install to Business
@@ -105,14 +137,31 @@ public static class BcSyncMode
 public static class DeliveryModeDisplay
 {
     /// <summary>How a deployment schedule reads on screen. An unknown (legacy) value is returned as-is so a broken row is visible rather than blank.</summary>
-    public static string Schedule(string? value) => BcDeploymentSchedule.Normalize(value) switch
+    public static string Schedule(string? value)
     {
-        BcDeploymentSchedule.Immediate => "Right away",
-        BcDeploymentSchedule.UpdateWindow => "In the Business Central update window",
-        BcDeploymentSchedule.NextMinorUpdate => "Next minor update",
-        BcDeploymentSchedule.NextMajorUpdate => "Next major update",
-        _ => value ?? string.Empty,
-    };
+        if (BcDeploymentSchedule.IsOurDeliveryWindow(value)) return "Delivery window";
+        return BcDeploymentSchedule.Normalize(value) switch
+        {
+            BcDeploymentSchedule.Immediate => "Right away",
+            BcDeploymentSchedule.UpdateWindow => "In the Business Central update window",
+            BcDeploymentSchedule.NextMinorUpdate => "Next minor update",
+            BcDeploymentSchedule.NextMajorUpdate => "Next major update",
+            _ => value ?? string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// How a schedule reads as a choice in the release-pipeline editor, where the
+    /// delivery window is named for the environment it belongs to
+    /// ("In Production's delivery window") so it can't be read as Business Central's
+    /// own update window. Every other value reads as in <see cref="Schedule"/>.
+    /// </summary>
+    public static string ScheduleChoice(string? value, string? environmentName) =>
+        BcDeploymentSchedule.IsOurDeliveryWindow(value)
+            ? string.IsNullOrWhiteSpace(environmentName)
+                ? "In the environment's delivery window"
+                : $"In {environmentName.Trim()}'s delivery window"
+            : Schedule(value);
 
     /// <summary>How a sync mode reads on screen.</summary>
     public static string SyncMode(string? value) => BcSyncMode.Normalize(value) switch
