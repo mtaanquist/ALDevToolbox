@@ -1,0 +1,31 @@
+/*
+    Scoped chrome for the "Release again" dialog (DeliveryRowPanel.dc.html, section 4).
+    The dialog, the checks and the facts' label/value pairs are the design system's;
+    what is left is the sunken facts box, the environment type beside its name, and a
+    check whose label carries a title and a caption.
+*/
+
+.ra-body { display: grid; gap: var(--space-3); }
+.ra-lead { margin: 0; text-wrap: pretty; }
+
+.ra-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-control);
+}
+
+/* A fact wraps rather than clips: the apps and the build's source are read whole. */
+.ra-facts .meta-item__value { white-space: normal; overflow-wrap: anywhere; }
+
+.ra-type { color: var(--ink-3); }
+.ra-type--prod { color: var(--danger-text); font-weight: var(--fw-semibold); }
+
+.ra-check { align-items: flex-start; }
+.ra-check__box { margin-top: 2px; }
+.ra-check__text { display: grid; gap: 1px; }
+.ra-check__title { color: var(--ink); font-size: var(--text-sm); font-weight: var(--fw-medium); }
+.ra-check__hint { font-size: var(--text-xs); color: var(--ink-3); }

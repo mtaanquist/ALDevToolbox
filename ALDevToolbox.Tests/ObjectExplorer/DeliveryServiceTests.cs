@@ -585,6 +585,268 @@ public sealed class DeliveryServiceTests : IDisposable
             .Contain("ExtensionChangeFailed").And.Contain("TenantSyncFailure");
     }
 
+    [Fact]
+    public async Task RunDeliveryAsync_stores_one_line_on_the_delivery_and_the_detail_on_the_app()
+    {
+        // The shape a real failed install produced (#930): the wrapper, then JSON whose
+        // message is in the environment's language, quotes escaped.
+        const string danish = "Udvidelsen \"CRONUS Core\" kunne ikke installeres, fordi feltet 12 \"Zone Priority\" er fjernet.";
+        const string raw = "A request to the Data Plane Admin Service failed. Http status code: BadRequest Error: "
+            + "{ \"code\": \"ExtensionChangeFailed\", \"message\": \"Udvidelsen \\\"CRONUS Core\\\" kunne ikke installeres, fordi feltet 12 \\\"Zone Priority\\\" er fjernet.\" }";
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        _apps.StatusByApp["CRONUS Core"] = "failed";
+        _apps.FailedErrorMessage = raw;
+
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.Include(d => d.Results).SingleAsync(d => d.Id == deliveryId);
+        var app = delivery.Results.Single();
+
+        delivery.FailureMessage.Should().Be($"Business Central refused a schema change while installing CRONUS Core {app.AppVersion}.",
+            "the delivery carries one line; the detail is the app's");
+        app.Message.Should().Be(
+            "Business Central refused a schema change (a renamed or removed table or field). "
+            + "Release again with Force sync to push it through, or keep the old names. "
+            + "Error code: ExtensionChangeFailed. Business Central's message: " + danish);
+        app.Message.Should().NotContain("Data Plane Admin Service").And.NotContain("{");
+        // The log keeps the response whole, for support and for the page to read back.
+        delivery.DiagnosticsLog.Should().Contain(
+            $"FAILED CRONUS Core {app.AppVersion}: Business Central reported the install as failed (ExtensionChangeFailed). {raw}");
+    }
+
+    // ── Deferred pre-checks: the app id, and a version already waiting (#936, #937) ──
+
+    [Fact]
+    public async Task RunDeliveryAsync_deferred_check_finds_a_renamed_app_by_its_id()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" },
+            deploymentSchedule: BcDeploymentSchedule.NextMinorUpdate);
+        var appId = Guid.NewGuid();
+        await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.AppId, appId.ToString()));
+        // Installed under the name it had before a rename: the same app.
+        _apps.Installed.Add(InstalledApp("CRONUS Core (old name)") with { AppId = appId });
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId))
+            .Status.Should().Be(ProjectDeliveryStatus.HandedOff);
+        _apps.UploadedOrder.Should().Equal("CRONUS Core");
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_deferred_check_does_not_take_another_app_with_the_same_name_for_this_one()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" },
+            deploymentSchedule: BcDeploymentSchedule.NextMinorUpdate);
+        await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.AppId, Guid.NewGuid().ToString()));
+        // Another publisher's app that happens to share the name.
+        _apps.Installed.Add(InstalledApp("CRONUS Core"));
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Failed);
+        delivery.FailureMessage.Should().Contain("isn't installed");
+        _apps.UploadedOrder.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_deferred_check_falls_back_to_the_name_when_the_artifact_has_no_id()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" },
+            deploymentSchedule: BcDeploymentSchedule.NextMinorUpdate);
+        // The seeded artifact carries no app id, as one written before #922 doesn't.
+        _apps.Installed.Add(InstalledApp("cronus core"));
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId))
+            .Status.Should().Be(ProjectDeliveryStatus.HandedOff);
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_refuses_a_version_already_waiting_for_the_same_schedule_and_skips_the_rest()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales", "CRONUS Reports" });
+        var ids = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        var artifacts = await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId).OrderBy(a => a.Id).ToListAsync();
+        for (var i = 0; i < artifacts.Count; i++)
+        {
+            artifacts[i].AppId = ids[i].ToString();
+            _apps.Installed.Add(InstalledApp(artifacts[i].AppName) with { AppId = ids[i] });
+        }
+        await ctx.SaveChangesAsync();
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        // A several-app delivery on a deferred schedule can't be created any more, but one
+        // from before that rule can still run.
+        await ctx.OeProjectDeliveries.Where(d => d.Id == deliveryId)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.DeploymentSchedule, BcDeploymentSchedule.NextMinorUpdate));
+        // Sales 1.0.1.0 was released for the next minor update once already.
+        _apps.Scheduled.Add(ScheduledOperation(ids[1], "CRONUS Sales", "1.0.1.0", BcDeploymentSchedule.NextMinorUpdate));
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        const string sentence = "CRONUS Sales 1.0.1.0 is already waiting for the next minor update on Production; cancel it there first.";
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.Include(d => d.Results).SingleAsync(d => d.Id == deliveryId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Failed);
+        delivery.FailureMessage.Should().Be(sentence);
+        delivery.DiagnosticsLog.Should().Contain(sentence);
+        var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        results[0].Status.Should().Be(ProjectDeliveryResultStatus.Scheduled);
+        results[1].Status.Should().Be(ProjectDeliveryResultStatus.Failed);
+        results[1].Message.Should().Be(sentence);
+        results[2].Status.Should().Be(ProjectDeliveryResultStatus.Skipped);
+        _apps.UploadedOrder.Should().Equal(new[] { "CRONUS Core" }, "the refused version never reaches Business Central");
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_does_not_refuse_a_version_waiting_for_a_different_schedule()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" },
+            deploymentSchedule: BcDeploymentSchedule.NextMinorUpdate);
+        var appId = Guid.NewGuid();
+        await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.AppId, appId.ToString()));
+        _apps.Installed.Add(InstalledApp("CRONUS Core") with { AppId = appId });
+        _apps.Scheduled.Add(ScheduledOperation(appId, "CRONUS Core", "1.0.0.0", BcDeploymentSchedule.NextMajorUpdate));
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId))
+            .Status.Should().Be(ProjectDeliveryStatus.HandedOff);
+        _apps.UploadedOrder.Should().Equal("CRONUS Core");
+    }
+
+    // ── Release again, and the apps already on the version (#931) ─────────────
+
+    /// <summary>A release of <paramref name="appNames"/> that failed on <paramref name="failOn"/>.</summary>
+    private async Task<(Seed Seed, int DeliveryId)> FailedReleaseAsync(string[] appNames, string failOn)
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames);
+        _apps.StatusByApp[failOn] = "failed";
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+        DrainQueue();
+        _apps.StatusByApp.Remove(failOn);
+        _apps.UploadedOrder.Clear();
+        return (seed, deliveryId);
+    }
+
+    [Fact]
+    public async Task ReleaseAgainAsync_with_force_sync_once_snapshots_it_on_the_new_delivery_only()
+    {
+        var (seed, failedId) = await FailedReleaseAsync(new[] { "CRONUS Core" }, failOn: "CRONUS Core");
+
+        var againId = await NewService(_db.NewContext()).ReleaseAgainAsync(failedId, forceSyncOnce: true);
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(againId);
+
+        await using var read = _db.NewContext();
+        var again = await read.OeProjectDeliveries.SingleAsync(d => d.Id == againId);
+        again.Id.Should().NotBe(failedId);
+        again.ProjectBuildId.Should().Be(seed.BuildId);
+        again.ReleasePipelineId.Should().Be(seed.ReleasePipelineId);
+        again.SchemaSyncMode.Should().Be(BcSyncMode.ForceSync);
+        again.Status.Should().Be(ProjectDeliveryStatus.Deployed);
+        _apps.LastSyncMode.Should().Be(BcSyncMode.ForceSync, "the upload is sent with the one-time mode");
+        again.DiagnosticsLog.Should().Contain("Schema sync: Force sync, this release only.");
+        (await read.OeReleasePipelines.SingleAsync(r => r.Id == seed.ReleasePipelineId))
+            .SchemaSyncMode.Should().Be(BcSyncMode.Add, "the pipeline's own setting is untouched");
+
+        // And the release after it is back on the pipeline's mode.
+        var nextId = await NewService(_db.NewContext()).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        (await read.OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == nextId))
+            .SchemaSyncMode.Should().Be(BcSyncMode.Add);
+    }
+
+    [Fact]
+    public async Task ReleaseAgainAsync_without_force_sync_keeps_the_pipelines_mode()
+    {
+        var (_, failedId) = await FailedReleaseAsync(new[] { "CRONUS Core" }, failOn: "CRONUS Core");
+
+        var againId = await NewService(_db.NewContext()).ReleaseAgainAsync(failedId, forceSyncOnce: false);
+
+        await using var read = _db.NewContext();
+        var again = await read.OeProjectDeliveries.SingleAsync(d => d.Id == againId);
+        again.SchemaSyncMode.Should().Be(BcSyncMode.Add);
+        again.Status.Should().Be(ProjectDeliveryStatus.Scheduled, "it is queued to run now");
+    }
+
+    [Fact]
+    public async Task ReleaseAgainAsync_refuses_a_release_that_did_not_fail()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var scheduledId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+
+        var act = () => NewService(_db.NewContext()).ReleaseAgainAsync(scheduledId, forceSyncOnce: true);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors["Delivery"].Should().Contain("Only a failed release");
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_skips_an_app_already_on_the_version_and_installs_the_next()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Base", "CRONUS Core" });
+        var baseId = Guid.NewGuid();
+        await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId && a.AppName == "CRONUS Base")
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.AppId, baseId.ToString()));
+        // Base went in on the release that failed on Core; Core is still on the old one.
+        _apps.Installed.Add(InstalledApp("CRONUS Base") with { AppId = baseId, Version = "1.0.0.0" });
+        _apps.Installed.Add(InstalledApp("CRONUS Core") with { Version = "0.9.0.0" });
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.Include(d => d.Results).SingleAsync(d => d.Id == deliveryId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Deployed);
+        var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        results[0].Status.Should().Be(ProjectDeliveryResultStatus.Skipped);
+        results[0].Message.Should().Be("Already on 1.0.0.0.");
+        results[1].Status.Should().Be(ProjectDeliveryResultStatus.Completed);
+        _apps.UploadedOrder.Should().Equal(new[] { "CRONUS Core" }, "Business Central would refuse a version it already has");
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_with_every_app_already_on_the_version_uploads_nothing_and_is_deployed()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" },
+            deploymentSchedule: BcDeploymentSchedule.NextMinorUpdate);
+        _apps.Installed.Add(InstalledApp("CRONUS Core") with { Version = "1.0.0.0" });
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Deployed, "nothing was handed to Business Central to install later");
+        delivery.DiagnosticsLog.Should().Contain("nothing to install");
+        _apps.UploadedOrder.Should().BeEmpty();
+    }
+
     // ── What the run records for the release page (#929) ──────────────────────
 
     [Fact]
@@ -739,10 +1001,17 @@ public sealed class DeliveryServiceTests : IDisposable
         reasons.DependentOrderings.Should().BeNull("the page then says only that the app was skipped after the failure");
     }
 
+    // An older version than any seeded build carries: an app already on the build's
+    // version is skipped by the run (#931), which the tests using this don't mean.
     private static BcInstalledApp InstalledApp(string name) => new(
-        AppId: Guid.NewGuid(), Name: name, Publisher: "CRONUS A/S", Version: "1.0.0.0",
+        AppId: Guid.NewGuid(), Name: name, Publisher: "CRONUS A/S", Version: "0.9.0.0",
         State: "Installed", AppType: "tenant", CanBeUninstalled: true,
         LastOperationId: null, LastUpdateAttemptResult: string.Empty);
+
+    private static BcScheduledPteOperation ScheduledOperation(Guid appId, string name, string version, string schedule) => new(
+        Id: Guid.NewGuid(), AppId: appId, Type: "install", Status: BcAppOperationStatus.Scheduled, RawStatus: "scheduled",
+        TargetAppVersion: version, ScheduleKind: schedule, Name: name, Publisher: "CRONUS A/S",
+        SyncMode: BcSyncMode.Add, LanguageId: string.Empty, CreatedOn: DateTimeOffset.UtcNow);
 
     private void DrainQueue()
     {
@@ -951,11 +1220,21 @@ public sealed class DeliveryServiceTests : IDisposable
         /// <summary>App name to the status its install operation reports. Missing = "succeeded".</summary>
         public Dictionary<string, string> StatusByApp { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// A failed operation's errorMessage exactly as Business Central sent it, with no
+        /// codes read out beforehand - the codes then only exist inside the text (#930).
+        /// Null = the default Danish sentence with the codes alongside.
+        /// </summary>
+        public string? FailedErrorMessage { get; set; }
+
         /// <summary>App names in upload order, so a test can assert dependency order was kept.</summary>
         public List<string> UploadedOrder { get; } = new();
 
         /// <summary>What the environment already has installed. Empty = every app is new to it.</summary>
         public List<BcInstalledApp> Installed { get; } = new();
+
+        /// <summary>Versions already waiting for a schedule. Empty = nothing is queued.</summary>
+        public List<BcScheduledPteOperation> Scheduled { get; } = new();
 
         /// <summary>What the last upload was sent with, for the tests that pin the call.</summary>
         public string? LastSchedule;
@@ -998,12 +1277,17 @@ public sealed class DeliveryServiceTests : IDisposable
         {
             var name = _appNameByAppId.GetValueOrDefault(appId, string.Empty);
             var status = StatusByApp.GetValueOrDefault(name, "succeeded");
-            return Task.FromResult<BcAppOperation?>(Operation(appId, status, operationId));
+            var operation = Operation(appId, status, operationId);
+            if (status == "failed" && FailedErrorMessage is { } raw)
+            {
+                operation = operation with { ErrorMessage = raw, ErrorCode = string.Empty, InnerErrorCode = string.Empty };
+            }
+            return Task.FromResult<BcAppOperation?>(operation);
         }
 
         public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(
             string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
-            => Task.FromResult((IReadOnlyList<BcScheduledPteOperation>)Array.Empty<BcScheduledPteOperation>());
+            => Task.FromResult((IReadOnlyList<BcScheduledPteOperation>)Scheduled);
         public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
 

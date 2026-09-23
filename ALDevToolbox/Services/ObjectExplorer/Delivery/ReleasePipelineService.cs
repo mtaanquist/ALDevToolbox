@@ -415,7 +415,7 @@ public sealed class ReleasePipelineService
         else if (environment.Missing)
         {
             errors["ProjectEnvironmentId"] =
-                $"'{environment.Name}' is no longer present in Business Central. Refresh the environments on the project's Business Central page, then come back.";
+                $"'{environment.Name}' is no longer present in Business Central. Refresh the environments on the solution's Business Central page, then come back.";
         }
         else if (BcEnvironmentStatus.RefusalMessage(environment.Name, environment.Status) is { } statusRefusal)
         {

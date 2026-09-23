@@ -261,6 +261,109 @@ public sealed class ReleaseBuildDialogTests : IDisposable
         cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
     }
 
+    // ── Release again (#931): DeliveryRowPanel.dc.html, section 4, its three states ──
+
+    private IRenderedComponent<ReleaseAgainDialog> OpenedReleaseAgain(string envName, string envType, bool forceSync,
+        bool failedOnSchemaChange = false)
+    {
+        var cut = _ctx.Render<ReleaseAgainDialog>();
+        cut.InvokeAsync(() => cut.Instance.OpenAsync(
+            new ReleaseAgainDialog.Request(
+                DeliveryId: 49, BuildId: 118, BuildSource: "from build pipeline \"Test\"", CustomerName: "CRONUS A/S",
+                EnvironmentName: envName, EnvironmentType: envType, WireSchedule: "Immediate", PipelineSyncMode: "Add",
+                Apps: ["CRONUS Base", "CRONUS Core", "CRONUS Reports"], AlreadyOn: ["CRONUS Base"],
+                FailedOnSchemaChange: failedOnSchemaChange),
+            forceSync)).GetAwaiter().GetResult();
+        return cut;
+    }
+
+    [Fact]
+    public void Release_again_on_a_sandbox_left_on_Add_can_release_straight_away()
+    {
+        var cut = OpenedReleaseAgain("Test", "Sandbox", forceSync: false);
+
+        cut.Find("#ra-title").TextContent.Should().Be("Release build #118 again?");
+        cut.Find(".ra-lead").TextContent.Should().Be(
+            "This installs build #118 from build pipeline \"Test\" into the Sandbox environment \"Test\" for CRONUS A/S, right away. "
+            + "CRONUS Base is already on this version and is left alone.");
+        cut.Find(".ra-facts").TextContent.Should().Contain("CRONUS Base, CRONUS Core, CRONUS Reports").And.Contain("Right away").And.Contain("Test Sandbox");
+        cut.Find(".ra-check input").HasAttribute("checked").Should().BeFalse("Force sync is off unless asked for");
+        cut.Find(".ra-check").TextContent.Should().Contain("The pipeline stays on Add. The next release goes back to Add.");
+        cut.FindAll(".check--ack").Should().BeEmpty();
+        cut.FindAll(".confirm-dialog--danger").Should().BeEmpty();
+        var release = cut.Find(".confirm-dialog__actions .btn--primary");
+        release.TextContent.Trim().Should().Be("Release");
+        release.HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Release_again_with_force_sync_ticked_waits_for_its_acknowledgement()
+    {
+        var cut = OpenedReleaseAgain("Test", "Sandbox", forceSync: true);
+
+        cut.Find(".ra-check input").HasAttribute("checked").Should().BeTrue("the failure's Force sync button pre-ticks it");
+        cut.Find(".check--ack").TextContent.Should().Contain("I understand Force sync can drop columns and permanently lose data in this environment.");
+        cut.Find(".field-warn").TextContent.Should().Contain("Tick the acknowledgement to release.");
+        cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
+
+        cut.WaitForAssertion(() => cut.Find(".check--ack input").Change(true));
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeFalse();
+            cut.FindAll(".field-warn").Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public void Release_again_into_production_with_force_sync_needs_both_acknowledgements()
+    {
+        var cut = OpenedReleaseAgain("Production", "Production", forceSync: true);
+
+        cut.FindAll(".confirm-dialog--danger").Should().ContainSingle();
+        cut.Find(".ra-lead").TextContent.Should().StartWith(
+            "This installs build #118 from build pipeline \"Test\" into CRONUS A/S's Production environment \"Production\", right away.");
+        var acks = cut.FindAll(".check--ack");
+        acks.Should().HaveCount(2);
+        acks[1].TextContent.Should().Contain("CRONUS A/S").And.Contain("live").And.Contain("Production");
+        cut.Find(".field-warn").TextContent.Should().Contain("Tick both acknowledgements to release.");
+
+        cut.WaitForAssertion(() => cut.FindAll(".check--ack input")[0].Change(true));
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".field-warn").TextContent.Should().Contain("Tick the acknowledgement to release.");
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
+        });
+        cut.WaitForAssertion(() => cut.FindAll(".check--ack input")[1].Change(true));
+        cut.WaitForAssertion(() =>
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeFalse());
+    }
+
+    [Fact]
+    public void Release_again_without_force_sync_after_a_refused_schema_change_says_it_will_likely_fail_again()
+    {
+        var cut = OpenedReleaseAgain("Production", "Production", forceSync: false, failedOnSchemaChange: true);
+
+        cut.Find(".ra-facts").TextContent.Should().NotContain("Production Production", "the type alone names an environment called after it");
+        cut.FindAll(".field-warn").Select(w => w.TextContent).Should().Contain(t => t.Contains("will most likely fail the same way"));
+
+        cut.WaitForAssertion(() => cut.Find(".ra-check input").Change(true));
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".field-warn").Select(w => w.TextContent).Should().NotContain(t => t.Contains("fail the same way")));
+    }
+
+    [Fact]
+    public void Release_again_unticking_force_sync_drops_its_acknowledgement()
+    {
+        var cut = OpenedReleaseAgain("Test", "Sandbox", forceSync: true);
+
+        cut.WaitForAssertion(() => cut.Find(".ra-check input").Change(false));
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".check--ack").Should().BeEmpty();
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeFalse();
+        });
+    }
+
     // ── Unused seams: the dialog never releases in these tests ────────────────
 
     /// <summary>No signed-in user: nothing here queries, so the filter sentinel is enough.</summary>

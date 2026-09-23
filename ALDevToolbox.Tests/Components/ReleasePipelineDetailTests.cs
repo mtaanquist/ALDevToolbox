@@ -114,8 +114,15 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
             cut.FindAll(".rp-rel.is-open").Should().ContainSingle("the newest release failed, so it opens by itself");
             cut.Find(".rp-rel__title").TextContent.Should().StartWith("Release 1");
             cut.Find(".rp-rel__build").TextContent.Should().Be($"Build #{seed.BuildId} from main");
-            // The stored failure as one paragraph, whole.
-            cut.Find(".rp-fail").TextContent.Should().Contain(failure);
+            // A release stored before #930 kept the long line; it reads like a new one (#930).
+            cut.Find(".rp-rel__why").TextContent.Should().Contain("Business Central refused a schema change");
+            cut.Find(".rp-rel__why .tag").TextContent.Should().Be("ExtensionChangeFailed");
+            cut.Find(".rp-what__text").TextContent.Should()
+                .Be("Business Central refused a schema change while installing CRONUS Warehouse 2.3.0.118.");
+            cut.Find(".rp-what__bc-text").TextContent.Should().StartWith("The schema synchronization of table 50110")
+                .And.EndWith("the old page cut it off.");
+            cut.Find(".rp-next__text").TextContent.Should().Contain("Force sync");
+            cut.FindAll(".rp-app__msg--failed").Select(e => e.TextContent).Should().Equal("Not installed. Still on 2.2.0.104.");
             // Every app says its state in words; the skipped one says why.
             cut.FindAll(".rp-app__end .rp-strong").Select(e => e.TextContent).Should().Equal("Completed", "Failed", "Skipped");
             cut.FindAll(".rp-app__ver").Select(e => e.TextContent).Should()
@@ -131,6 +138,151 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
             cut.FindAll(".rp-log__line").Should().HaveCount(3);
             cut.FindAll(".rp-log__line--err").Should().HaveCount(2);
             cut.Find(".rp-log__t").TextContent.Should().Be("02:00:05");
+        });
+    }
+
+    [Fact]
+    public async Task A_schema_change_failure_releases_again_with_force_sync_for_that_release_only()
+    {
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddHours(-3);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Failed, start, d =>
+        {
+            d.StartedAt = start.AddSeconds(5);
+            d.FinishedAt = start.AddSeconds(212);
+            d.FailureMessage = "Business Central refused a schema change while installing CRONUS Warehouse 2.3.0.118.";
+            d.DiagnosticsLog = "02:03:31  FAILED CRONUS Warehouse 2.3.0.118: Business Central reported the install as failed (ExtensionChangeFailed). "
+                + "A request to the Data Plane Admin Service failed. Http status code: BadRequest Error: "
+                + "{ \"code\": \"ExtensionChangeFailed\", \"message\": \"Feltet 12 er fjernet.\" }\n";
+        },
+        Result(0, "CRONUS Base", ProjectDeliveryResultStatus.Completed, "2.2.0.104", start.AddSeconds(5), start.AddSeconds(53)),
+        Result(1, "CRONUS Warehouse", ProjectDeliveryResultStatus.Failed, "2.2.0.104", start.AddSeconds(53), start.AddSeconds(145)),
+        Result(2, "CRONUS Reports", ProjectDeliveryResultStatus.Skipped, "2.2.0.104", null, null));
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".rp-rel__acts .btn").TextContent.Should().Be("Release again");
+            cut.Find(".rp-next__acts .btn").TextContent.Trim().Should().Be("Release again with Force sync");
+        });
+        cut.WaitForAssertion(() => cut.Find(".rp-next__acts .btn").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#ra-title").TextContent.Should().Be($"Release build #{seed.BuildId} again?");
+            cut.Find(".ra-lead").TextContent.Should().Contain("CRONUS Base is already on this version and is left alone.");
+            cut.Find(".ra-check input").HasAttribute("checked").Should().BeTrue();
+        });
+        cut.WaitForAssertion(() => cut.Find(".check--ack input").Change(true));
+        cut.WaitForAssertion(() => cut.Find(".confirm-dialog__actions .btn--primary").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("#ra-title").Should().BeEmpty();
+            cut.FindAll(".rp-rel").Should().HaveCount(2);
+            cut.Find(".rp-rel__force").TextContent.Should().Be("Force sync, this release only");
+        });
+        await using var read = _db.NewContext();
+        var again = await read.OeProjectDeliveries.AsNoTracking().OrderByDescending(d => d.Id).FirstAsync();
+        again.SchemaSyncMode.Should().Be(BcSyncMode.ForceSync);
+        (await read.OeReleasePipelines.AsNoTracking().SingleAsync(r => r.Id == seed.ReleasePipelineId))
+            .SchemaSyncMode.Should().Be(BcSyncMode.Add);
+    }
+
+    [Fact]
+    public async Task An_app_the_environment_already_had_says_so_instead_of_blaming_a_failure()
+    {
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddHours(-1);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Deployed, start, d =>
+        {
+            d.StartedAt = start.AddSeconds(5);
+            d.FinishedAt = start.AddSeconds(90);
+        },
+        Result(0, "CRONUS Base", ProjectDeliveryResultStatus.Skipped, "2.3.0.118", null, null, "Already on 2.3.0.118."),
+        Result(1, "CRONUS Warehouse", ProjectDeliveryResultStatus.Completed, "2.2.0.104", start.AddSeconds(5), start.AddSeconds(80)));
+
+        var cut = Render(seed.ReleasePipelineId);
+        cut.WaitForAssertion(() => cut.Find(".rp-rel__row").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-app__msg").Select(e => e.TextContent).Should().Equal("Already on 2.3.0.118.");
+            cut.FindAll(".rp-rel__acts .btn").Should().BeEmpty("only a failed release is released again");
+        });
+    }
+
+    [Fact]
+    public async Task A_failure_Business_Central_reported_shows_its_message_as_given_once_with_the_raw_response_behind_a_fold()
+    {
+        // As the run stores it since #930: one line on the release, the sentence and the
+        // message on the app, Business Central's whole response on the log line.
+        const string danish = "Udvidelsen \"CRONUS Core\" kunne ikke installeres, fordi feltet 12 \"Zone Priority\" i tabel 50110 \"Pick Zone\" er fjernet.";
+        const string raw = "A request to the Data Plane Admin Service failed. Http status code: BadRequest Error: "
+            + "{ \"code\": \"ExtensionChangeFailed\", \"message\": \"Udvidelsen \\\"CRONUS Core\\\" kunne ikke installeres, fordi feltet 12 \\\"Zone Priority\\\" i tabel 50110 \\\"Pick Zone\\\" er fjernet.\" }";
+        var detail = BcFailureText.Parse(raw);
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddHours(-1);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Failed, start, d =>
+        {
+            d.ClaimedAt = start.AddSeconds(4);
+            d.StartedAt = start.AddSeconds(5);
+            d.FinishedAt = start.AddSeconds(100);
+            d.FailureMessage = BcFailureText.WhatHappened(detail.Code, "CRONUS Core 2.3.0.118");
+            d.DiagnosticsLog = "02:00:05  Publishing 1 app(s) to Test.\n"
+                + $"02:01:40  FAILED CRONUS Core 2.3.0.118: {BcFailureText.ForLog(detail, raw)}\n02:01:40  Delivery failed.\n";
+        },
+        Result(0, "CRONUS Core", ProjectDeliveryResultStatus.Failed, "2.2.0.104", start.AddSeconds(5), start.AddSeconds(100),
+            BcFailureText.AppMessage(detail)));
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".rp-rel__why").TextContent.Should().Contain("Business Central refused a schema change")
+                .And.NotContain("Data Plane", "the wrapper tells the user nothing");
+            cut.Find(".rp-what__text").TextContent.Should()
+                .Be("Business Central refused a schema change while installing CRONUS Core 2.3.0.118.");
+            cut.Find(".rp-what__bc-label").TextContent.Should().Be("Business Central's message, in the environment's language");
+            cut.Find(".rp-what__bc-text").TextContent.Should().Be(danish, "shown as given, never translated");
+            cut.Find(".rp-next__text").TextContent.Should().Contain("release this build again with Force sync").And.Contain("\"Test\"");
+            // The app says where it was left, not the failure a second time.
+            cut.Find(".rp-app__msg--failed").TextContent.Should().Be("Not installed. Still on 2.2.0.104.");
+            cut.Find(".rp-rel__detail").TextContent.Split(danish).Length.Should().Be(2,
+                "Business Central's message is on the page once (the log and the raw response keep it escaped, as sent)");
+            var fold = cut.Find("details.rp-raw");
+            fold.HasAttribute("open").Should().BeFalse("the raw response is for support, closed until asked for");
+            cut.Find(".rp-raw__text").TextContent.Should().Contain(raw).And.StartWith("Release 1 of");
+            cut.Find(".rp-raw__foot .copy-btn").TextContent.Should().Contain("Copy for support");
+        });
+    }
+
+    [Fact]
+    public async Task A_failure_the_run_raised_itself_is_shown_as_written_with_no_code_and_no_raw_response()
+    {
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddHours(-1);
+        const string ours = "CRONUS Core 2.3.0.118 failed: The build's deliverables changed under the delivery.";
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Failed, start, d =>
+        {
+            d.StartedAt = start.AddSeconds(5);
+            d.FinishedAt = start.AddSeconds(6);
+            d.FailureMessage = ours;
+            d.DiagnosticsLog = "02:00:05  FAILED CRONUS Core 2.3.0.118: deliverable missing.\n02:00:06  Delivery failed.\n";
+        },
+        Result(0, "CRONUS Core", ProjectDeliveryResultStatus.Failed, "2.2.0.104", null, null, "The build's deliverables changed under the delivery."));
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".rp-rel__why").TextContent.Trim().Should().Be(ours);
+            cut.FindAll(".rp-rel__why .tag").Should().BeEmpty();
+            cut.Find(".rp-what__text").TextContent.Should().Be(ours);
+            cut.FindAll(".rp-what__bc").Should().BeEmpty("these are our words, not Business Central's");
+            cut.FindAll(".rp-next").Should().BeEmpty();
+            cut.FindAll("details.rp-raw").Should().BeEmpty();
+            cut.FindAll(".rp-app__msg--failed").Should().BeEmpty("the reason is said once, above");
         });
     }
 

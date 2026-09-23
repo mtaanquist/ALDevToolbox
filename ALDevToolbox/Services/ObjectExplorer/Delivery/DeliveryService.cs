@@ -87,7 +87,36 @@ public sealed class DeliveryService
     /// <see cref="PlanValidationException"/> on a bad request,
     /// <see cref="ProjectAccessDeniedException"/> when not permitted.
     /// </summary>
-    public async Task<int> ScheduleDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, CancellationToken ct = default)
+    public Task<int> ScheduleDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, CancellationToken ct = default)
+        => CreateDeliveryAsync(releasePipelineId, projectBuildId, scheduledForUtc, forceSyncOnce: false, ct);
+
+    /// <summary>
+    /// Releases a failed delivery's build again, now, through the same release pipeline
+    /// (#931). With <paramref name="forceSyncOnce"/> the new delivery snapshots
+    /// <see cref="BcSyncMode.ForceSync"/> as its own schema sync mode; the pipeline's
+    /// setting is not touched, so the release after this one is back on the pipeline's
+    /// mode. Everything else - access, the environment gate, the build and timing checks -
+    /// is the ordinary release's. Apps the environment already has at the build's version
+    /// are skipped by the run, which is what makes a retry after a partial failure safe.
+    /// The Production acknowledgement is the dialog's, as it is for every release. Throws
+    /// <see cref="PlanValidationException"/> when the delivery is missing or did not fail.
+    /// </summary>
+    public async Task<int> ReleaseAgainAsync(int deliveryId, bool forceSyncOnce, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var failed = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new { d.ReleasePipelineId, d.ProjectBuildId, d.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Delivery", "That release no longer exists.");
+        if (failed.Status != ProjectDeliveryStatus.Failed)
+        {
+            throw Validation("Delivery", "Only a failed release can be released again.");
+        }
+        return await CreateDeliveryAsync(failed.ReleasePipelineId, failed.ProjectBuildId, DateTime.UtcNow, forceSyncOnce, ct);
+    }
+
+    private async Task<int> CreateDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, bool forceSyncOnce, CancellationToken ct)
     {
         var orgId = RequireOrganizationId();
         scheduledForUtc = DateTime.SpecifyKind(scheduledForUtc, DateTimeKind.Utc);
@@ -207,7 +236,8 @@ public sealed class DeliveryService
             EnvironmentName = rp.EnvName,
             DeploymentSchedule = wireSchedule,
             ScheduledByDeliveryWindow = BcDeploymentSchedule.IsOurDeliveryWindow(rp.DeploymentSchedule),
-            SchemaSyncMode = rp.SchemaSyncMode,
+            // A one-time Force sync lives on this delivery only; the pipeline keeps its mode.
+            SchemaSyncMode = forceSyncOnce ? BcSyncMode.ForceSync : rp.SchemaSyncMode,
             ScheduledFor = scheduledForUtc,
             ScheduledOutsideWindow = outsideWindow,
             Status = ProjectDeliveryStatus.Scheduled,
@@ -239,9 +269,10 @@ public sealed class DeliveryService
         }
 
         _logger.LogInformation(
-            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}.",
+            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}{ForceOnce}.",
             delivery.Id, build.Id, rp.Id, rp.EnvName, scheduledForUtc, artifacts.Count,
-            outsideWindow ? " (outside the update window)" : "");
+            outsideWindow ? " (outside the update window)" : "",
+            forceSyncOnce ? " (Force sync, this release only)" : "");
         return delivery.Id;
     }
 
@@ -478,6 +509,18 @@ public sealed class DeliveryService
         delivery.StartedAt = now;
         delivery.UpdatedAt = now;
         Append(log, $"Publishing {delivery.Results.Count} app(s) to {delivery.EnvironmentName}.");
+        if (BcSyncMode.Normalize(delivery.SchemaSyncMode) == BcSyncMode.ForceSync)
+        {
+            // Said once, up front: a reader of the log after a dropped column needs to see
+            // it was asked for, and whether the pipeline asks for it every time (#931).
+            var pipelineMode = await _db.OeReleasePipelines.AsNoTracking()
+                .Where(r => r.Id == delivery.ReleasePipelineId)
+                .Select(r => r.SchemaSyncMode)
+                .FirstOrDefaultAsync(ct);
+            Append(log, BcSyncMode.Normalize(pipelineMode) == BcSyncMode.ForceSync
+                ? "Schema sync: Force sync."
+                : "Schema sync: Force sync, this release only.");
+        }
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
 
@@ -505,17 +548,24 @@ public sealed class DeliveryService
             return;
         }
 
+        // Each result's app id as the build's artifact knows it (results and artifacts
+        // line up by position). Business Central keys everything on the id: two apps can
+        // share a name across publishers, and a renamed app keeps its id. The name is
+        // only the fallback for an artifact written before the id was stamped on it.
+        var ordered = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        var appIds = ordered
+            .Select((r, i) => i < artifacts.Count && Guid.TryParse(artifacts[i].AppId, out var parsed) ? parsed : (Guid?)null)
+            .ToList();
+        BcInstalledApp? InstalledMatch(int i) => appIds[i] is { } id
+            ? installed.FirstOrDefault(a => a.AppId == id)
+            : installed.FirstOrDefault(a => string.Equals(a.Name, ordered[i].AppName, StringComparison.OrdinalIgnoreCase));
+
         // What each app is moving from, while the answer is at hand: the page reads it
         // back as "2.2.0.104 to 2.3.0.118", and after a failure it is the version the
-        // environment was left on. The build's artifact knows the app id before Business
-        // Central does; the name is the fallback for an artifact written before the id
-        // was stamped on it.
-        var ordered = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        // environment was left on.
         for (var i = 0; i < ordered.Count; i++)
         {
-            var appId = i < artifacts.Count && Guid.TryParse(artifacts[i].AppId, out var parsed) ? parsed : (Guid?)null;
-            var match = (appId is { } id ? installed.FirstOrDefault(a => a.AppId == id) : null)
-                ?? installed.FirstOrDefault(a => string.Equals(a.Name, ordered[i].AppName, StringComparison.OrdinalIgnoreCase));
+            var match = InstalledMatch(i);
             ordered[i].PreviousVersion = string.IsNullOrWhiteSpace(match?.Version) ? null : match.Version;
         }
 
@@ -524,8 +574,8 @@ public sealed class DeliveryService
         // first-time release has to go in right away.
         if (BcDeploymentSchedule.RequiresInstalledApp(delivery.DeploymentSchedule))
         {
-            var missing = delivery.Results
-                .Where(r => !installed.Any(a => string.Equals(a.Name, r.AppName, StringComparison.OrdinalIgnoreCase)))
+            var missing = ordered
+                .Where((r, i) => InstalledMatch(i) is null)
                 .Select(r => r.AppName)
                 .ToList();
             if (missing.Count > 0)
@@ -537,8 +587,34 @@ public sealed class DeliveryService
             }
         }
 
-        var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        // Business Central holds one version of an app per schedule, and answers a second
+        // upload of a version it is already holding with a bare 400. Read what is waiting
+        // once, so that case can be refused below with a sentence that says what to do.
+        IReadOnlyList<BcScheduledPteOperation> waiting = [];
+        if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
+        {
+            try
+            {
+                waiting = await _apps.ListScheduledPteOperationsAsync(bc.AccessToken, family, delivery.EnvironmentName, ct);
+            }
+            catch (BcApiException ex)
+            {
+                // Not a reason to stop: this read only buys a clearer message, and the
+                // upload itself reports a real conflict.
+                Append(log, $"Couldn't read the installs already waiting on {delivery.EnvironmentName}; going ahead. " + Short(ex.Message));
+            }
+        }
+
+        var results = ordered;
         var failedIndex = -1;
+        // Whether anything went up. A run where every app was already on its version
+        // hands nothing to Business Central, so it ends as deployed, not handed off.
+        var uploadedAny = false;
+        // The one line the delivery carries when Business Central reported the failure;
+        // the detail (its message) stays on the app, so the two never say the same twice.
+        string? failureLine = null;
+        // A refusal is already the whole sentence; it isn't prefixed like an app's failure.
+        string? refusal = null;
 
         for (var i = 0; i < results.Count; i++)
         {
@@ -558,6 +634,33 @@ public sealed class DeliveryService
                 result.FinishedAt = DateTime.UtcNow;
                 result.Message = "The build's deliverables changed under the delivery.";
                 Append(log, $"FAILED {label}: deliverable missing.");
+                break;
+            }
+
+            // Business Central refuses a version it already has, so an app the environment
+            // is already on is left alone and the run goes on (#931). That is what makes
+            // "Release again" after a partial failure safe: the apps that went in the
+            // first time are not sent twice.
+            if (InstalledMatch(i)?.Version is { Length: > 0 } onVersion
+                && string.Equals(onVersion, result.AppVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Status = ProjectDeliveryResultStatus.Skipped;
+                result.Message = $"Already on {onVersion}.";
+                result.UpdatedAt = DateTime.UtcNow;
+                Append(log, $"Skipped {label}: {delivery.EnvironmentName} already has this version.");
+                await SaveResultAsync(delivery, log, ct);
+                continue;
+            }
+
+            if (AlreadyWaiting(waiting, appIds[i], result, delivery) is { } waitingRefusal)
+            {
+                failedIndex = i;
+                refusal = waitingRefusal;
+                result.Status = ProjectDeliveryResultStatus.Failed;
+                result.FinishedAt = DateTime.UtcNow;
+                result.UpdatedAt = result.FinishedAt.Value;
+                result.Message = waitingRefusal;
+                Append(log, waitingRefusal);
                 break;
             }
 
@@ -587,6 +690,7 @@ public sealed class DeliveryService
                     installOrUpdateNeededDependencies: true,
                     ct);
 
+                uploadedAny = true;
                 result.OperationId = operation.Id;
                 result.AppId = operation.AppId?.ToString();
                 result.UpdatedAt = DateTime.UtcNow;
@@ -637,7 +741,17 @@ public sealed class DeliveryService
                     failedIndex = i;
                     result.Status = ProjectDeliveryResultStatus.Failed;
                     result.Message = outcome.Message;
-                    Append(log, $"FAILED {label}: {outcome.Message}");
+                    // The log keeps Business Central's text whole, wrapper and JSON included:
+                    // it is what support needs, and what the page parses back (#930).
+                    if (outcome.Failure is { } reported)
+                    {
+                        Append(log, $"FAILED {label}: {BcFailureText.ForLog(reported, outcome.Raw)}");
+                        failureLine = BcFailureText.WhatHappened(reported.Code, label);
+                    }
+                    else
+                    {
+                        Append(log, $"FAILED {label}: {outcome.Message}");
+                    }
                 }
                 result.FinishedAt = DateTime.UtcNow;
                 result.UpdatedAt = result.FinishedAt.Value;
@@ -647,10 +761,21 @@ public sealed class DeliveryService
             {
                 failedIndex = i;
                 result.Status = ProjectDeliveryResultStatus.Failed;
-                result.Message = Short(ex.Message);
+                // A refused upload can carry the same Data Plane Admin Service text as a
+                // failed install; when it names a code, say it the same way.
+                var refused = BcFailureText.Parse(ex.Message);
+                if (refused.Code.Length > 0)
+                {
+                    result.Message = BcFailureText.AppMessage(refused);
+                    failureLine = BcFailureText.WhatHappened(refused.Code, label);
+                }
+                else
+                {
+                    result.Message = Short(ex.Message);
+                }
                 result.FinishedAt = DateTime.UtcNow;
                 result.UpdatedAt = result.FinishedAt.Value;
-                Append(log, $"FAILED {label}: {Short(ex.Message)}");
+                Append(log, $"FAILED {label}: {OneLine(ex.Message)}");
             }
         }
 
@@ -658,9 +783,21 @@ public sealed class DeliveryService
         if (failedIndex >= 0)
         {
             var failed = results[failedIndex];
+            // The branches that stop the loop with a break leave the apps after the
+            // failed one pending; they didn't get there either.
+            foreach (var r in results.Skip(failedIndex + 1).Where(r => r.Status == ProjectDeliveryResultStatus.Pending))
+            {
+                r.Status = ProjectDeliveryResultStatus.Skipped;
+                r.UpdatedAt = endNow;
+            }
             delivery.Status = ProjectDeliveryStatus.Failed;
-            delivery.FailureMessage = $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
+            delivery.FailureMessage = refusal ?? failureLine ?? $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
             Append(log, "Delivery failed.");
+        }
+        else if (!uploadedAny)
+        {
+            delivery.Status = ProjectDeliveryStatus.Deployed;
+            Append(log, $"Every app was already on this version in {delivery.EnvironmentName}; nothing to install.");
         }
         else if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
         {
@@ -684,6 +821,35 @@ public sealed class DeliveryService
         // "did my release land?" is exactly who would read it next. A delivery names its
         // environment rather than carrying its id, so the whole project's entries go.
         _panelCache.InvalidateProject(delivery.ProjectId);
+    }
+
+    /// <summary>
+    /// The refusal for an app whose exact version Business Central is already holding for
+    /// this delivery's schedule (#937), or null when it isn't. Matched on the app id, the
+    /// name only when the artifact has none. An entry whose schedule didn't come back is
+    /// left alone: without knowing it is the same schedule, the upload may well be fine.
+    /// </summary>
+    private static string? AlreadyWaiting(
+        IReadOnlyList<BcScheduledPteOperation> waiting, Guid? appId, OeProjectDeliveryResult result, OeProjectDelivery delivery)
+    {
+        var schedule = BcDeploymentSchedule.Normalize(delivery.DeploymentSchedule);
+        var held = waiting.Any(op =>
+            op.Status is not (BcAppOperationStatus.Succeeded or BcAppOperationStatus.Failed
+                or BcAppOperationStatus.Canceled or BcAppOperationStatus.Skipped)
+            && op.ScheduleKind is { } kind && kind == schedule
+            && string.Equals(op.TargetAppVersion, result.AppVersion, StringComparison.OrdinalIgnoreCase)
+            && (appId is { } id
+                ? op.AppId == id
+                : string.Equals(op.Name, result.AppName, StringComparison.OrdinalIgnoreCase)));
+        if (!held) return null;
+
+        var when = schedule switch
+        {
+            BcDeploymentSchedule.NextMinorUpdate => "the next minor update",
+            BcDeploymentSchedule.NextMajorUpdate => "the next major update",
+            _ => "the Business Central update window",
+        };
+        return $"{result.AppName} {result.AppVersion} is already waiting for {when} on {delivery.EnvironmentName}; cancel it there first.";
     }
 
     /// <summary>
@@ -717,7 +883,7 @@ public sealed class DeliveryService
 
         if (live is null)
         {
-            return $"Business Central no longer has an environment called '{delivery.EnvironmentName}'. Refresh the environments on the project's Business Central page.";
+            return $"Business Central no longer has an environment called '{delivery.EnvironmentName}'. Refresh the environments on the solution's Business Central page.";
         }
 
         if (env is not null)
@@ -767,7 +933,7 @@ public sealed class DeliveryService
                 case BcAppOperationStatus.Succeeded:
                     return new DeploymentOutcome(true, null);
                 case BcAppOperationStatus.Failed:
-                    return new DeploymentOutcome(false, DescribeFailure(operation));
+                    return DescribeFailure(operation);
                 case BcAppOperationStatus.Canceled:
                     return new DeploymentOutcome(false, "The install was cancelled in Business Central.");
                 case BcAppOperationStatus.Skipped:
@@ -784,24 +950,31 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Turns a failed operation into one line for the history. The codes lead because
-    /// <see cref="BcAppOperation.ErrorMessage"/> comes back in the <em>environment's</em>
-    /// language — useful to show, never to branch on.
+    /// Turns a failed operation into what the history stores (#930): the app's message is
+    /// the code's sentence followed by Business Central's own message, verbatim, and the raw
+    /// text goes to the log. The codes lead because <see cref="BcAppOperation.ErrorMessage"/>
+    /// comes back in the <em>environment's</em> language - shown, never branched on. The
+    /// codes the client already read win over the ones parsed from the text.
     /// </summary>
-    private static string DescribeFailure(BcAppOperation operation)
+    private static DeploymentOutcome DescribeFailure(BcAppOperation operation)
     {
-        var codes = new[] { operation.ErrorCode, operation.InnerErrorCode }
-            .Where(c => !string.IsNullOrEmpty(c))
-            .ToList();
-        var detail = codes.Count > 0
-            ? $"Business Central reported the install as failed ({string.Join(" / ", codes)})."
-            : "Business Central reported the install as failed.";
-        return string.IsNullOrWhiteSpace(operation.ErrorMessage)
-            ? detail
-            : Short($"{detail} {operation.ErrorMessage}");
+        var parsed = BcFailureText.Parse(operation.ErrorMessage);
+        var detail = parsed with
+        {
+            Code = string.IsNullOrEmpty(operation.ErrorCode) ? parsed.Code : operation.ErrorCode,
+            InnerCode = string.IsNullOrEmpty(operation.InnerErrorCode) ? parsed.InnerCode : operation.InnerErrorCode,
+        };
+        var raw = string.IsNullOrWhiteSpace(operation.ErrorMessage) ? null : operation.ErrorMessage;
+        return new DeploymentOutcome(false, BcFailureText.AppMessage(detail), detail, raw);
     }
 
-    private sealed record DeploymentOutcome(bool Completed, string? Message);
+    /// <param name="Failure">Set when Business Central reported the install as failed, so the delivery's line is built from its code.</param>
+    /// <param name="Raw">Business Central's text as it came, for the log.</param>
+    private sealed record DeploymentOutcome(bool Completed, string? Message, BcFailureDetail? Failure = null, string? Raw = null);
+
+    /// <summary>A multi-line response folded onto one log line, so the page reads the log a line at a time.</summary>
+    private static string OneLine(string text) =>
+        string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()));
 
     // ── Reads (for delivery history) ──────────────────────────────────────────
 

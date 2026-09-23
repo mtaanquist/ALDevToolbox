@@ -649,7 +649,13 @@ short-circuited.
 **Failure detail comes from the codes, never the message.** A failed operation carries `errorMessage`
 localized to the *environment's* language (a real failure came back in Danish) with the structured
 `code` / `innerError.code` embedded in it as JSON. The run keys everything on those codes and carries
-the message through only as display text.
+the message through only as display text. Since #930 one parser (`BcFailureText`) takes that text apart: it drops the
+"A request to the Data Plane Admin Service failed. Http status code: ... Error:" wrapper and reads
+`code`, `message` and `innerError` out of the JSON. The release keeps one line built from the code
+("Business Central refused a schema change while installing X"); the failed app keeps the code's
+sentence followed by Business Central's message verbatim; the diagnostics log keeps the response
+whole. The page reads the log line back through the same parser, so a release stored before #930
+(whose failure message was the long raw line) renders the same way.
 
 ## Services & seams
 
@@ -720,7 +726,10 @@ the message through only as display text.
   to render. The failure sentence names the version the environment had before the run, or what
   the panel cache reports if someone read the environment since. The releases list numbers
   releases per pipeline for display ("Release 49"), shows the newest ten and extends in place
-  with "Show older releases"; a row opens into the stored failure message whole, a step strip
+  with "Show older releases"; a failed row carries the code's short sentence and the code as a tag, and opens into "What
+  happened" (our sentence, then Business Central's message as given in its own labelled block, then
+  what the environment reports installed), a suggested next step, and the raw response behind a
+  fold with "Copy for support" (DeliveryRowPanel.dc.html, section 2; nothing is translated); a step strip
   (only the steps whose moments were recorded), per-app rows with their state word, version
   change, message and duration, and the diagnostics log (UTC, open on failures, with a copy
   button). A skipped app says "Skipped because it depends on X" only when the build's manifests
@@ -729,8 +738,21 @@ the message through only as display text.
   records per-app `started_at` / `finished_at` and `previous_version` (from the installed-apps
   read before the first upload, matched on app id then name), the delivery's
   `install_started_at` (the first upload accepted), and `cancelled_by_user_id`. Rows written
-  before that have nulls and the page hides those cells. "Release again" (#931) and the
-  approval band (#934) are not built.
+  before that have nulls and the page hides those cells. The approval band (#934) is not built.
+- **Release again (#931):** a failed row carries "Release again" (manage-gated; the phone layout
+  moves it to a full-width button in the opened row), and when Business Central refused a schema
+  change (`ExtensionChangeFailed`) on a release that did not already use Force sync, the failure's
+  suggested next step carries "Release again with Force sync", which opens the same dialog with
+  Force sync pre-ticked (DeliveryRowPanel.dc.html, section 4). The dialog names the build, the
+  environment, the apps and when they install, and the apps the failed release already put in
+  ("... is already on this version and is left alone"). "Use Force sync for this release only"
+  is off by default and needs the pipeline editor's acknowledgement when ticked; Production
+  keeps the Release dialog's acknowledgement; the one primary is "Release". The new delivery
+  (`DeliveryService.ReleaseAgainAsync`) is an ordinary release of the same build through the
+  same pipeline, now, with every check a release has; a one-time Force sync is snapshotted on
+  the delivery's own `schema_sync_mode` and nowhere else, so the pipeline and the release after
+  this one stay on the pipeline's mode. The row reads "Force sync, this release only" and the
+  run's log says the same. No new column: the snapshot was already there.
 
 ## Security & tenant isolation
 
@@ -756,7 +778,10 @@ blocking. Access-gating + validation come from `DeliveryService`/`ProjectAccess`
 only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpException`. Scheduling a
 *future* delivery and the Production extra-confirm stay web-only — the agent path is release-now,
 including for a pipeline that installs in the delivery window (#928): the tool releases immediately
-and the delivery records that it ran outside the window when it did.
+and the delivery records that it ran outside the window when it did. `publish_build` always uses
+the pipeline's own schema sync mode and has no parameter to change it: a one-time Force sync
+(#931) is a person's decision, taken in the web UI behind its acknowledgement, and no agent or
+palette write may escalate to it.
 
 **The Deliver reads (#912):** ten read-only tools in their own class, `DeliverTools`, so the
 area's one write stays in `DeliveryTools` and a test (`DeliverToolsTests`) can walk the new
@@ -874,9 +899,17 @@ not architecture:
   window") and starts when *we* send; Microsoft's must name Microsoft ("When Business Central next
   updates Production") and starts when *they* do. The internal names are already apart —
   `OurDeliveryWindow` against the wire's `UpdateWindow` — so the question is only the product one.
-- **Re-releasing a version that's already scheduled.** BC won't hold two versions of one app for the
-  same schedule, so re-releasing the same version probably 400s. Decide between pre-checking,
-  cancel-then-install, and mapping the error to a clear message.
+- **Re-releasing a version that's already scheduled.** Decided (#937): pre-check. Before uploading
+  on a deferred schedule the run reads `scheduledPteOperations` once and refuses an app whose same
+  version is already waiting for the same schedule, with "{app} {version} is already waiting for the
+  next minor update on {environment}; cancel it there first." Still open: whether a *different*
+  version waiting for the same schedule also 400s, or replaces the waiting one.
+  **Re-releasing a version that's already installed** is answered too (#931): the run compares
+  each app with the installed-apps read it already makes (by app id, the name only when the
+  artifact has none), and an app already on the build's version is marked Skipped with "Already on
+  {version}." and the run goes on to the next. That is what makes releasing again after a partial
+  failure safe, with no setting for it. A run where every app was already on its version uploads
+  nothing and ends as deployed.
 - **Mixed-tool invisibility.** A version scheduled through the web client's Extension Management page
   isn't visible in the admin center until it installs, and vice versa. If a customer's own consultant
   uploads that way while we schedule through the admin center, neither surface shows the other's
