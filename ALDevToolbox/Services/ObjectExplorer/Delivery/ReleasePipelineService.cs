@@ -275,7 +275,7 @@ public sealed class ReleasePipelineService
         // the user would hit later, just earlier and while they can still change it.
         var environment = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.Id == input.ProjectEnvironmentId && e.ProjectId == input.ProjectId)
-            .Select(e => new { e.Name, e.Status, Missing = e.MissingSince != null })
+            .Select(e => new { e.Name, e.Status, Missing = e.MissingSince != null, e.UpdateWindowStart, e.UpdateWindowEnd })
             .FirstOrDefaultAsync(ct);
         if (environment is null)
         {
@@ -300,6 +300,15 @@ public sealed class ReleasePipelineService
         if (!BcDeploymentSchedule.Pickable.Contains(deploymentSchedule))
         {
             errors["DeploymentSchedule"] = "Choose when installs should run.";
+        }
+        else if (BcDeploymentSchedule.IsOurDeliveryWindow(deploymentSchedule)
+                 && environment is not null
+                 && !UpdateWindow.IsConfigured(environment.UpdateWindowStart, environment.UpdateWindowEnd))
+        {
+            // The delivery window belongs to the environment, so the choice only means
+            // something while that environment has one.
+            errors["DeploymentSchedule"] =
+                $"'{environment.Name}' has no delivery window yet. Set one on the environment's page, or choose another time for installs.";
         }
 
         var schemaSyncMode = string.IsNullOrWhiteSpace(input.SchemaSyncMode) ? BcSyncMode.Add : input.SchemaSyncMode;

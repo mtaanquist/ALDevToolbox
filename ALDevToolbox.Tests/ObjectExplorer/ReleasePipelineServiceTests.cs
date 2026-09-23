@@ -207,6 +207,54 @@ public sealed class ReleasePipelineServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_pipeline_can_install_in_its_environments_delivery_window_when_it_has_one()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId,
+            windowStart: new TimeOnly(22, 0), windowEnd: new TimeOnly(4, 0));
+
+        var id = await NewService(ctx).CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.OurDeliveryWindow, BcSyncMode.Add));
+
+        await using var read = _db.NewContext();
+        (await read.OeReleasePipelines.SingleAsync(r => r.Id == id))
+            .DeploymentSchedule.Should().Be(BcDeploymentSchedule.OurDeliveryWindow);
+    }
+
+    [Fact]
+    public async Task The_delivery_window_is_refused_for_an_environment_without_one()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "Production");
+
+        var act = () => NewService(ctx).CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.OurDeliveryWindow, BcSyncMode.Add));
+
+        var errors = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors;
+        errors.Should().ContainKey("DeploymentSchedule");
+        errors["DeploymentSchedule"].Should().Contain("'Production' has no delivery window");
+    }
+
+    [Fact]
+    public async Task Business_Centrals_own_update_window_is_still_not_pickable()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId,
+            windowStart: new TimeOnly(22, 0), windowEnd: new TimeOnly(4, 0));
+
+        var act = () => NewService(ctx).CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.UpdateWindow, BcSyncMode.Add));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("DeploymentSchedule");
+    }
+
+    [Fact]
     public async Task UpdateReleasePipelineAsync_changes_target_and_modes()
     {
         await using var ctx = _db.NewContext();
@@ -405,7 +453,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
     }
 
     private static async Task<int> SeedEnvironmentAsync(
-        AppDbContext ctx, int projectId, string? name = null, string? status = null, bool missing = false)
+        AppDbContext ctx, int projectId, string? name = null, string? status = null, bool missing = false,
+        TimeOnly? windowStart = null, TimeOnly? windowEnd = null)
     {
         var env = new OeProjectEnvironment
         {
@@ -416,6 +465,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
             Status = status,
             MissingSince = missing ? DateTime.UtcNow : null,
             FetchedAt = DateTime.UtcNow,
+            UpdateWindowStart = windowStart,
+            UpdateWindowEnd = windowEnd,
         };
         ctx.OeProjectEnvironments.Add(env);
         await ctx.SaveChangesAsync();
