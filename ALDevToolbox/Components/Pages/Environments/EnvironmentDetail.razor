@@ -2,7 +2,7 @@
 @page "/environments/{Id:int}/{OpenTab}"
 @attribute [Authorize]
 @rendermode InteractiveServer
-@implements IDisposable
+@implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
@@ -1108,7 +1108,7 @@
     {
         if (_tab == Section.Operations) await LoadOperationsAsync();
         else if (_tab == Section.Sessions) await RefreshSessionsAsync();
-        else if (_tab == Section.History) _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+        else if (_tab == Section.History) _activity = await Read(ct => UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id, ct));
         else await LoadPanelAsync(forceRefresh: true);
     }
 
@@ -1140,8 +1140,8 @@
             _loadedId = Id;
             if (_env is null) return;
 
-            _canManage = await Access.CanManageAsync(Row.ProjectId, _env.CreatedByUserId);
-            _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+            _canManage = await Read(ct => Access.CanManageAsync(Row.ProjectId, _env.CreatedByUserId, ct));
+            _activity = await Read(ct => UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id, ct));
         }
         if (_env is null) return;
 
@@ -1195,7 +1195,7 @@
         StateHasChanged();
         try
         {
-            _operations = await Connection.ListEnvironmentOperationsAsync(Row.ProjectId, Id);
+            _operations = await Read(ct => Connection.ListEnvironmentOperationsAsync(Row.ProjectId, Id, ct));
             _operationsFetchedAt = DateTime.UtcNow;
         }
         catch (PlanValidationException ex)
@@ -1208,6 +1208,10 @@
             _operations = null;
             _canManage = false;
             _operationsError = ex.Message;
+        }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            throw; // the page was left mid-read; see DisposeAsync
         }
         catch (Exception ex)
         {
@@ -1241,7 +1245,7 @@
         StateHasChanged();
         try
         {
-            _sessions = await Connection.ListEnvironmentSessionsAsync(Row.ProjectId, Id);
+            _sessions = await Read(ct => Connection.ListEnvironmentSessionsAsync(Row.ProjectId, Id, ct));
             _sessionsFetchedAt = DateTime.UtcNow;
             _sessionsError = null;
             _sessionsStaleNote = null;
@@ -1257,6 +1261,10 @@
             _sessions = null;
             _sessionsError = ex.Message;
             StopSessionsLive();
+        }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            throw; // the page was left mid-read; see DisposeAsync
         }
         catch (Exception ex)
         {
@@ -1374,6 +1382,10 @@
         {
             StopSessionsLive();
         }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            StopSessionsLive();
+        }
         catch (Exception ex)
         {
             Log.LogWarning(ex, "The environment page stopped keeping the session list current for {EnvId}.", Id);
@@ -1428,9 +1440,9 @@
         StateHasChanged();
         try
         {
-            await Connection.CancelEnvironmentSessionAsync(Row.ProjectId, Id, session.SessionId);
+            await Write(() => Connection.CancelEnvironmentSessionAsync(Row.ProjectId, Id, session.SessionId));
             _settingDone = $"{who}'s session on {Row.EnvironmentName} was ended.";
-            _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+            _activity = await Read(ct => UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id, ct));
         }
         catch (PlanValidationException ex)
         {
@@ -1440,6 +1452,10 @@
         catch (ProjectAccessDeniedException ex)
         {
             _settingError = ex.Message;
+        }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            throw; // the page was left mid-read; see DisposeAsync
         }
         catch (Exception ex)
         {
@@ -1456,7 +1472,60 @@
         await LoadSessionsAsync();
     }
 
-    public void Dispose() => StopSessionsLive();
+    // ── Leaving ─────────────────────────────────────────────────────────
+
+    // Every call the page makes to a service goes through Read or Write, so that
+    // leaving the page can cancel the reads under way and then wait for the last
+    // call to finish before the circuit's one AppDbContext goes with the scope. A
+    // read is cancelled outright: nobody is left to show it to. A write is let
+    // finish - an update the user asked for must not be lost to a click on Back -
+    // but the re-reads after it are reads, and stop like the rest. Before this, a
+    // load could still be finishing after Dispose, and its next query would land on
+    // a context being torn down under it; the page's tests met that as #924.
+    private readonly CancellationTokenSource _gone = new();
+    private int _asking;
+    private TaskCompletionSource? _quiet;
+
+    private async Task<T> Read<T>(Func<CancellationToken, Task<T>> read) => await AskAsync(read(_gone.Token));
+
+    private async Task Write(Func<Task> write) => await AskAsync(Then(write()));
+
+    private static async Task<bool> Then(Task task)
+    {
+        await task;
+        return true;
+    }
+
+    private async Task<T> AskAsync<T>(Task<T> call)
+    {
+        Interlocked.Increment(ref _asking);
+        try
+        {
+            return await call;
+        }
+        finally
+        {
+            if (Interlocked.Decrement(ref _asking) == 0) _quiet?.TrySetResult();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopSessionsLive();
+        await _gone.CancelAsync();
+        // Wait for whatever is still under way, including a call a finishing one
+        // starts next: the flag is armed before each look at the count, so a call
+        // that ends between the two is not missed. The source is left undisposed
+        // on purpose - a continuation queued behind this one may still ask it for
+        // the token, and a cancelled source with nothing registered holds nothing.
+        while (true)
+        {
+            var quiet = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _quiet = quiet;
+            if (Volatile.Read(ref _asking) == 0) break;
+            await quiet.Task;
+        }
+    }
 
     /// <summary>The operations list names an app only by id; the panel, when it has been read, knows the name.</summary>
     private string? AppNameFor(Guid appId) =>
@@ -1465,7 +1534,7 @@
 
     private async Task LoadEnvironmentAsync()
     {
-        _env = await Fleet.GetEnvironmentAsync(Id);
+        _env = await Read(ct => Fleet.GetEnvironmentAsync(Id, ct));
         _cadence = BcAppUpdateCadence.Normalize(_env?.AppSourceAppsUpdateCadence) ?? BcAppUpdateCadence.Default;
     }
 
@@ -1476,7 +1545,7 @@
         StateHasChanged();
         try
         {
-            _panel = await Connection.GetEnvironmentPanelAsync(Row.ProjectId, Id, forceRefresh);
+            _panel = await Read(ct => Connection.GetEnvironmentPanelAsync(Row.ProjectId, Id, forceRefresh, ct));
             _targetVersion = string.Empty;
             _m365 = await ReadM365Async();
         }
@@ -1492,6 +1561,10 @@
             _panel = null;
             _canManage = false;
             _panelError = ex.Message;
+        }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            throw; // the page was left mid-read; see DisposeAsync
         }
         catch (Exception ex)
         {
@@ -1515,7 +1588,7 @@
     {
         try
         {
-            return await Connection.GetM365AccessAsync(Row.ProjectId, Id);
+            return await Read(ct => Connection.GetM365AccessAsync(Row.ProjectId, Id, ct));
         }
         catch (PlanValidationException)
         {
@@ -1848,7 +1921,7 @@
         _windowSaving = true;
         try
         {
-            await Connection.SetUpdateWindowAsync(Row.ProjectId, Id, start, end);
+            await Write(() => Connection.SetUpdateWindowAsync(Row.ProjectId, Id, start, end));
             _windowEditing = false;
             await LoadEnvironmentAsync();
         }
@@ -1859,6 +1932,10 @@
         catch (ProjectAccessDeniedException ex)
         {
             _windowError = ex.Message;
+        }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            throw; // the page was left mid-read; see DisposeAsync
         }
         catch (Exception ex)
         {
@@ -2027,11 +2104,11 @@
         StateHasChanged();
         try
         {
-            await write();
+            await Write(write);
             _operations = null; // Business Central has a new one to show
             await LoadEnvironmentAsync();
             await LoadPanelAsync();
-            _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+            _activity = await Read(ct => UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id, ct));
             _settingDone = successMessage();
             return true;
         }
@@ -2044,6 +2121,10 @@
         catch (ProjectAccessDeniedException ex)
         {
             _settingError = ex.Message;
+        }
+        catch (OperationCanceledException) when (_gone.IsCancellationRequested)
+        {
+            throw; // the page was left mid-read; see DisposeAsync
         }
         catch (Exception ex)
         {
@@ -2066,7 +2147,7 @@
     {
         try
         {
-            await UpgradeActions.CancelUpgradeActionAsync(actionId);
+            await Write(() => UpgradeActions.CancelUpgradeActionAsync(actionId));
             _settingError = null;
             _settingDone = "The booked update was cancelled.";
         }
@@ -2079,6 +2160,6 @@
             _settingError = ex.Message;
         }
 
-        _activity = await UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id);
+        _activity = await Read(ct => UpgradeActions.ListEnvironmentActivityAsync(Row.ProjectId, Id, ct));
     }
 }
