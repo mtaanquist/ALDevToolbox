@@ -286,10 +286,7 @@
                        for everyone else. *@
                     @if (!_canManage && _panel?.EnvironmentUpdatesError is { } updatesUnread)
                     {
-                        <p class="field-error env-detail__later">
-                            <Icon Name="triangle-alert" Width="13" Height="13" />
-                            Couldn't read the versions this environment is being offered: @updatesUnread
-                        </p>
+                        <FieldError Class="env-detail__later">Couldn't read the versions this environment is being offered: @updatesUnread</FieldError>
                     }
                     @if (WindowsOverlap())
                     {
@@ -328,7 +325,7 @@
                                 <small class="field__hint">The hours agreed with the customer for our own installs, in the solution's time zone (@(ZoneCity(Row.TimeZone) ?? "UTC")). Releases prefill to the next opening; you can still release outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
                                 @if (_windowError is { } windowError)
                                 {
-                                    <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@windowError</span>
+                                    <FieldError Message="@windowError" />
                                 }
                             </div>
                         }
@@ -502,7 +499,7 @@
                     </div>
                     @if (panel.ScheduledInstallsError is { } scheduledErr)
                     {
-                        <div class="card__body"><span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@scheduledErr</span></div>
+                        <div class="card__body"><FieldError Message="@scheduledErr" /></div>
                     }
                     else if (panel.ScheduledInstalls.Count == 0)
                     {
@@ -580,7 +577,7 @@
                     </div>
                     @if (panel.InstalledAppsError is { } installedErr)
                     {
-                        <div class="card__body"><span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@installedErr</span></div>
+                        <div class="card__body"><FieldError Message="@installedErr" /></div>
                     }
                     else if (panel.InstalledApps.Count == 0)
                     {
@@ -672,7 +669,7 @@
                     </div>
                     @if (panel.AvailableUpdatesError is { } updatesErr)
                     {
-                        <div class="card__body"><span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@updatesErr</span></div>
+                        <div class="card__body"><FieldError Message="@updatesErr" /></div>
                     }
                     else if (panel.AvailableUpdates.Count == 0)
                     {

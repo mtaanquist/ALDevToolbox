@@ -202,8 +202,8 @@ public class OeProject
     /// <summary>
     /// Operator-supplied third-party symbols (<see cref="OeProjectSymbol"/>) the build
     /// merges into the symbol cache — the manual-symbols recovery path for a
-    /// dependency absent from both the repos' <c>.alpackages/</c> and any Microsoft
-    /// artifact. See <c>.design/object-explorer-project-builds.md</c>.
+    /// dependency absent from the repos' <c>.alpackages/</c>, the Microsoft artifact
+    /// and the public symbol feeds. See <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
     public ICollection<OeProjectSymbol> Symbols { get; set; } = new List<OeProjectSymbol>();
 

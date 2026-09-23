@@ -23,7 +23,7 @@
         }
         else if (_error is { } error)
         {
-            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@error</span>
+            <FieldError Message="@error" />
         }
         else if (_bytes is not null)
         {

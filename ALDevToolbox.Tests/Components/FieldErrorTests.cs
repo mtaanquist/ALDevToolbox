@@ -67,4 +67,46 @@ public sealed class FieldErrorTests : IDisposable
         // the message is present rather than that it is the whole content.
         span.TextContent.Should().Contain("Name is required.");
     }
+
+    // ── Plain-message mode (#842) ───────────────────────────────────────
+
+    [Fact]
+    public void Renders_a_plain_message_with_the_alert_role_and_the_triangle_glyph()
+    {
+        var cut = _ctx.Render<FieldError>(p => p.Add(c => c.Message, "Couldn't save."));
+
+        var span = cut.Find("span.field-error");
+        span.GetAttribute("role").Should().Be("alert");
+        span.TextContent.Should().Contain("Couldn't save.");
+        cut.FindAll("svg").Should().ContainSingle("the glyph is chosen once, here, not by each page");
+        cut.Markup.Should().Contain("triangle-alert", "the design system's field-error carries the warning triangle");
+    }
+
+    [Fact]
+    public void Renders_nothing_for_an_empty_message()
+    {
+        _ctx.Render<FieldError>(p => p.Add(c => c.Message, "")).Markup.Trim().Should().BeEmpty();
+        _ctx.Render<FieldError>(p => p.Add(c => c.Message, null)).Markup.Trim().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Renders_child_content_when_the_line_needs_markup()
+    {
+        var cut = _ctx.Render<FieldError>(p => p.AddChildContent("<a href=\"/x\">See who</a>"));
+
+        cut.Find("span.field-error a").TextContent.Should().Be("See who");
+    }
+
+    [Fact]
+    public void Passes_the_id_and_extra_class_through()
+    {
+        var cut = _ctx.Render<FieldError>(p => p
+            .Add(c => c.Message, "Too long.")
+            .Add(c => c.Id, "name-help")
+            .Add(c => c.Class, "later"));
+
+        var span = cut.Find("span.field-error");
+        span.Id.Should().Be("name-help", "an input points at the line with aria-describedby");
+        span.ClassList.Should().Contain("later");
+    }
 }

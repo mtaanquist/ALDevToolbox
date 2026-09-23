@@ -133,7 +133,7 @@ public sealed class DependencyPickerTests : IDisposable
 
         emitted.Should().BeFalse(
             "validation must fail closed — empty fields must not silently emit");
-        cut.Find("p.field-error").TextContent.Should().Contain("required");
+        cut.Find(".field-error").TextContent.Should().Contain("required");
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class DependencyPickerTests : IDisposable
             && d.DepName == "Custom"
             && d.DepPublisher == "PubCo");
 
-        cut.FindAll("p.field-error").Should().BeEmpty(
+        cut.FindAll(".field-error").Should().BeEmpty(
             "the previous error message must clear once a valid entry is added");
     }
 
@@ -182,7 +182,7 @@ public sealed class DependencyPickerTests : IDisposable
         cut.Find("div.dep-manual button.btn").Click();
 
         emitted.Should().BeFalse();
-        cut.Find("p.field-error").TextContent.Should().Contain("GUID",
+        cut.Find(".field-error").TextContent.Should().Contain("GUID",
             "the server validates dep_id as a GUID — the form mirrors that "
             + "rule client-side so the user sees the failure inline");
     }

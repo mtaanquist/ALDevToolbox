@@ -177,6 +177,8 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `AL_COMPILER_DIR`                             | Where the AL compiler is provisioned at runtime for project builds (mounted on the `app-altool` volume). | `/var/lib/aldevtoolbox/altool` |
 | `AL_COMPILER_PATH`                            | Full path to an `alc` binary you supply yourself; set it to skip runtime provisioning. | unset |
 | `AL_COMPILER_VERSION`                         | Pin the AL compiler version instead of taking the newest published one. | newest available |
+| `AL_SYMBOLS_APPSOURCE_FEED`                   | NuGet v3 service index project builds search for AppSource dependency symbols. Fetched packages are cached under `AL_COMPILER_DIR`/`symbol-cache`. | Microsoft's public `AppSourceSymbols` feed |
+| `AL_SYMBOLS_MICROSOFT_FEED`                   | NuGet v3 service index for Microsoft symbols the Business Central artifact does not carry. | Microsoft's public `MSSymbols` feed |
 | `GIT_PATH`                                    | Path to the `git` binary used to clone project repositories. | `git` on `PATH`     |
 | `BC_ARTIFACT_CDN_HOST`                        | Host serving Microsoft's Business Central artifact indexes; override for a mirror. | Microsoft's artifact CDN |
 | `OE_BUILD_CLONE_TIMEOUT_MINUTES`              | Ceiling, in minutes, on a project build's repository clone step. | `30`                |

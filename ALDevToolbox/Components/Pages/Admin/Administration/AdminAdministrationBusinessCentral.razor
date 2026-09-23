@@ -63,7 +63,7 @@
                                pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" />
                         @if (Err("BcClientId") is { } eBcClientId)
                         {
-                            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@eBcClientId</span>
+                            <FieldError Message="@eBcClientId" />
                         }
                     </ChildContent>
                 </SettingRow>
@@ -79,7 +79,7 @@
                                aria-label="Client secret" placeholder="@(_view?.HasSecret == true ? "Unchanged" : "Paste the secret's value")" />
                         @if (Err("BcClientSecret") is { } eBcClientSecret)
                         {
-                            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@eBcClientSecret</span>
+                            <FieldError Message="@eBcClientSecret" />
                         }
                     </ChildContent>
                 </SettingRow>
@@ -93,7 +93,7 @@
                                aria-label="Secret expires" />
                         @if (Err("BcClientSecretExpiresAt") is { } eBcClientSecretExpiresAt)
                         {
-                            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@eBcClientSecretExpiresAt</span>
+                            <FieldError Message="@eBcClientSecretExpiresAt" />
                         }
                     </ChildContent>
                 </SettingRow>
