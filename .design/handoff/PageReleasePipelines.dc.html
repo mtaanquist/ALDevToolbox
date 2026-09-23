@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Workbench - page sheet - Releases</p>
+    <h1 class="doc__title">Release pipelines</h1>
+    <p class="doc__sub">Every release pipeline in the organisation, read the way an ops engineer reads it at 08:00: what is shipping now, what shipped or failed overnight, and what is queued for tonight. Built on the list archetype (<code>PageList</code>) inside the real shell. Desktop frames are 1440px shells scaled down; phone frames are 390px shells at 1:1, where the shell switches to its drawer.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Populated - desktop</span><h2 class="arch__t">Eight pipelines, one shipping now</h2></div><span class="arch__use">Shipping now, failed last night, environment missing, tonight's delivery window, a Production pipeline waiting on Business Central, a Force sync pipeline.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Dark - same markup</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Populated - phone, 390px</span><h2 class="arch__t">Rows become stacked items</h2></div><span class="arch__use">Same order, same keyline and glyph. Delivery reads first, configuration only when it is a risk.</span></div>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start">
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-compact="{{ yes }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Loading - phone</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-kind="loading" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Loading and empty - desktop</span><h2 class="arch__t">Before there is anything to ship</h2></div><span class="arch__use">Skeletons under the real header. Two different empties, because the next step is different.</span></div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: var(--space-5)">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Loading</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-kind="loading" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - no solutions yet</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-kind="no-solutions" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - solutions, no pipelines</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-kind="no-pipelines" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - solutions, no pipelines (dark)</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipelines" body-kind="no-pipelines" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Structure</h3>
+        <ul>
+          <li>Archetype 2 unchanged: <code>.page-head</code>, <code>.filter-bar</code> (search, solution, environment type, pill tabs), <code>.data-table--edge</code>, <code>.pager</code>. One <code>.btn--primary</code> per state: "New release pipeline" in the head, or the empty state's action when the head has none.</li>
+          <li>Columns in reading order for the morning scan: Pipeline (solution below) / Environment (type and health below) / <b>Delivery</b> / Next release / Apps from / Installs. Delivery comes before configuration because it is what changes overnight.</li>
+          <li>Default sort is by delivery urgency: shipping now, needs attention, scheduled, then the rest. The tabs filter to those same groups.</li>
+        </ul>
+        <h3>Row state</h3>
+        <ul>
+          <li>Same rule as every table: leading glyph plus right keyline, word in <code>aria-label</code> / <code>title</code>, no Status column. Mapping: <code>is-running</code> shipping now (spinning arc), <code>is-failed</code> last release failed (cross) or environment missing / failed (alert), <code>is-queued</code> scheduled (clock) or handed to Business Central (arrow), <code>is-succeeded</code> deployed, <code>is-cancelled</code> cancelled or environment being deleted.</li>
+          <li>Shipping now is loud three times: a <b>Shipping now</b> band above the table (<code>--info-bg</code>, <code>--bar-running</code> keyline, large spinner, step count and progress), the row tinted <code>--info-bg</code>, and the Delivery cell in <code>--info-text</code> with a progress bar. The band is the across-the-room signal; one per live release, gone when nothing ships. Uploading uses the same band with "Uploading 3 apps" and an indeterminate <code>&lt;progress&gt;</code>.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Risk marks</h3>
+        <ul>
+          <li><b>Production</b> is set in <code>--danger-text</code> semibold wherever an environment type appears, the same tone as the detail page's danger pill, so a Production target is never a plain word among Sandboxes.</li>
+          <li><b>Force sync</b> gets a warning triangle and <code>--warning-text</code>, with the consequence in the <code>title</code>: it can drop tables and columns and the data in them. Add is plain text.</li>
+          <li>Environment health: Ready is muted; Being deleted is warning; Failed and Missing are danger, and a missing environment also turns Next release into "Blocked".</li>
+        </ul>
+        <h3>Phone</h3>
+        <ul>
+          <li>Below the shell's 700px step the table becomes a stacked list with the same glyph and keyline: name and solution, then delivery, then next release, then a risk line only when there is one (missing environment, deleting, Force sync). The row menu button is 44px.</li>
+          <li><code>ReleasePipelinesBody</code> takes <code>compact</code> here because inline styles cannot hold a container query; in the app this is the shell's own <code>@container (max-width: 700px)</code>.</li>
+        </ul>
+        <h3>Files</h3>
+        <ul>
+          <li><code>ReleasePipelinesBody.dc.html</code> - page body, props <code>kind</code> (populated | loading | no-solutions | no-pipelines) and <code>compact</code>. <code>ShellFrame</code> gained <code>body="release-pipelines"</code> and <code>bodyCompact</code>, and marks Deliver &gt; Releases as current. No new tokens or colours.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() { return { yes: true }; }
+}
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="foundations.css" />
   <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="pages.css" />
 </helmet>
 <div class="doc">
   <header class="doc__head">
@@ -29,6 +30,20 @@
       <dc-import name="ComponentsPanel" hint-size="100%,4200px"></dc-import>
     </section>
   </div>
+
+  <section id="delivery-row" style="display: grid; gap: var(--space-3)">
+    <div class="arch__head"><div><span class="arch__n">Component - delivery row</span><h2 class="arch__t">Delivery row, per-app sub-row, failure text, "Release again" dialog</h2></div><span class="arch__use">Used on the release pipeline page and anywhere a single release is listed. A Business Central error is shown once, in the right place: a short sentence and code when collapsed, prose when expanded, raw text only on request.</span></div>
+    <div class="themes">
+      <section class="panel" data-theme="light">
+        <div class="panel__label"><span class="panel__dot"></span>Light</div>
+        <dc-import name="DeliveryRowPanel" hint-size="100%,2600px"></dc-import>
+      </section>
+      <section class="panel" data-theme="dark">
+        <div class="panel__label"><span class="panel__dot"></span>Dark</div>
+        <dc-import name="DeliveryRowPanel" hint-size="100%,2600px"></dc-import>
+      </section>
+    </div>
+  </section>
 
   <section class="spec">
     <h2>Spec</h2>
