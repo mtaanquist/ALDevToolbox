@@ -501,17 +501,24 @@ public sealed class DeliveryService
             return;
         }
 
+        // Each result's app id as the build's artifact knows it (results and artifacts
+        // line up by position). Business Central keys everything on the id: two apps can
+        // share a name across publishers, and a renamed app keeps its id. The name is
+        // only the fallback for an artifact written before the id was stamped on it.
+        var ordered = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        var appIds = ordered
+            .Select((r, i) => i < artifacts.Count && Guid.TryParse(artifacts[i].AppId, out var parsed) ? parsed : (Guid?)null)
+            .ToList();
+        BcInstalledApp? InstalledMatch(int i) => appIds[i] is { } id
+            ? installed.FirstOrDefault(a => a.AppId == id)
+            : installed.FirstOrDefault(a => string.Equals(a.Name, ordered[i].AppName, StringComparison.OrdinalIgnoreCase));
+
         // What each app is moving from, while the answer is at hand: the page reads it
         // back as "2.2.0.104 to 2.3.0.118", and after a failure it is the version the
-        // environment was left on. The build's artifact knows the app id before Business
-        // Central does; the name is the fallback for an artifact written before the id
-        // was stamped on it.
-        var ordered = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        // environment was left on.
         for (var i = 0; i < ordered.Count; i++)
         {
-            var appId = i < artifacts.Count && Guid.TryParse(artifacts[i].AppId, out var parsed) ? parsed : (Guid?)null;
-            var match = (appId is { } id ? installed.FirstOrDefault(a => a.AppId == id) : null)
-                ?? installed.FirstOrDefault(a => string.Equals(a.Name, ordered[i].AppName, StringComparison.OrdinalIgnoreCase));
+            var match = InstalledMatch(i);
             ordered[i].PreviousVersion = string.IsNullOrWhiteSpace(match?.Version) ? null : match.Version;
         }
 
@@ -520,8 +527,8 @@ public sealed class DeliveryService
         // first-time release has to go in right away.
         if (BcDeploymentSchedule.RequiresInstalledApp(delivery.DeploymentSchedule))
         {
-            var missing = delivery.Results
-                .Where(r => !installed.Any(a => string.Equals(a.Name, r.AppName, StringComparison.OrdinalIgnoreCase)))
+            var missing = ordered
+                .Where((r, i) => InstalledMatch(i) is null)
                 .Select(r => r.AppName)
                 .ToList();
             if (missing.Count > 0)
@@ -533,8 +540,28 @@ public sealed class DeliveryService
             }
         }
 
-        var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        // Business Central holds one version of an app per schedule, and answers a second
+        // upload of a version it is already holding with a bare 400. Read what is waiting
+        // once, so that case can be refused below with a sentence that says what to do.
+        IReadOnlyList<BcScheduledPteOperation> waiting = [];
+        if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
+        {
+            try
+            {
+                waiting = await _apps.ListScheduledPteOperationsAsync(bc.AccessToken, family, delivery.EnvironmentName, ct);
+            }
+            catch (BcApiException ex)
+            {
+                // Not a reason to stop: this read only buys a clearer message, and the
+                // upload itself reports a real conflict.
+                Append(log, $"Couldn't read the installs already waiting on {delivery.EnvironmentName}; going ahead. " + Short(ex.Message));
+            }
+        }
+
+        var results = ordered;
         var failedIndex = -1;
+        // A refusal is already the whole sentence; it isn't prefixed like an app's failure.
+        string? refusal = null;
 
         for (var i = 0; i < results.Count; i++)
         {
@@ -554,6 +581,18 @@ public sealed class DeliveryService
                 result.FinishedAt = DateTime.UtcNow;
                 result.Message = "The build's deliverables changed under the delivery.";
                 Append(log, $"FAILED {label}: deliverable missing.");
+                break;
+            }
+
+            if (AlreadyWaiting(waiting, appIds[i], result, delivery) is { } waitingRefusal)
+            {
+                failedIndex = i;
+                refusal = waitingRefusal;
+                result.Status = ProjectDeliveryResultStatus.Failed;
+                result.FinishedAt = DateTime.UtcNow;
+                result.UpdatedAt = result.FinishedAt.Value;
+                result.Message = waitingRefusal;
+                Append(log, waitingRefusal);
                 break;
             }
 
@@ -654,8 +693,15 @@ public sealed class DeliveryService
         if (failedIndex >= 0)
         {
             var failed = results[failedIndex];
+            // The branches that stop the loop with a break leave the apps after the
+            // failed one pending; they didn't get there either.
+            foreach (var r in results.Skip(failedIndex + 1).Where(r => r.Status == ProjectDeliveryResultStatus.Pending))
+            {
+                r.Status = ProjectDeliveryResultStatus.Skipped;
+                r.UpdatedAt = endNow;
+            }
             delivery.Status = ProjectDeliveryStatus.Failed;
-            delivery.FailureMessage = $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
+            delivery.FailureMessage = refusal ?? $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
             Append(log, "Delivery failed.");
         }
         else if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
@@ -680,6 +726,35 @@ public sealed class DeliveryService
         // "did my release land?" is exactly who would read it next. A delivery names its
         // environment rather than carrying its id, so the whole project's entries go.
         _panelCache.InvalidateProject(delivery.ProjectId);
+    }
+
+    /// <summary>
+    /// The refusal for an app whose exact version Business Central is already holding for
+    /// this delivery's schedule (#937), or null when it isn't. Matched on the app id, the
+    /// name only when the artifact has none. An entry whose schedule didn't come back is
+    /// left alone: without knowing it is the same schedule, the upload may well be fine.
+    /// </summary>
+    private static string? AlreadyWaiting(
+        IReadOnlyList<BcScheduledPteOperation> waiting, Guid? appId, OeProjectDeliveryResult result, OeProjectDelivery delivery)
+    {
+        var schedule = BcDeploymentSchedule.Normalize(delivery.DeploymentSchedule);
+        var held = waiting.Any(op =>
+            op.Status is not (BcAppOperationStatus.Succeeded or BcAppOperationStatus.Failed
+                or BcAppOperationStatus.Canceled or BcAppOperationStatus.Skipped)
+            && op.ScheduleKind is { } kind && kind == schedule
+            && string.Equals(op.TargetAppVersion, result.AppVersion, StringComparison.OrdinalIgnoreCase)
+            && (appId is { } id
+                ? op.AppId == id
+                : string.Equals(op.Name, result.AppName, StringComparison.OrdinalIgnoreCase)));
+        if (!held) return null;
+
+        var when = schedule switch
+        {
+            BcDeploymentSchedule.NextMinorUpdate => "the next minor update",
+            BcDeploymentSchedule.NextMajorUpdate => "the next major update",
+            _ => "the Business Central update window",
+        };
+        return $"{result.AppName} {result.AppVersion} is already waiting for {when} on {delivery.EnvironmentName}; cancel it there first.";
     }
 
     /// <summary>
