@@ -58,6 +58,7 @@ public sealed class ProjectBuildService
     private readonly BcArtifactService _artifacts;
     private readonly ReleaseImportService _importer;
     private readonly AlCompilerProvisioner _compiler;
+    private readonly AlSymbolFeedResolver _symbolFeeds;
     private readonly CloneCredentialResolver _credentials;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
@@ -69,6 +70,7 @@ public sealed class ProjectBuildService
         BcArtifactService artifacts,
         ReleaseImportService importer,
         AlCompilerProvisioner compiler,
+        AlSymbolFeedResolver symbolFeeds,
         CloneCredentialResolver credentials,
         IProcessRunner processRunner,
         TimeProvider clock,
@@ -79,6 +81,7 @@ public sealed class ProjectBuildService
         _artifacts = artifacts;
         _importer = importer;
         _compiler = compiler;
+        _symbolFeeds = symbolFeeds;
         _credentials = credentials;
         _processRunner = processRunner;
         _clock = clock;
@@ -209,10 +212,16 @@ public sealed class ProjectBuildService
             {
                 ExtractArtifactSymbols(download, symbolsDir);
                 CopyCommittedSymbols(clones.Select(c => c.Dir).ToList(), symbolsDir);
+                // Whatever is still missing comes from Microsoft's public symbol
+                // feeds (#901). Stored uploads are read first so the feed never
+                // fetches an app the operator has deliberately supplied.
+                var supplemental = await LoadSupplementalSymbolsAsync(projectId, ct).ConfigureAwait(false);
+                await ResolveFromSymbolFeedsAsync(discovered, supplemental, symbolsDir, resolved.MajorMinor, country, logs, ct)
+                    .ConfigureAwait(false);
                 // Operator-supplied symbols (the manual-symbols recovery path) are
-                // written last so they win over a stale committed/artifact copy of
-                // the same package — the upload is the deliberate fix.
-                await CopySupplementalSymbolsAsync(projectId, symbolsDir, ct).ConfigureAwait(false);
+                // written last so they win over a stale committed/artifact/feed copy
+                // of the same package — the upload is the deliberate fix.
+                await WriteSupplementalSymbolsAsync(projectId, supplemental, symbolsDir, ct).ConfigureAwait(false);
                 // 4. Auto-import the parent BC release inline (best-effort) so
                 //    cross-release references into Base App resolve. Reuses the
                 //    artifact we already downloaded.
@@ -1046,19 +1055,23 @@ public sealed class ProjectBuildService
     }
 
     /// <summary>
-    /// Writes any operator-supplied dependency symbols (the manual-symbols recovery
-    /// path) for the project into the symbol dir, overwriting a same-named copy so
-    /// the upload — the deliberate fix for a dependency missing from both the repo's
-    /// <c>.alpackages/</c> and any Microsoft artifact — takes effect. Persisted at
-    /// the project level, so every later build benefits. See
-    /// <c>.design/object-explorer-project-builds.md</c>.
+    /// Reads the operator-supplied dependency symbols stored for the project (the
+    /// manual-symbols recovery path). Persisted at the project level, so every
+    /// later build benefits. See <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
-    private async Task CopySupplementalSymbolsAsync(int projectId, string symbolsDir, CancellationToken ct)
-    {
-        var symbols = await _db.OeProjectSymbols.AsNoTracking()
+    private async Task<List<SupplementalSymbol>> LoadSupplementalSymbolsAsync(int projectId, CancellationToken ct) =>
+        await _db.OeProjectSymbols.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
-            .Select(s => new { s.FileName, s.Content })
+            .Select(s => new SupplementalSymbol(s.FileName, s.Content))
             .ToListAsync(ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Writes the stored uploads into the symbol dir, overwriting a same-named
+    /// copy so the upload — the deliberate fix for a dependency nothing else
+    /// supplies — takes effect.
+    /// </summary>
+    private async Task WriteSupplementalSymbolsAsync(int projectId, List<SupplementalSymbol> symbols, string symbolsDir, CancellationToken ct)
+    {
         foreach (var symbol in symbols)
         {
             var dest = Path.Combine(symbolsDir, Path.GetFileName(symbol.FileName));
@@ -1069,6 +1082,63 @@ public sealed class ProjectBuildService
             _logger.LogInformation("Merged {Count} supplemental symbol(s) into the build cache for project {ProjectId}.",
                 symbols.Count, projectId);
         }
+    }
+
+    /// <summary>
+    /// Fetches the dependencies nothing else supplied from Microsoft's public
+    /// symbol feeds, and records in the build log where each one came from or why
+    /// it could not be found. An app counts as supplied when the artifact or a
+    /// committed <c>.alpackages/</c> already put it in the symbol dir, when this
+    /// build compiles it, or when a stored upload carries it. Never fails the
+    /// build: an unresolved app fails only the extensions that need it, at
+    /// compile time, as a missing dependency always has.
+    /// </summary>
+    private async Task ResolveFromSymbolFeedsAsync(
+        IReadOnlyList<DiscoveredApp> discovered, List<SupplementalSymbol> supplemental, string symbolsDir,
+        string applicationVersion, string country, List<PendingLog> logs, CancellationToken ct)
+    {
+        var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var app in discovered) provided.Add(NormalizeAppId(app.Manifest.Id));
+        foreach (var upload in supplemental)
+        {
+            using var stream = new MemoryStream(upload.Content, writable: false);
+            if (AppPackageReader.TryReadManifest(stream) is { } manifest) provided.Add(NormalizeAppId(manifest.AppId.ToString()));
+        }
+
+        var dependencies = discovered
+            .SelectMany(d => d.Manifest.Dependencies)
+            .Where(d => NormalizeAppId(d.Id).Length > 0)
+            .GroupBy(d => NormalizeAppId(d.Id))
+            .Select(g => new SymbolDependency(g.Key, g.First().Name,
+                g.Select(d => d.Version).OrderByDescending(v => Version.TryParse(v, out var parsed) ? parsed : null).First()))
+            .ToList();
+
+        SymbolFeedOutcome outcome;
+        try
+        {
+            outcome = await _symbolFeeds.ResolveAsync(
+                new SymbolFeedRequest(dependencies, symbolsDir, provided, applicationVersion, country), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // The resolver promises not to throw; this keeps that promise from
+            // being the only thing between a feed bug and a sunk build.
+            _logger.LogWarning(ex, "Symbol feed resolution failed; the build continues with the symbols it already has.");
+            logs.Add(new PendingLog(null, "Symbols", $"Could not look up dependencies on the public symbol feeds: {ex.Message}"));
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var package in outcome.Resolved)
+        {
+            lines.Add($"Resolved {package.Name} {package.Version} from the {package.Feed}{(package.FromCache ? " (cached)" : string.Empty)}.");
+        }
+        foreach (var missing in outcome.Unresolved)
+        {
+            var wanted = missing.MinVersion is null ? string.Empty : $" {missing.MinVersion} or later";
+            lines.Add($"Could not resolve {missing.Name ?? "app"} ({missing.AppId}){wanted}: {missing.Reason}.");
+        }
+        if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
     }
 
     /// <summary>Copies any third-party symbols the repos committed under <c>.alpackages/</c> into the symbol dir.</summary>
@@ -1453,6 +1523,9 @@ public sealed class ProjectBuildService
                 path);
         }
     }
+
+    /// <summary>A stored operator upload, read before the feeds run so its app id is never fetched over it.</summary>
+    private sealed record SupplementalSymbol(string FileName, byte[] Content);
 
     /// <summary>A captured log section accumulated during a build, before it's persisted as a <see cref="OeProjectBuildLog"/>.</summary>
     private sealed record PendingLog(int? RepoId, string Section, string Content);
