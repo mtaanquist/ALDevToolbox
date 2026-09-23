@@ -289,6 +289,143 @@ public sealed class ReleasePipelineServiceTests : IDisposable
             "a busy environment passes on its own; one that is being removed or has failed does not");
     }
 
+    // ── The Releases list's delivery summary (#935) ──────────────────────────
+
+    [Fact]
+    public async Task The_overview_sums_up_each_pipelines_newest_live_and_next_release()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildPipelineId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "UAT");
+        var svc = NewService(ctx);
+        var busy = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "CRONUS to UAT", buildPipelineId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+        var idle = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "CRONUS to UAT again", buildPipelineId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+        await ctx.OeProjectEnvironments.Where(e => e.Id == envId).ExecuteUpdateAsync(u => u
+            .SetProperty(e => e.BcNextUpdateVersion, "28.4")
+            .SetProperty(e => e.BcNextUpdateType, "Major")
+            .SetProperty(e => e.BcNextUpdateDate, new DateTime(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc)));
+        var buildId = await SeedBuildAsync(ctx, projectId, buildPipelineId);
+
+        var t0 = new DateTime(2026, 9, 20, 10, 0, 0, DateTimeKind.Utc);
+        // A deployed release that took six minutes, then a later one that failed on its second app.
+        await SeedDeliveryAsync(ctx, projectId, busy, buildId, ProjectDeliveryStatus.Deployed,
+            startedAt: t0, finishedAt: t0.AddMinutes(6), apps: [ProjectDeliveryResultStatus.Completed]);
+        var failed = await SeedDeliveryAsync(ctx, projectId, busy, buildId, ProjectDeliveryStatus.Failed,
+            startedAt: t0.AddHours(1), finishedAt: t0.AddHours(1).AddMinutes(2),
+            apps: [ProjectDeliveryResultStatus.Completed, ProjectDeliveryResultStatus.Failed, ProjectDeliveryResultStatus.Skipped],
+            appNames: ["CRONUS Base", "CRONUS Sales", "CRONUS Reports"]);
+        // One installing its second of three apps right now.
+        var running = await SeedDeliveryAsync(ctx, projectId, busy, buildId, ProjectDeliveryStatus.Installing,
+            startedAt: t0.AddHours(2), finishedAt: null,
+            apps: [ProjectDeliveryResultStatus.Completed, ProjectDeliveryResultStatus.Installing, ProjectDeliveryResultStatus.Pending]);
+        // Two waiting for their time; the earlier one is next, whichever was created first.
+        await SeedDeliveryAsync(ctx, projectId, busy, buildId, ProjectDeliveryStatus.Scheduled,
+            startedAt: null, finishedAt: null, apps: [], scheduledFor: t0.AddDays(3));
+        var soonest = await SeedDeliveryAsync(ctx, projectId, busy, buildId, ProjectDeliveryStatus.Scheduled,
+            startedAt: null, finishedAt: null, apps: [], scheduledFor: t0.AddDays(1), outsideWindow: true);
+
+        var rows = await NewService(_db.NewContext()).ListReleasePipelineOverviewAsync();
+
+        var row = rows.Single(r => r.Id == busy);
+        row.LastDelivery.Should().NotBeNull();
+        row.LastDelivery!.DeliveryId.Should().Be(failed);
+        row.LastDelivery.Status.Should().Be(ProjectDeliveryStatus.Failed);
+        row.LastDelivery.FailedAppName.Should().Be("CRONUS Sales");
+        row.LastDelivery.At.Should().Be(t0.AddHours(1).AddMinutes(2));
+
+        row.LiveDelivery.Should().NotBeNull();
+        row.LiveDelivery!.DeliveryId.Should().Be(running);
+        row.LiveDelivery.Phase.Should().Be(ProjectDeliveryResultStatus.Installing);
+        row.LiveDelivery.CurrentApp.Should().Be(2);
+        row.LiveDelivery.AppsDone.Should().Be(1);
+        row.LiveDelivery.AppCount.Should().Be(3);
+        row.LiveDelivery.StartedAt.Should().Be(t0.AddHours(2));
+        row.LiveDelivery.PreviousDuration.Should().Be(TimeSpan.FromMinutes(6), "the last successful release, not the failed one");
+
+        row.NextDelivery.Should().NotBeNull();
+        row.NextDelivery!.DeliveryId.Should().Be(soonest);
+        row.NextDelivery.OutsideWindow.Should().BeTrue();
+
+        row.EnvironmentNextUpdate.Should().Be(new EnvironmentNextUpdate(
+            new DateTime(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc), "28.4", "Major"));
+
+        var quiet = rows.Single(r => r.Id == idle);
+        quiet.LastDelivery.Should().BeNull("nothing has been released through it");
+        quiet.LiveDelivery.Should().BeNull();
+        quiet.NextDelivery.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_live_release_that_is_between_apps_counts_the_next_one_as_in_hand()
+    {
+        var live = ReleasePipelineLiveDelivery.From(1, ProjectDeliveryStatus.Installing, null,
+            [ProjectDeliveryResultStatus.Completed, ProjectDeliveryResultStatus.Pending], null);
+
+        live.Phase.Should().BeNull();
+        live.CurrentApp.Should().Be(2);
+        live.AppsDone.Should().Be(1);
+
+        var claimed = ReleasePipelineLiveDelivery.From(2, ProjectDeliveryStatus.Claimed, null, [], null);
+        claimed.CurrentApp.Should().Be(0, "a release with no apps listed has no app in hand");
+    }
+
+    private static async Task<int> SeedBuildAsync(AppDbContext ctx, int projectId, int pipelineId)
+    {
+        var build = new OeProjectBuild
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = projectId,
+            PipelineId = pipelineId,
+            Status = ProjectBuildStatus.Ready,
+            StartedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjectBuilds.Add(build);
+        await ctx.SaveChangesAsync();
+        return build.Id;
+    }
+
+    private static async Task<int> SeedDeliveryAsync(
+        AppDbContext ctx, int projectId, int releasePipelineId, int buildId, string status,
+        DateTime? startedAt, DateTime? finishedAt, string[] apps, string[]? appNames = null,
+        DateTime? scheduledFor = null, bool outsideWindow = false)
+    {
+        var created = startedAt ?? scheduledFor ?? DateTime.UtcNow;
+        var delivery = new OeProjectDelivery
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = projectId,
+            ReleasePipelineId = releasePipelineId,
+            ProjectBuildId = buildId,
+            EnvironmentName = "UAT",
+            Status = status,
+            ScheduledFor = scheduledFor ?? created,
+            ScheduledOutsideWindow = outsideWindow,
+            StartedAt = startedAt,
+            FinishedAt = finishedAt,
+            CreatedAt = created,
+            UpdatedAt = finishedAt ?? created,
+        };
+        for (var i = 0; i < apps.Length; i++)
+        {
+            delivery.Results.Add(new OeProjectDeliveryResult
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Ordering = i,
+                AppName = appNames?[i] ?? $"App {i + 1}",
+                AppVersion = "1.0.0.0",
+                Status = apps[i],
+                CreatedAt = created,
+                UpdatedAt = created,
+            });
+        }
+        ctx.OeProjectDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+        return delivery.Id;
+    }
+
     // ── Artifact source (#632) ───────────────────────────────────────────────
 
     [Fact]

@@ -1,22 +1,140 @@
-/* The target cell keeps its environment-type pill next to the environment name
-   — a cell, not a row, so the pill is the right carrier here. */
+/* The Releases list, after .design/handoff/ReleasePipelinesBody.dc.html. The sheet
+   draws these with inline styles over the design system's tokens; they live here as
+   classes instead, with the same tokens. */
 
-.rp-env {
-    display: inline-flex;
+/* ── "Shipping now": one band per release in flight, above the filter row ── */
+.rp-live {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    background: var(--info-bg);
+    border: 1px solid var(--info);
+    border-left: 4px solid var(--bar-running);
+    border-radius: var(--r);
+}
+.rp-live__spinner { border-top-color: var(--info-text); }
+.rp-live__body { display: grid; gap: var(--space-1); min-width: 0; }
+.rp-live__head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.rp-live__eyebrow {
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--info-text);
+}
+.rp-live__name { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.rp-live__text { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
+.rp-live__meter { display: flex; align-items: center; gap: var(--space-2); max-width: 420px; }
+.rp-live__progress { height: 6px; flex: 1; }
+.rp-live__step { font-size: var(--text-xs); color: var(--info-text); font-weight: var(--fw-medium); white-space: nowrap; }
+
+/* ── The table ── */
+.rp-list__table { table-layout: fixed; }
+/* A fixed layout takes the state column's 1% literally; the glyph needs its 44px. */
+.rp-list__table .data-table__col-state { width: 44px; }
+.rp-list__table .rp-list__col-pipeline { width: 19%; }
+.rp-list__table .rp-list__col-env { width: 15%; }
+.rp-list__table .rp-list__col-delivery { width: 19%; }
+.rp-list__table .rp-list__col-next { width: 15%; }
+.rp-list__table .rp-list__col-source { width: 15%; }
+.rp-list__table .rp-list__col-installs { width: 13%; }
+.rp-list__table .rp-list__col-actions { width: 56px; }
+
+/* On a narrow page the tabs scroll sideways rather than wrapping their labels. */
+.rp-list__tabs { display: flex; min-width: 0; max-width: 100%; overflow-x: auto; }
+.rp-list__tabs .pill-tabs { width: max-content; }
+.rp-list__tabs .pill-tab { white-space: nowrap; }
+
+.rp-list__name { font-weight: var(--fw-medium); }
+.rp-list__quiet { color: inherit; }
+.rp-list__prod { color: var(--danger-text); font-weight: var(--fw-semibold); }
+.rp-list__strong { font-weight: var(--fw-medium); }
+.rp-list__none { color: var(--ink-4); }
+/* "Environment not found" is also the way to the fix: the solution's Business Central tab. */
+.rp-list__fix { color: var(--danger-text); text-decoration: underline; text-underline-offset: 2px; }
+
+/* A row in flight is tinted as well as keylined: it is the one thing on the page
+   that is changing while you look at it. */
+.rp-list__table tr.is-running td { background: var(--info-bg); }
+/* Nothing released yet: no keyline, and the dashed ring stays quiet. */
+.rp-list__table tr.rp-list__idle .data-table__state { color: var(--ink-4); }
+.rp-list__table tr.is-queued .data-table__state { color: var(--ink-2); }
+
+.rp-list__live { color: var(--info-text); font-weight: var(--fw-semibold); }
+.rp-list__live-sub { display: flex; align-items: center; gap: var(--space-2); }
+.rp-list__meter { height: 5px; width: 48px; flex: none; }
+
+.rp-list__source { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.rp-list__source ::deep .rp-list__source-icon { flex: none; color: var(--ink-3); }
+
+.rp-list__force {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--warning-text);
+    font-weight: var(--fw-semibold);
 }
 
-/* Force Sync can drop columns on install, so it is called out beside the name
-   rather than hidden in the row menu. Not a row state: the pipeline is fine,
-   the setting is just one worth seeing before you publish. */
-.rp-force {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    margin-left: var(--space-2);
-    font-size: var(--text-2xs);
-    font-weight: var(--fw-medium);
-    color: var(--warning-text);
+/* Tones for a word inside a cell. */
+.rp-tone--success { color: var(--success-text); }
+.rp-tone--danger { color: var(--danger-text); }
+.rp-tone--warning { color: var(--warning-text); }
+.rp-tone--muted { color: var(--ink-3); }
+.rp-tone--ink { color: var(--ink); }
+.cell-stack__main.rp-tone--success,
+.cell-stack__main.rp-tone--danger,
+.cell-stack__main.rp-tone--muted,
+.cell-stack__main.rp-tone--ink { font-weight: var(--fw-medium); }
+
+/* ── The phone layout: cards instead of the table, from the sheet's compact
+   variant. .page is a size container, so this follows the page's width. ── */
+.rp-cards { display: none; }
+
+.rp-card {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border);
+    border-right: 4px solid transparent;
+}
+.rp-card:last-child { border-bottom: 0; }
+.rp-card.is-running { border-right-color: var(--bar-running); background: var(--info-bg); }
+.rp-card.is-failed { border-right-color: var(--bar-failed); }
+.rp-card.is-queued { border-right-color: var(--bar-queued); }
+.rp-card.is-succeeded { border-right-color: var(--bar-succeeded); }
+.rp-card.is-cancelled { border-right-color: var(--bar-cancelled); }
+.rp-card.is-running .rp-card__state { color: var(--info-text); }
+.rp-card.is-failed .rp-card__state { color: var(--danger-text); }
+.rp-card.is-succeeded .rp-card__state { color: var(--success-text); }
+.rp-card.is-queued .rp-card__state { color: var(--ink-2); }
+.rp-card.rp-list__idle .rp-card__state { color: var(--ink-4); }
+
+.rp-card__state { padding-top: 2px; }
+.rp-card__head { padding: 0; }
+.rp-card__name { font-weight: var(--fw-semibold); }
+/* A 44px touch target, pulled into the card's padding so it does not push the row. */
+.rp-card__menu { width: 44px; height: 44px; margin: -10px -10px 0 0; }
+.rp-card__lines { grid-column: 2 / span 2; display: grid; gap: 2px; font-size: var(--text-sm); }
+.rp-card__meter { height: 5px; margin: 2px 0; }
+.rp-card__outcome { font-weight: var(--fw-medium); }
+.rp-card__next { color: var(--ink-2); }
+.rp-card__next-when { font-weight: var(--fw-medium); color: var(--ink); }
+.rp-card__warn { font-weight: var(--fw-medium); }
+
+@container (max-width: 700px) {
+    .rp-list__wide { display: none; }
+    .rp-cards {
+        display: block;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+    }
+    /* The tabs get a row of their own and scroll inside it. Without the containment
+       their full width becomes the page's minimum and the whole page scrolls sideways. */
+    .rp-list__tabs { contain: inline-size; flex: 1 1 100%; }
+    .rp-live { grid-template-columns: auto minmax(0, 1fr); }
+    .rp-live__open { grid-column: 2; justify-self: start; }
 }
