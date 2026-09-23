@@ -216,10 +216,7 @@
                         </div>
                         @if (_entraEnabled && _entraTenantIds.Count == 0)
                         {
-                            <span class="field-error">
-                                <Icon Name="circle-alert" Width="13" Height="13" />
-                                <span>Add at least one before you can turn Microsoft sign-in on.</span>
-                            </span>
+                            <FieldError Message="Add at least one before you can turn Microsoft sign-in on." />
                         }
                     </ChildContent>
                 </SettingRow>
@@ -258,14 +255,11 @@
                         else if (_entraOnlyPolicy && !_baseEntraOnlyPolicy && _membersWithoutLink > 0)
                         {
                             @* Blast radius, before the confirm dialog repeats it. *@
-                            <span class="field-error">
-                                <Icon Name="circle-alert" Width="13" Height="13" />
-                                <span>
-                                    @_membersWithoutLink of @_membersTotal people here haven't connected a
-                                    Microsoft account yet and won't be able to sign in once you save.
-                                    <a href="/admin/administration/users">See who</a>.
-                                </span>
-                            </span>
+                            <FieldError>
+                                @_membersWithoutLink of @_membersTotal people here haven't connected a
+                                Microsoft account yet and won't be able to sign in once you save.
+                                <a href="/admin/administration/users">See who</a>.
+                            </FieldError>
                         }
                         else if (_membersWithoutLink > 0)
                         {

@@ -14,11 +14,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Pins the Projects directory against the design system's list archetype,
-/// table view. The rule under test is the handoff's one rule for tables: a
-/// row's status is the 4px edge keyline plus a leading glyph — never a pill in
-/// a cell — and a project with no build yet gets neither, because an absent
-/// build is not a status.
+/// Pins the Solutions list: its columns (where the customer runs, the version they are
+/// on, when something last reached production, who may see it), the row as the link
+/// that opens the customer info beside the list, and the rail that is kept while
+/// nothing is chosen. See .design/solution-customer-info.md.
 /// </summary>
 public sealed class ProjectsBrowserTests : IDisposable
 {
@@ -73,38 +72,131 @@ public sealed class ProjectsBrowserTests : IDisposable
     }
 
     [Fact]
-    public async Task A_projects_build_status_is_the_row_edge_and_a_glyph_never_a_pill()
+    public async Task Each_row_is_a_link_that_opens_its_customer_info_and_the_name_still_opens_the_solution()
     {
-        await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Failed, bcVersion: null);
+        await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        var id = await IdOfAsync("CRONUS Denmark");
+        RequestWith("?q=cronus&module=");
 
         var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("table.data-table--edge").Should().NotBeNull();
-            cut.Find("tr.is-failed td.data-table__col-state .data-table__state--icon")
-                .GetAttribute("aria-label").Should().Be("Failed");
-            cut.FindAll("table .status-pill").Should().BeEmpty(
-                "a table row carries status as the edge bar and glyph, never a pill");
-            cut.FindAll("table .build-pill").Should().BeEmpty(
-                "BuildStatusPill is the pre-redesign treatment and has no place in a row");
+            var row = cut.Find("tbody tr");
+            var select = row.QuerySelector("a.sol-list__select")!;
+            select.GetAttribute("href").Should().Be($"/solutions?q=cronus&selected={id}", "choosing keeps the search the person had");
+            select.GetAttribute("aria-label").Should().Be("Show customer info for CRONUS Denmark");
+            select.HasAttribute("aria-current").Should().BeFalse("nothing is chosen yet");
+            row.QuerySelector("a.sol-list__name")!.GetAttribute("href").Should().Be($"/solutions/{id}");
+            row.QuerySelectorAll("a a").Should().BeEmpty("a link inside a link is invalid and browsers split it");
+            row.QuerySelectorAll(".btn").Should().BeEmpty("the row is the way in; it carries no buttons");
+            cut.FindAll("table .status-pill, .data-table__state--icon").Should().BeEmpty("the list no longer reports build status");
         });
     }
 
     [Fact]
-    public async Task A_project_with_no_build_gets_no_edge_class_and_no_glyph()
+    public async Task The_short_name_sits_beside_the_name_when_there_is_one()
     {
-        await SeedProjectAsync("CRONUS Sweden", status: null, bcVersion: null);
+        await SeedProjectAsync("CRONUS Denmark", status: null, bcVersion: null);
+        await SeedProjectAsync("CRONUS Norway", status: null, bcVersion: null);
+        await using (var db = _db.NewContext())
+        {
+            (await db.OeProjects.SingleAsync(p => p.Name == "CRONUS Denmark")).ShortName = "CRD";
+            await db.SaveChangesAsync();
+        }
 
         var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No builds yet");
-            cut.FindAll("tbody tr[class*='is-']").Should().BeEmpty(
-                "an absent build is not a status — colouring the edge would invent one");
-            cut.FindAll(".data-table__state--icon").Should().BeEmpty();
+            var rows = cut.FindAll("tbody tr");
+            rows[0].QuerySelector(".sol-list__short")!.TextContent.Should().Be("CRD");
+            rows[1].QuerySelector(".sol-list__short").Should().BeNull();
         });
+    }
+
+    [Fact]
+    public async Task Visibility_reads_in_the_words_the_access_tab_uses()
+    {
+        await SeedProjectAsync("CRONUS Denmark", status: null, bcVersion: null);
+        await SeedProjectAsync("CRONUS Norway", status: null, bcVersion: null);
+        await using (var db = _db.NewContext())
+        {
+            (await db.OeProjects.SingleAsync(p => p.Name == "CRONUS Norway")).Visibility = ProjectVisibility.ReadOnly;
+            await db.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll("tbody tr");
+            rows[0].Children[4].TextContent.Should().Be("Public");
+            rows[1].Children[4].TextContent.Should().Be("Read-only");
+        });
+    }
+
+    [Fact]
+    public async Task Last_shipped_links_to_the_release_pipeline_says_never_when_nothing_has_and_marks_a_handed_off_one()
+    {
+        await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        await SeedProjectAsync("CRONUS Norway", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        await SeedProjectAsync("CRONUS Sweden", status: null, bcVersion: null);
+        var deployedPipeline = await ShipAsync("CRONUS Denmark", ProjectDeliveryStatus.Deployed, new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc));
+        await ShipAsync("CRONUS Norway", ProjectDeliveryStatus.HandedOff, new DateTime(2026, 9, 12, 12, 0, 0, DateTimeKind.Utc));
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll("tbody tr");
+            var deployed = rows[0].Children[3].QuerySelector("a.sol-list__shipped")!;
+            deployed.GetAttribute("href").Should().Be($"/releases/{deployedPipeline}");
+            deployed.TextContent.Trim().Should().Be("10 Sep 2026");
+            deployed.ClassList.Should().NotContain("sol-list__shipped--handed-off");
+
+            var handedOff = rows[1].Children[3].QuerySelector("a.sol-list__shipped")!;
+            handedOff.ClassList.Should().Contain("sol-list__shipped--handed-off");
+            handedOff.GetAttribute("title").Should().Contain("later update window");
+            handedOff.TextContent.Should().Contain("installs later", "the tone alone would say nothing on a call or to a screen reader");
+
+            rows[2].Children[3].TextContent.Trim().Should().Be("Never");
+        });
+    }
+
+    /// <summary>A release pipeline to a Production environment and one finished delivery through it.</summary>
+    private async Task<int> ShipAsync(string name, string status, DateTime finishedAt)
+    {
+        await using var db = _db.NewContext();
+        var project = await db.OeProjects.SingleAsync(p => p.Name == name);
+        var build = await db.OeProjectBuilds.FirstAsync(b => b.ProjectId == project.Id);
+        var environment = new OeProjectEnvironment
+        {
+            OrganizationId = project.OrganizationId, ProjectId = project.Id, Name = "Production", Type = "Production", FetchedAt = DateTime.UtcNow,
+        };
+        db.OeProjectEnvironments.Add(environment);
+        await db.SaveChangesAsync();
+        var pipeline = new OeReleasePipeline
+        {
+            OrganizationId = project.OrganizationId, ProjectId = project.Id, Name = "To production",
+            ProjectEnvironmentId = environment.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        db.OeReleasePipelines.Add(pipeline);
+        await db.SaveChangesAsync();
+        db.OeProjectDeliveries.Add(new OeProjectDelivery
+        {
+            OrganizationId = project.OrganizationId, ProjectId = project.Id, ReleasePipelineId = pipeline.Id, ProjectBuildId = build.Id,
+            EnvironmentName = "Production", Status = status, ScheduledFor = finishedAt, FinishedAt = finishedAt,
+            CreatedAt = finishedAt, UpdatedAt = finishedAt,
+        });
+        await db.SaveChangesAsync();
+        return pipeline.Id;
+    }
+
+    private async Task<int> IdOfAsync(string name)
+    {
+        await using var db = _db.NewContext();
+        return (await db.OeProjects.SingleAsync(p => p.Name == name)).Id;
     }
 
     /// <summary>
@@ -128,6 +220,7 @@ public sealed class ProjectsBrowserTests : IDisposable
             row.TextContent.Should().Contain("Private — visible to its team");
             row.QuerySelectorAll("a").Should().BeEmpty("there is nothing behind the name for this viewer");
             cut.Markup.Should().NotContain("26.0", "a build version reports activity on the customer");
+            row.Children.Should().HaveCount(2, "the name, then one cell saying why there is nothing else");
         });
     }
 
@@ -176,10 +269,23 @@ public sealed class ProjectsBrowserTests : IDisposable
 
         if (status is not null)
         {
+            // A pipeline's build: only those carry the row's status. A build
+            // with no pipeline (a pull-request check) is deliberately not one.
+            var pipeline = new OePipeline
+            {
+                OrganizationId = project.OrganizationId,
+                ProjectId = project.Id,
+                Name = "Default",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            db.OePipelines.Add(pipeline);
+            await db.SaveChangesAsync();
             db.OeProjectBuilds.Add(new OeProjectBuild
             {
                 OrganizationId = project.OrganizationId,
                 ProjectId = project.Id,
+                PipelineId = pipeline.Id,
                 Status = status,
                 BcVersion = bcVersion,
                 StartedAt = DateTime.UtcNow,
@@ -217,13 +323,86 @@ public sealed class ProjectsBrowserTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("thead th").Select(h => h.TextContent.Trim()).Should().Equal(
-                "Latest build", "Solution", "Hosted by", "BC version", "Latest build", "Owner", "Actions");
+                "Solution", "Hosted by", "BC version", "Last shipped", "Visibility");
             var cells = cut.Find("tbody tr").Children;
-            cells[2].TextContent.Should().Be("Customer's hardware");
-            cells[3].TextContent.Should().Be("NAV 2018 CU12");
-            cells[4].TextContent.Trim().Should().Be("Built for BC 26.0", "two bare versions side by side get read out wrong on a call");
-            cut.FindAll(".detail-body__aside").Should().BeEmpty("no column is reserved until a customer is chosen");
+            cells[1].TextContent.Should().Be("Customer's hardware");
+            cells[2].TextContent.Should().Be("NAV 2018 CU12");
             cut.Markup.Should().NotContain("Annette Hill");
+        });
+    }
+
+    [Fact]
+    public async Task With_nothing_chosen_the_rail_is_kept_and_asks_for_a_solution()
+    {
+        await SeedProjectAsync("CRONUS Norway", status: null, bcVersion: null);
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var rail = cut.Find(".detail-body__aside");
+            rail.GetAttribute("aria-label").Should().Be("Customer info");
+            rail.QuerySelector(".empty-state__title")!.TextContent.Should().Be("Choose a solution to see its customer info");
+            cut.FindAll("tbody tr.is-selected").Should().BeEmpty();
+            cut.FindAll("input[type=hidden][name=selected]").Should().BeEmpty("there is no choice to carry");
+        });
+    }
+
+    [Fact]
+    public async Task A_search_keeps_the_chosen_solution()
+    {
+        await SeedProjectAsync("CRONUS Norway", status: null, bcVersion: null);
+        var id = await IdOfAsync("CRONUS Norway");
+        RequestWith($"?selected={id}");
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var hidden = cut.Find("form input[type=hidden][name=selected]");
+            hidden.GetAttribute("value").Should().Be(id.ToString());
+            hidden.Closest("form")!.QuerySelector("input[name=q]").Should().NotBeNull("it rides along with the search");
+        });
+    }
+
+    /// <summary>
+    /// Connects a described customer and gives it a Production environment Business
+    /// Central has reported on (#907). The secret is not a real ciphertext: nothing
+    /// on the list decrypts.
+    /// </summary>
+    private async Task ConnectAsync(int projectId)
+    {
+        await using var ctx = _db.NewContext();
+        var project = await ctx.OeProjects.SingleAsync(p => p.Id == projectId);
+        project.HostingType = ProjectHostingType.MicrosoftCloud;
+        project.BcTenantId = Guid.NewGuid();
+        project.BcClientId = "11111111-2222-3333-4444-555555555555";
+        project.BcClientSecretEncrypted = "not-a-real-ciphertext";
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Production", Type = "Production",
+            Version = "26.1.30000.0", WebClientLoginUrl = "https://businesscentral.dynamics.com/tenant/Production",
+            FetchedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_connected_customers_version_and_address_are_the_ones_business_central_reports()
+    {
+        await SeedProjectAsync("CRONUS Norway", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        var id = await DescribeAsync("CRONUS Norway");
+        await ConnectAsync(id);
+        RequestWith($"?selected={id}");
+
+        var cut = _ctx.Render<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("tbody tr").Children[2].TextContent.Should().Be("26.1.30000.0");
+            var rail = cut.Find(".detail-body__aside");
+            rail.TextContent.Should().Contain("26.1.30000.0").And.NotContain("NAV 2018 CU12");
+            rail.QuerySelector("a[href='https://businesscentral.dynamics.com/tenant/Production']").Should().NotBeNull();
         });
     }
 
@@ -245,7 +424,9 @@ public sealed class ProjectsBrowserTests : IDisposable
             rail.QuerySelector("a[href^='tel:']")!.GetAttribute("href").Should().Be("tel:+4512345678");
             rail.QuerySelector("a[aria-label='Close customer info']")!.GetAttribute("href").Should().Be("/solutions?q=cronus",
                 "closing keeps the search the person had");
-            cut.Find($"a[aria-label='Customer info for CRONUS Norway']").GetAttribute("href").Should().Be($"/solutions?q=cronus&selected={id}");
+            var select = cut.Find("a[aria-label='Show customer info for CRONUS Norway']");
+            select.GetAttribute("href").Should().Be($"/solutions?q=cronus&selected={id}");
+            select.GetAttribute("aria-current").Should().Be("true");
             rail.QuerySelectorAll("input, select, textarea").Should().BeEmpty("the summary never edits; the Customer tab does");
         });
     }
@@ -263,7 +444,8 @@ public sealed class ProjectsBrowserTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.Find("tbody tr.projects__locked").Should().NotBeNull();
-            cut.FindAll(".detail-body__aside").Should().BeEmpty();
+            cut.Find(".detail-body__aside .empty-state__title").TextContent.Should().Be(
+                "Choose a solution to see its customer info", "the id is ignored, not answered");
             cut.Markup.Should().NotContain("Annette Hill").And.NotContain("NAV 2018");
         });
     }

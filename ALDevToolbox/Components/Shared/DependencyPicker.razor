@@ -80,10 +80,7 @@
     </div>
     @if (_manualError is not null)
     {
-        <p class="field-error" role="alert">
-            <Icon Name="circle-alert" Width="13" Height="13" />
-            <span>@_manualError</span>
-        </p>
+        <FieldError Message="@_manualError" />
     }
 
     @{

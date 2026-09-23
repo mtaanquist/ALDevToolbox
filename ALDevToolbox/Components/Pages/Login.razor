@@ -170,10 +170,7 @@ else
             }
             @if (!string.IsNullOrEmpty(_passkeyError))
             {
-                <span class="field-error" role="alert">
-                    <Icon Name="circle-alert" Width="13" Height="13" />
-                    @_passkeyError
-                </span>
+                <FieldError Message="@_passkeyError" />
             }
         </div>
         </ChildContent>

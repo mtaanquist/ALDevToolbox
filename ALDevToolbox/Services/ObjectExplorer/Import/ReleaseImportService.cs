@@ -700,12 +700,14 @@ public class ReleaseImportService
     /// Soft-deleted keys remain reusable since the partial index excludes them.
     ///
     /// <para>
-    /// Releases without a dedup key (manual uploads, third-party, project) are
-    /// never deduped — the <see cref="OeRelease.Label"/> is a pure display string,
-    /// free to repeat. Only first-party artifact imports set a key
-    /// (<c>bc-onprem:{Maj}.{Min}:{cc}</c>); they're the daily sweep's idempotency
-    /// guarantee. See <c>.design/roadmap.md</c> ("Harden first-party dedup, then
-    /// free the label").
+    /// Releases without a dedup key (manual uploads, manual third-party imports,
+    /// project builds) are never deduped — the <see cref="OeRelease.Label"/> is a
+    /// pure display string, free to repeat. First-party artifact imports set a key
+    /// (<c>bc-onprem:{Maj}.{Min}:{cc}</c>) as the daily sweep's idempotency
+    /// guarantee, and so do the vendor symbols a pipeline build ingests
+    /// (<c>symbols:{appId}:{version}</c>, #901) so every build shares one copy.
+    /// See <c>.design/roadmap.md</c> ("Harden first-party dedup, then free the
+    /// label").
     /// </para>
     /// </summary>
     private async Task EnsureDedupKeyAvailableAsync(int orgId, string? dedupKey, CancellationToken ct)

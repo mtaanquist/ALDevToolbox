@@ -88,9 +88,7 @@
                         </div>
                         @if (!string.IsNullOrEmpty(_rulesetError))
                         {
-                            <span class="field-error" role="alert">
-                                <Icon Name="circle-alert" Width="13" Height="13" />@_rulesetError
-                            </span>
+                            <FieldError Message="@_rulesetError" />
                         }
                     </div>
                 </section>
@@ -173,9 +171,7 @@
                         </div>
                         @if (!string.IsNullOrEmpty(_editError))
                         {
-                            <span class="field-error" role="alert">
-                                <Icon Name="circle-alert" Width="13" Height="13" />@_editError
-                            </span>
+                            <FieldError Message="@_editError" />
                         }
                     </div>
                     <div class="card__foot">

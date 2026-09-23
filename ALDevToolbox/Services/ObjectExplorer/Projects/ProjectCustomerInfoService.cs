@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Projects;
@@ -43,13 +44,60 @@ public sealed class ProjectCustomerInfoService
     public async Task<CustomerBasics?> GetBasicsAsync(int projectId, CancellationToken ct = default)
     {
         await _access.EnsureCanViewAsync(projectId, ct);
-        return await _db.OeProjects
+        var basics = await _db.OeProjects
             .AsNoTracking()
             .Where(p => p.Id == projectId && p.DeletedAt == null)
             .Select(p => new CustomerBasics(
                 p.HostingType, p.BcVersion, p.LicenseType, p.UserExperience,
-                p.ClientUrl, p.VoiceAccountNumber, p.BcTenantId))
+                p.ClientUrl, p.VoiceAccountNumber, p.BcTenantId, null))
             .FirstOrDefaultAsync(ct);
+        if (basics is null) return null;
+        var production = await ReadProductionFactsAsync(_db, [projectId], ct);
+        return production.TryGetValue(projectId, out var facts) ? basics with { Production = facts } : basics;
+    }
+
+    /// <summary>
+    /// What Business Central last reported about each solution's production
+    /// environment, for the solutions where that overrides what was typed: online, with a
+    /// connection configured, and a current Production environment that has told us a
+    /// version or an address. A solution missing from the answer keeps its typed values.
+    /// <para>
+    /// Only Production counts - a sandbox's version is not what support means by "the
+    /// customer's version" - and among several the first by name. One read whatever the
+    /// number of solutions, and it never touches a secret: whether one is stored is the
+    /// whole of the connection test. <paramref name="projectIds"/> null means every
+    /// solution in the organisation, for a caller that has already decided which rows
+    /// it shows. See <c>.design/solution-customer-info.md</c>, "Hosting and the basics".
+    /// </para>
+    /// </summary>
+    public static async Task<Dictionary<int, ProductionEnvironmentFacts>> ReadProductionFactsAsync(
+        AppDbContext db, IReadOnlyCollection<int>? projectIds, CancellationToken ct)
+    {
+        if (projectIds is { Count: 0 }) return new();
+
+        var connected = ProjectConnectionService.ConfiguredProjects(db)
+            .Where(p => p.HostingType == null || p.HostingType == ProjectHostingType.MicrosoftCloud);
+        if (projectIds is not null) connected = connected.Where(p => projectIds.Contains(p.Id));
+        var connectedIds = connected.Select(p => p.Id);
+
+        var rows = await db.OeProjectEnvironments.AsNoTracking()
+            .Where(EnvironmentQueries.NotSoftDeleted)
+            .Where(e => connectedIds.Contains(e.ProjectId)
+                && e.MissingSince == null
+                && e.Type.Trim().ToUpper() == "PRODUCTION"
+                && (e.Version != null || e.WebClientLoginUrl != null))
+            .Select(e => new { e.ProjectId, e.Name, e.Version, e.WebClientLoginUrl, e.FetchedAt })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => r.ProjectId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(r => new ProductionEnvironmentFacts(r.Name, Blank(r.Version), Blank(r.WebClientLoginUrl), r.FetchedAt))
+                    .First());
+
+        static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     /// <summary>
@@ -115,13 +163,28 @@ public sealed class ProjectCustomerInfoService
             }
         }
 
+        // While Business Central reports the version and the address, the typed ones are
+        // hidden, not replaced: a form opened before the connection was made must not
+        // overwrite them, and they come back if the connection goes. Nor can what it
+        // carried for them fail the save of fields the person could see.
+        var fromBusinessCentral = !onPremises
+            && (await ReadProductionFactsAsync(_db, [project.Id], ct)).ContainsKey(project.Id);
+        if (fromBusinessCentral)
+        {
+            errors.Remove("BcVersion");
+            errors.Remove("ClientUrl");
+        }
+
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         project.HostingType = input.HostingType;
-        project.BcVersion = version;
+        if (!fromBusinessCentral)
+        {
+            project.BcVersion = version;
+            project.ClientUrl = url;
+        }
         project.LicenseType = input.LicenseType;
         project.UserExperience = input.UserExperience;
-        project.ClientUrl = url;
         project.VoiceAccountNumber = voice;
         if (onPremises) project.BcTenantId = tenantId;
         project.UpdatedAt = DateTime.UtcNow;
@@ -157,10 +220,14 @@ public sealed class ProjectCustomerInfoService
     public async Task<Dictionary<int, CustomerListFacts>> ListFactsAsync(IReadOnlyCollection<int> projectIds, CancellationToken ct = default)
     {
         if (projectIds.Count == 0) return new();
-        return await _db.OeProjects.AsNoTracking()
+        var rows = await _db.OeProjects.AsNoTracking()
             .Where(p => projectIds.Contains(p.Id) && p.DeletedAt == null)
-            .Select(p => new { p.Id, p.HostingType, p.BcVersion })
-            .ToDictionaryAsync(p => p.Id, p => new CustomerListFacts(p.HostingType, p.BcVersion), ct);
+            .Select(p => new { p.Id, p.HostingType, p.BcVersion, p.ClientUrl })
+            .ToListAsync(ct);
+        var production = await ReadProductionFactsAsync(_db, projectIds, ct);
+        return rows.ToDictionary(p => p.Id, p => production.TryGetValue(p.Id, out var facts)
+            ? new CustomerListFacts(p.HostingType, facts.Version, facts.WebClientLoginUrl, true)
+            : new CustomerListFacts(p.HostingType, p.BcVersion, p.ClientUrl, false));
     }
 
     // ── Getting in, and notes ───────────────────────────────────────────
@@ -405,7 +472,12 @@ public sealed class ProjectCustomerInfoService
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
-/// <summary>The basics as read. <paramref name="TenantId"/> is the Business Central connection's, shown for reference.</summary>
+/// <summary>
+/// The basics as read. <paramref name="TenantId"/> is the Business Central connection's,
+/// shown for reference. <paramref name="BcVersion"/> and <paramref name="ClientUrl"/> are
+/// what was typed; <paramref name="Production"/>, when set, is what Business Central
+/// reported instead, and the <c>Effective</c> pair is the one to show.
+/// </summary>
 public sealed record CustomerBasics(
     ProjectHostingType? HostingType,
     string? BcVersion,
@@ -413,14 +485,27 @@ public sealed record CustomerBasics(
     ProjectUserExperience? UserExperience,
     string? ClientUrl,
     string? VoiceAccountNumber,
-    Guid? TenantId)
+    Guid? TenantId,
+    ProductionEnvironmentFacts? Production = null)
 {
     public bool IsOnPremises => HostingType is not (null or ProjectHostingType.MicrosoftCloud);
 
-    /// <summary>True when nobody has entered anything yet, which is the tab's first-run state.</summary>
-    public bool IsEmpty => HostingType is null && BcVersion is null && LicenseType is null
-        && UserExperience is null && ClientUrl is null && VoiceAccountNumber is null;
+    /// <summary>True when the version and the address come from the production environment rather than from what was typed.</summary>
+    public bool FromBusinessCentral => Production is not null;
+
+    /// <summary>When Business Central was last asked, while <see cref="FromBusinessCentral"/>.</summary>
+    public DateTime? FetchedAt => Production?.FetchedAt;
+
+    public string? EffectiveVersion => Production is { } p ? p.Version : BcVersion;
+    public string? EffectiveClientUrl => Production is { } p ? p.WebClientLoginUrl : ClientUrl;
+
+    /// <summary>True when there is nothing to show yet, which is the tab's first-run state.</summary>
+    public bool IsEmpty => HostingType is null && EffectiveVersion is null && LicenseType is null
+        && UserExperience is null && EffectiveClientUrl is null && VoiceAccountNumber is null;
 }
+
+/// <summary>What Business Central last reported for a solution's production environment. See <see cref="ProjectCustomerInfoService.ReadProductionFactsAsync"/>.</summary>
+public sealed record ProductionEnvironmentFacts(string EnvironmentName, string? Version, string? WebClientLoginUrl, DateTime FetchedAt);
 
 public sealed record CustomerBasicsInput(
     ProjectHostingType? HostingType,
@@ -454,4 +539,8 @@ public sealed record CustomerInfoSnapshot(
     List<CustomerPerson> People,
     List<CustomerIntegration> Integrations);
 
-public sealed record CustomerListFacts(ProjectHostingType? HostingType, string? BcVersion);
+/// <summary>
+/// A row's hosting, and the version and address to show for it - Business Central's when
+/// <paramref name="FromBusinessCentral"/>, otherwise what was typed.
+/// </summary>
+public sealed record CustomerListFacts(ProjectHostingType? HostingType, string? BcVersion, string? ClientUrl = null, bool FromBusinessCentral = false);

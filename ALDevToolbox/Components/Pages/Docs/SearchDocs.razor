@@ -1,0 +1,190 @@
+@page "/docs/search"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using ALDevToolbox.Components.Shared
+
+@*
+    What the "Search or jump to" box does, for someone who has never used one.
+    Linked from the box's own footer and reachable from it as a page, which is
+    why it is in NavDestinations. See .design/command-palette.md.
+
+    Page archetype 12 (docs / long-form): DocsPage over a .prose column with an
+    on-page table of contents.
+
+    Tone: the reader has just met a search box that answers with a list of
+    customers and pages, and wants to know whether it can break anything. That
+    question is answered on the page, not implied. Nothing here names a class, a
+    file or an endpoint - the reader is a consultant, not a maintainer.
+*@
+
+<PageTitle>Search or jump to · AL Workbench</PageTitle>
+
+<DocsPage Title="Search or jump to"
+          Subtitle="One box that finds a customer, an environment, a release or a page - and takes you there."
+          Toc="@Toc">
+    <p class="prose__lead">
+        The search box in the top bar is a shortcut for getting somewhere. Type
+        part of what you are looking for, press Enter, and you are on the page.
+        It is quicker than the menu once you know the name of the thing you
+        want, and it is the fastest way to a customer you only half remember.
+    </p>
+
+    <h2 id="search-open">Opening it</h2>
+    <p>
+        Click <strong>Search or jump to...</strong> in the top bar. On a
+        keyboard you can also press <kbd class="kbd">Ctrl</kbd> +
+        <kbd class="kbd">K</kbd> from anywhere in AL Workbench
+        (<kbd class="kbd">Cmd</kbd> + <kbd class="kbd">K</kbd> on a Mac), which
+        works even while you are typing in an editor. On a phone or a tablet the
+        button is the way in.
+    </p>
+    <p>
+        Many pages also have a search box of their own, which only looks through
+        that page. Press <kbd class="kbd">F3</kbd> to put the cursor in it.
+    </p>
+    <p>
+        With nothing typed, the box lists a few commands and every page you can
+        open, so you can browse it like a menu. Start typing and the list narrows.
+    </p>
+    <p>
+        On a Solution or an environment, the list starts with that page's own
+        tabs and links - its environments and latest build, or the way into
+        Business Central - so you can move around it without reaching for the
+        mouse. Below them, <strong>Recent</strong> lists the last few places you
+        went in this browser tab. It is forgotten when you close the tab, and
+        <strong>Clear recents</strong> at the bottom of the box empties it now.
+        Anything you can no longer open drops out of the list on its own.
+    </p>
+
+    <h2 id="search-finds">What it finds</h2>
+    <p>
+        Results are grouped, and the group tells you what kind of thing you are
+        looking at:
+    </p>
+    <ul>
+        <li>
+            <strong>Solutions</strong> - by the customer's name or the short
+            name your team uses for them. You can also find a Solution by the
+            name or company of a contact on it, by its Voice account number, or
+            by its Business Central tenant ID - useful mid-call, when the
+            customer gives you a number rather than a name. The row shows you
+            which of those matched, never the number itself.
+        </li>
+        <li><strong>Environments</strong> - by environment name, with the customer underneath.</li>
+        <li>
+            <strong>Releases</strong> - the releases in Object Explorer, by
+            label, Business Central version, country, or the customer whose
+            build produced them.
+        </li>
+        <li><strong>Recipes</strong> - the AL recipes in the Cookbook, by title or tag.</li>
+        <li>
+            <strong>Pipelines</strong> - by pipeline name or customer, with how its
+            last build went.
+        </li>
+        <li>
+            <strong>Release pipelines</strong> - by name, customer or the
+            environment they deliver to.
+        </li>
+        <li><strong>Templates</strong> - the workspace and extension templates, by name.</li>
+        <li><strong>Teams</strong> - by team name.</li>
+        <li>
+            <strong>People</strong> - for administrators, the people in your
+            organisation by name, with their role. It opens their row on the
+            Users page.
+        </li>
+        <li>
+            <strong>Docs</strong> - these help pages, by title or section, so
+            <code>token</code> takes you straight to setting up a token for your AI assistant.
+        </li>
+        <li><strong>Go to</strong> - every page in the menu, including the audit log for administrators.</li>
+    </ul>
+    <p>
+        Every word you type has to match something, but the order does not
+        matter: <code>con prod</code> and <code>prod con</code> both find the
+        production environment of CRONUS Consulting. Capitals and accents are
+        ignored, so <code>moller</code> finds M&oslash;ller. Spelling, though, is
+        not guessed at - if nothing comes back, check it.
+    </p>
+    <div class="note note--info">
+        <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+        <span class="note__title">You only ever see your own work</span>
+        <span class="note__body">
+            The box searches exactly what you could reach by clicking. A private
+            Solution you are not a member of does not appear here at all - if you
+            expect a customer and get nothing, the Solutions page will tell you
+            whether it exists and who to ask.
+        </span>
+    </div>
+    <p>
+        It does not search inside code, translations or the text of a recipe.
+        Object Explorer and the Cookbook have their own search for that, and
+        they find more than this box does.
+    </p>
+
+    <h2 id="search-keys">Choosing a result</h2>
+    <ul>
+        <li><kbd class="kbd">&uarr;</kbd> and <kbd class="kbd">&darr;</kbd> move between results. The mouse does the same thing.</li>
+        <li><kbd class="kbd">Enter</kbd> opens the highlighted one.</li>
+        <li><kbd class="kbd">Ctrl</kbd> + <kbd class="kbd">Enter</kbd> opens it in a new tab.</li>
+        <li><kbd class="kbd">Esc</kbd> closes the box and leaves you where you were.</li>
+    </ul>
+    <p class="prose__cap">
+        Middle-click or Ctrl-click opens a result in a new tab.
+    </p>
+
+    <h2 id="search-commands">Doing things from it</h2>
+    <p>
+        The box can also do a few small things, listed under
+        <strong>Commands</strong>: start a new Solution, workspace or extension,
+        switch to the light or dark theme or follow your computer's, copy the
+        link to the page you are on, refresh an environment page, or sign out.
+        Type what you want to do - <code>new sol</code>, <code>dark</code>,
+        <code>sign out</code> - and press Enter. The New commands open the form;
+        nothing is created until you finish it there.
+    </p>
+
+    <h2 id="search-safe">It never changes a customer's environment</h2>
+    <p>
+        Every result is somewhere to go. Every command either stays inside AL
+        Workbench or, like Refresh, only reads from Business Central. Nothing you
+        type here publishes, deletes or updates a customer's environment - those
+        actions stay on the pages that own them, behind the confirmation that
+        names the environment.
+    </p>
+    <div class="note note--tip">
+        <span class="note__icon"><Icon Name="lightbulb" Width="17" Height="17" /></span>
+        <span class="note__title">You can search freely</span>
+        <span class="note__body">
+            Typing a customer's name and opening the wrong result costs nothing -
+            the back button puts you straight back.
+            Nothing in this box changes a customer's data.
+        </span>
+    </div>
+
+    <h2 id="search-nothing">When it comes back empty</h2>
+    <p>
+        Two different things can happen, and they say different things:
+    </p>
+    <ul>
+        <li>
+            <strong>No search results</strong> - nothing matched what you typed.
+            Try fewer words, or check the spelling.
+        </li>
+        <li>
+            <strong>Search is not available right now</strong> - the search did
+            not come back, usually a brief network hiccup. The menu still works,
+            so you can get where you are going; try again in a moment.
+        </li>
+    </ul>
+</DocsPage>
+
+@code {
+    private static readonly DocsTocEntry[] Toc =
+    {
+        new("Opening it", "search-open"),
+        new("What it finds", "search-finds"),
+        new("Choosing a result", "search-keys"),
+        new("Doing things from it", "search-commands"),
+        new("It never changes a customer's environment", "search-safe"),
+        new("When it comes back empty", "search-nothing"),
+    };
+}

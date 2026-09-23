@@ -6,6 +6,7 @@ using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.GitHub;
@@ -443,6 +444,7 @@ public sealed class GitHubReleaseService
             {
                 OrganizationId = orgId,
                 FileName = asset.Name,
+                AppId = BuildArtifactAppIdBackfill.ReadAppId(content),
                 AppName = appName,
                 AppVersion = appVersion,
                 SizeBytes = content.LongLength,

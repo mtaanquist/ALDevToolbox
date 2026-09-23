@@ -1,0 +1,401 @@
+@using ALDevToolbox.Domain.Navigation
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services.Palette
+@using ALDevToolbox.Services.SingleTenant
+@using ALDevToolbox.Services.Tools
+@inject IOrganizationContext OrgContext
+@inject IToolAvailability ToolAvailability
+@inject ISingleTenantMode SingleTenant
+@inject IServiceScopeFactory Scopes
+
+@*
+    The command palette's skeleton. Rendered hidden into MainLayout for every
+    signed-in person; wwwroot/command-palette.js opens it on Ctrl/Cmd+K and
+    fills the list. See .design/command-palette.md.
+
+    Static and deliberately not interactive. MainLayout is a static frame and
+    several pages (/solutions, the docs pages) hold no circuit at all, so an
+    interactive island here would tax every page with a circuit just so the
+    palette can open.
+
+    The script writes no HTML and picks no class names: everything it puts on
+    screen is a clone of something below, with textContent and href filled in.
+    That keeps the design system in one place and takes markup injection off
+    the table - which matters, because the rows carry customer names.
+
+    The styles are global (wwwroot/command-palette.css), never a scoped
+    .razor.css: Blazor's scope attribute is not on script-cloned nodes, so
+    scoped rules would silently match nothing.
+*@
+
+<AuthorizeView>
+    <Authorized>
+        @if (_viewer is { } viewer)
+        {
+            <div id="cmdp" class="modal-layer cmdp-layer" role="dialog" aria-modal="true"
+                 aria-label="Search or jump to" hidden>
+                <div class="modal-backdrop" data-cmdp-close aria-hidden="true"></div>
+                <div class="cmdp">
+                    <div class="cmdp__head">
+                        <span class="cmdp__head-icon" aria-hidden="true">
+                            <Icon Name="search" Width="17" Height="17" />
+                        </span>
+                        @* Short, because it is what a screen reader announces on
+                           every focus. The placeholder is the longer one: it is
+                           read once, by eye, and it is the only thing on an
+                           unfilled palette that says this box finds customers
+                           and not just pages. *@
+                        <label class="u-sr-only" for="cmdp-input">Search or jump to</label>
+                        <input id="cmdp-input" class="cmdp__input" type="text" role="combobox"
+                               autocomplete="off" autocapitalize="off" spellcheck="false"
+                               aria-autocomplete="list" aria-expanded="false" aria-controls="cmdp-list"
+                               placeholder="Search solutions, environments, releases - or jump to a page" />
+                        @* A real button, not a decorative key cap. It sits where a
+                           close control belongs and looks pressable, and at phone
+                           width - where the keyboard hints below are hidden and
+                           there is no Esc key to press - it is the way out. *@
+                        <button type="button" class="cmdp__close" data-cmdp-close aria-label="Close">
+                            <span class="kbd cmdp__close-key" aria-hidden="true">Esc</span>
+                            <span class="cmdp__close-x" aria-hidden="true"><Icon Name="x" Width="16" Height="16" /></span>
+                        </button>
+                    </div>
+
+                    @* Not "Results": with nothing typed this list is the app's
+                       page index, and that is what a screen reader should hear. *@
+                    <div id="cmdp-list" class="cmdp__list" role="listbox" aria-label="Search results and pages"></div>
+
+                    @* What the list says out loud. A screen reader following
+                       aria-activedescendant hears the selected row and nothing
+                       else, so "no search results" and "search is not available"
+                       - which replace the rows rather than being one - would
+                       land in silence. The region is in the page before it ever
+                       has text, which is what makes an announcement fire. *@
+                    <p id="cmdp-live" class="u-sr-only" role="status" aria-live="polite"></p>
+
+                    <div class="cmdp__foot">
+                        <span class="kbd-hint"><kbd class="kbd">&uarr;</kbd><kbd class="kbd">&darr;</kbd>
+                            <span class="kbd-hint__label">to move</span></span>
+                        <span class="kbd-hint"><kbd class="kbd">Enter</kbd>
+                            <span class="kbd-hint__label">to choose</span></span>
+                        <span class="kbd-hint"><kbd class="kbd">Esc</kbd>
+                            <span class="kbd-hint__label">to close</span></span>
+                        @* The two things in the foot that are not hints, together
+                           at the end: a person who is already typing needs
+                           neither. Clear recents is hidden until there are recents
+                           on screen - a control that clears nothing is a question
+                           nobody asked. *@
+                        <span class="cmdp__foot-end">
+                            <button type="button" class="cmdp__foot-btn" data-cmdp-clear-recents hidden>Clear recents</button>
+                            <a class="cmdp__foot-link" href="/docs/search">How search works</a>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            @* One row per kind of result. The script clones the matching
+               template, or the "default" one for a kind it has not been taught
+               yet, and fills in the title, the second line and the link. *@
+            <template data-palette-row="solution">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="folder-git-2" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="environment">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="server" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="release">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="send" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="recipe">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="square-code" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="pipeline">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="rocket" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="release-pipeline">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="send" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="template">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="folder-plus" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="team">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="users" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="goto">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" data-cmdp-remember>
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="arrow-right" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            @* The context block's own kinds. A tab of the page you are on and the
+               latest build are not remembered as recents (no data-cmdp-remember):
+               the record they belong to already is, as a visit. *@
+            <template data-palette-row="tab">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="arrow-right" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="build">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="rocket" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            @* The one row that leaves the app - Business Central and its admin
+               centre - so it opens beside the palette's tab rather than in place
+               of it, like the environment page's own buttons. The script accepts
+               an https link for this kind and for no other. *@
+            <template data-palette-row="external">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/" target="_blank" rel="noopener">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="external-link" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="default">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="box" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+
+            @* A group, not a loose heading. A <p> dropped straight into a
+               role="listbox" is not something a listbox may own, and the
+               grouping - which is the difference between "Contoso" the Solution
+               and "Contoso" the environment - is then invisible to a screen
+               reader. role="group" carries the name; the heading itself is
+               aria-hidden so it is not read twice. *@
+            @* A person and a docs section are not remembered as recents: a
+               person's row lands on a row of the Users table and a section on a
+               heading, neither of which is a place Recent could re-check. *@
+            <template data-palette-row="person">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="user" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-row="doc">
+                <a class="cmdp-row" role="option" tabindex="-1" href="/">
+                    <span class="cmdp-row__icon" aria-hidden="true"><Icon Name="book-open" Width="16" Height="16" /></span>
+                    <span class="cmdp-row__text">
+                        <span class="cmdp-row__title"></span>
+                        <span class="cmdp-row__sub"></span>
+                    </span>
+                </a>
+            </template>
+            <template data-palette-group>
+                <div class="cmdp__group-wrap" role="group">
+                    <p class="cmdp__group" aria-hidden="true"></p>
+                </div>
+            </template>
+
+            @* The two things the list says when it has nothing to show. The
+               script fills the <span> with what was typed; it never builds a
+               sentence of its own. *@
+            @* "No search results", not "nothing matches": a page from the list
+               below is offered right underneath, and a flat "nothing matches"
+               above something that plainly did match reads as a bug. *@
+            <template data-palette-state="no-results">
+                <div class="cmdp__state">
+                    <p class="cmdp__state-title">No search results for "<span data-cmdp-query></span>".</p>
+                    <p class="cmdp__state-text">Check the spelling, or go to a page instead.</p>
+                </div>
+            </template>
+            <template data-palette-state="unavailable">
+                <div class="cmdp__state">
+                    <p class="cmdp__state-title">Search is not available right now.</p>
+                    <p class="cmdp__state-text">You can still go to any page below. Try searching again in a moment.</p>
+                </div>
+            </template>
+
+            @* The "Go to" list, rendered here rather than fetched: the sidebar's
+               role and tool gates are server-side facts, so the palette can only
+               offer a page the sidebar would. The script filters these clones;
+               it never asks the server for them. Inside a <template> so the
+               rows are inert until one is used. *@
+            <template id="cmdp-goto">
+                @foreach (var destination in NavDestinations.VisibleTo(viewer))
+                {
+                    var label = destination.LabelFor(viewer);
+                    var subtitle = destination.SubtitleFor(viewer);
+                    <a class="cmdp-row" role="option" tabindex="-1" href="@destination.Href" data-cmdp-remember
+                       data-title="@label" data-search="@($"{label} {subtitle}".Trim())">
+                        <span class="cmdp-row__icon" aria-hidden="true">
+                            <Icon Name="@destination.Icon" Width="16" Height="16" />
+                        </span>
+                        <span class="cmdp-row__text">
+                            <span class="cmdp-row__title">@label</span>
+                            <span class="cmdp-row__sub">@subtitle</span>
+                        </span>
+                    </a>
+                }
+            </template>
+
+            @* The Commands group, rendered here for the same reason as "Go to":
+               who may use a command is a server-side fact. A command either
+               links to the page that owns a form (an ordinary href) or names an
+               action the script runs from its closed list; the script refuses
+               any other action, and none of them writes to a customer's tenant.
+               See PaletteCommands and .design/command-palette.md, "Commands".
+               The second-line swaps ("Current", "Copied") are rendered here,
+               hidden, so the script shows copy rather than writing it. *@
+            <template id="cmdp-commands">
+                @foreach (var command in PaletteCommands.VisibleTo(viewer))
+                {
+                    @if (command.Href is { } href)
+                    {
+                        <a class="cmdp-row" role="option" tabindex="-1" href="@href"
+                           data-title="@command.Label" data-search="@command.SearchText" data-cmdp-on-open="@command.OnOpen">
+                            <span class="cmdp-row__icon" aria-hidden="true">
+                                <Icon Name="@command.Icon" Width="16" Height="16" />
+                            </span>
+                            <span class="cmdp-row__text">
+                                <span class="cmdp-row__title">@command.Label</span>
+                                <span class="cmdp-row__sub">@command.Subtitle</span>
+                            </span>
+                        </a>
+                    }
+                    else
+                    {
+                        <a class="cmdp-row" role="option" tabindex="-1" data-command-action="@command.Action"
+                           data-title="@command.Label" data-search="@command.SearchText" data-cmdp-on-open="@command.OnOpen">
+                            <span class="cmdp-row__icon" aria-hidden="true">
+                                <Icon Name="@command.Icon" Width="16" Height="16" />
+                            </span>
+                            <span class="cmdp-row__text">
+                                <span class="cmdp-row__title">@command.Label</span>
+                                <span class="cmdp-row__sub" data-cmdp-sub>@command.Subtitle</span>
+                                @if (command.Action is PaletteCommands.ThemeLight or PaletteCommands.ThemeDark or PaletteCommands.ThemeSystem)
+                                {
+                                    <span class="cmdp-row__sub" data-cmdp-sub-current hidden>Current</span>
+                                }
+                                else if (command.Action == PaletteCommands.CopyLink)
+                                {
+                                    <span class="cmdp-row__sub" data-cmdp-sub-done hidden>Copied</span>
+                                    <span class="cmdp-row__sub" data-cmdp-sub-failed hidden>Couldn't copy - use the address bar</span>
+                                }
+                            </span>
+                        </a>
+                    }
+                }
+            </template>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private NavViewer? _viewer;
+
+    /// <summary>
+    /// Whether the one question the claims cannot answer has been asked yet, and
+    /// for whom. Same guard, and the same reason, as <c>NavMenu</c>: this runs on
+    /// every navigation and every cascading auth-state change, so without it the
+    /// palette would cost a DI scope and two queries per render.
+    /// </summary>
+    private string? _opsComputedForUser;
+    private bool _opsComputed;
+    private bool _canUseEnvironmentOps;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthStateTask is null) return;
+        var state = await AuthStateTask;
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            _viewer = null;
+            return;
+        }
+
+        var userId = state.User.FindFirst(HttpOrganizationContext.UserIdClaim)?.Value ?? string.Empty;
+        if (!_opsComputed || _opsComputedForUser != userId)
+        {
+            _opsComputed = true;
+            _opsComputedForUser = userId;
+            _canUseEnvironmentOps = await CanUseEnvironmentOpsAsync();
+        }
+
+        _viewer = PaletteViewer.For(state.User, OrgContext, SingleTenant, ToolAvailability, _canUseEnvironmentOps);
+    }
+
+    /// <summary>
+    /// Whether this person may run Business Central update actions anywhere -
+    /// what puts Upgrades in the list. Read through a DI scope of its own for
+    /// the reason <c>NavMenu.CanUseEnvironmentOpsAsync</c> gives: the shell
+    /// renders while the page's own load is mid-query, and both would otherwise
+    /// be using the one scoped <c>AppDbContext</c> at the same moment.
+    /// </summary>
+    private async Task<bool> CanUseEnvironmentOpsAsync()
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+        var access = scope.ServiceProvider
+            .GetRequiredService<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+        return (await access.GetSnapshotAsync()).CanUseEnvironmentOps;
+    }
+}

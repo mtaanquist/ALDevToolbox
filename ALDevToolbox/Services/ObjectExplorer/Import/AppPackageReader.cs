@@ -137,6 +137,117 @@ public static class AppPackageReader
     }
 
     /// <summary>
+    /// Reads only the <c>NavxManifest.xml</c> of an <c>.app</c> - who made it, what it
+    /// is and which version - without walking its symbols or source. For callers that
+    /// need to say which package a stored file is (the missing-dependency report on a
+    /// failed build) and would otherwise parse a whole symbol tree to learn one version
+    /// number. Null when the bytes are not a readable <c>.app</c>: an NEA-encrypted
+    /// package hides its manifest, and a broken upload should cost a sentence in a
+    /// report, not the build.
+    /// </summary>
+    public static Task<AppManifest?> TryReadManifestAsync(byte[] bytes, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ct.ThrowIfCancellationRequested();
+        // The stream overload below does the work; this keeps the in-memory shape
+        // the missing-dependency report reads stored uploads through.
+        using var stream = new MemoryStream(bytes, writable: false);
+        return Task.FromResult(TryReadManifest(stream));
+    }
+
+    /// <summary>
+    /// Reads only the <c>NavxManifest.xml</c> of the <c>.app</c> at
+    /// <paramref name="path"/>, or <see langword="null"/> when the file is not a
+    /// readable, unencrypted <c>.app</c>. For callers that need an app's identity
+    /// (id, version) without paying for the symbol tree: the project build asks it
+    /// of every package already in its symbol cache - a couple of hundred
+    /// Microsoft apps, some of them large - to decide which dependencies still need
+    /// fetching. It opens the archive's central directory and one entry, and reads
+    /// nothing else unless the file is a Ready2Run wrapper, whose nested
+    /// <c>.app</c> has to be buffered to be opened at all.
+    /// </summary>
+    public static AppManifest? TryReadManifest(string path)
+    {
+        try
+        {
+            using var file = File.OpenRead(path);
+            return TryReadManifest(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="TryReadManifest(string)"/> over a seekable stream positioned at
+    /// the start of the <c>.app</c> bytes.
+    /// </summary>
+    public static AppManifest? TryReadManifest(Stream appFileStream)
+    {
+        try
+        {
+            if (!appFileStream.CanSeek || appFileStream.Length < NavxPrefixLength) return null;
+            var header = new byte[NavxPrefixLength + NeaMagic.Length];
+            var read = appFileStream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
+            if (read < NavxPrefixLength || !IsNavxHeader(header) || IsNeaEncrypted(header)) return null;
+
+            using var zipView = new OffsetReadStream(appFileStream, NavxPrefixLength);
+            using var archive = new ZipArchive(zipView, ZipArchiveMode.Read, leaveOpen: true);
+            if (IsReadyToRunWrapper(archive))
+            {
+                using var inner = ExtractReadyToRunInnerAppAsync(archive, CancellationToken.None).GetAwaiter().GetResult();
+                return TryReadManifest(inner);
+            }
+            return ReadManifest(archive, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Xml.XmlException
+            or FormatException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A read-only, seekable view of <c>inner</c> that starts <c>offset</c> bytes
+    /// in, so <see cref="ZipArchive"/> can open the zip behind the NAVX prefix
+    /// straight from disk instead of from a copy of the whole file.
+    /// </summary>
+    private sealed class OffsetReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long _offset;
+
+        public OffsetReadStream(Stream inner, long offset)
+        {
+            _inner = inner;
+            _offset = offset;
+            _inner.Position = offset;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length - _offset;
+        public override long Position
+        {
+            get => _inner.Position - _offset;
+            set => _inner.Position = value + _offset;
+        }
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override int Read(Span<byte> buffer) => _inner.Read(buffer);
+        public override long Seek(long offset, SeekOrigin origin) => origin switch
+        {
+            SeekOrigin.Begin => _inner.Seek(offset + _offset, SeekOrigin.Begin) - _offset,
+            SeekOrigin.Current => _inner.Seek(offset, SeekOrigin.Current) - _offset,
+            _ => _inner.Seek(offset, SeekOrigin.End) - _offset,
+        };
+        public override void Flush() { }
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>
     /// Per-XLIFF decompressed ceiling for the <c>Translations/</c> walk. BC
     /// base-app language XLIFFs run to ~100&#160;MB; 256&#160;MB is generous
     /// headroom while still tripping a decompression bomb before it fills the

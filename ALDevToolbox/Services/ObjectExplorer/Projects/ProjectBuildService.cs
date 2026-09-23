@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
-using ALDevToolbox.Services.Account;
 using Microsoft.EntityFrameworkCore;
 using ALDevToolbox.Services.ObjectExplorer.Import;
 
@@ -59,7 +59,8 @@ public sealed class ProjectBuildService
     private readonly BcArtifactService _artifacts;
     private readonly ReleaseImportService _importer;
     private readonly AlCompilerProvisioner _compiler;
-    private readonly UserRepositoryTokenService _repoTokens;
+    private readonly AlSymbolFeedResolver _symbolFeeds;
+    private readonly CloneCredentialResolver _credentials;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildService> _logger;
@@ -70,7 +71,8 @@ public sealed class ProjectBuildService
         BcArtifactService artifacts,
         ReleaseImportService importer,
         AlCompilerProvisioner compiler,
-        UserRepositoryTokenService repoTokens,
+        AlSymbolFeedResolver symbolFeeds,
+        CloneCredentialResolver credentials,
         IProcessRunner processRunner,
         TimeProvider clock,
         ILogger<ProjectBuildService> logger)
@@ -80,7 +82,8 @@ public sealed class ProjectBuildService
         _artifacts = artifacts;
         _importer = importer;
         _compiler = compiler;
-        _repoTokens = repoTokens;
+        _symbolFeeds = symbolFeeds;
+        _credentials = credentials;
         _processRunner = processRunner;
         _clock = clock;
         _logger = logger;
@@ -206,14 +209,22 @@ public sealed class ProjectBuildService
             Directory.CreateDirectory(symbolsDir);
             var download = await _artifacts.DownloadArtifactSetAsync(resolved.ApplicationUrl, ct).ConfigureAwait(false);
             int? parentReleaseId;
+            IReadOnlyList<ResolvedSymbolPackage> fromFeeds = [];
             try
             {
                 ExtractArtifactSymbols(download, symbolsDir);
                 CopyCommittedSymbols(clones.Select(c => c.Dir).ToList(), symbolsDir);
+                // Whatever is still missing comes from Microsoft's public symbol
+                // feeds, then from the organisation's own earlier builds (#901).
+                // Stored uploads are read first so neither fetches an app the
+                // operator has deliberately supplied.
+                var supplemental = await LoadSupplementalSymbolsAsync(projectId, ct).ConfigureAwait(false);
+                fromFeeds = await ResolveDependencySymbolsAsync(projectId, discovered, supplemental, symbolsDir, resolved.MajorMinor, country, logs, ct)
+                    .ConfigureAwait(false);
                 // Operator-supplied symbols (the manual-symbols recovery path) are
-                // written last so they win over a stale committed/artifact copy of
-                // the same package — the upload is the deliberate fix.
-                await CopySupplementalSymbolsAsync(projectId, symbolsDir, ct).ConfigureAwait(false);
+                // written last so they win over a stale committed/artifact/feed/build
+                // copy of the same package — the upload is the deliberate fix.
+                await WriteSupplementalSymbolsAsync(projectId, supplemental, symbolsDir, ct).ConfigureAwait(false);
                 // 4. Auto-import the parent BC release inline (best-effort) so
                 //    cross-release references into Base App resolve. Reuses the
                 //    artifact we already downloaded.
@@ -225,10 +236,18 @@ public sealed class ProjectBuildService
                 if (download.PlatformZipPath is not null) TryDelete(download.PlatformZipPath);
             }
 
+            // 4b. Put each vendor package the feeds resolved into the Object
+            //     Explorer, once per (app id, version), so our code's references
+            //     into it resolve (#901, Part 4). Best-effort, like the parent.
+            var dependencyReleaseIds = await EnsureVendorReleasesAsync(fromFeeds, symbolsDir, parentReleaseId, logs, ct)
+                .ConfigureAwait(false);
+
             // 5. Compile each extension in dependency order; a compiled sibling
             //    becomes a symbol for the apps that depend on it.
             var uploads = new List<AppFileUpload>();
             var artifacts = new List<PendingArtifact>();
+            List<StoredSymbolPackage>? storedSymbols = null;
+            List<InstalledAppFact>? installedApps = null;
             foreach (var app in TopologicalOrder(discovered))
             {
                 ct.ThrowIfCancellationRequested();
@@ -249,8 +268,29 @@ public sealed class ProjectBuildService
                 }
                 if (compiled is null)
                 {
+                    // Name the dependency when that is what stopped it, so the row
+                    // says what to supply rather than pointing at the log.
+                    string? missingMessage = null;
+                    var missing = AlcOutputParser.ParseMissingPackages(compileLog);
+                    if (missing.Count > 0)
+                    {
+                        storedSymbols ??= await ReadStoredSymbolPackagesAsync(projectId, ct).ConfigureAwait(false);
+                        installedApps ??= await ReadInstalledAppsAsync(projectId, ct).ConfigureAwait(false);
+                        var failedSiblings = results
+                            .Where(r => r.Status == ProjectBuildResultStatus.Failed && !string.IsNullOrEmpty(r.AppId))
+                            .Select(r => r.AppId)
+                            .ToList();
+                        missingMessage = MissingDependencyReport.Compose(app.Manifest, missing, storedSymbols, failedSiblings,
+                        [
+                            $"the Business Central {resolved.MajorMinor} ({country}) symbols",
+                            "the repositories' .alpackages folders",
+                            "Microsoft's public symbol feeds",
+                            "the builds of this organisation's Public and Read-only solutions",
+                            "the symbols stored on this solution",
+                        ], installedApps);
+                    }
                     results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
-                        ProjectBuildResultStatus.Failed, $"Compilation failed (see the build report for {app.Manifest.Name}).",
+                        ProjectBuildResultStatus.Failed, missingMessage ?? $"Compilation failed (see the build report for {app.Manifest.Name}).",
                         RepoUrl: app.Repo.Url, CommitSha: app.Repo.CommitSha, CommitDate: app.Repo.CommitDate));
                     continue;
                 }
@@ -267,7 +307,7 @@ public sealed class ProjectBuildService
                 // anyway so they can't slip in as a download. See .design/artifacts.md.
                 if (!fileName.EndsWith(".dep.app", StringComparison.OrdinalIgnoreCase))
                 {
-                    artifacts.Add(new PendingArtifact(fileName, app.Manifest.Name, app.Manifest.Version, app.Manifest.Runtime, bytes));
+                    artifacts.Add(new PendingArtifact(fileName, BuildArtifactAppIdBackfill.CanonicalAppId(app.Manifest.Id), app.Manifest.Name, app.Manifest.Version, app.Manifest.Runtime, bytes));
                 }
                 results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
                     ProjectBuildResultStatus.Compiled, null,
@@ -284,7 +324,7 @@ public sealed class ProjectBuildService
             // Project labels aren't unique (the release id is their identity), so
             // a rebuild of the same project+version reuses the same clean label.
             var finalLabel = $"{project.Name} on BC {resolved.MajorMinor}";
-            await FinalizeReleaseAsync(releaseId, finalLabel, parentReleaseId, ct).ConfigureAwait(false);
+            await FinalizeReleaseAsync(releaseId, finalLabel, parentReleaseId, dependencyReleaseIds, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Project build for {Project} (release {ReleaseId}): {Compiled} compiled, {Failed} failed, parent release {ParentReleaseId}.",
@@ -384,14 +424,12 @@ public sealed class ProjectBuildService
             {
                 ct.ThrowIfCancellationRequested();
                 var dest = Path.Combine(root, $"repo-{index++}");
-                var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(pat))
+                var credentials = await _credentials.ResolveAsync(repo.Provider, ct).ConfigureAwait(false);
+                if (credentials.Count == 0)
                 {
-                    failures.Add($"No {repo.Provider.DisplayName()} token for \"{repo.DisplayName}\" — add one under Account → Repository access.");
+                    failures.Add($"Couldn't reach \"{repo.DisplayName}\": {CloneCredentialResolver.NothingToCloneWith(repo.Provider)}");
                     continue;
                 }
-
-                var env = GitAuthEnv(repo.Provider, pat);
 
                 // Discovery only needs app.json — never the (often gigabytes of
                 // committed .alpackages) working tree. A blobless, no-checkout,
@@ -399,13 +437,15 @@ public sealed class ProjectBuildService
                 // sparse-checkout limited to app.json then materialises only those
                 // files, lazily fetching only their tiny blobs. This keeps discovery
                 // fast even on repos whose .git is bloated by committed binaries. The
-                // PAT travels in git config (http.extraHeader), never the URL or argv.
-                var clone = await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                // token travels in git config (http.extraHeader), never the URL or argv.
+                var (clone, used, cloneFailure) = await CloneWithAsync(gitPath,
                     new[] { "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--single-branch", "--no-tags", "--quiet", repo.Url, dest },
-                    root, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                    root, dest, DiscoveryCloneTimeout, credentials, repo, ct).ConfigureAwait(false);
+                var pat = used.Secret;
+                var env = GitAuthEnv(repo.Provider, pat);
                 if (!clone.Succeeded || !Directory.Exists(dest))
                 {
-                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, pat)}".Trim());
+                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {cloneFailure}".Trim());
                     _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
                         repo.DisplayName, project.Id, clone.ExitCode);
                     continue;
@@ -733,6 +773,7 @@ public sealed class ProjectBuildService
                 OrganizationId = build.OrganizationId,
                 ProjectBuildId = build.Id,
                 FileName = Truncate(a.FileName, 400),
+                AppId = a.AppId,
                 AppName = Truncate(a.AppName, 250),
                 AppVersion = Truncate(a.AppVersion, 50),
                 RuntimeVersion = a.Runtime is null ? null : Truncate(a.Runtime, 50),
@@ -812,27 +853,33 @@ public sealed class ProjectBuildService
         foreach (var repo in project.Repositories)
         {
             var dest = Path.Combine(buildRoot, $"repo-{index++}");
-            // A pull-request build has no user, so there is no personal token to
-            // resolve: it clones as the app's installation instead, in the same
-            // http.extraHeader shape a PAT travels in (#627). A manual build is
-            // unchanged - it is the user's own token or nothing.
-            var usesInstallation = options.InstallationToken is not null && repo.Provider == RepositoryProvider.GitHub;
-            var pat = usesInstallation
-                ? options.InstallationToken
-                : options.InstallationToken is not null
-                    ? null
-                    : await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
-            if (string.IsNullOrEmpty(pat))
+            // A pull-request build has no user, so there is nothing personal to
+            // clone with: it clones as the app's installation instead, in the same
+            // http.extraHeader shape a token travels in (#627). A manual build
+            // clones as the person who started it - their connected GitHub
+            // account first, their stored build token after that.
+            IReadOnlyList<CloneCredential> credentials;
+            if (options.InstallationToken is not null)
+            {
+                credentials = repo.Provider == RepositoryProvider.GitHub
+                    ? [new CloneCredential(options.InstallationToken, "the installation")]
+                    : [];
+            }
+            else
+            {
+                credentials = await _credentials.ResolveAsync(repo.Provider, ct).ConfigureAwait(false);
+            }
+            if (credentials.Count == 0)
             {
                 var reason = options.InstallationToken is not null
                     ? $"This build was started from a pull request, and the workbench can only reach {RepositoryProvider.GitHub.DisplayName()} repositories that way. Build this solution by hand to include the {repo.Provider.DisplayName()} repository."
-                    : $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository access, then rebuild.";
+                    : $"{CloneCredentialResolver.NothingToCloneWith(repo.Provider)} Then rebuild.";
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
                     reason, RepoUrl: repo.Url));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
                     options.InstallationToken is not null
                         ? $"Skipped: a pull-request build has no credential for a {repo.Provider.DisplayName()} repository."
-                        : $"Skipped: no {repo.Provider.DisplayName()} token for the user who started this build."));
+                        : $"Skipped: nothing to reach {repo.Provider.DisplayName()} with for the user who started this build."));
                 continue;
             }
 
@@ -840,13 +887,15 @@ public sealed class ProjectBuildService
             // changelog's `git log <prev>..<new>` and the force-push ancestry check
             // work) while fetching file blobs lazily on checkout — close to a
             // depth-1 clone's transfer for the working tree, but with the metadata
-            // the changelog needs. The PAT travels in the environment
+            // the changelog needs. The token travels in the environment
             // (GIT_CONFIG_* http.extraHeader), never in the URL, on disk, or in the
             // world-readable process argv.
             var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
+            var (result, used, cloneFailure) = await CloneWithAsync(gitPath, args, buildRoot, dest, BuildCloneTimeout(), credentials, repo, ct)
+                .ConfigureAwait(false);
+            var pat = used.Secret;
             var env = GitAuthEnv(repo.Provider, pat);
-            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env, BuildCloneTimeout()), ct).ConfigureAwait(false);
-            var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
+            var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), credentials);
             if (result.Succeeded && Directory.Exists(dest))
             {
                 // The pull request's own repository is moved onto the head commit
@@ -865,17 +914,78 @@ public sealed class ProjectBuildService
                 var (sha, date) = await CaptureCommitAsync(gitPath, dest, ct).ConfigureAwait(false);
                 clones.Add(new ClonedRepo(dest, repo.Url, sha, date, repo.Id, repo.DisplayName));
                 logs.Add(new PendingLog(repo.Id, repo.DisplayName,
-                    $"Cloned {repo.Url} at {(sha is null ? "(unknown commit)" : sha)}.{(cloneLog.Length > 0 ? "\n" + cloneLog : "")}"));
+                    $"Cloned {repo.Url} at {(sha is null ? "(unknown commit)" : sha)} using {used.Source}.{(cloneLog.Length > 0 ? "\n" + cloneLog : "")}"));
             }
             else
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
-                    $"git clone failed: {Sanitize(result.StdErr, pat)}".Trim(), RepoUrl: repo.Url));
-                logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"git clone failed (exit {result.ExitCode}): {cloneLog}".Trim()));
+                    $"git clone failed: {cloneFailure}".Trim(), RepoUrl: repo.Url));
+                logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"git clone failed (exit {result.ExitCode}): {cloneFailure}".Trim()));
                 _logger.LogWarning("Project {ProjectId}: clone of {Repo} exited {Exit}.", project.Id, repo.DisplayName, result.ExitCode);
             }
         }
         return clones;
+    }
+
+    /// <summary>
+    /// Runs a clone with each of <paramref name="credentials"/> in turn until one
+    /// succeeds, and returns the last outcome with the credential it was tried
+    /// with.
+    ///
+    /// <para>Trying rather than choosing is deliberate: the connected GitHub
+    /// account reaches only the repositories the App is installed on, and the
+    /// build token may reach more or fewer, and only git knows which for the
+    /// repository in front of it. A failed attempt's directory is removed before
+    /// the next, because git refuses to clone into a path that exists.</para>
+    ///
+    /// <para><c>Failure</c> describes every attempt, not just the last, so a person
+    /// reading a failed clone can tell which of their credentials was refused and
+    /// why - the last error alone once sent someone chasing the wrong token.</para>
+    /// </summary>
+    private async Task<(ProcessRunResult Result, CloneCredential Used, string Failure)> CloneWithAsync(
+        string gitPath, IReadOnlyList<string> args, string workDir, string dest, TimeSpan timeout,
+        IReadOnlyList<CloneCredential> credentials, OeProjectRepository repo, CancellationToken ct)
+    {
+        ProcessRunResult result = null!;
+        CloneCredential used = null!;
+        var attempts = new List<(CloneCredential Credential, string StdErr)>(credentials.Count);
+        for (var i = 0; i < credentials.Count; i++)
+        {
+            used = credentials[i];
+            result = await _processRunner.RunAsync(new ProcessRunRequest(
+                gitPath, args, workDir, GitAuthEnv(repo.Provider, used.Secret), timeout), ct).ConfigureAwait(false);
+            if (result.Succeeded && Directory.Exists(dest)) return (result, used, string.Empty);
+            attempts.Add((used, result.StdErr));
+            if (i + 1 < credentials.Count)
+            {
+                _logger.LogInformation(
+                    "Clone of {Repo} using {Source} exited {Exit}; trying {Next}.",
+                    repo.DisplayName, used.Source, result.ExitCode, credentials[i + 1].Source);
+                TryDeleteDirectory(dest);
+            }
+        }
+        return (result, used, DescribeCloneFailures(attempts, credentials));
+    }
+
+    /// <summary>
+    /// Words for a clone that failed with every credential it had. One attempt
+    /// reads as git's own error, as it always has; several name each credential
+    /// before its error, so "the build token was refused" and "the connected
+    /// account was refused" stop looking identical. Secrets are scrubbed from
+    /// every attempt's output, not only the one that produced it.
+    /// </summary>
+    internal static string DescribeCloneFailures(
+        IReadOnlyList<(CloneCredential Credential, string StdErr)> attempts,
+        IReadOnlyList<CloneCredential> credentials)
+    {
+        if (attempts.Count == 0) return string.Empty;
+        if (attempts.Count == 1) return Sanitize(attempts[0].StdErr ?? string.Empty, credentials).Trim();
+
+        return string.Join(" ", attempts.Select(a =>
+        {
+            var error = Regex.Replace(Sanitize(a.StdErr ?? string.Empty, credentials), @"\s+", " ").Trim().TrimEnd('.');
+            return $"With {a.Credential.Source}: {(error.Length > 0 ? error : "failed without a message")}.";
+        }));
     }
 
     /// <summary>
@@ -1005,19 +1115,23 @@ public sealed class ProjectBuildService
     }
 
     /// <summary>
-    /// Writes any operator-supplied dependency symbols (the manual-symbols recovery
-    /// path) for the project into the symbol dir, overwriting a same-named copy so
-    /// the upload — the deliberate fix for a dependency missing from both the repo's
-    /// <c>.alpackages/</c> and any Microsoft artifact — takes effect. Persisted at
-    /// the project level, so every later build benefits. See
-    /// <c>.design/object-explorer-project-builds.md</c>.
+    /// Reads the operator-supplied dependency symbols stored for the project (the
+    /// manual-symbols recovery path). Persisted at the project level, so every
+    /// later build benefits. See <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
-    private async Task CopySupplementalSymbolsAsync(int projectId, string symbolsDir, CancellationToken ct)
-    {
-        var symbols = await _db.OeProjectSymbols.AsNoTracking()
+    private async Task<List<SupplementalSymbol>> LoadSupplementalSymbolsAsync(int projectId, CancellationToken ct) =>
+        await _db.OeProjectSymbols.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
-            .Select(s => new { s.FileName, s.Content })
+            .Select(s => new SupplementalSymbol(s.FileName, s.Content))
             .ToListAsync(ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Writes the stored uploads into the symbol dir, overwriting a same-named
+    /// copy so the upload — the deliberate fix for a dependency nothing else
+    /// supplies — takes effect.
+    /// </summary>
+    private async Task WriteSupplementalSymbolsAsync(int projectId, List<SupplementalSymbol> symbols, string symbolsDir, CancellationToken ct)
+    {
         foreach (var symbol in symbols)
         {
             var dest = Path.Combine(symbolsDir, Path.GetFileName(symbol.FileName));
@@ -1028,6 +1142,114 @@ public sealed class ProjectBuildService
             _logger.LogInformation("Merged {Count} supplemental symbol(s) into the build cache for project {ProjectId}.",
                 symbols.Count, projectId);
         }
+    }
+
+    /// <summary>
+    /// Supplies the dependencies nothing else supplied - from Microsoft's public
+    /// symbol feeds first, then from the <c>.app</c>s the organisation's earlier
+    /// builds retained (a PTE another solution builds, #901 Part 3) - and records in
+    /// the build log where each one came from or why it could not be found. An app
+    /// counts as supplied when the artifact or a committed <c>.alpackages/</c>
+    /// already put it in the symbol dir, when this build compiles it, or when a
+    /// stored upload carries it. Never fails the build: an unresolved app fails only
+    /// the extensions that need it, at compile time, as a missing dependency always has.
+    /// Returns the packages the feeds supplied, which Part 4 ingests as vendor releases.
+    /// </summary>
+    private async Task<IReadOnlyList<ResolvedSymbolPackage>> ResolveDependencySymbolsAsync(
+        int projectId, IReadOnlyList<DiscoveredApp> discovered, List<SupplementalSymbol> supplemental, string symbolsDir,
+        string applicationVersion, string country, List<PendingLog> logs, CancellationToken ct)
+    {
+        var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var app in discovered) provided.Add(NormalizeAppId(app.Manifest.Id));
+        foreach (var upload in supplemental)
+        {
+            using var stream = new MemoryStream(upload.Content, writable: false);
+            if (AppPackageReader.TryReadManifest(stream) is { } manifest) provided.Add(NormalizeAppId(manifest.AppId.ToString()));
+        }
+
+        var dependencies = discovered
+            .SelectMany(d => d.Manifest.Dependencies)
+            .Where(d => NormalizeAppId(d.Id).Length > 0)
+            .GroupBy(d => NormalizeAppId(d.Id))
+            .Select(g => new SymbolDependency(g.Key, g.First().Name,
+                g.Select(d => d.Version).OrderByDescending(v => Version.TryParse(v, out var parsed) ? parsed : null).First()))
+            .ToList();
+
+        var lines = new List<string>();
+        var fromFeeds = new List<ResolvedSymbolPackage>();
+        var unresolved = new List<UnresolvedSymbol>(
+            await ResolveFromSymbolFeedsAsync(dependencies, symbolsDir, provided, applicationVersion, country, lines, fromFeeds, ct)
+                .ConfigureAwait(false));
+
+        // The feeds only know published apps; a PTE another solution in the
+        // organisation builds is in that solution's retained build output.
+        var fromBuilds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var outcome = await new BuildArtifactSymbolResolver(_db, _logger).ResolveAsync(
+                new BuildArtifactSymbolRequest(projectId, dependencies, symbolsDir, provided, applicationVersion), ct).ConfigureAwait(false);
+            foreach (var hit in outcome.Resolved)
+            {
+                fromBuilds.Add(hit.AppId);
+                var source = hit.ProjectId == projectId
+                    ? $"this solution's build #{hit.BuildId}"
+                    : $"solution {hit.ProjectName}'s build #{hit.BuildId}";
+                lines.Add($"Resolved {hit.AppName} {hit.AppVersion} from {source}.");
+            }
+            // What those apps need in turn and no build carried: the feeds have
+            // not been asked about these yet.
+            if (outcome.TransitiveMisses.Count > 0)
+            {
+                unresolved.AddRange(await ResolveFromSymbolFeedsAsync(
+                    outcome.TransitiveMisses, symbolsDir, provided, applicationVersion, country, lines, fromFeeds, ct).ConfigureAwait(false));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Resolving symbols from earlier builds failed; the build continues with the symbols it already has.");
+            lines.Add($"Could not look up dependencies in earlier builds: {ex.Message}");
+        }
+
+        foreach (var missing in unresolved.Where(u => !fromBuilds.Contains(NormalizeAppId(u.AppId))))
+        {
+            var wanted = missing.MinVersion is null ? string.Empty : $" {missing.MinVersion} or later";
+            lines.Add($"Could not resolve {missing.Name ?? "app"} ({missing.AppId}){wanted}: {missing.Reason}, "
+                + "and no successful build of this solution or of a Public or Read-only solution has it.");
+        }
+        if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
+        return fromFeeds;
+    }
+
+    /// <summary>
+    /// One pass over Microsoft's public symbol feeds: logs a line per package
+    /// fetched, adds what it fetched to <paramref name="resolved"/>, and returns
+    /// what could not be found. Never throws except on cancellation.
+    /// </summary>
+    private async Task<IReadOnlyList<UnresolvedSymbol>> ResolveFromSymbolFeedsAsync(
+        IReadOnlyList<SymbolDependency> dependencies, string symbolsDir, IReadOnlySet<string> provided,
+        string applicationVersion, string country, List<string> lines, List<ResolvedSymbolPackage> resolved, CancellationToken ct)
+    {
+        SymbolFeedOutcome outcome;
+        try
+        {
+            outcome = await _symbolFeeds.ResolveAsync(
+                new SymbolFeedRequest(dependencies, symbolsDir, provided, applicationVersion, country), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // The resolver promises not to throw; this keeps that promise from
+            // being the only thing between a feed bug and a sunk build.
+            _logger.LogWarning(ex, "Symbol feed resolution failed; the build continues with the symbols it already has.");
+            lines.Add($"Could not look up dependencies on the public symbol feeds: {ex.Message}");
+            return [];
+        }
+
+        foreach (var package in outcome.Resolved)
+        {
+            lines.Add($"Resolved {package.Name} {package.Version} from the {package.Feed}{(package.FromCache ? " (cached)" : string.Empty)}.");
+        }
+        resolved.AddRange(outcome.Resolved);
+        return outcome.Unresolved;
     }
 
     /// <summary>Copies any third-party symbols the repos committed under <c>.alpackages/</c> into the symbol dir.</summary>
@@ -1119,6 +1341,114 @@ public sealed class ProjectBuildService
         }
     }
 
+    /// <summary>
+    /// Ensures a <c>third_party</c> Release exists for each package the symbol
+    /// feeds resolved, and returns their ids for the project Release to link.
+    /// One Release per (app id, version), found again by its dedup key, so every
+    /// build that resolves the same vendor version shares it - the way the
+    /// Microsoft parent is shared. It is parented onto this build's Microsoft
+    /// Release so the vendor's own references into Base App resolve. A package
+    /// whose ingest fails is left out and the build carries on; one whose earlier
+    /// ingest failed is not linked until someone retries it from its manage page.
+    /// See <c>.design/object-explorer-project-builds.md</c> ("Ingest the resolved
+    /// symbols").
+    /// </summary>
+    private async Task<IReadOnlyList<int>> EnsureVendorReleasesAsync(
+        IReadOnlyList<ResolvedSymbolPackage> packages, string symbolsDir, int? parentReleaseId,
+        List<PendingLog> logs, CancellationToken ct)
+    {
+        var ids = new List<int>();
+        var lines = new List<string>();
+        foreach (var package in packages)
+        {
+            ct.ThrowIfCancellationRequested();
+            var id = await EnsureVendorReleaseAsync(package, symbolsDir, parentReleaseId, lines, ct).ConfigureAwait(false);
+            if (id is { } found && !ids.Contains(found)) ids.Add(found);
+        }
+        if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
+        return ids;
+    }
+
+    /// <summary>The dedup key a vendor symbols Release is found again by: one per (app id, version) per organisation.</summary>
+    internal static string VendorDedupKey(string appId, string version) =>
+        $"symbols:{NormalizeAppId(appId)}:{version.Trim()}";
+
+    private async Task<int?> EnsureVendorReleaseAsync(
+        ResolvedSymbolPackage package, string symbolsDir, int? parentReleaseId, List<string> lines, CancellationToken ct)
+    {
+        var dedupKey = VendorDedupKey(package.AppId, package.Version);
+        var label = $"{package.Name} {package.Version} (symbols)";
+        var existing = await FindVendorReleaseAsync(dedupKey, ct).ConfigureAwait(false);
+        if (existing is not null) return Adopt(existing.Value, label, lines);
+
+        byte[] bytes;
+        AppManifest? manifest;
+        try
+        {
+            bytes = await File.ReadAllBytesAsync(Path.Combine(symbolsDir, Path.GetFileName(package.FileName)), ct).ConfigureAwait(false);
+            using var probe = new MemoryStream(bytes, writable: false);
+            manifest = AppPackageReader.TryReadManifest(probe);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Could not read the resolved symbols package {File} for ingest.", package.FileName);
+            lines.Add($"Could not add {label} to the Object Explorer: the package could not be read.");
+            return null;
+        }
+        // A stored upload written after the feed could have replaced the file;
+        // only ingest what the feed actually resolved.
+        if (manifest is null
+            || NormalizeAppId(manifest.AppId.ToString()) != NormalizeAppId(package.AppId)
+            || !string.Equals(manifest.Version, package.Version, StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add($"Did not add {label} to the Object Explorer: the package in the build is not the one the feed supplied.");
+            return null;
+        }
+
+        try
+        {
+            var metadata = new ReleaseImportMetadata(
+                Label: label, Kind: "third_party", ParentReleaseId: parentReleaseId, ApplicationVersionId: null,
+                Publisher: manifest.Publisher, DedupKey: dedupKey);
+            var vendorId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+            using var stream = new MemoryStream(bytes, writable: false);
+            await _importer.ProcessReleaseAsync(
+                vendorId, [new AppFileUpload(Path.GetFileName(package.FileName), stream, SourceZipStream: null)],
+                storeSymbolReference: false, ct).ConfigureAwait(false);
+            _logger.LogInformation("Ingested vendor symbols {Label} (release {ReleaseId}) for a project build.", label, vendorId);
+            lines.Add($"Added {label} to the Object Explorer.");
+            return vendorId;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Same race as the parent (#431): another build may have won the
+            // unique dedup-key insert. Adopt its Release if one now exists.
+            _db.ChangeTracker.Clear();
+            var adopted = await FindVendorReleaseAsync(dedupKey, ct).ConfigureAwait(false);
+            if (adopted is not null) return Adopt(adopted.Value, label, lines);
+
+            _logger.LogWarning(ex, "Failed to ingest vendor symbols {Label}; the build continues without them.", label);
+            lines.Add($"Could not add {label} to the Object Explorer: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task<(int Id, string Status)?> FindVendorReleaseAsync(string dedupKey, CancellationToken ct)
+    {
+        var row = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.DedupKey == dedupKey && r.DeletedAt == null)
+            .Select(r => new { r.Id, r.Status })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        return row is null ? null : (row.Id, row.Status);
+    }
+
+    private static int? Adopt((int Id, string Status) release, string label, List<string> lines)
+    {
+        if (release.Status != "failed") return release.Id;
+        lines.Add($"{label} is in the Object Explorer but its import failed; retry it there to link it to this build.");
+        return null;
+    }
+
     // ── Compile ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -1130,7 +1460,7 @@ public sealed class ProjectBuildService
     private async Task<(string? OutFile, string Log)> CompileAsync(DiscoveredApp app, string symbolsDir, AlCompilerInfo compiler, CancellationToken ct)
     {
         var outFile = Path.Combine(symbolsDir, SafeAppFileName(app.Manifest));
-        var args = new List<string>
+        var args = new List<string>(compiler.LeadingArguments)
         {
             "/project:" + app.ProjectDir,
             "/packagecachepath:" + symbolsDir,
@@ -1141,7 +1471,7 @@ public sealed class ProjectBuildService
             ? new Dictionary<string, string> { ["DOTNET_ROLL_FORWARD"] = "LatestMajor" }
             : null;
 
-        var result = await _processRunner.RunAsync(new ProcessRunRequest(compiler.AlcPath, args, app.ProjectDir, env), ct).ConfigureAwait(false);
+        var result = await _processRunner.RunAsync(new ProcessRunRequest(compiler.FileName, args, app.ProjectDir, env), ct).ConfigureAwait(false);
         // alc writes diagnostics to stdout; keep both streams for the build log.
         var log = string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
         if (result.Succeeded && File.Exists(outFile))
@@ -1153,15 +1483,80 @@ public sealed class ProjectBuildService
         return (null, log);
     }
 
+    /// <summary>
+    /// The solution's stored symbol packages, identified by their own manifests, for
+    /// the missing-dependency report. Only read when a compile has already failed for
+    /// want of a package, so a green build never pays for it. A stored file that
+    /// cannot be read is skipped - it cannot be the version the build needed either.
+    /// </summary>
+    private async Task<List<StoredSymbolPackage>> ReadStoredSymbolPackagesAsync(int projectId, CancellationToken ct)
+    {
+        var rows = await _db.OeProjectSymbols.AsNoTracking()
+            .Where(s => s.ProjectId == projectId)
+            .Select(s => new { s.FileName, s.Content })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var packages = new List<StoredSymbolPackage>(rows.Count);
+        foreach (var row in rows)
+        {
+            var manifest = await AppPackageReader.TryReadManifestAsync(row.Content, ct).ConfigureAwait(false);
+            if (manifest is null) continue;
+            packages.Add(new StoredSymbolPackage(row.FileName, manifest.AppId, manifest.Publisher, manifest.Name, manifest.Version));
+        }
+        return packages;
+    }
+
+    /// <summary>
+    /// What the solution's Business Central environments last reported installed, from
+    /// the installed-apps mirror rather than the tenant: the build has no business
+    /// holding the customer's credentials, and a mirror a day old still says which
+    /// version of a vendor app the customer runs. Empty for a solution with no
+    /// connection. See <c>.design/solution-customer-info.md</c>, "Modules".
+    /// </summary>
+    private async Task<List<InstalledAppFact>> ReadInstalledAppsAsync(int projectId, CancellationToken ct)
+    {
+        var environments = _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == projectId && e.MissingSince == null)
+            .Where(Bc.EnvironmentQueries.NotSoftDeleted);
+        var rows = await (
+                from e in environments
+                join a in _db.OeEnvironmentApps.AsNoTracking() on e.Id equals a.EnvironmentId
+                select new { e.Name, e.Type, a.AppId, a.Version })
+            .ToListAsync(ct).ConfigureAwait(false);
+        return rows
+            .Select(r => new InstalledAppFact(r.Name, Bc.BcEnvironmentTypes.IsProduction(r.Type), r.AppId, r.Version))
+            .ToList();
+    }
+
     // ── Release finalisation ────────────────────────────────────────────
 
-    private async Task FinalizeReleaseAsync(int releaseId, string label, int? parentReleaseId, CancellationToken ct)
+    /// <summary>
+    /// Stamps the project Release's label and parent, and replaces its dependency
+    /// links with the vendor Releases this build resolved, so a rebuild that no
+    /// longer needs a vendor stops seeing it. Runs before the caller ingests the
+    /// compiled apps, because the ingest's reference pass reads the chain.
+    /// </summary>
+    private async Task FinalizeReleaseAsync(
+        int releaseId, string label, int? parentReleaseId, IReadOnlyList<int> dependencyReleaseIds, CancellationToken ct)
     {
         var release = await _db.OeReleases.FirstOrDefaultAsync(r => r.Id == releaseId, ct).ConfigureAwait(false);
         if (release is null) return;
         release.Label = label;
         release.ParentReleaseId = parentReleaseId;
         release.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+
+        var stale = await _db.OeReleaseDependencies.Where(d => d.ReleaseId == releaseId).ToListAsync(ct).ConfigureAwait(false);
+        _db.OeReleaseDependencies.RemoveRange(stale.Where(d => !dependencyReleaseIds.Contains(d.DependencyReleaseId)));
+        var now = _clock.GetUtcNow().UtcDateTime;
+        foreach (var dependencyId in dependencyReleaseIds.Where(id => id != releaseId && stale.All(d => d.DependencyReleaseId != id)))
+        {
+            _db.OeReleaseDependencies.Add(new OeReleaseDependency
+            {
+                OrganizationId = release.OrganizationId,
+                ReleaseId = releaseId,
+                DependencyReleaseId = dependencyId,
+                CreatedAt = now,
+            });
+        }
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
@@ -1371,6 +1766,12 @@ public sealed class ProjectBuildService
     /// commit-capture invocations never receive the PAT, so their output can't
     /// carry it — only git transport (clone / ls-remote) is routed through here.
     /// </summary>
+    private static string Sanitize(string text, IReadOnlyList<CloneCredential> credentials)
+    {
+        foreach (var credential in credentials) text = Sanitize(text, credential.Secret);
+        return text;
+    }
+
     private static string Sanitize(string text, string secret)
     {
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(secret)) return text;
@@ -1407,11 +1808,14 @@ public sealed class ProjectBuildService
         }
     }
 
+    /// <summary>A stored operator upload, read before the feeds run so its app id is never fetched over it.</summary>
+    private sealed record SupplementalSymbol(string FileName, byte[] Content);
+
     /// <summary>A captured log section accumulated during a build, before it's persisted as a <see cref="OeProjectBuildLog"/>.</summary>
     private sealed record PendingLog(int? RepoId, string Section, string Content);
 
     /// <summary>A compiled deliverable held in memory, before it's persisted as a <see cref="OeProjectBuildArtifact"/>.</summary>
-    private sealed record PendingArtifact(string FileName, string AppName, string AppVersion, string? Runtime, byte[] Content);
+    private sealed record PendingArtifact(string FileName, string? AppId, string AppName, string AppVersion, string? Runtime, byte[] Content);
 
     /// <summary>One parsed compiler diagnostic with its path already made repository-relative, before it becomes a row.</summary>
     private sealed record PendingDiagnostic(int? RepoId, string RelativePath, AlcDiagnostic Diagnostic);

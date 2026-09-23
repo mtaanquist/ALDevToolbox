@@ -2387,6 +2387,11 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AppId")
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)")
+                        .HasColumnName("app_id");
+
                     b.Property<string>("AppName")
                         .IsRequired()
                         .HasMaxLength(250)
@@ -2432,6 +2437,9 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("size_bytes");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AppId")
+                        .HasDatabaseName("ix_oe_project_build_artifacts_app_id");
 
                     b.HasIndex("OrganizationId");
 
@@ -3535,6 +3543,45 @@ namespace ALDevToolbox.Data.Migrations
                         .HasFilter("deleted_at IS NULL AND dedup_key IS NOT NULL");
 
                     b.ToTable("oe_releases", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleaseDependency", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DependencyReleaseId")
+                        .HasColumnType("integer")
+                        .HasColumnName("dependency_release_id");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ReleaseId")
+                        .HasColumnType("integer")
+                        .HasColumnName("release_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DependencyReleaseId")
+                        .HasDatabaseName("ix_oe_release_dependencies_dependency_release");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ReleaseId", "DependencyReleaseId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_oe_release_dependencies_release_dependency");
+
+                    b.ToTable("oe_release_dependencies", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleasePipeline", b =>
@@ -7197,6 +7244,33 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("ParentRelease");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleaseDependency", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "DependencyRelease")
+                        .WithMany()
+                        .HasForeignKey("DependencyReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.OeRelease", "Release")
+                        .WithMany()
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DependencyRelease");
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Release");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeReleasePipeline", b =>

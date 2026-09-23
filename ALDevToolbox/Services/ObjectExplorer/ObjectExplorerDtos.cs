@@ -677,3 +677,12 @@ public sealed record CodeViewerDeclaration(
 /// </summary>
 public sealed record CodeViewerResolvable(
     int Line, int ColumnStart, int ColumnEnd, long? SymbolId = null);
+
+/// <summary>One vendor Release a pipeline build linked for its dependency symbols - a row of the manage page's "Third-party dependencies" card. <see cref="AppName"/> / <see cref="AppVersion"/> come from the app it holds, null while it has none.</summary>
+public sealed record ReleaseDependencyRow(
+    int ReleaseId,
+    string Label,
+    string? Publisher,
+    string Status,
+    string? AppName = null,
+    string? AppVersion = null);

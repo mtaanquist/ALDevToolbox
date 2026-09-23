@@ -2,7 +2,9 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.Explore.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.Import.PersistedImportJobs ImportJobs
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject IHttpContextAccessor Http
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Import
 
@@ -82,7 +84,7 @@
                                class="input" />
                         <small class="field__hint">Who owns this extension - handy when you've taken over an app someone else built.</small>
                     </label>
-                    @if (_release.Kind == "solution")
+                    @if (_release.Kind == OeRelease.ProjectBuildKind)
                     {
                         <label class="field">
                             <span class="field__label">Solution</span>
@@ -131,7 +133,7 @@
             </div>
         </section>
 
-        @if (_release.Kind == "solution" && _buildResults.Count > 0)
+        @if (_release.Kind == OeRelease.ProjectBuildKind && _buildResults.Count > 0)
         {
             <section class="card">
                 <div class="card__head">
@@ -173,7 +175,13 @@
                                         <span>—</span>
                                     }
                                 </td>
-                                <td class="u-muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
+                                <td class="u-muted">
+                                    @(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)
+                                    @if (_projectId is { } solutionId && ALDevToolbox.Services.ObjectExplorer.Projects.MissingDependencyReport.NamesMissingDependency(r.Message))
+                                    {
+                                        <text> </text><a href="@($"/solutions/{solutionId}?tab=symbols")">Add symbols to the solution</a>
+                                    }
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -182,7 +190,36 @@
             </section>
         }
 
-        @if (_release.Kind == "solution" && _release.DeletedAt is null
+        @if (_dependencies.Count > 0)
+        {
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Third-party dependencies</h2></div>
+                <div class="card__body">
+                <p class="form-sec__cap">
+                    Apps from other publishers that this build depends on. Their symbols were downloaded
+                    from Microsoft automatically so the build could compile - there's nothing you need to do.
+                    Open one to browse its objects; there's no source code to read.
+                </p>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>App</th><th>Version</th><th>Publisher</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in _dependencies)
+                        {
+                            <tr>
+                                <td><a href="@($"/object-explorer/release/{d.ReleaseId}")">@(d.AppName ?? d.Label)</a></td>
+                                <td class="u-muted">@(d.AppVersion ?? "—")</td>
+                                <td class="u-muted">@(string.IsNullOrEmpty(d.Publisher) ? "—" : d.Publisher)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+            </section>
+        }
+
+        @if (_release.Kind == OeRelease.ProjectBuildKind && _release.DeletedAt is null
              && (_release.Status == "ready" || _release.Status == "failed")
              && _buildResults.Any(r => r.Status == "failed"))
         {
@@ -195,6 +232,10 @@
                     dependency's <code>.app</code> here and rebuild - the symbols are kept with
                     the solution, so future builds use them too. The previous attempt's data is
                     cleared and replaced by the rebuild.
+                    @if (_projectId is { } symbolsFor)
+                    {
+                        <text>The symbols already stored are on the solution's <a href="@($"/solutions/{symbolsFor}?tab=symbols")">Symbols tab</a>.</text>
+                    }
                 </p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/recover-symbols")"
                       enctype="multipart/form-data">
@@ -217,7 +258,7 @@
             </section>
         }
 
-        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == "solution")
+        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == OeRelease.ProjectBuildKind)
         {
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Retry build</h2></div>
@@ -248,7 +289,7 @@
             </section>
         }
 
-        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "solution")
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != OeRelease.ProjectBuildKind)
         {
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Retry import</h2></div>
@@ -374,6 +415,10 @@
     private ReleaseDetail? _release;
     private ImportJobOrigin? _origin;
     private List<ProjectBuildResultRow> _buildResults = new();
+    private List<ReleaseDependencyRow> _dependencies = new();
+
+    /// <summary>The solution a project-kind release was built from, when the viewer may see it.</summary>
+    private int? _projectId;
     private bool _isPartial;
     private (string Message, bool IsError)? Status { get; set; }
 
@@ -407,10 +452,13 @@
         }
         // Solution releases carry a per-app build report; a "ready" release with
         // a failed row is a partial build.
-        if (_release is { Kind: "solution" })
+        if (_release is { Kind: OeRelease.ProjectBuildKind })
         {
             _buildResults = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
+            _dependencies = await ObjectExplorer.GetDependencyReleasesAsync(ReleaseId);
+            // Where the solution's stored symbols live, for the link from a failed row.
+            _projectId = await Artifacts.GetProjectIdForReleaseAsync(ReleaseId);
         }
     }
 
@@ -451,14 +499,14 @@
         "first_party" => "First-party",
         "third_party" => "Third-party",
         "cal"         => "C/AL",
-        "solution"     => "Pipeline build",
+        OeRelease.ProjectBuildKind     => "Pipeline build",
         _             => kind,
     };
 
     private static string FormatStatus(string s, string kind) => s switch
     {
         "ready"                             => "Ready",
-        "ingesting" when kind == "solution" => "Building...",
+        "ingesting" when kind == OeRelease.ProjectBuildKind => "Building...",
         "ingesting"                         => "Ingesting...",
         "failed"                            => "Failed",
         _                                   => s,

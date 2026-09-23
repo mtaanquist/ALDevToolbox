@@ -276,7 +276,9 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         staged.StartedByUserId.Should().Be(UserId);
         // The manifest inside the .app is what names the app, not the file name.
         staged.Artifacts.Should().ContainSingle()
-            .Which.Should().Match<OeProjectBuildArtifact>(a => a.AppName == "CRONUS Core" && a.AppVersion == "1.0.0.0");
+            .Which.Should().Match<OeProjectBuildArtifact>(a => a.AppName == "CRONUS Core" && a.AppVersion == "1.0.0.0"
+                // ...and its app id, so a later build can resolve a dependency on it (#901).
+                && a.AppId == StagedAppId);
     }
 
     [Fact]
@@ -472,6 +474,8 @@ public sealed class GitHubReleaseServiceTests : IDisposable
                 "https://objects.githubusercontent.com/app-bytes")
             .OnBytes(HttpMethod.Get, "/app-bytes", AppFile("CRONUS Core", "1.0.0.0"));
 
+    private const string StagedAppId = "c0ffee00-0000-0000-0000-000000000001";
+
     /// <summary>A minimal but real <c>.app</c>: the NAVX header, then a zip holding the manifest.</summary>
     private static byte[] AppFile(string name, string version)
     {
@@ -480,7 +484,7 @@ public sealed class GitHubReleaseServiceTests : IDisposable
         {
             var entry = archive.CreateEntry("NavxManifest.xml");
             using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
-            writer.Write($"<Package><App Name=\"{name}\" Version=\"{version}\" Publisher=\"CRONUS\" /></Package>");
+            writer.Write($"<Package><App Id=\"{StagedAppId}\" Name=\"{name}\" Version=\"{version}\" Publisher=\"CRONUS\" /></Package>");
         }
         var header = new byte[40];
         Encoding.ASCII.GetBytes("NAVX").CopyTo(header, 0);

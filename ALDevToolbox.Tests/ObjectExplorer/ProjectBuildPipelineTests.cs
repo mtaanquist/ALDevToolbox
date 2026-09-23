@@ -21,11 +21,11 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// including the partial-failure shape (one extension ingested, one failed).
 ///
 /// <para>
-/// The clone → resolve-symbols → compile → ingest path itself drives concrete,
-/// network-bound services (<see cref="BcArtifactService"/> against Microsoft's
-/// CDN, <see cref="AlCompilerProvisioner"/> against NuGet) that aren't seamed
-/// behind interfaces, so the full end-to-end is exercised by the staging smoke,
-/// not here. The pure build logic is covered by <see cref="ProjectBuildServiceTests"/>.
+/// The clone → resolve-symbols → compile path is driven end to end, with git,
+/// <c>alc</c>, the artifact CDN and the symbol feeds faked, by
+/// <see cref="ProjectBuildSymbolFeedTests"/>; the real toolchain and ingest are
+/// exercised by the staging smoke. The pure build logic is covered by
+/// <see cref="ProjectBuildServiceTests"/>.
 /// </para>
 /// </summary>
 public sealed class ProjectBuildPipelineTests : IDisposable

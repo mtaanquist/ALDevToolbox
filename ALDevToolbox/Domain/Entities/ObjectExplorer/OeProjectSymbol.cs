@@ -3,10 +3,11 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <summary>
 /// A third-party dependency symbol package (<c>.app</c>) an operator uploaded for a
 /// <see cref="OeProject"/> after a build failed for want of it. The project-build
-/// pipeline copies these into the symbol cache alongside the repos' committed
-/// <c>.alpackages/</c> before compiling, so the next build (or a rebuild triggered
-/// from the manage page's "Supply missing symbols" action) can resolve a dependency
-/// that lives neither in the repo nor on a Microsoft artifact. Persisted at the
+/// pipeline copies these into the symbol cache last - after the Microsoft artifact,
+/// the repos' committed <c>.alpackages/</c> and the public symbol feeds, so an upload
+/// overrides all three - and the next build (or a rebuild triggered from the manage
+/// page's "Supply missing symbols" action) can resolve a dependency none of those
+/// supply. Persisted at the
 /// project level — not the release — so it benefits every later build of that
 /// project, including a future auto-build. Org-scoped like the rest of the Object
 /// Explorer admin surface. See <c>.design/object-explorer-project-builds.md</c>

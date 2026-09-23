@@ -33,17 +33,11 @@
     </div>
     @if (From <= 0)
     {
-        <span class="field-error" role="alert">
-            <Icon Name="circle-alert" Width="13" Height="13" />
-            The first ID must be greater than zero.
-        </span>
+        <FieldError Message="The first ID must be greater than zero." />
     }
     else if (To <= From)
     {
-        <span class="field-error" role="alert">
-            <Icon Name="circle-alert" Width="13" Height="13" />
-            The last ID must be higher than the first.
-        </span>
+        <FieldError Message="The last ID must be higher than the first." />
     }
     else if (!string.IsNullOrEmpty(Hint))
     {

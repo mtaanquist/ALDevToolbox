@@ -30,7 +30,7 @@ namespace ALDevToolbox.Tests.Components;
 /// The live half is served here from the panel cache, so Business Central is never
 /// reached - the doubles throw if it is.</para>
 /// </summary>
-public sealed class EnvironmentDetailTests : IDisposable
+public sealed class EnvironmentDetailTests : IAsyncDisposable
 {
     private readonly TestDb _db = new();
     private readonly BunitContext _ctx = new();
@@ -79,10 +79,30 @@ public sealed class EnvironmentDetailTests : IDisposable
         _db.OrgContext.CurrentUserId = OwnerUserId;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // Teardown has raced the page three times (#895, #905, #924), and the three
+        // symptoms had one cause: bunit's DisposeComponentsAsync clears its list of root
+        // components right after posting the detach to the renderer's dispatcher, so
+        // when the dispatcher is busy with one of the page's loads at that moment - it
+        // usually is, straight after an assertion - the posted work finds nothing to
+        // detach, and the page lives on: its timer ticks into a disposed context
+        // ("connection is in state Connecting"), its list is iterated under the clear
+        // ("Collection was modified"), or its next query runs after the database has
+        // been dropped ('database "aldt_test_..." does not exist'). The settle and the
+        // sleeps that were here only shortened the odds.
+        //
+        // So the components are not disposed through that call. The renderer's own
+        // DisposeAsync walks every component on the dispatcher, behind whatever the
+        // page is doing, and waits for the page's DisposeAsync - which cancels its
+        // reads and waits for the last call to let go of the DbContext. Only then
+        // is the service provider disposed and the database dropped. The settle is
+        // a second line, not the first: it covers a command a dying call is still
+        // disposing. Leaving_the_page_cancels_the_read_under_way_and_waits_for_it holds
+        // the page and the renderer to the first part of that.
+        await _ctx.Renderer.DisposeAsync();
         _db.WaitForQueriesToSettle();
-        _ctx.Dispose();
+        await _ctx.DisposeAsync();
         _db.Dispose();
     }
 
@@ -102,12 +122,30 @@ public sealed class EnvironmentDetailTests : IDisposable
 
         public List<int> Cancelled { get; } = new();
 
-        public override Task<IReadOnlyList<BcSession>> ListSessionsAsync(
+        /// <summary>Set to make every read wait until the page gives up on it.</summary>
+        public bool HangUntilCancelled;
+
+        /// <summary>Reads the page gave up on, so a test can show that leaving does.</summary>
+        public int CancelledReads;
+
+        public override async Task<IReadOnlyList<BcSession>> ListSessionsAsync(
             string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
         {
             Interlocked.Increment(ref Reads);
             if (SessionsThrows is { } refusal) throw refusal;
-            return Task.FromResult(OnSessions());
+            if (HangUntilCancelled)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref CancelledReads);
+                    throw;
+                }
+            }
+            return OnSessions();
         }
 
         public override Task CancelSessionAsync(
@@ -220,6 +258,25 @@ public sealed class EnvironmentDetailTests : IDisposable
         var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, environmentId).Add(c => c.OpenTab, tab));
         cut.WaitForAssertion(() => cut.FindAll(".loading-block").Should().BeEmpty());
         return cut;
+    }
+
+    /// <summary>
+    /// The page tells the command palette what it is about (#887). It says so on
+    /// every tab, since the palette's context rows land on all five.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("history")]
+    public async Task The_page_tells_the_palette_which_environment_it_is(string? tab)
+    {
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+
+        var cut = Render(envId, tab);
+
+        var marker = cut.Find("[data-palette-context]");
+        marker.GetAttribute("data-palette-context").Should().Be($"environment:{envId}");
+        marker.GetAttribute("data-palette-href").Should().Be($"/environments/{envId}");
     }
 
     [Fact]
@@ -668,6 +725,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         _admin.Reads.Should().Be(1);
         cut.Markup.Should().Contain("Sessions read from Business Central",
             "the freshness strip says which half of the page this is");
+        cut.Find(".freshness button").HasAttribute("data-page-refresh").Should().BeTrue(
+            "the command palette offers Refresh only on a page whose Refresh button carries the mark");
     }
 
     /// <summary>
@@ -926,6 +985,26 @@ public sealed class EnvironmentDetailTests : IDisposable
     }
 
     [Fact]
+    public async Task Leaving_the_page_cancels_the_read_under_way_and_waits_for_it()
+    {
+        var (projectId, envId) = await SeedAsync();
+        await SeedCredentialsAsync(projectId);
+        _admin.HangUntilCancelled = true;
+
+        var cut = _ctx.Render<EnvironmentDetail>(p => p.Add(c => c.Id, envId).Add(c => c.OpenTab, "sessions"));
+        // Not WaitForAssertion: it re-checks on renders, and a read that hangs never
+        // renders again once it has started.
+        SpinWait.SpinUntil(() => Volatile.Read(ref _admin.Reads) == 1, TimeSpan.FromSeconds(5)).Should().BeTrue();
+
+        // A read is still on its way to Business Central when the page goes. Leaving
+        // has to end it, and has to come back only once it has ended: that is what lets
+        // this class's teardown drop the database the moment the renderer is gone.
+        await _ctx.Renderer.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        _admin.CancelledReads.Should().Be(1);
+        _db.CommandTracker.InFlight.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Declining_the_confirm_ends_nothing()
     {
         var (projectId, envId) = await SeedAsync();
@@ -983,6 +1062,8 @@ public sealed class EnvironmentDetailTests : IDisposable
         cut.FindAll(".alert--warn").Should().BeEmpty();
         cut.FindAll(".freshness button").Should().BeEmpty(
             "a forced re-read spends the customer's connection, which this person may not do");
+        cut.FindAll("[data-page-refresh]").Should().BeEmpty(
+            "with no button to press, the command palette must not offer Refresh either");
     }
 
     /// <summary>

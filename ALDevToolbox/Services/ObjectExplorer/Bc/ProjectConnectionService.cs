@@ -60,6 +60,25 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         _logger = logger;
     }
 
+    /// <summary>
+    /// The live projects whose connection is complete enough to answer: a tenant id and
+    /// a registration with a secret - their own, or none of their own and the
+    /// organisation's to fall back on. The same test as
+    /// <see cref="BcConnectionStatus.IsConfigured"/> from <see cref="GetConnectionAsync"/>,
+    /// written as one translatable query so a list or a sweep can ask it of every
+    /// project at once. It looks at whether a secret is stored, never at the secret.
+    /// Org-scoped by the EF query filter on <paramref name="db"/>; both halves are the
+    /// solution's own organisation.
+    /// </summary>
+    public static IQueryable<OeProject> ConfiguredProjects(AppDbContext db) =>
+        db.OeProjects.AsNoTracking()
+            .Where(p => p.DeletedAt == null
+                && p.BcTenantId != null
+                && (p.BcClientId != null
+                    ? p.BcClientSecretEncrypted != null
+                    : db.OrganizationSettings.Any(o => o.OrganizationId == p.OrganizationId
+                        && o.BcClientId != null && o.BcClientSecretEncrypted != null)));
+
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException("No organization in scope; BC connection mutation called outside an authenticated request.");
 
