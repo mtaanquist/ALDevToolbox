@@ -34,7 +34,7 @@
     See .design/artifacts.md.
 
     Each tab is its own component - ProjectDetailGeneral, ProjectDetailRepositories,
-    ProjectDetailBc, ProjectDetailPipelines, ProjectDetailAccess. What stays here is
+    ProjectDetailBc, ProjectDetailPipelines, ProjectDetailSymbols, ProjectDetailAccess. What stays here is
     what the page is: the route, the load, the header, the tab strip, and the state
     more than one tab reads (the shared edit model behind one Save, and the loaded
     solution the header reports).
@@ -223,6 +223,10 @@
                                             Pipelines="_pipelines"
                                             Saving="_saving" />
                 }
+                else if (_section == Section.Symbols && Id is not null && _canManage)
+                {
+                    <ProjectDetailSymbols Id="Id.Value" CanManage="_canManage" />
+                }
                 else if (_section == Section.Access && Id is not null && _canChangeAccess)
                 {
                     <ProjectDetailAccess Id="Id.Value"
@@ -253,7 +257,7 @@
     /// </summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? OpenTab { get; set; }
 
-    private enum Section { General, Repos, Customer, Bc, Pipelines, Access }
+    private enum Section { General, Repos, Customer, Bc, Pipelines, Symbols, Access }
     private Section _section = Section.General;
 
     /// <summary>
@@ -284,6 +288,9 @@
                 // Nothing on it works without Business Central online.
                 if (!IsOnPremises) tabs.Add(Tab("Business Central", Section.Bc));
                 tabs.Add(Tab("Pipelines", Section.Pipelines));
+                // The dependency packages a build can't find on its own. Beside
+                // Pipelines, because a failed build is what sends people here.
+                tabs.Add(Tab("Symbols", Section.Symbols));
                 // Who may see the solution is the owner's and the admins' to set, not
                 // every manager's - on a Public solution that is everybody.
                 if (_canChangeAccess) tabs.Add(Tab("Access", Section.Access));
@@ -445,6 +452,7 @@
         "repositories" => Section.Repos,
         "customer" => Section.Customer,
         "pipelines" => Section.Pipelines,
+        "symbols" => Section.Symbols,
         "access" => Section.Access,
         _ => Id is null ? Section.General : Section.Customer,
     };
