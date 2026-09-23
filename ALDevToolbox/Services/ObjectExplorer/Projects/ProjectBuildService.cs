@@ -208,6 +208,7 @@ public sealed class ProjectBuildService
             Directory.CreateDirectory(symbolsDir);
             var download = await _artifacts.DownloadArtifactSetAsync(resolved.ApplicationUrl, ct).ConfigureAwait(false);
             int? parentReleaseId;
+            IReadOnlyList<ResolvedSymbolPackage> fromFeeds = [];
             try
             {
                 ExtractArtifactSymbols(download, symbolsDir);
@@ -217,7 +218,7 @@ public sealed class ProjectBuildService
                 // Stored uploads are read first so neither fetches an app the
                 // operator has deliberately supplied.
                 var supplemental = await LoadSupplementalSymbolsAsync(projectId, ct).ConfigureAwait(false);
-                await ResolveDependencySymbolsAsync(projectId, discovered, supplemental, symbolsDir, resolved.MajorMinor, country, logs, ct)
+                fromFeeds = await ResolveDependencySymbolsAsync(projectId, discovered, supplemental, symbolsDir, resolved.MajorMinor, country, logs, ct)
                     .ConfigureAwait(false);
                 // Operator-supplied symbols (the manual-symbols recovery path) are
                 // written last so they win over a stale committed/artifact/feed/build
@@ -233,6 +234,12 @@ public sealed class ProjectBuildService
                 TryDelete(download.ApplicationZipPath);
                 if (download.PlatformZipPath is not null) TryDelete(download.PlatformZipPath);
             }
+
+            // 4b. Put each vendor package the feeds resolved into the Object
+            //     Explorer, once per (app id, version), so our code's references
+            //     into it resolve (#901, Part 4). Best-effort, like the parent.
+            var dependencyReleaseIds = await EnsureVendorReleasesAsync(fromFeeds, symbolsDir, parentReleaseId, logs, ct)
+                .ConfigureAwait(false);
 
             // 5. Compile each extension in dependency order; a compiled sibling
             //    becomes a symbol for the apps that depend on it.
@@ -316,7 +323,7 @@ public sealed class ProjectBuildService
             // Project labels aren't unique (the release id is their identity), so
             // a rebuild of the same project+version reuses the same clean label.
             var finalLabel = $"{project.Name} on BC {resolved.MajorMinor}";
-            await FinalizeReleaseAsync(releaseId, finalLabel, parentReleaseId, ct).ConfigureAwait(false);
+            await FinalizeReleaseAsync(releaseId, finalLabel, parentReleaseId, dependencyReleaseIds, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Project build for {Project} (release {ReleaseId}): {Compiled} compiled, {Failed} failed, parent release {ParentReleaseId}.",
@@ -1118,8 +1125,9 @@ public sealed class ProjectBuildService
     /// already put it in the symbol dir, when this build compiles it, or when a
     /// stored upload carries it. Never fails the build: an unresolved app fails only
     /// the extensions that need it, at compile time, as a missing dependency always has.
+    /// Returns the packages the feeds supplied, which Part 4 ingests as vendor releases.
     /// </summary>
-    private async Task ResolveDependencySymbolsAsync(
+    private async Task<IReadOnlyList<ResolvedSymbolPackage>> ResolveDependencySymbolsAsync(
         int projectId, IReadOnlyList<DiscoveredApp> discovered, List<SupplementalSymbol> supplemental, string symbolsDir,
         string applicationVersion, string country, List<PendingLog> logs, CancellationToken ct)
     {
@@ -1140,8 +1148,9 @@ public sealed class ProjectBuildService
             .ToList();
 
         var lines = new List<string>();
+        var fromFeeds = new List<ResolvedSymbolPackage>();
         var unresolved = new List<UnresolvedSymbol>(
-            await ResolveFromSymbolFeedsAsync(dependencies, symbolsDir, provided, applicationVersion, country, lines, ct)
+            await ResolveFromSymbolFeedsAsync(dependencies, symbolsDir, provided, applicationVersion, country, lines, fromFeeds, ct)
                 .ConfigureAwait(false));
 
         // The feeds only know published apps; a PTE another solution in the
@@ -1164,7 +1173,7 @@ public sealed class ProjectBuildService
             if (outcome.TransitiveMisses.Count > 0)
             {
                 unresolved.AddRange(await ResolveFromSymbolFeedsAsync(
-                    outcome.TransitiveMisses, symbolsDir, provided, applicationVersion, country, lines, ct).ConfigureAwait(false));
+                    outcome.TransitiveMisses, symbolsDir, provided, applicationVersion, country, lines, fromFeeds, ct).ConfigureAwait(false));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -1180,15 +1189,17 @@ public sealed class ProjectBuildService
                 + "and no successful build of this solution or of a Public or Read-only solution has it.");
         }
         if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
+        return fromFeeds;
     }
 
     /// <summary>
     /// One pass over Microsoft's public symbol feeds: logs a line per package
-    /// fetched and returns what could not be found. Never throws except on cancellation.
+    /// fetched, adds what it fetched to <paramref name="resolved"/>, and returns
+    /// what could not be found. Never throws except on cancellation.
     /// </summary>
     private async Task<IReadOnlyList<UnresolvedSymbol>> ResolveFromSymbolFeedsAsync(
         IReadOnlyList<SymbolDependency> dependencies, string symbolsDir, IReadOnlySet<string> provided,
-        string applicationVersion, string country, List<string> lines, CancellationToken ct)
+        string applicationVersion, string country, List<string> lines, List<ResolvedSymbolPackage> resolved, CancellationToken ct)
     {
         SymbolFeedOutcome outcome;
         try
@@ -1209,6 +1220,7 @@ public sealed class ProjectBuildService
         {
             lines.Add($"Resolved {package.Name} {package.Version} from the {package.Feed}{(package.FromCache ? " (cached)" : string.Empty)}.");
         }
+        resolved.AddRange(outcome.Resolved);
         return outcome.Unresolved;
     }
 
@@ -1301,6 +1313,114 @@ public sealed class ProjectBuildService
         }
     }
 
+    /// <summary>
+    /// Ensures a <c>third_party</c> Release exists for each package the symbol
+    /// feeds resolved, and returns their ids for the project Release to link.
+    /// One Release per (app id, version), found again by its dedup key, so every
+    /// build that resolves the same vendor version shares it - the way the
+    /// Microsoft parent is shared. It is parented onto this build's Microsoft
+    /// Release so the vendor's own references into Base App resolve. A package
+    /// whose ingest fails is left out and the build carries on; one whose earlier
+    /// ingest failed is not linked until someone retries it from its manage page.
+    /// See <c>.design/object-explorer-project-builds.md</c> ("Ingest the resolved
+    /// symbols").
+    /// </summary>
+    private async Task<IReadOnlyList<int>> EnsureVendorReleasesAsync(
+        IReadOnlyList<ResolvedSymbolPackage> packages, string symbolsDir, int? parentReleaseId,
+        List<PendingLog> logs, CancellationToken ct)
+    {
+        var ids = new List<int>();
+        var lines = new List<string>();
+        foreach (var package in packages)
+        {
+            ct.ThrowIfCancellationRequested();
+            var id = await EnsureVendorReleaseAsync(package, symbolsDir, parentReleaseId, lines, ct).ConfigureAwait(false);
+            if (id is { } found && !ids.Contains(found)) ids.Add(found);
+        }
+        if (lines.Count > 0) logs.Add(new PendingLog(null, "Symbols", string.Join("\n", lines)));
+        return ids;
+    }
+
+    /// <summary>The dedup key a vendor symbols Release is found again by: one per (app id, version) per organisation.</summary>
+    internal static string VendorDedupKey(string appId, string version) =>
+        $"symbols:{NormalizeAppId(appId)}:{version.Trim()}";
+
+    private async Task<int?> EnsureVendorReleaseAsync(
+        ResolvedSymbolPackage package, string symbolsDir, int? parentReleaseId, List<string> lines, CancellationToken ct)
+    {
+        var dedupKey = VendorDedupKey(package.AppId, package.Version);
+        var label = $"{package.Name} {package.Version} (symbols)";
+        var existing = await FindVendorReleaseAsync(dedupKey, ct).ConfigureAwait(false);
+        if (existing is not null) return Adopt(existing.Value, label, lines);
+
+        byte[] bytes;
+        AppManifest? manifest;
+        try
+        {
+            bytes = await File.ReadAllBytesAsync(Path.Combine(symbolsDir, Path.GetFileName(package.FileName)), ct).ConfigureAwait(false);
+            using var probe = new MemoryStream(bytes, writable: false);
+            manifest = AppPackageReader.TryReadManifest(probe);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Could not read the resolved symbols package {File} for ingest.", package.FileName);
+            lines.Add($"Could not add {label} to the Object Explorer: the package could not be read.");
+            return null;
+        }
+        // A stored upload written after the feed could have replaced the file;
+        // only ingest what the feed actually resolved.
+        if (manifest is null
+            || NormalizeAppId(manifest.AppId.ToString()) != NormalizeAppId(package.AppId)
+            || !string.Equals(manifest.Version, package.Version, StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add($"Did not add {label} to the Object Explorer: the package in the build is not the one the feed supplied.");
+            return null;
+        }
+
+        try
+        {
+            var metadata = new ReleaseImportMetadata(
+                Label: label, Kind: "third_party", ParentReleaseId: parentReleaseId, ApplicationVersionId: null,
+                Publisher: manifest.Publisher, DedupKey: dedupKey);
+            var vendorId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+            using var stream = new MemoryStream(bytes, writable: false);
+            await _importer.ProcessReleaseAsync(
+                vendorId, [new AppFileUpload(Path.GetFileName(package.FileName), stream, SourceZipStream: null)],
+                storeSymbolReference: false, ct).ConfigureAwait(false);
+            _logger.LogInformation("Ingested vendor symbols {Label} (release {ReleaseId}) for a project build.", label, vendorId);
+            lines.Add($"Added {label} to the Object Explorer.");
+            return vendorId;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Same race as the parent (#431): another build may have won the
+            // unique dedup-key insert. Adopt its Release if one now exists.
+            _db.ChangeTracker.Clear();
+            var adopted = await FindVendorReleaseAsync(dedupKey, ct).ConfigureAwait(false);
+            if (adopted is not null) return Adopt(adopted.Value, label, lines);
+
+            _logger.LogWarning(ex, "Failed to ingest vendor symbols {Label}; the build continues without them.", label);
+            lines.Add($"Could not add {label} to the Object Explorer: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task<(int Id, string Status)?> FindVendorReleaseAsync(string dedupKey, CancellationToken ct)
+    {
+        var row = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.DedupKey == dedupKey && r.DeletedAt == null)
+            .Select(r => new { r.Id, r.Status })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        return row is null ? null : (row.Id, row.Status);
+    }
+
+    private static int? Adopt((int Id, string Status) release, string label, List<string> lines)
+    {
+        if (release.Status != "failed") return release.Id;
+        lines.Add($"{label} is in the Object Explorer but its import failed; retry it there to link it to this build.");
+        return null;
+    }
+
     // ── Compile ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -1381,13 +1501,34 @@ public sealed class ProjectBuildService
 
     // ── Release finalisation ────────────────────────────────────────────
 
-    private async Task FinalizeReleaseAsync(int releaseId, string label, int? parentReleaseId, CancellationToken ct)
+    /// <summary>
+    /// Stamps the project Release's label and parent, and replaces its dependency
+    /// links with the vendor Releases this build resolved, so a rebuild that no
+    /// longer needs a vendor stops seeing it. Runs before the caller ingests the
+    /// compiled apps, because the ingest's reference pass reads the chain.
+    /// </summary>
+    private async Task FinalizeReleaseAsync(
+        int releaseId, string label, int? parentReleaseId, IReadOnlyList<int> dependencyReleaseIds, CancellationToken ct)
     {
         var release = await _db.OeReleases.FirstOrDefaultAsync(r => r.Id == releaseId, ct).ConfigureAwait(false);
         if (release is null) return;
         release.Label = label;
         release.ParentReleaseId = parentReleaseId;
         release.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+
+        var stale = await _db.OeReleaseDependencies.Where(d => d.ReleaseId == releaseId).ToListAsync(ct).ConfigureAwait(false);
+        _db.OeReleaseDependencies.RemoveRange(stale.Where(d => !dependencyReleaseIds.Contains(d.DependencyReleaseId)));
+        var now = _clock.GetUtcNow().UtcDateTime;
+        foreach (var dependencyId in dependencyReleaseIds.Where(id => id != releaseId && stale.All(d => d.DependencyReleaseId != id)))
+        {
+            _db.OeReleaseDependencies.Add(new OeReleaseDependency
+            {
+                OrganizationId = release.OrganizationId,
+                ReleaseId = releaseId,
+                DependencyReleaseId = dependencyId,
+                CreatedAt = now,
+            });
+        }
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 

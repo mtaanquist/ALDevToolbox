@@ -8,12 +8,14 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// <summary>
 /// Synthetic Business Central <c>.app</c> files: the 40-byte NAVX prefix and a zip
 /// holding a <c>NavxManifest.xml</c>. Enough for anything that reads an app's
-/// identity; there is no symbol tree behind it.
+/// identity. A test that needs objects passes a <c>SymbolReference.json</c> body,
+/// and one that needs code passes source files by their path inside the app.
 /// </summary>
 internal static class SyntheticApp
 {
     public static byte[] Build(string appId, string name, string publisher, string version,
-        IReadOnlyList<(string Id, string Name, string Version)>? dependencies = null)
+        IReadOnlyList<(string Id, string Name, string Version)>? dependencies = null,
+        string? symbolReferenceJson = null, IReadOnlyDictionary<string, string>? source = null)
     {
         byte[] zipBytes;
         using (var zipMs = new MemoryStream())
@@ -25,13 +27,25 @@ internal static class SyntheticApp
                 {
                     deps.Append($"<Dependency Id=\"{d.Id}\" Name=\"{d.Name}\" Publisher=\"Test\" MinVersion=\"{d.Version}\" />");
                 }
-                using var w = new StreamWriter(zip.CreateEntry("NavxManifest.xml").Open());
-                w.Write("<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-                    + "<Package xmlns=\"http://schemas.microsoft.com/navx/2015/manifest\">"
-                    + $"<App Id=\"{appId}\" Name=\"{WebUtility.HtmlEncode(name)}\" Publisher=\"{WebUtility.HtmlEncode(publisher)}\" Version=\"{version}\" />"
-                    + "<ResourceExposurePolicy />"
-                    + $"<Dependencies>{deps}</Dependencies>"
-                    + "</Package>");
+                using (var w = new StreamWriter(zip.CreateEntry("NavxManifest.xml").Open()))
+                {
+                    w.Write("<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+                        + "<Package xmlns=\"http://schemas.microsoft.com/navx/2015/manifest\">"
+                        + $"<App Id=\"{appId}\" Name=\"{WebUtility.HtmlEncode(name)}\" Publisher=\"{WebUtility.HtmlEncode(publisher)}\" Version=\"{version}\" />"
+                        + "<ResourceExposurePolicy />"
+                        + $"<Dependencies>{deps}</Dependencies>"
+                        + "</Package>");
+                }
+                if (symbolReferenceJson is not null)
+                {
+                    using var w = new StreamWriter(zip.CreateEntry("SymbolReference.json").Open());
+                    w.Write(symbolReferenceJson);
+                }
+                foreach (var (path, content) in source ?? new Dictionary<string, string>())
+                {
+                    using var w = new StreamWriter(zip.CreateEntry(path).Open());
+                    w.Write(content);
+                }
             }
             zipBytes = zipMs.ToArray();
         }
@@ -159,6 +173,9 @@ internal sealed record FakePackage(
     string PackageId, string AppId, string Name, string Version, string? Application,
     IReadOnlyList<(string PackageId, string Version)> DependsOn)
 {
+    /// <summary>The symbol tree inside the package's <c>.app</c>, when a test needs objects to land.</summary>
+    public string? SymbolReferenceJson { get; set; }
+
     public string AppFileName => $"Test_{Name.Replace(" ", string.Empty)}_{Version}.app";
 
     public string Nuspec()
@@ -187,7 +204,7 @@ internal sealed record FakePackage(
         {
             using (var app = zip.CreateEntry(AppFileName).Open())
             {
-                app.Write(SyntheticApp.Build(AppId, Name, "Test", Version));
+                app.Write(SyntheticApp.Build(AppId, Name, "Test", Version, symbolReferenceJson: SymbolReferenceJson));
             }
             using (var w = new StreamWriter(zip.CreateEntry(PackageId + ".nuspec").Open()))
             {

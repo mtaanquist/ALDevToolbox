@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261014000000_AddReleaseDependencies")]
+    partial class AddReleaseDependencies
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2387,11 +2390,6 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AppId")
-                        .HasMaxLength(36)
-                        .HasColumnType("character varying(36)")
-                        .HasColumnName("app_id");
-
                     b.Property<string>("AppName")
                         .IsRequired()
                         .HasMaxLength(250)
@@ -2437,9 +2435,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("size_bytes");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AppId")
-                        .HasDatabaseName("ix_oe_project_build_artifacts_app_id");
 
                     b.HasIndex("OrganizationId");
 

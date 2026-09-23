@@ -47,8 +47,10 @@ public class OeRelease
 
     /// <summary>
     /// Explicit, source-derived identity for releases that must not import twice —
-    /// currently first-party OnPrem artifacts (<c>bc-onprem:{Maj}.{Min}:{cc}</c>).
-    /// Null when a release isn't deduped (manual uploads, third-party, project),
+    /// first-party OnPrem artifacts (<c>bc-onprem:{Maj}.{Min}:{cc}</c>) and the vendor
+    /// symbols a pipeline build ingests from the public feeds
+    /// (<c>symbols:{appId}:{version}</c>, #901). Null when a release isn't deduped
+    /// (manual uploads, manual third-party imports, project builds),
     /// which is why the unique index is filtered to non-null keys. This is what lets
     /// the <see cref="Label"/> be a pure display string. See
     /// <c>.design/roadmap.md</c> ("Harden first-party dedup, then free the label").

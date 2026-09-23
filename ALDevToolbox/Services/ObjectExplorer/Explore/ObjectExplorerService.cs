@@ -238,6 +238,28 @@ public class ObjectExplorerService
     }
 
     /// <summary>
+    /// The vendor Releases a pipeline build resolved its dependency symbols from
+    /// (the release's dependency links, #901), by label. Empty for a release with
+    /// no links. Feeds the manage page's "Third-party dependencies" card.
+    /// </summary>
+    public async Task<List<ReleaseDependencyRow>> GetDependencyReleasesAsync(int releaseId, CancellationToken ct = default)
+    {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
+        return await _db.OeReleaseDependencies.AsNoTracking()
+            .Where(d => d.ReleaseId == releaseId)
+            .OrderBy(d => d.DependencyRelease!.Label)
+            .Select(d => new ReleaseDependencyRow(
+                d.DependencyReleaseId,
+                d.DependencyRelease!.Label,
+                d.DependencyRelease.Publisher,
+                d.DependencyRelease.Status,
+                // A symbols release holds the one app it was named for.
+                d.DependencyRelease.Modules.OrderBy(m => m.Id).Select(m => m.Name).FirstOrDefault(),
+                d.DependencyRelease.Modules.OrderBy(m => m.Id).Select(m => m.Version).FirstOrDefault()))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
     /// The per-app build report for a project Release, newest-meaningful order
     /// (failures first so the admin sees what to fix). Empty for non-project
     /// releases. Read-only; feeds the manage page's build panel + partial badge.

@@ -24,8 +24,12 @@ namespace ALDevToolbox.Services.ObjectExplorer.Explore;
 /// EF read (the clicked file's release, or <c>ResolveReleaseAsync</c>), and a
 /// parent chain never crosses an org boundary (a parent can only be picked from
 /// the same org at import time, with no <c>IgnoreQueryFilters</c>), so the walk
-/// stays in-tenant. Don't call these with a release id that hasn't been
-/// org-validated.</para>
+/// stays in-tenant. The dependency links a pipeline build adds (#901) keep that
+/// argument: the build writes them inside its own org scope, linking releases
+/// it read or created there, and the chain SQL does not take the link row's
+/// word for it anyway - it follows a link only to a release in the seed's own
+/// organisation (<see cref="ReleaseAncestrySql.Chain"/>). Don't call these with
+/// a release id that hasn't been org-validated.</para>
 /// </summary>
 internal static class ChainObjectResolution
 {

@@ -13,18 +13,52 @@ namespace ALDevToolbox.Services.ObjectExplorer.Explore;
 /// its own SELECT tail. <see cref="WinningModules"/> omits <c>m.name</c>;
 /// <see cref="WinningModulesWithName"/> includes it for queries that report
 /// the module.
+///
+/// <para><b>Two seeds (#901).</b> The walk starts from the release itself and
+/// from the vendor releases it links in <c>oe_release_dependencies</c>, and
+/// follows the ordinary parent pointer from both. <c>depth</c> is a rank, not a
+/// hop count: a dependency link costs one and a parent step costs two, so the
+/// order is the release (0), its dependency releases (1), its own parent (2),
+/// a dependency's parent (3), and so on. That puts a vendor's objects between
+/// ours and Microsoft's, and when a vendor release was ingested on top of a
+/// different Business Central version than this release's, our own parent
+/// still wins over the vendor's. For a release with no links the ranks are
+/// 0, 2, 4, ... so every ordering is what it was. A release reachable by two
+/// paths keeps its lowest rank (<c>chain</c> has one row per release). Links
+/// are followed one level only: the recursive step walks parent pointers,
+/// never a dependency release's own links. A rank tie between two releases
+/// carrying the same app id goes to the newer release id. See
+/// <c>.design/object-explorer.md</c> ("Dependency links").</para>
+///
+/// <para><b>Tenant fence.</b> The dependency seed joins both ends of each link
+/// to <c>oe_releases</c> and keeps only a dependency in the seed release's own
+/// organisation, so a link row naming another tenant's release is never
+/// followed even if one were written. The parent walk relies on the argument
+/// in <see cref="ChainObjectResolution"/>.</para>
 /// </summary>
 internal static class ReleaseAncestrySql
 {
     public const string Chain = """
-        WITH RECURSIVE chain AS (
+        WITH RECURSIVE chain_walk AS (
             SELECT id, parent_release_id, 0 AS depth
             FROM oe_releases
             WHERE id = {0}
             UNION ALL
-            SELECT r.id, r.parent_release_id, c.depth + 1
+            SELECT dep.id, dep.parent_release_id, 1 AS depth
+            FROM oe_release_dependencies d
+            JOIN oe_releases seed ON seed.id = d.release_id
+            JOIN oe_releases dep  ON dep.id  = d.dependency_release_id
+                                 AND dep.organization_id = seed.organization_id
+            WHERE d.release_id = {0}
+            UNION ALL
+            SELECT r.id, r.parent_release_id, c.depth + 2
             FROM oe_releases r
-            JOIN chain c ON r.id = c.parent_release_id
+            JOIN chain_walk c ON r.id = c.parent_release_id
+        ),
+        chain AS (
+            SELECT id, MIN(depth) AS depth
+            FROM chain_walk
+            GROUP BY id
         )
         """;
 
@@ -34,7 +68,7 @@ internal static class ReleaseAncestrySql
             SELECT DISTINCT ON (m.app_id) m.id, m.app_id
             FROM oe_modules m
             JOIN chain c ON c.id = m.release_id
-            ORDER BY m.app_id, c.depth ASC
+            ORDER BY m.app_id, c.depth ASC, c.id DESC
         )
         """;
 
@@ -44,7 +78,7 @@ internal static class ReleaseAncestrySql
             SELECT DISTINCT ON (m.app_id) m.id, m.app_id, m.name
             FROM oe_modules m
             JOIN chain c ON c.id = m.release_id
-            ORDER BY m.app_id, c.depth ASC
+            ORDER BY m.app_id, c.depth ASC, c.id DESC
         )
         """;
 }
