@@ -609,7 +609,7 @@ public sealed class DeliveryServiceTests : IDisposable
             "the delivery carries one line; the detail is the app's");
         app.Message.Should().Be(
             "Business Central refused a schema change (a renamed or removed table or field). "
-            + "Release again with Force sync to push it through, or keep the old names. "
+            + "Deploy again with Force sync to push it through, or keep the old names. "
             + "Error code: ExtensionChangeFailed. Business Central's message: " + danish);
         app.Message.Should().NotContain("Data Plane Admin Service").And.NotContain("{");
         // The log keeps the response whole, for support and for the page to read back.
@@ -768,7 +768,7 @@ public sealed class DeliveryServiceTests : IDisposable
         again.SchemaSyncMode.Should().Be(BcSyncMode.ForceSync);
         again.Status.Should().Be(ProjectDeliveryStatus.Deployed);
         _apps.LastSyncMode.Should().Be(BcSyncMode.ForceSync, "the upload is sent with the one-time mode");
-        again.DiagnosticsLog.Should().Contain("Schema sync: Force sync, this release only.");
+        again.DiagnosticsLog.Should().Contain("Schema sync: Force sync, this deployment only.");
         (await read.OeReleasePipelines.SingleAsync(r => r.Id == seed.ReleasePipelineId))
             .SchemaSyncMode.Should().Be(BcSyncMode.Add, "the pipeline's own setting is untouched");
 
@@ -801,7 +801,7 @@ public sealed class DeliveryServiceTests : IDisposable
         var act = () => NewService(_db.NewContext()).ReleaseAgainAsync(scheduledId, forceSyncOnce: true);
 
         (await act.Should().ThrowAsync<PlanValidationException>())
-            .Which.Errors["Delivery"].Should().Contain("Only a failed release");
+            .Which.Errors["Delivery"].Should().Contain("Only a failed deployment");
     }
 
     [Fact]
@@ -1228,7 +1228,7 @@ public sealed class DeliveryServiceTests : IDisposable
         delivery.DismissReason.Should().Be("CRONUS asked us to wait until after month-end");
         delivery.ReplacedByProjectBuildId.Should().BeNull();
         ProjectDeliveryStatus.IsTerminal(delivery.Status).Should().BeTrue();
-        delivery.Results.Should().OnlyContain(r => r.Status == ProjectDeliveryResultStatus.Skipped && r.Message == "Not sent: the release was dismissed.");
+        delivery.Results.Should().OnlyContain(r => r.Status == ProjectDeliveryResultStatus.Skipped && r.Message == "Not sent: the deployment was dismissed.");
         delivery.CancelledByUserId.Should().Be(who);
         delivery.FinishedAt.Should().NotBeNull();
         delivery.DiagnosticsLog.Should().Contain("Dismissed by K. Jensen: CRONUS asked us to wait until after month-end");

@@ -54,7 +54,7 @@ public sealed class PipelinePaletteSource : IPaletteSource
 
     public string Id => "pipelines";
 
-    public string Label => "Pipelines";
+    public string Label => "Build pipelines";
 
     public int Order => PaletteGroupOrder.Pipelines;
 

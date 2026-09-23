@@ -182,19 +182,44 @@
                         <span class="nav-item__label">Teams</span>
                     </NavLink>
                 }
-                @if (ToolVisible(ToolKey.Pipelines))
+                @* Build and deployment pipelines share one parent. It is not a link yet:
+                   there is no Pipelines page to land on until the dashboard issue gives
+                   /pipelines one, so for now it only groups its two children. Each child
+                   keeps its own tool toggle (the frozen keys Pipelines and Releases), and
+                   the parent shows while either is on. See .design/saas-delivery.md,
+                   "Vocabulary".
+
+                   At icon-rail width shell.css hides every .nav-sub, and a parent that is
+                   not a link would leave both pages unreachable from the rail. So this
+                   parent is --rail-flat: at that width app.css hides it and shows its two
+                   children as ordinary rail icons instead. *@
+                @if (ToolVisible(ToolKey.Pipelines) || ToolVisible(ToolKey.Releases))
                 {
-                    <NavLink class="nav-item" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                        <Icon Name="rocket" Width="17" Height="17" Css="nav-item__icon" />
-                        <span class="nav-item__label">Pipelines</span>
-                    </NavLink>
-                }
-                @if (ToolVisible(ToolKey.Releases))
-                {
-                    <NavLink class="nav-item" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                        <Icon Name="send" Width="17" Height="17" Css="nav-item__icon" />
-                        <span class="nav-item__label">Releases</span>
-                    </NavLink>
+                    <div class="@PipelinesParentClass">
+                        <div class="nav-item nav-item--group" title="Pipelines">
+                            <Icon Name="rocket" Width="17" Height="17" Css="nav-item__icon" />
+                            <span class="nav-item__label">Pipelines</span>
+                        </div>
+                        <div class="nav-sub">
+                            @if (ToolVisible(ToolKey.Pipelines))
+                            {
+                                @* A plain link rather than a NavLink: one build pipeline's page is
+                                   /pipelines/{id}, outside the list's prefix, and it still lives
+                                   under Builds. *@
+                                <a class="@BuildsClass" href="/pipelines/builds" title="Build pipelines" aria-current="@(BuildsCurrent ? "page" : null)">
+                                    <Icon Name="rocket" Width="17" Height="17" Css="nav-item__icon nav-sub__rail-icon" />
+                                    <span class="nav-item__label">Builds</span>
+                                </a>
+                            }
+                            @if (ToolVisible(ToolKey.Releases))
+                            {
+                                <NavLink class="nav-item" href="/pipelines/deployments" Match="NavLinkMatch.Prefix" ActiveClass="is-active" title="Deployment pipelines">
+                                    <Icon Name="send" Width="17" Height="17" Css="nav-item__icon nav-sub__rail-icon" />
+                                    <span class="nav-item__label">Deployments</span>
+                                </NavLink>
+                            }
+                        </div>
+                    </div>
                 }
             </div>
         </div>
@@ -490,15 +515,47 @@
         return classes;
     }
 
+    /// <summary>
+    /// The Pipelines parent's classes. It has no link of its own to go active, so
+    /// while one of its children is the current page it takes shell.css's
+    /// <c>has-active-child</c> weight instead. A build pipeline's own page
+    /// (<c>/pipelines/{id}</c>) counts: it lives under Builds.
+    /// </summary>
+    private string PipelinesParentClass =>
+        CurrentPath().StartsWith("/pipelines/", StringComparison.OrdinalIgnoreCase)
+            ? "nav-parent nav-parent--rail-flat is-open has-active-child"
+            : "nav-parent nav-parent--rail-flat is-open";
+
+    /// <summary>
+    /// Builds is current on the list and on any one build pipeline's page, whose route
+    /// (<c>/pipelines/{id:int}</c>) sits beside the list rather than under it.
+    /// </summary>
+    private bool BuildsCurrent
+    {
+        get
+        {
+            var path = CurrentPath();
+            return path.Equals("/pipelines/builds", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("/pipelines/builds/", StringComparison.OrdinalIgnoreCase)
+                || (path.StartsWith("/pipelines/", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(path.AsSpan("/pipelines/".Length), System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out _));
+        }
+    }
+
+    private string BuildsClass => BuildsCurrent ? "nav-item is-active" : "nav-item";
+
+    private string CurrentPath() => "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+
     /// <summary>Whether the page being rendered lives under one of this group's routes.</summary>
     private bool GroupHoldsCurrentPage(string key)
     {
-        var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+        var path = CurrentPath();
         var prefixes = key switch
         {
             BuildGroup => new[] { "/templates", "/cookbook", "/object-explorer" },
             TextGroup => new[] { "/translator", "/diff", "/piper" },
-            DeliverGroup => new[] { "/solutions", "/upgrades", "/teams", "/pipelines", "/releases" },
+            DeliverGroup => new[] { "/solutions", "/upgrades", "/teams", "/pipelines" },
             AssistantGroup => new[] { "/tools/mcp" },
             AdminGroup => new[] { "/admin" },
             SiteAdminGroup => new[] { "/site-admin" },

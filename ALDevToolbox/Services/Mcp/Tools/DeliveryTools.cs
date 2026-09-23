@@ -10,21 +10,23 @@ using ModelContextProtocol.Server;
 namespace ALDevToolbox.Services.Mcp.Tools;
 
 /// <summary>
-/// MCP tools over SaaS delivery — the agent-facing parallel of the Releases web tool.
-/// A release pipeline is the reusable "where + how" of a deploy (a build pipeline's
-/// artifacts → one Business Central environment); a delivery is one run of it. Agents
-/// can list release pipelines, release a successful build now, and read a pipeline's
-/// delivery history with per-app outcomes. Publishing runs asynchronously in the same
-/// in-process worker the web "Release now" uses, so <c>publish_build</c> returns a
-/// delivery id to poll with <c>list_deliveries</c> rather than blocking to completion.
+/// MCP tools over SaaS delivery — the agent-facing parallel of the Deployments web tool.
+/// A deployment pipeline (the <c>OeReleasePipeline</c> entity) is the reusable "where +
+/// how" of a deploy (a build pipeline's artifacts → one Business Central environment); a
+/// deployment (an <c>OeProjectDelivery</c> row) is one run of it. Agents can list
+/// deployment pipelines, deploy a successful build now, and read a pipeline's deployment
+/// history with per-app outcomes. Deploying runs asynchronously in the same in-process
+/// worker the web "Deploy now" uses, so <c>deploy_build</c> returns a deployment id to
+/// poll with <c>list_deployments</c> rather than blocking to completion.
 /// Access-gating and validation come from <see cref="DeliveryService"/> itself (the
 /// project owner / org Admin / an assigned team, via <c>ProjectAccess</c>); this class
 /// only translates its exceptions into <see cref="McpException"/>. All reads are
 /// org-scoped by the EF query filter and project-scoped by the same authority — a
 /// Private project the caller has no grant on is absent from every list here and
-/// unresolvable by id. Scheduling a future delivery stays a web-only surface for now,
-/// and so does approving or dismissing a release the pipeline prepared (#934): agents
-/// see it as "proposed" and nothing more. See <c>.design/saas-delivery.md</c> ("MCP parity").
+/// unresolvable by id. Scheduling a future deployment stays a web-only surface for now,
+/// and so does approving or dismissing a deployment the pipeline prepared (#934): agents
+/// see it as "proposed" and nothing more. The tool names follow the product's words, not
+/// the entity names; see <c>.design/saas-delivery.md</c> ("Vocabulary", "MCP parity").
 /// </summary>
 [McpServerToolType]
 public sealed class DeliveryTools
@@ -46,10 +48,10 @@ public sealed class DeliveryTools
         _artifacts = artifacts;
     }
 
-    [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
-    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning solution (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), when installs run (its deployment schedule), schema sync mode, and whether a new successful build prepares a release for a person to approve (prepareReleaseOnNewBuild; nothing installs until someone approves it in the web UI). Pipelines under a private solution you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
+    [McpServerTool(Name = "list_deployment_pipelines", ReadOnly = true)]
+    [Description("Lists the deployment pipelines you can see in the organisation — each is a named 'deploy this build pipeline's builds to this Business Central environment' target. Returns each pipeline's id, name, its owning solution (id and name), its source build pipeline (or, for a pipeline that installs a repository's GitHub releases, that repository), the target environment (name, Production/Sandbox type, and whether it is still present in Business Central), when installs run (its deployment schedule), schema sync mode, and whether a new successful build prepares a deployment for a person to approve (prepareDeploymentOnNewBuild; nothing installs until someone approves it in the web UI). Pipelines under a private solution you are not on the team for are not listed. Use an id with deploy_build (to deploy a build) or list_deployments (to see its history).")]
     public async Task<IReadOnlyList<ReleasePipelineRow>> ListReleasePipelinesAsync(
-        [Description("Optional solution id to list only that solution's release pipelines.")] int? solutionId = null,
+        [Description("Optional solution id to list only that solution's deployment pipelines.")] int? solutionId = null,
         CancellationToken ct = default)
     {
         try
@@ -64,50 +66,50 @@ public sealed class DeliveryTools
         }
     }
 
-    [McpServerTool(Name = "list_deliveries", ReadOnly = true)]
-    [Description("Lists a release pipeline's deliveries, newest first, with per-app outcomes. Each delivery returns its id, status ('proposed'/'scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off'/'dismissed': 'proposed' is a release the pipeline prepared from a new build that is waiting for a person to approve or dismiss it in the web UI - nothing has been sent, and there is no tool to approve it; 'dismissed' is such a prepared release that a person dismissed (dismissReason says why, when they gave a reason) or a newer build replaced (replacedByBuildId), so nothing was ever sent; 'handed_off' means Business Central accepted the apps and will install them on its own schedule), the build it published, scheduled/started/finished times, who triggered it, whether it was scheduled outside the environment's update window, any failure message, and each app's install result. Use it to track a publish_build call to completion.")]
+    [McpServerTool(Name = "list_deployments", ReadOnly = true)]
+    [Description("Lists a deployment pipeline's deployments, newest first, with per-app outcomes. Each deployment returns its id, its number in the pipeline's history (number; the web UI calls it 'Deployment 3'), status ('proposed'/'scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off'/'dismissed': 'proposed' is a deployment the pipeline prepared from a new build that is waiting for a person to approve or dismiss it in the web UI - nothing has been sent, and there is no tool to approve it; 'dismissed' is such a prepared deployment that a person dismissed (dismissReason says why, when they gave a reason) or a newer build replaced (replacedByBuildId), so nothing was ever sent; 'handed_off' means Business Central accepted the apps and will install them on its own schedule), the build it installed, scheduled/started/finished times, who triggered it, whether it was scheduled outside the environment's delivery window, any failure message, and each app's install result. Use it to track a deploy_build call to completion.")]
     public async Task<IReadOnlyList<DeliveryHistoryRow>> ListDeliveriesAsync(
-        [Description("Release pipeline id (from list_release_pipelines).")] int releasePipelineId,
+        [Description("Deployment pipeline id (from list_deployment_pipelines).")] int deploymentPipelineId,
         CancellationToken ct = default)
     {
-        await _releasePipelines.EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
-        return await _deliveries.ListDeliveryHistoryAsync(releasePipelineId, ct);
+        await _releasePipelines.EnsureReleasePipelineExistsAsync(deploymentPipelineId, ct);
+        return await _deliveries.ListDeliveryHistoryAsync(deploymentPipelineId, ct);
     }
 
-    [McpServerTool(Name = "publish_build", ReadOnly = false, Idempotent = false)]
-    [Description("Releases a successful build to its release pipeline's Business Central environment NOW — uploads and installs the build's .app files. The build must be a 'ready' build of the release pipeline's source build pipeline. A pipeline whose installs run in the environment's delivery window (deployment schedule 'OurDeliveryWindow') still releases immediately through this tool; the release is recorded as outside the window when it is. Publishing runs in the background; this returns the new delivery's id immediately, which you poll with list_deliveries for progress (uploading → installing → deployed/failed). The release uses the release pipeline's own schema sync mode; this tool cannot turn on Force sync for a release, and there is no way to ask it to. To schedule for later, to release to a Production target that needs an extra confirmation, or to release a failed build again with Force sync for that one release, use the web UI. Requires the solution owner or an org admin.")]
+    [McpServerTool(Name = "deploy_build", ReadOnly = false, Idempotent = false)]
+    [Description("Deploys a successful build to its deployment pipeline's Business Central environment NOW — uploads and installs the build's .app files. The build must be a 'ready' build of the deployment pipeline's source build pipeline. A pipeline whose installs run in the environment's delivery window (deployment schedule 'OurDeliveryWindow') still deploys immediately through this tool; the deployment is recorded as outside the window when it is. Deploying runs in the background; this returns the new deployment's id immediately, which you poll with list_deployments for progress (uploading → installing → deployed/failed). The deployment uses the pipeline's own schema sync mode; this tool cannot turn on Force sync for a deployment, and there is no way to ask it to. To schedule for later, to deploy to a Production target that needs an extra confirmation, or to deploy a failed build again with Force sync for that one deployment, use the web UI. Requires the solution owner or an org admin.")]
     public async Task<PublishBuildResult> PublishBuildAsync(
-        [Description("Release pipeline id (from list_release_pipelines) — carries the target environment and modes.")] int releasePipelineId,
-        [Description("Build id to publish (from list_pipeline_builds / list_solution_builds) — must be a 'ready' build of this pipeline's source build pipeline.")] int buildId,
+        [Description("Deployment pipeline id (from list_deployment_pipelines) — carries the target environment and modes.")] int deploymentPipelineId,
+        [Description("Build id to deploy (from list_pipeline_builds / list_solution_builds) — must be a 'ready' build of this pipeline's source build pipeline.")] int buildId,
         CancellationToken ct = default)
     {
         try
         {
-            var deliveryId = await _deliveries.ReleaseBuildNowAsync(releasePipelineId, buildId, ct);
+            var deliveryId = await _deliveries.ReleaseBuildNowAsync(deploymentPipelineId, buildId, ct);
             return new PublishBuildResult(
                 deliveryId,
-                "Delivery queued. Poll list_deliveries with this release pipeline id to watch it upload, install, and deploy (or fail).");
+                "Deployment queued. Poll list_deployments with this deployment pipeline id to watch it upload, install, and deploy (or fail).");
         }
         catch (ProjectAccessDeniedException)
         {
-            throw new McpException("You don't have permission to release this solution's builds — you must be the solution owner or an org admin.");
+            throw new McpException("You don't have permission to deploy this solution's builds — you must be the solution owner or an org admin.");
         }
         catch (PlanValidationException ex)
         {
-            throw new McpException("Couldn't release that build: " + string.Join("; ", ex.Errors.Values));
+            throw new McpException("Couldn't deploy that build: " + string.Join("; ", ex.Errors.Values));
         }
     }
 
     [McpServerTool(Name = "list_github_releases", ReadOnly = true)]
-    [Description("Lists the GitHub releases a release pipeline can install, newest first, with each release's tag, title, publication date and the app files attached to it. Only works for a release pipeline whose apps come from a repository's GitHub releases - one that releases a build pipeline's builds is refused, and you should use list_pipeline_builds for that. Releases with no app files attached cannot be installed. Requires the solution owner or an org admin.")]
+    [Description("Lists the GitHub releases a deployment pipeline can install, newest first, with each release's tag, title, publication date and the app files attached to it. Only works for a deployment pipeline whose apps come from a repository's GitHub releases - one that deploys a build pipeline's builds is refused, and you should use list_pipeline_builds for that. Releases with no app files attached cannot be installed. Requires the solution owner or an org admin.")]
     public async Task<IReadOnlyList<GitHubReleaseOption>> ListGitHubReleasesAsync(
-        [Description("Release pipeline id (from list_release_pipelines).")] int releasePipelineId,
+        [Description("Deployment pipeline id (from list_deployment_pipelines).")] int deploymentPipelineId,
         CancellationToken ct = default)
     {
-        await _releasePipelines.EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
+        await _releasePipelines.EnsureReleasePipelineExistsAsync(deploymentPipelineId, ct);
         try
         {
-            return await _githubReleases.ListReleasesAsync(releasePipelineId, ct);
+            return await _githubReleases.ListReleasesAsync(deploymentPipelineId, ct);
         }
         catch (ProjectAccessDeniedException)
         {
@@ -130,22 +132,22 @@ public sealed class DeliveryTools
     }
 
     [McpServerTool(Name = "stage_github_release", ReadOnly = false, Idempotent = true)]
-    [Description("Downloads the app files attached to one GitHub release and records them as a build, so publish_build can install them into the release pipeline's Business Central environment. Nothing is installed yet — this only fetches the files. Staging the same release twice returns the build already recorded rather than fetching it again. Refused when the release pipeline does not draw from GitHub releases, when the tag no longer exists, or when the release has no app files attached. Requires the solution owner or an org admin.")]
+    [Description("Downloads the app files attached to one GitHub release and records them as a build, so deploy_build can install them into the deployment pipeline's Business Central environment. Nothing is installed yet — this only fetches the files. Staging the same release twice returns the build already recorded rather than fetching it again. Refused when the deployment pipeline does not draw from GitHub releases, when the tag no longer exists, or when the release has no app files attached. Requires the solution owner or an org admin.")]
     public async Task<BuildRow> StageGitHubReleaseAsync(
-        [Description("Release pipeline id (from list_release_pipelines) — says which repository the release is read from.")] int releasePipelineId,
+        [Description("Deployment pipeline id (from list_deployment_pipelines) — says which repository the release is read from.")] int deploymentPipelineId,
         [Description("The release's tag, exactly as list_github_releases reports it (for example 'v1.2.3.0').")] string tag,
         CancellationToken ct = default)
     {
-        await _releasePipelines.EnsureReleasePipelineExistsAsync(releasePipelineId, ct);
+        await _releasePipelines.EnsureReleasePipelineExistsAsync(deploymentPipelineId, ct);
         try
         {
-            var buildId = await _githubReleases.StageReleaseAsync(releasePipelineId, tag, ct);
+            var buildId = await _githubReleases.StageReleaseAsync(deploymentPipelineId, tag, ct);
             return await _artifacts.GetBuildRowAsync(buildId, ct)
                 ?? throw new McpException($"Release {tag} was staged as build {buildId}, but the build could not be read back.");
         }
         catch (ProjectAccessDeniedException)
         {
-            throw new McpException("You don't have permission to release this solution's builds — you must be the solution owner or an org admin.");
+            throw new McpException("You don't have permission to deploy this solution's builds — you must be the solution owner or an org admin.");
         }
         catch (PlanValidationException ex)
         {
@@ -162,5 +164,8 @@ public sealed class DeliveryTools
     }
 }
 
-/// <summary>The outcome of a <c>publish_build</c> call — the new delivery id and how to track it.</summary>
-public sealed record PublishBuildResult(int DeliveryId, string Message);
+/// <summary>
+/// The outcome of a <c>deploy_build</c> call — the new deployment's id and how to track it.
+/// MCP-only, so its member names are the agent-facing ones.
+/// </summary>
+public sealed record PublishBuildResult(int DeploymentId, string Message);

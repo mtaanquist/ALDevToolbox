@@ -26,12 +26,12 @@
     flips Building -> Ready live. Editing which extensions are built is "Edit
     pipeline" (the shared PipelineEditorDialog). See .design/artifacts.md.
 
-    A successful build's row carries "Release...", the shortcut .design/saas-delivery.md
-    describes (#938): it resolves which release pipeline takes this pipeline's builds
-    (straight on when one does, a chooser when several do, the release pipeline editor
+    A successful build's row carries "Deploy...", the shortcut .design/saas-delivery.md
+    describes (#938): it resolves which deployment pipeline takes this pipeline's builds
+    (straight on when one does, a chooser when several do, the deployment pipeline editor
     with this pipeline filled in when none does) and opens the same ReleaseBuildDialog
-    the release pipeline's page opens, with this build selected. The canonical Release
-    action stays on the release pipeline.
+    the deployment pipeline's page opens, with this build selected. The canonical Deploy
+    action stays on the deployment pipeline.
 
     Named user: a BC consultant cutting a customer build. Primary action: Build. Repo
     editing and solution deletion live in the Solutions tool (/solutions/{id}).
@@ -47,12 +47,12 @@
         <EmptyState Icon="rocket" Title="This pipeline doesn't exist" Heading="true">
             <Text>It may have been deleted. Head back to the list to pick another.</Text>
             <Action>
-                <a class="btn btn--primary" href="/pipelines"><Icon Name="arrow-left" Width="16" Height="16" /><span>All pipelines</span></a>
+                <a class="btn btn--primary" href="/pipelines/builds"><Icon Name="arrow-left" Width="16" Height="16" /><span>All build pipelines</span></a>
             </Action>
         </EmptyState>
     </NotFound>
     <Crumbs>
-        <a href="/pipelines">Pipelines</a>
+        <a href="/pipelines/builds">Build pipelines</a>
         <Icon Name="chevron-right" Width="12" Height="12" />
         <a href="@($"/solutions/{_header!.ProjectId}")">@_header!.ProjectName</a>
         <Icon Name="chevron-right" Width="12" Height="12" />
@@ -133,7 +133,7 @@
             <Alert Tone="@(note.Sent ? AlertTone.Success : AlertTone.Info)" Role="status">
                 <span>
                     @note.Text
-                    <a href="@($"/releases/{note.ReleasePipelineId}")">@note.LinkText</a>
+                    <a href="@($"/pipelines/deployments/{note.ReleasePipelineId}")">@note.LinkText</a>
                 </span>
             </Alert>
         }
@@ -442,9 +442,9 @@
                                                 @if (b.Status == "ready" && _canManage)
                                                 {
                                                     <button type="button" class="btn btn--sm" @onclick="() => StartReleaseAsync(b)"
-                                                            disabled="@_openingRelease" aria-label="@($"Release build #{b.Id}")">
+                                                            disabled="@_openingRelease" aria-label="@($"Deploy build #{b.Id}")">
                                                         <Icon Name="send" Width="13" Height="13" />
-                                                        <span>Release...</span>
+                                                        <span>Deploy...</span>
                                                     </button>
                                                 }
                                                 <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
@@ -575,7 +575,7 @@
 <ReleasePipelineEditorDialog @ref="_releasePipelineEditor" OnSaved="OnReleasePipelineCreatedAsync" />
 <ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
 
-@* Which release pipeline a build goes through, when that isn't a given: several take
+@* Which deployment pipeline a build goes through, when that isn't a given: several take
    this pipeline's builds, or none does yet. One is a given, and skips this. *@
 @if (_releaseBuild is { } releasing)
 {
@@ -587,15 +587,15 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="send" Width="17" Height="17" />
                 </span>
-                <h2 id="pb-rel-title" class="confirm-dialog__title">Release build #@releasing.Id from @TimeAgo(releasing.FinishedAt ?? releasing.StartedAt)</h2>
+                <h2 id="pb-rel-title" class="confirm-dialog__title">Deploy build #@releasing.Id from @TimeAgo(releasing.FinishedAt ?? releasing.StartedAt)</h2>
             </div>
             <div class="confirm-dialog__body">
                 @if (_releaseTargets.Count == 0)
                 {
                     <p>
-                        @(_header?.Name ?? "This pipeline") isn't set up to install anywhere yet. A release pipeline
+                        @(_header?.Name ?? "This pipeline") isn't set up to install anywhere yet. A deployment pipeline
                         says which of @(_header?.ProjectName ?? "the solution")'s Business Central environments its
-                        builds go to, and how installs run. You only set it up once, then you carry on releasing
+                        builds go to, and how installs run. You only set it up once, then you carry on deploying
                         build #@releasing.Id.
                     </p>
                 }
@@ -612,8 +612,8 @@
                                 </div>
                                 <div class="sub-row__acts">
                                     <button type="button" class="btn btn--sm" @onclick="() => ChooseTargetAsync(target)"
-                                            disabled="@_openingRelease" aria-label="@($"Release through {target.Name}")">
-                                        <span>Release here</span>
+                                            disabled="@_openingRelease" aria-label="@($"Deploy through {target.Name}")">
+                                        <span>Deploy here</span>
                                     </button>
                                 </div>
                             </div>
@@ -627,7 +627,7 @@
                 {
                     <button type="button" class="btn btn--primary" @onclick="SetUpReleasePipelineAsync">
                         <Icon Name="plus" Width="14" Height="14" />
-                        <span>Set up a release pipeline</span>
+                        <span>Set up a deployment pipeline</span>
                     </button>
                 }
             </div>
@@ -650,22 +650,22 @@
     private PipelineEditorDialog? _editor;
     private ConfirmDialog? _deleteConfirm;
 
-    // "Release..." on a build row (#938).
+    // "Deploy..." on a build row (#938).
     private ReleasePipelineEditorDialog? _releasePipelineEditor;
     private ReleaseBuildDialog? _releaseDialog;
     private ElementReference _chooserRoot;
     private bool _focusChooser;
     private bool _openingRelease;
-    /// <summary>The build whose release target is being chosen; the chooser is open while set.</summary>
+    /// <summary>The build whose deployment target is being chosen; the chooser is open while set.</summary>
     private BuildRow? _releaseBuild;
-    /// <summary>The build a release pipeline is being set up for, carried across the editor.</summary>
+    /// <summary>The build a deployment pipeline is being set up for, carried across the editor.</summary>
     private int? _pendingReleaseBuildId;
     private List<ReleasePipelineRow> _releaseTargets = new();
-    /// <summary>The release pipeline the open release dialog sends through, for the note after it.</summary>
+    /// <summary>The deployment pipeline the open deployment dialog sends through, for the note after it.</summary>
     private (int Id, string EnvironmentName, int BuildId)? _releasingThrough;
     private ReleaseNote? _releaseNote;
 
-    /// <summary>What the page says after a release was set off from here, or couldn't be.</summary>
+    /// <summary>What the page says after a deployment was set off from here, or couldn't be.</summary>
     private sealed record ReleaseNote(bool Sent, string Text, int ReleasePipelineId, string LinkText);
 
     private PipelineHeader? _header;
@@ -813,10 +813,10 @@
     }
 
     /// <summary>
-    /// "Release..." on a successful build's row: finds the release pipelines that take
-    /// this build pipeline's builds and goes straight to the release dialog when there
+    /// "Deploy..." on a successful build's row: finds the deployment pipelines that take
+    /// this build pipeline's builds and goes straight to the deployment dialog when there
     /// is exactly one; otherwise the chooser asks which, or offers to set one up.
-    /// A release pipeline that draws from GitHub releases is not a target for a build.
+    /// A deployment pipeline that draws from GitHub releases is not a target for a build.
     /// </summary>
     private async Task StartReleaseAsync(BuildRow build)
     {
@@ -840,12 +840,12 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _buildError = "Only the solution owner or an admin can release this solution's builds.";
+            _buildError = "Only the solution owner or an admin can deploy this solution's builds.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Reading release pipelines failed for build pipeline {PipelineId}.", PipelineId);
-            _buildError = "Couldn't read this solution's release pipelines. Try again in a moment.";
+            Log.LogError(ex, "Reading deployment pipelines failed for build pipeline {PipelineId}.", PipelineId);
+            _buildError = "Couldn't read this solution's deployment pipelines. Try again in a moment.";
         }
         finally
         {
@@ -875,7 +875,7 @@
         if (e.Key is "Escape" or "Esc") CloseChooser();
     }
 
-    /// <summary>No release pipeline takes these builds yet: open the editor with this build pipeline as its source.</summary>
+    /// <summary>No deployment pipeline takes these builds yet: open the editor with this build pipeline as its source.</summary>
     private async Task SetUpReleasePipelineAsync()
     {
         if (_releaseBuild is not { } build || _releasePipelineEditor is null || _header is null) return;
@@ -885,7 +885,7 @@
             nextStep: $"After you create it, you choose when build #{build.Id} installs.");
     }
 
-    /// <summary>The new release pipeline is saved: carry on to releasing the build it was set up for.</summary>
+    /// <summary>The new deployment pipeline is saved: carry on to deploying the build it was set up for.</summary>
     private async Task OnReleasePipelineCreatedAsync(int releasePipelineId)
     {
         if (_pendingReleaseBuildId is not { } buildId) return;
@@ -894,8 +894,8 @@
     }
 
     /// <summary>
-    /// Opens the release dialog for one release pipeline with <paramref name="buildId"/>
-    /// selected, fed exactly as the release pipeline's own page feeds it: the target
+    /// Opens the deployment dialog for one deployment pipeline with <paramref name="buildId"/>
+    /// selected, fed exactly as the deployment pipeline's own page feeds it: the target
     /// environment and its update window, the solution's timezone, when the Business
     /// Central secret lapses, and this pipeline's successful builds with their apps.
     /// </summary>
@@ -907,13 +907,13 @@
             var rp = await Releases.GetReleasePipelineAsync(releasePipelineId);
             if (rp?.ProjectEnvironment is null)
             {
-                _buildError = "That release pipeline no longer exists. Try again.";
+                _buildError = "That deployment pipeline no longer exists. Try again.";
                 return;
             }
             if (rp.ArtifactSource != ReleaseArtifactSource.Build || rp.BuildPipelineId != PipelineId)
             {
                 // Saved from the editor with a different source than this pipeline:
-                // this build is not what it releases.
+                // this build is not what it deploys.
                 _releaseNote = new ReleaseNote(false,
                     $"{rp.Name} takes its apps from somewhere other than this pipeline, so build #{buildId} can't go through it.",
                     rp.Id, $"Open {rp.Name}");
@@ -944,12 +944,12 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _buildError = "Only the solution owner or an admin can release this solution's builds.";
+            _buildError = "Only the solution owner or an admin can deploy this solution's builds.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Opening the release dialog failed for release pipeline {ReleasePipelineId}.", releasePipelineId);
-            _buildError = "Couldn't open the release. Try again in a moment.";
+            Log.LogError(ex, "Opening the deploy dialog failed for deployment pipeline {ReleasePipelineId}.", releasePipelineId);
+            _buildError = "Couldn't open the deployment. Try again in a moment.";
         }
     }
 
@@ -957,8 +957,8 @@
     {
         if (_releasingThrough is { } through)
         {
-            // "Lined up" covers both a release now and one scheduled for later: the
-            // dialog doesn't say which, and the release pipeline's page has the time.
+            // "Lined up" covers both a deployment now and one scheduled for later: the
+            // dialog doesn't say which, and the deployment pipeline's page has the time.
             _releaseNote = new ReleaseNote(true,
                 $"Build #{through.BuildId} is lined up to install into {through.EnvironmentName}.",
                 through.Id, "Follow its progress");
@@ -966,7 +966,7 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>A release target's environment as the chooser shows it, with anything that would stop a release.</summary>
+    /// <summary>A deployment target's environment as the chooser shows it, with anything that would stop a deployment.</summary>
     private static string TargetLine(ReleasePipelineRow target)
     {
         var env = target.EnvironmentName.Equals(target.EnvironmentType, StringComparison.OrdinalIgnoreCase)
@@ -1004,7 +1004,7 @@
         try
         {
             await Pipelines.SoftDeletePipelineAsync(PipelineId);
-            Nav.NavigateTo("/pipelines");
+            Nav.NavigateTo("/pipelines/builds");
         }
         catch (Exception ex)
         {

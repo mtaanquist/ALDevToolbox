@@ -196,7 +196,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         return cut;
     }
 
-    private static string ReleaseButton(int buildId) => $"button[aria-label='Release build #{buildId}']";
+    private static string ReleaseButton(int buildId) => $"button[aria-label='Deploy build #{buildId}']";
 
     /// <summary>
     /// Acts once, inside the wait, then asserts until the render catches up. Each step
@@ -227,7 +227,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         // The older build, so "selected" can't be the dialog's own default of the latest.
         ActThen(cut,
             () => cut.Find(ReleaseButton(seed.OlderBuildId)).Click(),
-            () => cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS Denmark — Production"));
+            () => cut.Find("#rb-title").TextContent.Should().Be("Deploy to CRONUS Denmark — Production"));
 
         cut.WaitForAssertion(() =>
         {
@@ -249,7 +249,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
 
         ActThen(cut,
             () => cut.Find(ReleaseButton(seed.NewerBuildId)).Click(),
-            () => cut.Find("#pb-rel-title").TextContent.Should().StartWith($"Release build #{seed.NewerBuildId} from "));
+            () => cut.Find("#pb-rel-title").TextContent.Should().StartWith($"Deploy build #{seed.NewerBuildId} from "));
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".modal-layer .sub-row__name").Select(n => n.TextContent.Trim())
@@ -258,8 +258,8 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         });
 
         ActThen(cut,
-            () => cut.Find("button[aria-label='Release through CRONUS App → UAT']").Click(),
-            () => cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS Denmark — UAT"));
+            () => cut.Find("button[aria-label='Deploy through CRONUS App → UAT']").Click(),
+            () => cut.Find("#rb-title").TextContent.Should().Be("Deploy to CRONUS Denmark — UAT"));
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("#pb-rel-title").Should().BeEmpty();
@@ -271,7 +271,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         ActThen(cut,
             () => cut.Find(".modal-layer .btn--primary").Click(),
             () => cut.Find(".alert").TextContent.Should().Contain($"Build #{seed.NewerBuildId} is lined up to install into UAT."));
-        cut.Find(".alert a").GetAttribute("href").Should().StartWith("/releases/");
+        cut.Find(".alert a").GetAttribute("href").Should().StartWith("/pipelines/deployments/");
 
         await using var ctx = _db.NewContext();
         (await ctx.OeProjectDeliveries.AsNoTracking().SingleAsync()).ProjectBuildId.Should().Be(seed.NewerBuildId);
@@ -304,7 +304,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
                 cut.Find("#rpe-env").Change(seed.SandboxEnvId.ToString());
                 cut.Find(".confirm-dialog__actions .btn--primary").Click();
             },
-            () => cut.Find("#rb-title").TextContent.Should().Be("Release to CRONUS Denmark — UAT"));
+            () => cut.Find("#rb-title").TextContent.Should().Be("Deploy to CRONUS Denmark — UAT"));
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("#rpe-title").Should().BeEmpty();

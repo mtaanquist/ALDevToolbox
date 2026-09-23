@@ -1,8 +1,8 @@
-/* The Releases list, after .design/handoff/ReleasePipelinesBody.dc.html. The sheet
+/* The Deployment pipelines list, after .design/handoff/ReleasePipelinesBody.dc.html. The sheet
    draws these with inline styles over the design system's tokens; they live here as
    classes instead, with the same tokens. */
 
-/* ── "Shipping now": one band per release in flight, above the filter row ── */
+/* ── "Shipping now": one band per deployment in flight, above the filter row ── */
 .rp-live {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -58,7 +58,7 @@
 /* A row in flight is tinted as well as keylined: it is the one thing on the page
    that is changing while you look at it. */
 .rp-list__table tr.is-running td { background: var(--info-bg); }
-/* Nothing released yet: no keyline, and the dashed ring stays quiet. */
+/* Nothing deployed yet: no keyline, and the dashed ring stays quiet. */
 .rp-list__table tr.rp-list__idle .data-table__state { color: var(--ink-4); }
 .rp-list__table tr.is-queued .data-table__state { color: var(--ink-2); }
 

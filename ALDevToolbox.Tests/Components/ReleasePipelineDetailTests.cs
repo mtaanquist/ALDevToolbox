@@ -108,11 +108,11 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".rp-summary__title").TextContent.Should().Be("Last release failed");
+            cut.Find(".rp-summary__title").TextContent.Should().Be("Last deployment failed");
             cut.Find(".rp-summary__sentence").TextContent.Should()
-                .Contain("on CRONUS Warehouse. CRONUS Base 2.3.0.118 was installed before it.").And.Contain("Before this release the environment had CRONUS Warehouse 2.2.0.104 installed.");
+                .Contain("on CRONUS Warehouse. CRONUS Base 2.3.0.118 was installed before it.").And.Contain("Before this deployment the environment had CRONUS Warehouse 2.2.0.104 installed.");
             cut.FindAll(".rp-rel.is-open").Should().ContainSingle("the newest release failed, so it opens by itself");
-            cut.Find(".rp-rel__title").TextContent.Should().StartWith("Release 1");
+            cut.Find(".rp-rel__title").TextContent.Should().StartWith("Deployment 1");
             cut.Find(".rp-rel__build").TextContent.Should().Be($"Build #{seed.BuildId} from main");
             // A release stored before #930 kept the long line; it reads like a new one (#930).
             cut.Find(".rp-rel__why").TextContent.Should().Contain("Business Central refused a schema change");
@@ -163,13 +163,13 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".rp-rel__acts .btn").TextContent.Should().Be("Release again");
-            cut.Find(".rp-next__acts .btn").TextContent.Trim().Should().Be("Release again with Force sync");
+            cut.Find(".rp-rel__acts .btn").TextContent.Should().Be("Deploy again");
+            cut.Find(".rp-next__acts .btn").TextContent.Trim().Should().Be("Deploy again with Force sync");
         });
         cut.WaitForAssertion(() => cut.Find(".rp-next__acts .btn").Click());
         cut.WaitForAssertion(() =>
         {
-            cut.Find("#ra-title").TextContent.Should().Be($"Release build #{seed.BuildId} again?");
+            cut.Find("#ra-title").TextContent.Should().Be($"Deploy build #{seed.BuildId} again?");
             cut.Find(".ra-lead").TextContent.Should().Contain("CRONUS Base is already on this version and is left alone.");
             cut.Find(".ra-check input").HasAttribute("checked").Should().BeTrue();
         });
@@ -180,7 +180,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         {
             cut.FindAll("#ra-title").Should().BeEmpty();
             cut.FindAll(".rp-rel").Should().HaveCount(2);
-            cut.Find(".rp-rel__force").TextContent.Should().Be("Force sync, this release only");
+            cut.Find(".rp-rel__force").TextContent.Should().Be("Force sync, this deployment only");
         });
         await using var read = _db.NewContext();
         var again = await read.OeProjectDeliveries.AsNoTracking().OrderByDescending(d => d.Id).FirstAsync();
@@ -245,14 +245,14 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
                 .Be("Business Central refused a schema change while installing CRONUS Core 2.3.0.118.");
             cut.Find(".rp-what__bc-label").TextContent.Should().Be("Business Central's message, in the environment's language");
             cut.Find(".rp-what__bc-text").TextContent.Should().Be(danish, "shown as given, never translated");
-            cut.Find(".rp-next__text").TextContent.Should().Contain("release this build again with Force sync").And.Contain("\"Test\"");
+            cut.Find(".rp-next__text").TextContent.Should().Contain("deploy this build again with Force sync").And.Contain("\"Test\"");
             // The app says where it was left, not the failure a second time.
             cut.Find(".rp-app__msg--failed").TextContent.Should().Be("Not installed. Still on 2.2.0.104.");
             cut.Find(".rp-rel__detail").TextContent.Split(danish).Length.Should().Be(2,
                 "Business Central's message is on the page once (the log and the raw response keep it escaped, as sent)");
             var fold = cut.Find("details.rp-raw");
             fold.HasAttribute("open").Should().BeFalse("the raw response is for support, closed until asked for");
-            cut.Find(".rp-raw__text").TextContent.Should().Contain(raw).And.StartWith("Release 1 of");
+            cut.Find(".rp-raw__text").TextContent.Should().Contain(raw).And.StartWith("Deployment 1 of");
             cut.Find(".rp-raw__foot .copy-btn").TextContent.Should().Contain("Copy for support");
         });
     }
@@ -317,11 +317,11 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         cut.WaitForAssertion(() =>
         {
             cut.Find(".rp-summary__title").TextContent.Should().Be("Healthy");
-            cut.Find(".rp-summary__sentence").TextContent.Should().Be("The last release deployed 37 minutes ago. Nothing is scheduled.");
+            cut.Find(".rp-summary__sentence").TextContent.Should().Be("The last deployment succeeded 37 minutes ago. Nothing is scheduled.");
             cut.FindAll(".rp-rel__detail").Should().BeEmpty();
             cut.Find(".rp-rel__took").TextContent.Should().Be("2m 51s");
             cut.FindAll(".rp-rel__cell").Select(c => c.TextContent).Should().Contain("1 of 1 installed");
-            cut.FindAll(".btn--primary").Select(b => b.TextContent.Trim()).Should().Equal("Release");
+            cut.FindAll(".btn--primary").Select(b => b.TextContent.Trim()).Should().Equal("Deploy");
             cut.FindAll(".rp-foot").Should().BeEmpty("there is nothing older to show");
         });
 
@@ -372,12 +372,12 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".empty-state__title").TextContent.Should().Be("No releases yet");
+            cut.Find(".empty-state__title").TextContent.Should().Be("No deployments yet");
             cut.Find(".empty-state__text").TextContent.Should()
-                .Be("Nothing has been installed by this pipeline yet. Release the latest build to install it now.");
+                .Be("Nothing has been installed by this pipeline yet. Deploy the latest build to install it now.");
             cut.FindAll(".btn--primary").Should().ContainSingle()
                 .Which.Closest(".empty-state").Should().NotBeNull("the head's Release is an outline copy now");
-            cut.Find(".rp-summary__title").TextContent.Should().Be("Nothing released yet");
+            cut.Find(".rp-summary__title").TextContent.Should().Be("Nothing deployed yet");
         });
     }
 
@@ -399,13 +399,13 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         var cut = _ctx.Render<ReleasePipelineDetail>(p => p.Add(c => c.Id, seed.ReleasePipelineId));
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Loading releases...");
+            cut.Markup.Should().Contain("Loading deployments...");
             cut.Find(".detail-head__title").TextContent.Should().Be("Test into Test");
             cut.FindAll(".skeleton").Should().NotBeEmpty();
         });
 
         await tx.CommitAsync();
-        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should().Be("No releases yet"));
+        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should().Be("No deployments yet"));
     }
 
     [Fact]
@@ -422,7 +422,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".rp-rel").Should().HaveCount(ReleasePipelineDetail.PageSize);
-            cut.Find(".rp-rel__title").TextContent.Should().StartWith($"Release {ReleasePipelineDetail.PageSize + 2}");
+            cut.Find(".rp-rel__title").TextContent.Should().StartWith($"Deployment {ReleasePipelineDetail.PageSize + 2}");
         });
 
         cut.WaitForAssertion(() =>
@@ -452,14 +452,14 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         {
             var band = cut.Find(".rp-approval");
             band.QuerySelector(".rp-approval__eyebrow")!.TextContent.Should().Be("Waiting for approval");
-            band.QuerySelector(".rp-approval__title")!.TextContent.Should().Be($"Release 2 - build #{seed.BuildId}");
+            band.QuerySelector(".rp-approval__title")!.TextContent.Should().Be($"Deployment 2 - build #{seed.BuildId}");
             band.QuerySelector(".rp-approval__text")!.TextContent.Should()
                 .StartWith($"Build #{seed.BuildId} finished today at")
-                .And.EndWith("a release was prepared for \"Test\". Approve it to install it right away, or dismiss it.");
+                .And.EndWith("a deployment was prepared for \"Test\". Approve it to install it right away, or dismiss it.");
             cut.FindAll(".rp-approval__acts button").Select(b => b.TextContent).Should().Equal("Approve", "Dismiss");
             cut.FindAll(".rp-rel").Should().ContainSingle("the prepared release is not a row: it has not happened");
             cut.Find(".rp-summary__title").TextContent.Should().Be("Waiting for approval");
-            cut.FindAll(".btn--primary").Select(b => b.TextContent.Trim()).Should().Equal("Release");
+            cut.FindAll(".btn--primary").Select(b => b.TextContent.Trim()).Should().Equal("Deploy");
         });
     }
 
@@ -473,7 +473,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".rp-approval__acts button")[0].Click();
-            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Approve release 1?");
+            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Approve deployment 1?");
             cut.Find(".confirm-dialog__body").TextContent.Should()
                 .Contain($"This installs build #{seed.BuildId}, 3 apps (CRONUS Base, CRONUS Warehouse, CRONUS Reports), into the Sandbox environment \"Test\" right away. You can still cancel it on this page until it starts.");
         });
@@ -482,7 +482,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
             // Clicked only while the dialog is up: a retry after it closed has nothing to click.
             if (cut.FindAll(".confirm-dialog__actions .btn--primary") is { Count: 1 } confirm) confirm[0].Click();
             cut.FindAll(".rp-approval").Should().BeEmpty();
-            cut.Find(".rp-rel__title").TextContent.Should().StartWith("Release 1");
+            cut.Find(".rp-rel__title").TextContent.Should().StartWith("Deployment 1");
         });
 
         await using var read = _db.NewContext();
@@ -531,7 +531,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".rp-approval__acts button")[1].Click();
-            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Dismiss release 1?");
+            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Dismiss deployment 1?");
         });
         cut.WaitForAssertion(() =>
         {
@@ -550,7 +550,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
             cut.Find(".rp-rel__row").Click();
             cut.Markup.Should().Contain("Dismissed by K. Jensen: CRONUS asked us to wait. Nothing was sent.");
             cut.FindAll(".rp-step__label").Select(e => e.TextContent).Should().Equal("Prepared", "Dismissed");
-            cut.Find(".rp-summary__title").TextContent.Should().Be("Nothing released yet", "a dismissed proposal never was a release");
+            cut.Find(".rp-summary__title").TextContent.Should().Be("Nothing deployed yet", "a dismissed proposal never was a release");
         });
 
         var stored = await _db.NewContext().OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id);

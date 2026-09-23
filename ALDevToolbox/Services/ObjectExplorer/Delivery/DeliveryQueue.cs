@@ -5,7 +5,7 @@ using ALDevToolbox.Services.Workers;
 namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 
 /// <summary>
-/// In-process hand-off from a request (the "Release this build now" action) to
+/// In-process hand-off from a request (the "Deploy now" action) to
 /// <see cref="DeliveryWorker"/>, which runs the BC publish off the request thread. A
 /// small bounded <see cref="System.Threading.Channels.Channel{T}"/> — not an external broker — keeps the "no
 /// external services" fence intact, mirroring <see cref="ProjectDiscoveryQueue"/> and
@@ -14,7 +14,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 ///
 /// <para>
 /// <see cref="DeliveryScheduler"/> enqueues a delivery when its scheduled time comes
-/// (a release-now is simply due at once), and on its first sweep fails the rows a
+/// (a deploy-now is simply due at once), and on its first sweep fails the rows a
 /// restart interrupted. The in-memory dedupe keyed on delivery id stops the scheduler
 /// and a double-click from enqueuing the same delivery twice.
 /// </para>

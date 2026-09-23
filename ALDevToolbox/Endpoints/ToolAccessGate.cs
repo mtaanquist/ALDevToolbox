@@ -58,18 +58,27 @@ internal static class ToolAccessGate
 
     /// <summary>
     /// Returns the tool whose end-user route prefix the path falls under, or
-    /// <see langword="null"/> when the path isn't a gated tool route.
+    /// <see langword="null"/> when the path isn't a gated tool route. The longest
+    /// matching prefix wins, because one tool's routes can sit inside another's:
+    /// deployment pipelines (<c>/pipelines/deployments</c>) under build pipelines
+    /// (<c>/pipelines</c>).
     /// </summary>
-    private static ToolKey? MatchTool(PathString path)
+    internal static ToolKey? MatchTool(PathString path)
     {
         if (!path.HasValue) return null;
+        ToolKey? match = null;
+        var matchLength = -1;
         foreach (var tool in ToolCatalog.All)
         {
             foreach (var prefix in tool.RoutePrefixes)
             {
-                if (path.StartsWithSegments(prefix)) return tool.Key;
+                if (prefix.Length > matchLength && path.StartsWithSegments(prefix))
+                {
+                    match = tool.Key;
+                    matchLength = prefix.Length;
+                }
             }
         }
-        return null;
+        return match;
     }
 }

@@ -11,7 +11,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
 
 /// <summary>
 /// Creates and runs <see cref="OeProjectDelivery"/> runs — the publish side of SaaS
-/// delivery. A release of a successful build to a release pipeline's target is created
+/// delivery. A deployment of a successful build to a deployment pipeline's target is created
 /// here (access-gated, target snapshotted) and enqueued to <see cref="DeliveryQueue"/>;
 /// <see cref="DeliveryWorker"/> then calls <see cref="RunDeliveryAsync"/>, which claims
 /// the row and drives the per-app upload → install → poll flow through the
@@ -67,7 +67,7 @@ public sealed class DeliveryService
 
     /// <summary>
     /// Creates a delivery of <paramref name="projectBuildId"/> through
-    /// <paramref name="releasePipelineId"/> to run immediately (the "Release now" path).
+    /// <paramref name="releasePipelineId"/> to run immediately (the "Deploy now" path).
     /// Thin wrapper over <see cref="ScheduleDeliveryAsync"/> with <c>scheduledFor = now</c>.
     /// </summary>
     public Task<int> ReleaseBuildNowAsync(int releasePipelineId, int projectBuildId, CancellationToken ct = default)
@@ -77,7 +77,7 @@ public sealed class DeliveryService
     /// Creates a delivery of <paramref name="projectBuildId"/> through
     /// <paramref name="releasePipelineId"/>, scheduled for <paramref name="scheduledForUtc"/>.
     /// Validates access (the project owner / org Admin), that the build is a successful
-    /// build of the release pipeline's build pipeline with deliverables, that the target
+    /// build of the deployment pipeline's build pipeline with deliverables, that the target
     /// environment can take an install, and that the pipeline's install timing is one
     /// Business Central still accepts. Snapshots the target so later edits don't
     /// rewrite history, and records whether the chosen time is <em>outside</em> the
@@ -91,14 +91,14 @@ public sealed class DeliveryService
         => CreateDeliveryAsync(releasePipelineId, projectBuildId, scheduledForUtc, forceSyncOnce: false, ct);
 
     /// <summary>
-    /// Releases a failed delivery's build again, now, through the same release pipeline
+    /// Deploys a failed delivery's build again, now, through the same deployment pipeline
     /// (#931). With <paramref name="forceSyncOnce"/> the new delivery snapshots
     /// <see cref="BcSyncMode.ForceSync"/> as its own schema sync mode; the pipeline's
-    /// setting is not touched, so the release after this one is back on the pipeline's
+    /// setting is not touched, so the deployment after this one is back on the pipeline's
     /// mode. Everything else - access, the environment gate, the build and timing checks -
-    /// is the ordinary release's. Apps the environment already has at the build's version
+    /// is the ordinary deployment's. Apps the environment already has at the build's version
     /// are skipped by the run, which is what makes a retry after a partial failure safe.
-    /// The Production acknowledgement is the dialog's, as it is for every release. Throws
+    /// The Production acknowledgement is the dialog's, as it is for every deployment. Throws
     /// <see cref="PlanValidationException"/> when the delivery is missing or did not fail.
     /// </summary>
     public async Task<int> ReleaseAgainAsync(int deliveryId, bool forceSyncOnce, CancellationToken ct = default)
@@ -108,10 +108,10 @@ public sealed class DeliveryService
             .Where(d => d.Id == deliveryId)
             .Select(d => new { d.ReleasePipelineId, d.ProjectBuildId, d.Status })
             .FirstOrDefaultAsync(ct)
-            ?? throw Validation("Delivery", "That release no longer exists.");
+            ?? throw Validation("Delivery", "That deployment no longer exists.");
         if (failed.Status != ProjectDeliveryStatus.Failed)
         {
-            throw Validation("Delivery", "Only a failed release can be released again.");
+            throw Validation("Delivery", "Only a failed deployment can be deployed again.");
         }
         return await CreateDeliveryAsync(failed.ReleasePipelineId, failed.ProjectBuildId, DateTime.UtcNow, forceSyncOnce, ct);
     }
@@ -124,7 +124,7 @@ public sealed class DeliveryService
         var plan = await ResolveReleaseAsync(releasePipelineId, projectBuildId, checkAccess: true, ct);
         var delivery = await WriteDeliveryAsync(orgId, plan, scheduledForUtc, forceSyncOnce, proposed: false, ct);
 
-        // Due now (or in the past) → enqueue immediately so "Release now" is snappy;
+        // Due now (or in the past) → enqueue immediately so "Deploy now" is snappy;
         // a future delivery is left for the DeliveryScheduler to enqueue when due.
         if (scheduledForUtc <= delivery.CreatedAt)
         {
@@ -132,15 +132,15 @@ public sealed class DeliveryService
         }
 
         _logger.LogInformation(
-            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}{ForceOnce}.",
+            "Created delivery {DeliveryId}: build {BuildId} → deployment pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}{ForceOnce}.",
             delivery.Id, plan.BuildId, plan.Id, plan.EnvName, scheduledForUtc, plan.Artifacts.Count,
             delivery.ScheduledOutsideWindow ? " (outside the update window)" : "",
-            forceSyncOnce ? " (Force sync, this release only)" : "");
+            forceSyncOnce ? " (Force sync, this deployment only)" : "");
         return delivery.Id;
     }
 
     /// <summary>
-    /// Writes one delivery of a resolved release, with a pending row per app. A proposed
+    /// Writes one delivery of a resolved deployment, with a pending row per app. A proposed
     /// one (#934) has nobody behind it yet - the person who approves it becomes its
     /// triggering user - and opens its log with the line that says where it came from.
     /// </summary>
@@ -188,12 +188,12 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Everything a release of <paramref name="projectBuildId"/> through
+    /// Everything a deployment of <paramref name="projectBuildId"/> through
     /// <paramref name="releasePipelineId"/> needs, checked the way every release is: the
     /// pipeline and its target still exist and can take an install, the build is a
     /// successful build of this pipeline's source with apps in it, and the pipeline's
     /// timing and schema sync are values Business Central still accepts. Shared by a
-    /// hand-made release, an approval of a prepared one, and the preparing itself, so the
+    /// hand-made deployment, an approval of a prepared one, and the preparing itself, so the
     /// three can never disagree about what is releasable. Throws
     /// <see cref="PlanValidationException"/>; with <paramref name="checkAccess"/> also
     /// <see cref="ProjectAccessDeniedException"/>.
@@ -219,7 +219,7 @@ public sealed class DeliveryService
                 WindowEnd = r.ProjectEnvironment.UpdateWindowEnd,
             })
             .FirstOrDefaultAsync(ct)
-            ?? throw Validation("ReleasePipeline", "This release pipeline no longer exists.");
+            ?? throw Validation("ReleasePipeline", "This deployment pipeline no longer exists.");
 
         if (checkAccess)
         {
@@ -229,12 +229,12 @@ public sealed class DeliveryService
         if (rp.EnvMissing)
         {
             throw Validation("ProjectEnvironment",
-                "This release pipeline's target environment is no longer present in Business Central. Refresh the environments and try again.");
+                "This deployment pipeline's target environment is no longer present in Business Central. Refresh the environments and try again.");
         }
         // The cached status catches the obvious cases at the point the user is looking
         // at the screen. The live re-read before the upload (see PublishAsync) is the
         // one that catches an update that lands between scheduling and running.
-        // Preparing a release skips it: an environment busy with an update when a build
+        // Preparing a deployment skips it: an environment busy with an update when a build
         // lands is ready again long before anyone approves, and the approval checks again.
         if (checkEnvironmentStatus && BcEnvironmentStatus.RefusalMessage(rp.EnvName, rp.EnvStatus) is { } statusRefusal)
         {
@@ -259,12 +259,12 @@ public sealed class DeliveryService
         if (!acceptable)
         {
             throw Validation("Build", rp.ArtifactSource == ReleaseArtifactSource.GithubRelease
-                ? "That build didn't come from one of this release pipeline's GitHub releases."
-                : "That build isn't from this release pipeline's build pipeline.");
+                ? "That build didn't come from one of this deployment pipeline's GitHub releases."
+                : "That build isn't from this deployment pipeline's build pipeline.");
         }
         if (build.Status != ProjectBuildStatus.Ready)
         {
-            throw Validation("Build", "Only a successful build can be released.");
+            throw Validation("Build", "Only a successful build can be deployed.");
         }
 
         var artifacts = await _db.OeProjectBuildArtifacts.AsNoTracking()
@@ -277,7 +277,7 @@ public sealed class DeliveryService
             throw Validation("Build", "That build has no deliverable apps to publish.");
         }
 
-        // A release pipeline saved before the move to the App Management API stores the
+        // A deployment pipeline saved before the move to the App Management API stores the
         // old wording ("Current Version", "Force Sync"), which that API rejects outright.
         // Refuse here with something the user can act on rather than letting the upload
         // fail hours later inside the worker.
@@ -287,12 +287,12 @@ public sealed class DeliveryService
         if (wireSchedule is null)
         {
             throw Validation("DeploymentSchedule",
-                "This release pipeline's install timing is no longer a valid option. Open the release pipeline, choose when installs should run, and save it.");
+                "This deployment pipeline's install timing is no longer a valid option. Open the deployment pipeline, choose when installs should run, and save it.");
         }
         if (!BcSyncMode.IsValid(rp.SchemaSyncMode))
         {
             throw Validation("SchemaSyncMode",
-                "This release pipeline's schema sync setting is no longer a valid option. Open the release pipeline, choose a schema sync setting, and save it.");
+                "This deployment pipeline's schema sync setting is no longer a valid option. Open the deployment pipeline, choose a schema sync setting, and save it.");
         }
         // Business Central decides the order it installs a window's queue in; our order
         // only decides the order things were uploaded. With one app that's harmless, with
@@ -301,7 +301,7 @@ public sealed class DeliveryService
         {
             throw Validation("DeploymentSchedule",
                 $"This build has {artifacts.Count} apps, and Business Central chooses the order it installs them in when they wait for a later update. "
-                + "Set this release pipeline to install right away, or release the apps one at a time.");
+                + "Set this deployment pipeline to install right away, or deploy the apps one at a time.");
         }
 
         return new ReleasePlan(
@@ -310,10 +310,10 @@ public sealed class DeliveryService
             UpdateWindow.ResolveTimeZone(rp.TimeZone), rp.WindowStart, rp.WindowEnd, build.Id, artifacts);
     }
 
-    /// <summary>One app a release will install, in the build's order.</summary>
+    /// <summary>One app a deployment will install, in the build's order.</summary>
     private sealed record ReleaseApp(string AppName, string AppVersion);
 
-    /// <summary>A release checked and ready to be written: see <see cref="ResolveReleaseAsync"/>.</summary>
+    /// <summary>A deployment checked and ready to be written: see <see cref="ResolveReleaseAsync"/>.</summary>
     private sealed record ReleasePlan(
         int Id, int ProjectId, string EnvName, string WireSchedule, bool ByDeliveryWindow, string SchemaSyncMode,
         TimeZoneInfo Tz, TimeOnly? WindowStart, TimeOnly? WindowEnd, int BuildId, List<ReleaseApp> Artifacts)
@@ -323,29 +323,29 @@ public sealed class DeliveryService
             UpdateWindow.IsConfigured(WindowStart, WindowEnd) && !UpdateWindow.IsWithin(WindowStart, WindowEnd, Tz, utc);
 
         /// <summary>
-        /// When the pipeline's own rule puts a release made at <paramref name="fromUtc"/>:
+        /// When the pipeline's own rule puts a deployment made at <paramref name="fromUtc"/>:
         /// the next opening of the delivery window for a pipeline set to it, else right
-        /// away. This is what a prepared release is scheduled for, and what an approval
-        /// schedules it for, so it runs the way the Release dialog's prefill would have.
+        /// away. This is what a prepared deployment is scheduled for, and what an approval
+        /// schedules it for, so it runs the way the deploy dialog's prefill would have.
         /// </summary>
         public DateTime RuleTime(DateTime fromUtc) => ByDeliveryWindow
             ? UpdateWindow.NextOpeningUtc(WindowStart, WindowEnd, Tz, fromUtc)
             : fromUtc;
     }
 
-    // ── Prepared releases (#934) ──────────────────────────────────────────────
+    // ── Prepared deployments (#934) ──────────────────────────────────────────────
 
-    /// <summary>The longest reason a person can give for dismissing a prepared release.</summary>
+    /// <summary>The longest reason a person can give for dismissing a prepared deployment.</summary>
     public const int DismissReasonMaxLength = 500;
 
     /// <summary>
-    /// Prepares a release of <paramref name="projectBuildId"/> through every release
-    /// pipeline that draws from its build pipeline and has "Prepare a release when a new
+    /// Prepares a deployment of <paramref name="projectBuildId"/> through every deployment
+    /// pipeline that draws from its build pipeline and has "Prepare a deployment when a new
     /// build succeeds" on: a <see cref="ProjectDeliveryStatus.Proposed"/> delivery with
     /// the build's apps and the time the pipeline's rule gives, and nothing sent. A
     /// proposal still waiting on an older build is replaced (dismissed, with the newer
     /// build recorded on it), so a pipeline never holds a queue of them. A pipeline
-    /// the build can't be released through - its environment gone, its settings no longer
+    /// the build can't be deployed through - its environment gone, its settings no longer
     /// valid - is skipped with a warning in the log, never an error: the build is fine.
     /// Called by the build worker under the build's own organisation once it is ready;
     /// needs no access check, because preparing sends nothing and approving checks.
@@ -392,7 +392,7 @@ public sealed class DeliveryService
             catch (PlanValidationException ex)
             {
                 _logger.LogWarning(
-                    "Not preparing a release of build {BuildId} through release pipeline {ReleasePipelineId}: {Reason}",
+                    "Not preparing a deployment of build {BuildId} through deployment pipeline {ReleasePipelineId}: {Reason}",
                     build.Id, releasePipelineId, string.Join(" ", ex.Errors.Values));
                 continue;
             }
@@ -412,27 +412,27 @@ public sealed class DeliveryService
                         .SetProperty(d => d.FinishedAt, now)
                         .SetProperty(d => d.DiagnosticsLog, d => (d.DiagnosticsLog ?? string.Empty) + replacedLine)
                         .SetProperty(d => d.UpdatedAt, now), ct);
-                await MarkAppsNotSentAsync(old.Id, $"Not sent: build #{build.Id} replaced this release.", ct);
+                await MarkAppsNotSentAsync(old.Id, $"Not sent: build #{build.Id} replaced this deployment.", ct);
             }
 
             var delivery = await WriteDeliveryAsync(orgId, plan, plan.RuleTime(DateTime.UtcNow), forceSyncOnce: false, proposed: true, ct);
             prepared++;
             _logger.LogInformation(
-                "Prepared delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}), waiting for approval; replaced {Replaced} older.",
+                "Prepared delivery {DeliveryId}: build {BuildId} → deployment pipeline {ReleasePipelineId} ({Env}), waiting for approval; replaced {Replaced} older.",
                 delivery.Id, build.Id, releasePipelineId, plan.EnvName, waiting.Count);
         }
         return prepared;
     }
 
     /// <summary>
-    /// Approves a prepared release (atomic <c>proposed → scheduled</c>). From here it is
-    /// an ordinary release: every check a hand-made one has is made again now, the
+    /// Approves a prepared deployment (atomic <c>proposed → scheduled</c>). From here it is
+    /// an ordinary deployment: every check a hand-made one has is made again now, the
     /// pipeline's settings are snapshotted as they are now, the approver becomes the
     /// person it runs as, and it is scheduled by the pipeline's rule from now - the next
     /// opening of the delivery window, or right away. The Production acknowledgement is
-    /// the page's, as it is for every release. Throws <see cref="PlanValidationException"/>
+    /// the page's, as it is for every deployment. Throws <see cref="PlanValidationException"/>
     /// when it is no longer waiting (replaced by a newer build, or dismissed) or can't be
-    /// released, <see cref="ProjectAccessDeniedException"/> when not permitted.
+    /// deployed, <see cref="ProjectAccessDeniedException"/> when not permitted.
     /// </summary>
     public async Task ApproveProposalAsync(int deliveryId, CancellationToken ct = default)
     {
@@ -441,7 +441,7 @@ public sealed class DeliveryService
             .Where(d => d.Id == deliveryId)
             .Select(d => new { d.ReleasePipelineId, d.ProjectBuildId, d.Status })
             .FirstOrDefaultAsync(ct)
-            ?? throw Validation("Delivery", "That release no longer exists.");
+            ?? throw Validation("Delivery", "That deployment no longer exists.");
 
         // Access first, so somebody who may not approve learns that rather than the state.
         var plan = await ResolveReleaseAsync(proposal.ReleasePipelineId, proposal.ProjectBuildId, checkAccess: true, ct);
@@ -482,7 +482,7 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Dismisses a prepared release (atomic <c>proposed → dismissed</c>), recording who
+    /// Dismisses a prepared deployment (atomic <c>proposed → dismissed</c>), recording who
     /// did it (<see cref="OeProjectDelivery.CancelledByUserId"/>) and, when they gave one,
     /// why (<see cref="OeProjectDelivery.DismissReason"/>); the log gets a line too, for
     /// reading. Nothing was sent, so nothing needs undoing. Throws
@@ -502,7 +502,7 @@ public sealed class DeliveryService
             .Where(d => d.Id == deliveryId)
             .Select(d => new { d.ProjectId, d.Status, OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId })
             .FirstOrDefaultAsync(ct)
-            ?? throw Validation("Delivery", "That release no longer exists.");
+            ?? throw Validation("Delivery", "That deployment no longer exists.");
         await _access.EnsureCanManageAsync(owner.ProjectId, owner.OwnerId, ct);
         if (owner.Status != ProjectDeliveryStatus.Proposed)
         {
@@ -525,12 +525,12 @@ public sealed class DeliveryService
         {
             throw Validation("Delivery", NoLongerWaiting);
         }
-        await MarkAppsNotSentAsync(deliveryId, "Not sent: the release was dismissed.", ct);
+        await MarkAppsNotSentAsync(deliveryId, "Not sent: the deployment was dismissed.", ct);
         _logger.LogInformation("Dismissed prepared delivery {DeliveryId}.", deliveryId);
     }
 
     /// <summary>
-    /// A prepared release that was set aside never reaches its apps, so they stop reading
+    /// A prepared deployment that was set aside never reaches its apps, so they stop reading
     /// "Pending" - which says they are still on their way - and say why instead.
     /// </summary>
     private async Task MarkAppsNotSentAsync(int deliveryId, string message, CancellationToken ct)
@@ -545,7 +545,7 @@ public sealed class DeliveryService
     }
 
     private const string NoLongerWaiting =
-        "This release is no longer waiting for approval. A newer build may have replaced it, or someone else approved or dismissed it.";
+        "This deployment is no longer waiting for approval. A newer build may have replaced it, or someone else approved or dismissed it.";
 
     /// <summary>
     /// Cancels a <em>scheduled</em> delivery (atomic <c>scheduled → cancelled</c>). Access-gated.
@@ -674,7 +674,7 @@ public sealed class DeliveryService
         foreach (var d in orphans)
         {
             d.Status = ProjectDeliveryStatus.Failed;
-            d.FailureMessage = "The delivery was interrupted by a restart. Release the build again.";
+            d.FailureMessage = "The deployment was interrupted by a restart. Deploy the build again.";
             d.FinishedAt = now;
             d.UpdatedAt = now;
             foreach (var r in d.Results.Where(r => r.Status is ProjectDeliveryResultStatus.Pending
@@ -721,7 +721,7 @@ public sealed class DeliveryService
             return;
         }
 
-        // A release that was prepared and approved (#934) already carries those lines;
+        // A deployment that was prepared and approved (#934) already carries those lines;
         // the run writes after them rather than over them.
         var log = new StringBuilder(delivery.DiagnosticsLog ?? string.Empty);
         try
@@ -792,7 +792,7 @@ public sealed class DeliveryService
                 .FirstOrDefaultAsync(ct);
             Append(log, BcSyncMode.Normalize(pipelineMode) == BcSyncMode.ForceSync
                 ? "Schema sync: Force sync."
-                : "Schema sync: Force sync, this release only.");
+                : "Schema sync: Force sync, this deployment only.");
         }
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
@@ -844,7 +844,7 @@ public sealed class DeliveryService
 
         // "Next minor/major update" is an instruction to bump an app that's already
         // there. Business Central refuses it for an app it has never seen, so a
-        // first-time release has to go in right away.
+        // first-time deployment has to go in right away.
         if (BcDeploymentSchedule.RequiresInstalledApp(delivery.DeploymentSchedule))
         {
             var missing = ordered
@@ -912,7 +912,7 @@ public sealed class DeliveryService
 
             // Business Central refuses a version it already has, so an app the environment
             // is already on is left alone and the run goes on (#931). That is what makes
-            // "Release again" after a partial failure safe: the apps that went in the
+            // "Deploy again" after a partial failure safe: the apps that went in the
             // first time are not sent twice.
             if (InstalledMatch(i)?.Version is { Length: > 0 } onVersion
                 && string.Equals(onVersion, result.AppVersion, StringComparison.OrdinalIgnoreCase))
@@ -957,7 +957,7 @@ public sealed class DeliveryService
                     delivery.DeploymentSchedule, delivery.SchemaSyncMode,
                     // No language is sent. The workbench has no concept of one, and
                     // guessing "en-US" would set the install locale wrong for (say) a
-                    // Danish customer; BC applies its own default until a release
+                    // Danish customer; BC applies its own default until a deployment
                     // pipeline can say what the language should be.
                     languageId: string.Empty,
                     installOrUpdateNeededDependencies: true,
@@ -1091,7 +1091,7 @@ public sealed class DeliveryService
 
         // We have just changed what this customer's environment has installed or has
         // queued to install, so the cached panel is now wrong — and a consultant checking
-        // "did my release land?" is exactly who would read it next. A delivery names its
+        // "did my deployment land?" is exactly who would read it next. A delivery names its
         // environment rather than carrying its id, so the whole project's entries go.
         _panelCache.InvalidateProject(delivery.ProjectId);
     }
@@ -1251,7 +1251,7 @@ public sealed class DeliveryService
 
     // ── Reads (for delivery history) ──────────────────────────────────────────
 
-    /// <summary>A release pipeline's deliveries, newest first, without the per-app rows or blobs.</summary>
+    /// <summary>A deployment pipeline's deliveries, newest first, without the per-app rows or blobs.</summary>
     public async Task<List<OeProjectDelivery>> ListDeliveriesAsync(int releasePipelineId, CancellationToken ct = default)
     {
         await EnsureCanViewReleasePipelineAsync(releasePipelineId, ct);
@@ -1262,7 +1262,7 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// A release pipeline's deliveries, newest first, each with its per-app result rows
+    /// A deployment pipeline's deliveries, newest first, each with its per-app result rows
     /// (ordered) — for the delivery-history UI. The result rows carry no blobs, so this
     /// stays cheap. Triggering-user display names are resolved alongside.
     /// </summary>
@@ -1270,11 +1270,11 @@ public sealed class DeliveryService
         => ListDeliveryHistoryAsync(releasePipelineId, int.MaxValue, ct);
 
     /// <summary>
-    /// The newest <paramref name="limit"/> deliveries of a release pipeline, the way
+    /// The newest <paramref name="limit"/> deliveries of a deployment pipeline, the way
     /// <see cref="ListDeliveryHistoryAsync(int, CancellationToken)"/> reads them, for a
     /// page that shows the latest few and extends the list on request. Each row carries
     /// its per-pipeline <see cref="DeliveryHistoryRow.Number"/> (1 for the pipeline's
-    /// first release), so a row whose number is above 1 says there are older ones.
+    /// first deployment), so a row whose number is above 1 says there are older ones.
     /// </summary>
     public async Task<List<DeliveryHistoryRow>> ListDeliveryHistoryAsync(int releasePipelineId, int limit, CancellationToken ct = default)
     {
@@ -1282,7 +1282,7 @@ public sealed class DeliveryService
         var query = _db.OeProjectDeliveries.AsNoTracking()
             .Where(d => d.ReleasePipelineId == releasePipelineId);
 
-        // "Release 49" is display-only: the position in this pipeline's history, not a
+        // "Deployment 49" is display-only: the position in this pipeline's history, not a
         // stored column. Counting once and numbering down from it is exact as long as
         // the order below is total, hence the id tie-break.
         var total = await query.CountAsync(ct);
@@ -1335,7 +1335,7 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Why the skipped apps in one delivery were skipped, for the release page's per-app
+    /// Why the skipped apps in one delivery were skipped, for the deployment page's per-app
     /// rows. A run skips every app after the first failure whether or not it needed the
     /// failed one, so a row may only say "because it depends on" when the build's own
     /// manifests show that it does - directly or through another skipped app. The
@@ -1407,7 +1407,7 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Gates a release-pipeline-keyed delivery read on its project's visibility —
+    /// Gates a deployment-pipeline-keyed delivery read on its project's visibility —
     /// deliveries inherit it like everything else under a project. One that doesn't
     /// exist passes; the read below returns nothing on its own.
     /// </summary>
@@ -1473,9 +1473,9 @@ public sealed class DeliveryService
 }
 
 /// <summary>
-/// The lines a prepared release (#934) writes into its delivery's log: where it came
+/// The lines a prepared deployment (#934) writes into its delivery's log: where it came
 /// from, and who approved or dismissed it or which build replaced it. Written for a
-/// person reading the log, and never read back: what became of a prepared release is
+/// person reading the log, and never read back: what became of a prepared deployment is
 /// its status, <see cref="OeProjectDelivery.CancelledByUserId"/>,
 /// <see cref="OeProjectDelivery.DismissReason"/> and
 /// <see cref="OeProjectDelivery.ReplacedByProjectBuildId"/>.
@@ -1512,7 +1512,7 @@ public sealed record DeliveryHistoryRow(
     string? TriggeredByName,
     IReadOnlyList<DeliveryAppRow> Apps)
 {
-    /// <summary>The release's position in its pipeline's history, 1 for the first. Display only (#929); not stored.</summary>
+    /// <summary>The deployment's position in its pipeline's history, 1 for the first. Display only (#929); not stored.</summary>
     public int Number { get; init; }
 
     /// <summary>When the worker took the row.</summary>
@@ -1530,7 +1530,7 @@ public sealed record DeliveryHistoryRow(
     /// <summary>Who cancelled it. Null unless cancelled, and for cancellations before this was recorded.</summary>
     public string? CancelledByName { get; init; }
 
-    /// <summary>The branch the released build was made from, when it was built here.</summary>
+    /// <summary>The branch the deployed build was made from, when it was built here.</summary>
     public string? BuildBranch { get; init; }
 
     /// <summary>The GitHub release tag the build was staged from, for a release-sourced pipeline.</summary>
@@ -1539,7 +1539,7 @@ public sealed record DeliveryHistoryRow(
     /// <summary>The run's secret-free log, <c>HH:mm:ss  message</c> lines in UTC. Null until the run starts.</summary>
     /// <summary>
     /// The run's own log, for the page's diagnostics block. Kept out of the MCP
-    /// serialisation: list_deliveries would otherwise carry every run's log on
+    /// serialisation: list_deployments would otherwise carry every run's log on
     /// every call, and an assistant that needs it has the failure text and the
     /// per-app results already.
     /// </summary>
@@ -1555,23 +1555,23 @@ public sealed record DeliveryHistoryRow(
     /// <summary>True for a delivery waiting for its scheduled time — the cancellable/reschedulable state.</summary>
     public bool IsScheduled => Status == ProjectDeliveryStatus.Scheduled;
 
-    /// <summary>A release the pipeline prepared from a new build, waiting for someone to approve it (#934).</summary>
+    /// <summary>A deployment the pipeline prepared from a new build, waiting for someone to approve it (#934).</summary>
     [JsonIgnore]
     public bool IsProposed => Status == ProjectDeliveryStatus.Proposed;
 
     /// <summary>
-    /// A prepared release set aside before anyone approved it (#934): dismissed by a
+    /// A prepared deployment set aside before anyone approved it (#934): dismissed by a
     /// person (<see cref="CancelledByName"/>) or replaced by a newer build
     /// (<see cref="ReplacedByBuildId"/>). It never ran, so it is history rather than "the
-    /// last release".
+    /// last deployment".
     /// </summary>
     [JsonIgnore]
     public bool IsDismissed => Status == ProjectDeliveryStatus.Dismissed;
 
-    /// <summary>For a dismissed prepared release: the reason given, or "Replaced by build #N". Null otherwise, or when no reason was given.</summary>
+    /// <summary>For a dismissed prepared deployment: the reason given, or "Replaced by build #N". Null otherwise, or when no reason was given.</summary>
     public string? DismissReason { get; init; }
 
-    /// <summary>For a prepared release a newer build replaced: that build's id. Null otherwise.</summary>
+    /// <summary>For a prepared deployment a newer build replaced: that build's id. Null otherwise.</summary>
     public int? ReplacedByBuildId { get; init; }
 }
 

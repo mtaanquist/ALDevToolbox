@@ -154,8 +154,10 @@ public static class NavDestinations
         // so the net rule is the grant alone.
         new("Upgrades", "/upgrades", "calendar", "Deliver", Gate: NavGate.EnvironmentOps),
         new("Teams", "/teams", "users", "Deliver", Gate: NavGate.SignedIn),
-        new("Pipelines", "/pipelines", "rocket", "Deliver", Tool: ToolKey.Pipelines),
-        new("Releases", "/releases", "send", "Deliver", Tool: ToolKey.Releases),
+        // The sidebar's Pipelines parent is not a page yet, so only its two children
+        // are destinations; the parent's name rides along as their second line.
+        new("Builds", "/pipelines/builds", "rocket", "Deliver", Tool: ToolKey.Pipelines, Parent: "Pipelines"),
+        new("Deployments", "/pipelines/deployments", "send", "Deliver", Tool: ToolKey.Releases, Parent: "Pipelines"),
 
         // ---- Connect an assistant ----
         new("MCP", "/tools/mcp", "bot", "Connect an assistant",

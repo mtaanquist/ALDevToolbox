@@ -22,7 +22,7 @@ redirects to the route in the second column. Keep the table and that test in ste
 | Old route | New route | Page |
 | --- | --- | --- |
 | `/compare` | `/diff` | `CompareLegacyRedirect.razor` |
-| `/artifacts` | `/pipelines` | `LegacyArtifactsRedirect.razor` |
+| `/artifacts` | `/pipelines/builds` | `LegacyArtifactsRedirect.razor` |
 | `/artifacts/{id}` | `/projects/{id}` | `LegacyArtifactsRedirect.razor` |
 | `/admin/configuration` | `/admin/administration/identity` | `AdminLegacyConfigurationRedirect.razor` |
 | `/admin/configuration/identity` | `/admin/administration/identity` | `AdminLegacyConfigurationRedirect.razor` |
@@ -45,5 +45,6 @@ redirects to the route in the second column. Keep the table and that test in ste
 | `/site-admin/settings/mcp` | `/site-admin/settings/tools` | `LegacySiteAdminSettingsMcpRedirect.razor` |
 
 `Endpoints/LegacyRedirectEndpoints.cs` holds the same idea for routes that were never
-Blazor pages (the `/snippets` -> `/cookbook` rename and `/projects/extension`); it is
+Blazor pages (the `/snippets` -> `/cookbook` rename, `/projects/extension`, and the
+`/releases` -> `/pipelines/deployments` and `/pipelines` -> `/pipelines/builds` moves); it is
 covered by the same test and the same window.

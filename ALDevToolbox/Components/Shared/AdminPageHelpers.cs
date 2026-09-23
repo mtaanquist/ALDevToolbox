@@ -104,8 +104,8 @@ public static class AdminPageHelpers
         AuditEntityType.Module => "Module",
         AuditEntityType.ModuleDependency => "Module dependency",
         AuditEntityType.WellKnownDependency => "Catalogue entry",
-        AuditEntityType.ReleasePipeline => "Release pipeline",
-        AuditEntityType.Project => "Project connection",
+        AuditEntityType.ReleasePipeline => "Deployment pipeline",
+        AuditEntityType.Project => "Solution connection",
         // The multi-word enum names below used to fall through to ToString() and
         // reached the reader as "ApplicationVersion" / "PersonalAccessToken".
         // Single-word ones (User, Recipe, Invite, Backup) still fall through

@@ -19,5 +19,5 @@
     [Parameter] public int? ProjectId { get; set; }
 
     protected override void OnInitialized() =>
-        Nav.NavigateTo(ProjectId is { } pid ? $"/solutions/{pid}" : "/pipelines", replace: true);
+        Nav.NavigateTo(ProjectId is { } pid ? $"/solutions/{pid}" : "/pipelines/builds", replace: true);
 }

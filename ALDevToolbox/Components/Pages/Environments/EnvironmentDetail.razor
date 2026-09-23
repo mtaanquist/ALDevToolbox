@@ -293,7 +293,7 @@
                         <Alert Tone="AlertTone.Info" Class="env-detail__overlap" Block="true">
                             <span>
                                 The two windows overlap. Business Central refuses an install while it
-                                is updating the environment, so a release that lands during Microsoft's
+                                is updating the environment, so a deployment that lands during Microsoft's
                                 update would fail. Move the delivery window if the update date matters
                                 to the customer.
                             </span>
@@ -322,7 +322,7 @@
                                     <button type="button" class="btn btn--sm" @onclick="() => PersistWindowAsync(null, null)" disabled="@_windowSaving">Clear (any time)</button>
                                     <button type="button" class="btn btn--sm" @onclick="() => _windowEditing = false" disabled="@_windowSaving">Cancel</button>
                                 </div>
-                                <small class="field__hint">The hours agreed with the customer for our own installs, in the solution's time zone (@(ZoneCity(Row.TimeZone) ?? "UTC")). Releases prefill to the next opening; you can still release outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
+                                <small class="field__hint">The hours agreed with the customer for our own installs, in the solution's time zone (@(ZoneCity(Row.TimeZone) ?? "UTC")). Deployments prefill to the next opening; you can still deploy outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
                                 @if (_windowError is { } windowError)
                                 {
                                     <FieldError Message="@windowError" />
@@ -368,7 +368,7 @@
                                 {
                                     <span class="setting__name">AppSource apps update cadence</span>
                                 }
-                                <span class="setting__hint">How often apps the customer installed are updated. Does not affect extensions you release yourself.</span>
+                                <span class="setting__hint">How often apps the customer installed are updated. Does not affect extensions you deploy yourself.</span>
                             </span>
                             <span class="setting__ctl">
                                 @if (_canManage)
@@ -504,9 +504,9 @@
                     else if (panel.ScheduledInstalls.Count == 0)
                     {
                         <EmptyState Icon="calendar" Title="Nothing waiting to install" Quiet="true">
-                            <Text>A release you schedule for this environment waits here until Business Central installs it.</Text>
+                            <Text>A deployment you schedule for this environment waits here until Business Central installs it.</Text>
                             <Action>
-                                <a class="btn btn--sm" href="/releases">Open Releases</a>
+                                <a class="btn btn--sm" href="/pipelines/deployments">Open deployment pipelines</a>
                             </Action>
                         </EmptyState>
                     }
@@ -532,7 +532,7 @@
                                             @(string.IsNullOrWhiteSpace(op.Name) ? "An extension" : op.Name)
                                             @if (op.AppId is { } ourApp && panel.ReleasedAppIds.Contains(ourApp))
                                             {
-                                                <span class="tag">Released from this workbench</span>
+                                                <span class="tag">Deployed from this workbench</span>
                                             }
                                         </td>
                                         <td class="u-num env-detail__mono">@op.TargetAppVersion</td>
@@ -609,7 +609,7 @@
                                                 @app.Name
                                                 @if (panel.ReleasedAppIds.Contains(app.AppId))
                                                 {
-                                                    <span class="tag">Released from this workbench</span>
+                                                    <span class="tag">Deployed from this workbench</span>
                                                 }
                                             </td>
                                             <td>@app.Publisher</td>
@@ -625,7 +625,7 @@
                                     {
                                         <text>Showing @installedShown.Count of @panel.InstalledApps.Count. </text>
                                     }
-                                    Extensions you build are updated from <a href="/releases">Releases</a>, not here.
+                                    Extensions you build are updated from <a href="/pipelines/deployments">Deployments</a>, not here.
                                 </span>
                                 @if (installedShown.Count < installed.Count)
                                 {
@@ -645,7 +645,7 @@
                                 {
                                     <text>@BlockedCount(panel) of these @(BlockedCount(panel) == 1 ? "waits" : "wait") for another app to be updated first. </text>
                                 }
-                                Apps you build and release yourself are never listed here.
+                                Apps you build and deploy yourself are never listed here.
                             </p>
                         </div>
                         @if (panel.AvailableUpdates.Count > 0)
@@ -1772,7 +1772,7 @@
         : string.Equals(app.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase) ? "Microsoft"
         : "AppSource";
 
-    /// <summary>When a scheduled install will actually run, in the words the release picker uses.</summary>
+    /// <summary>When a scheduled install will actually run, in the words the deploy dialog uses.</summary>
     private static string ScheduleWhen(string? scheduleKind) =>
         BcDeploymentSchedule.Normalize(scheduleKind) is { } known
             ? DeliveryModeDisplay.Schedule(known)
@@ -1780,7 +1780,7 @@
 
     /// <summary>
     /// Cancels one scheduled install, behind a confirm - Business Central drops the
-    /// uploaded package, so the version has to be released again afterwards.
+    /// uploaded package, so the version has to be deployed again afterwards.
     /// </summary>
     private async Task CancelScheduledAsync(Guid appId, BcScheduledPteOperation op)
     {
@@ -1789,7 +1789,7 @@
         var confirmed = await _confirm.OpenAsync(
             "Cancel this scheduled install?",
             $"Business Central will drop the copy of {name} {op.TargetAppVersion} it is holding for {Row.EnvironmentName}. "
-            + "To install it later you'll have to release it again.",
+            + "To install it later you'll have to deploy it again.",
             "Cancel the install");
         if (!confirmed) return;
 

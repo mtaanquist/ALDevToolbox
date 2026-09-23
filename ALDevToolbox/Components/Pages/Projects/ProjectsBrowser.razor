@@ -189,7 +189,7 @@
                                     }
                                     else
                                     {
-                                        <a class="@state" href="@($"/releases/{shipped.ReleasePipelineId}")" title="@shippedText">
+                                        <a class="@state" href="@($"/pipelines/deployments/{shipped.ReleasePipelineId}")" title="@shippedText">
                                             @if (handedOff) { <Icon Name="send" Width="12" Height="12" /> }
                                             <span>@ShippedDate(shipped)</span>
                                             @if (handedOff) { <span class="sol-list__shipped-note">installs later</span> }
@@ -408,6 +408,6 @@
         var what = shipped.Status == ProjectDeliveryStatus.HandedOff
             ? $"Handed to Business Central {when}. It accepted the apps and installs them in a later update window."
             : $"Installed in production {when}.";
-        return shipped.ReleasePipelineRemoved ? what + " Its release pipeline has since been deleted." : what;
+        return shipped.ReleasePipelineRemoved ? what + " Its deployment pipeline has since been deleted." : what;
     }
 }

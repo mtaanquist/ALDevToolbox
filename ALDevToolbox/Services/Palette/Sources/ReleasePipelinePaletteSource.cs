@@ -9,30 +9,30 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services.Palette.Sources;
 
 /// <summary>
-/// Release pipelines - the targets on <c>/releases</c> that publish a build to a
-/// Business Central environment - found by their own name, their Solution's and
-/// their environment's. <c>cronus prod</c> finds the pipeline that releases to
-/// CRONUS's Production. See <c>.design/command-palette.md</c>, "Sources", and
-/// issue #885.
+/// Deployment pipelines - the targets on <c>/pipelines/deployments</c> that install a
+/// build into a Business Central environment - found by their own name, their
+/// Solution's and their environment's. <c>cronus prod</c> finds the pipeline that
+/// deploys to CRONUS's Production. See <c>.design/command-palette.md</c>, "Sources",
+/// and issue #885.
 ///
-/// <para>Its group is "Release pipelines" rather than the page's own heading,
-/// "Releases": that word already heads the Object Explorer releases group, and
-/// two groups with one heading would say nothing about which is which. The
-/// Releases page calls each row a "Release pipeline" in its table, so the
-/// words are still the page's.</para>
+/// <para>Its group is "Deployment pipelines", the page's own heading. It used to be
+/// "Release pipelines", which sat one word from the Object Explorer "Releases" group;
+/// the product vocabulary moved to Deployments so the two no longer share a word
+/// (.design/saas-delivery.md, "Vocabulary"). The type is still named for the
+/// entity, <c>OeReleasePipeline</c>.</para>
 ///
 /// <para><b>A small table, so no pre-filter</b> - a few per Solution. See
 /// <see cref="PaletteQuery.SqlTerms"/>.</para>
 ///
-/// <para><b>The fence.</b> A release pipeline inherits its Solution's
+/// <para><b>The fence.</b> A deployment pipeline inherits its Solution's
 /// visibility, exactly as <see cref="ReleasePipelineService.ListReleasePipelinesAsync"/>
-/// reads it for <c>/releases</c>: through
+/// reads it for <c>/pipelines/deployments</c>: through
 /// <see cref="ProjectAccess.VisibleProjectPredicate"/>, with the organisation
 /// query filter underneath. No <c>IgnoreQueryFilters()</c>.</para>
 ///
 /// <para>A pipeline aimed at an environment that has gone or failed is still
-/// offered - the Releases page lists it too - and its subtitle says what is
-/// wrong, in that page's words, because a pipeline that cannot release is the
+/// offered - the Deployment pipelines page lists it too - and its subtitle says what is
+/// wrong, in that page's words, because a pipeline that cannot deploy is the
 /// one somebody is most likely looking for.</para>
 /// </summary>
 public sealed class ReleasePipelinePaletteSource : IPaletteSource
@@ -53,13 +53,14 @@ public sealed class ReleasePipelinePaletteSource : IPaletteSource
 
     public string Id => "release-pipelines";
 
-    public string Label => "Release pipelines";
+    public string Label => "Deployment pipelines";
 
     public int Order => PaletteGroupOrder.ReleasePipelines;
 
     /// <summary>
-    /// Exactly the gate on the sidebar's Releases entry: signed in, and the
-    /// Releases tool switched on site-wide and for this organisation.
+    /// Exactly the gate on the sidebar's Deployments entry: signed in, and the
+    /// deployment pipelines tool (<see cref="ToolKey.Releases"/>) switched on
+    /// site-wide and for this organisation.
     /// </summary>
     public Task<bool> IsAvailableAsync(ClaimsPrincipal user, CancellationToken ct) =>
         Task.FromResult(user?.Identity?.IsAuthenticated == true && _tools.IsEnabled(ToolKey.Releases, user));
@@ -96,7 +97,7 @@ public sealed class ReleasePipelinePaletteSource : IPaletteSource
             r.Name,
             Describe(r.ProjectName, r.EnvironmentName,
                 ReleasePipelineRow.DescribeEnvironmentProblem(r.EnvironmentMissing, r.EnvironmentStatus)),
-            $"/releases/{r.Id}",
+            $"/pipelines/deployments/{r.Id}",
             ShortName: null,
             SearchOnly: r.ProjectShortName));
 
@@ -106,7 +107,7 @@ public sealed class ReleasePipelinePaletteSource : IPaletteSource
     /// <summary>
     /// The Solution, then the target environment, then - only when there is
     /// one - what is wrong with that environment ("no longer present", "failed
-    /// in Business Central"), the words the Releases list prints beside it.
+    /// in Business Central"), the words the Deployment pipelines list prints beside it.
     /// </summary>
     private static string? Describe(string projectName, string? environmentName, string? problem)
     {

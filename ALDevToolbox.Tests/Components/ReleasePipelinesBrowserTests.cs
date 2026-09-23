@@ -102,8 +102,8 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".card .empty-state__title").TextContent.Trim().Should().Be("No release pipelines yet");
-            cut.Find(".empty-state__action button").TextContent.Should().Contain("New release pipeline");
+            cut.Find(".card .empty-state__title").TextContent.Trim().Should().Be("No deployment pipelines yet");
+            cut.Find(".empty-state__action button").TextContent.Should().Contain("New deployment pipeline");
             cut.FindAll(".page-head__actions button").Should().BeEmpty("the empty state carries the one next step");
         });
     }
@@ -143,13 +143,13 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
                 "every relative time carries the exact time on hover");
 
             // Never released: says so, rather than a blank cell.
-            rows[3].Children[3].TextContent.Should().Contain("Nothing released yet");
+            rows[3].Children[3].TextContent.Should().Contain("Nothing deployed yet");
             rows[3].Children[4].TextContent.Should().Contain("None scheduled");
 
             // The environment and the solution are links (#932, the list half).
             live.Children[2].QuerySelector("a")!.GetAttribute("href").Should().Be($"/environments/{s.UatId}");
             live.Children[1].QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
-                .Should().Equal($"/releases/{s.Live}", $"/solutions/{s.ProjectId}");
+                .Should().Equal($"/pipelines/deployments/{s.Live}", $"/solutions/{s.ProjectId}");
         });
     }
 
@@ -167,9 +167,9 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
             band.QuerySelector(".rp-live__name")!.TextContent.Should().Be("CRONUS to UAT");
             band.QuerySelector(".rp-live__text")!.TextContent.Should()
                 .StartWith("Installing app 2 of 3 into UAT (Sandbox) for CRONUS International.")
-                .And.Contain("the last release here took 6 minutes");
+                .And.Contain("the last deployment here took 6 minutes");
             band.QuerySelector(".rp-live__step")!.TextContent.Should().Be("1 of 3 apps done");
-            band.QuerySelector("a.rp-live__open")!.GetAttribute("href").Should().Be($"/releases/{s.Live}");
+            band.QuerySelector("a.rp-live__open")!.GetAttribute("href").Should().Be($"/pipelines/deployments/{s.Live}");
             cut.FindAll(".rp-live").Should().HaveCount(1, "only the release in flight gets a band");
         });
     }
@@ -213,11 +213,11 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".alert--warn").TextContent.Should().Contain("1 release waiting for approval:").And.Contain("CRONUS to Production");
-            cut.Find(".alert--warn a").GetAttribute("href").Should().Be($"/releases/{s.Quiet}");
+            cut.Find(".alert--warn").TextContent.Should().Contain("1 deployment waiting for approval:").And.Contain("CRONUS to Production");
+            cut.Find(".alert--warn a").GetAttribute("href").Should().Be($"/pipelines/deployments/{s.Quiet}");
             var row = cut.Find($"table.rp-list__wide tbody tr[data-pipeline='{s.Quiet}']");
             row.ClassList.Should().Contain("is-draft");
-            row.QuerySelector(".data-table__state")!.GetAttribute("aria-label").Should().Be("Release waiting for approval");
+            row.QuerySelector(".data-table__state")!.GetAttribute("aria-label").Should().Be("Deployment waiting for approval");
             row.Children[4].TextContent.Should().Contain("Waiting for approval");
             cut.FindAll(".pill-tab").Select(t => t.TextContent.Trim()).Should().Contain("Needs attention3");
         });

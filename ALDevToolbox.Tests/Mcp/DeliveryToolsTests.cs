@@ -79,11 +79,11 @@ public sealed class DeliveryToolsTests : IDisposable
         await using var read = _db.NewContext();
         var result = await NewTools(read).PublishBuildAsync(seed.ReleasePipelineId, seed.BuildId);
 
-        result.DeliveryId.Should().BeGreaterThan(0);
+        result.DeploymentId.Should().BeGreaterThan(0);
 
         await using var verify = _db.NewContext();
         var delivery = await verify.OeProjectDeliveries.AsNoTracking()
-            .SingleAsync(d => d.Id == result.DeliveryId);
+            .SingleAsync(d => d.Id == result.DeploymentId);
         delivery.Status.Should().Be(ProjectDeliveryStatus.Scheduled);
         delivery.ReleasePipelineId.Should().Be(seed.ReleasePipelineId);
     }
@@ -112,7 +112,7 @@ public sealed class DeliveryToolsTests : IDisposable
 
         await using var verify = _db.NewContext();
         var delivery = await verify.OeProjectDeliveries.AsNoTracking()
-            .SingleAsync(d => d.Id == result.DeliveryId);
+            .SingleAsync(d => d.Id == result.DeploymentId);
         delivery.ScheduledFor.Should().BeBefore(DateTime.UtcNow.AddMinutes(1), "the tool releases now, not at the window");
         delivery.DeploymentSchedule.Should().Be(BcDeploymentSchedule.Immediate);
         delivery.ScheduledByDeliveryWindow.Should().BeTrue();
@@ -132,7 +132,7 @@ public sealed class DeliveryToolsTests : IDisposable
         await using var read = _db.NewContext();
         var act = () => NewTools(read).PublishBuildAsync(seed.ReleasePipelineId, seed.BuildId);
 
-        (await act.Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("Couldn't release");
+        (await act.Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("Couldn't deploy");
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class DeliveryToolsTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
-            deliveryId = (await NewTools(ctx).PublishBuildAsync(seed.ReleasePipelineId, seed.BuildId)).DeliveryId;
+            deliveryId = (await NewTools(ctx).PublishBuildAsync(seed.ReleasePipelineId, seed.BuildId)).DeploymentId;
         }
 
         await using var read = _db.NewContext();
@@ -231,7 +231,7 @@ public sealed class DeliveryToolsTests : IDisposable
         // The whole point of staging: the ordinary publish takes it from here.
         await using var publish = _db.NewContext();
         var result = await NewTools(publish, GitHubWithOneRelease()).PublishBuildAsync(seed.ReleasePipelineId, staged.Id);
-        result.DeliveryId.Should().BeGreaterThan(0);
+        result.DeploymentId.Should().BeGreaterThan(0);
     }
 
     [Fact]

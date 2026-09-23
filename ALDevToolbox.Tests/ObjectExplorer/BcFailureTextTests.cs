@@ -102,7 +102,7 @@ public sealed class BcFailureTextTests
     {
         BcFailureText.Sentence("ExtensionChangeFailed").Should().Be(
             "Business Central refused a schema change (a renamed or removed table or field). "
-            + "Release again with Force sync to push it through, or keep the old names.");
+            + "Deploy again with Force sync to push it through, or keep the old names.");
         BcFailureText.Sentence("SomethingNew").Should().Be("Business Central refused the install (SomethingNew).");
         BcFailureText.Sentence("").Should().Be("Business Central reported the install as failed.");
 
@@ -128,8 +128,8 @@ public sealed class BcFailureTextTests
     public void Force_sync_is_not_suggested_to_a_release_that_already_used_it()
     {
         BcFailureText.NextStep("ExtensionChangeFailed", "Test", forceSync: false).Should()
-            .Contain("release this build again with Force sync").And.Contain("\"Test\"");
+            .Contain("deploy this build again with Force sync").And.Contain("\"Test\"");
         BcFailureText.NextStep("ExtensionChangeFailed", "Test", forceSync: true).Should()
-            .Contain("already used Force sync").And.NotContain("release this build again");
+            .Contain("already used Force sync").And.NotContain("deploy this build again");
     }
 }

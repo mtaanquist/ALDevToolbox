@@ -147,17 +147,17 @@
             </Alert>
         }
 
-        @* A release a pipeline prepared from a new build waits on that pipeline's page
+        @* A deployment a pipeline prepared from a new build waits on that pipeline's page
            for someone to approve it (#934); this is the solution's pointer to it. *@
         @if (_waitingForApproval.Count > 0)
         {
             <Alert Tone="AlertTone.Warn">
                 <span>
-                    <b>@(_waitingForApproval.Count == 1 ? "1 release" : $"{_waitingForApproval.Count} releases") waiting for approval:</b>
+                    <b>@(_waitingForApproval.Count == 1 ? "1 deployment" : $"{_waitingForApproval.Count} deployments") waiting for approval:</b>
                     @for (var i = 0; i < _waitingForApproval.Count; i++)
                     {
                         var w = _waitingForApproval[i];
-                        @(i == 0 ? " " : ", ")<a href="@($"/releases/{w.ReleasePipelineId}")">@w.ReleasePipelineName</a><text> (build #@w.BuildId)</text>
+                        @(i == 0 ? " " : ", ")<a href="@($"/pipelines/deployments/{w.ReleasePipelineId}")">@w.ReleasePipelineName</a><text> (build #@w.BuildId)</text>
                     }
                 </span>
             </Alert>
@@ -170,7 +170,7 @@
                 @* The Pipelines list searched for this solution, not /pipelines/{Id}:
                    that route takes a pipeline's id, so it opened whichever pipeline
                    happened to share this solution's number - or nothing. *@
-                <a href="@($"/pipelines?q={Uri.EscapeDataString(_header?.Name ?? string.Empty)}")">download its builds</a>.
+                <a href="@($"/pipelines/builds?q={Uri.EscapeDataString(_header?.Name ?? string.Empty)}")">download its builds</a>.
             </p>
         }
 
@@ -568,7 +568,7 @@
 
     private OeProject? _loadedProject;
 
-    /// <summary>Releases prepared from a new build and waiting for someone to approve them (#934).</summary>
+    /// <summary>Deployments prepared from a new build and waiting for someone to approve them (#934).</summary>
     private List<ALDevToolbox.Services.ObjectExplorer.Delivery.ReleaseWaitingForApproval> _waitingForApproval = new();
 
     /// <summary>

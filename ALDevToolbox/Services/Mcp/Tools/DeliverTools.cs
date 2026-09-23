@@ -19,7 +19,7 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 /// <para><b>Every tool here only reads, and a test holds it to that.</b>
 /// <c>DeliverToolsTests</c> walks this class and fails if any tool is not
 /// <c>ReadOnly = true</c>, so a write cannot be added here by accident; the one write in
-/// the area, <c>publish_build</c>, stays in <see cref="DeliveryTools"/> behind its own
+/// the area, <c>deploy_build</c>, stays in <see cref="DeliveryTools"/> behind its own
 /// gate.</para>
 ///
 /// <para><b>No tool calls a customer's tenant.</b> Environment facts come from the mirror
@@ -235,11 +235,11 @@ public sealed class DeliverTools
 
     // ── Deliveries ──────────────────────────────────────────────────────
 
-    [McpServerTool(Name = "list_recent_deliveries", ReadOnly = true)]
-    [Description("Lists deliveries across every solution you can see, newest first: for each, the solution, the release pipeline, the target environment, the build, its status ('proposed'/'scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off'/'dismissed': 'proposed' is a release the pipeline prepared from a new build that is waiting for a person to approve it in the web UI, with nothing sent yet; 'dismissed' is such a prepared release that a person dismissed or a newer build replaced before anyone approved it, so nothing was ever sent; 'handed_off' means Business Central accepted the apps and installs them in its own later window), when it was requested, started and finished, who triggered it, and - for a failed one - the failure message and each app's result. These are the workbench's own records of what it delivered. Use it for 'did the release go alright?' or 'what failed to deploy this week?'; list_deliveries has one release pipeline's full history.")]
+    [McpServerTool(Name = "list_recent_deployments", ReadOnly = true)]
+    [Description("Lists deployments across every solution you can see, newest first: for each, the solution, the deployment pipeline, the target environment, the build, its status ('proposed'/'scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'/'handed_off'/'dismissed': 'proposed' is a deployment the pipeline prepared from a new build that is waiting for a person to approve it in the web UI, with nothing sent yet; 'dismissed' is such a prepared deployment that a person dismissed or a newer build replaced before anyone approved it, so nothing was ever sent; 'handed_off' means Business Central accepted the apps and installs them in its own later window), when it was requested, started and finished, who triggered it, and - for a failed one - the failure message and each app's result. These are the workbench's own records of what it deployed. Use it for 'did the deployment go alright?' or 'what failed to deploy this week?'; list_deployments has one deployment pipeline's full history.")]
     public async Task<IReadOnlyList<RecentDelivery>> ListRecentDeliveriesAsync(
         [Description("Optional status to keep, e.g. 'failed' or 'deployed'.")] string? status = null,
-        [Description("Optional date (yyyy-MM-dd, UTC): only deliveries requested on or after it.")] string? since = null,
+        [Description("Optional date (yyyy-MM-dd, UTC): only deployments requested on or after it.")] string? since = null,
         [Description("How many to return, newest first. Default 50, at most 200.")] int limit = 50,
         CancellationToken ct = default)
     {
@@ -247,7 +247,7 @@ public sealed class DeliverTools
         if (!string.IsNullOrEmpty(wanted) && !KnownDeliveryStatuses.Contains(wanted))
         {
             throw new McpException(
-                $"'{status}' is not a delivery status. Use one of: {string.Join(", ", KnownDeliveryStatuses)}.");
+                $"'{status}' is not a deployment status. Use one of: {string.Join(", ", KnownDeliveryStatuses)}.");
         }
 
         var rows = await _deliveries.ListRecentAsync(wanted, ParseDate(since, "since"), limit, ct);
@@ -611,14 +611,17 @@ public sealed record UpgradeEnvironmentRow(
 /// <summary>An update move booked from this workbench that has not run yet.</summary>
 public sealed record PendingUpgradeAction(string Action, DateTime RunsAt, string RequestedBy);
 
-/// <summary>One delivery in <c>list_recent_deliveries</c>.</summary>
-/// <param name="Apps">Each app's result; filled only for a failed delivery.</param>
+/// <summary>
+/// One deployment in <c>list_recent_deployments</c>. MCP-only, so its member names are the
+/// agent-facing ones (Solution, Deployment), not the entity's (Project, Delivery).
+/// </summary>
+/// <param name="Apps">Each app's result; filled only for a failed deployment.</param>
 public sealed record RecentDelivery(
-    int DeliveryId,
+    int DeploymentId,
     int SolutionId,
     string SolutionName,
-    int ReleasePipelineId,
-    string ReleasePipelineName,
+    int DeploymentPipelineId,
+    string DeploymentPipelineName,
     string EnvironmentName,
     int BuildId,
     string Status,

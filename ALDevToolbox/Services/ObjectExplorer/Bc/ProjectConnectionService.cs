@@ -1715,7 +1715,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             // Never a quiet switch to the other registration: which one a customer has
             // authorised is theirs to know, and a fallback would hide it.
             throw new BcApiException(null, creds.FromOrganization
-                ? "Your organisation's Business Central client secret has expired. An administrator has to rotate it in Entra and re-enter it under Administration before releasing."
+                ? "Your organisation's Business Central client secret has expired. An administrator has to rotate it in Entra and re-enter it under Administration before deploying."
                 : "This solution's own Business Central client secret has expired. Rotate it in Entra and re-enter it on the solution's Business Central tab, or switch the solution to your organisation's app registration there.");
         }
 

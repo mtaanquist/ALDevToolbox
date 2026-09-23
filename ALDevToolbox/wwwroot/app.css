@@ -87,6 +87,39 @@ a.errlink:hover,
 a.menu__item:hover,
 a.check:hover { text-decoration: none; }
 
+/* A sidebar parent that only groups its children (Pipelines, until it has a page
+   of its own). It is not a link, so it must not look clickable: no pointer and no
+   hover wash. shell.css's .nav-parent.has-active-child still gives it its weight
+   while one of its children is the current page. */
+.nav-item--group { cursor: default; }
+.nav-item--group:hover { background: none; color: var(--ink-2); }
+.nav-parent.has-active-child > .nav-item--group:hover { color: var(--ink); }
+
+/* The same parent at icon-rail width. shell.css hides every .nav-sub there, which
+   is fine under a parent that links somewhere, but this one does not: its children
+   would be unreachable from the rail. So the parent steps aside and its children
+   become ordinary rail items, each with the icon it carries only for this. The
+   drawer (narrow, open) shows labels again, so it gets the nested look back. */
+.nav-sub__rail-icon { display: none; }
+@container (max-width: 1080px) {
+    .nav-parent--rail-flat > .nav-item--group { display: none; }
+    .nav-parent--rail-flat > .nav-sub { display: grid !important; gap: 1px; margin: 0; padding: 0; border-left: 0; }
+    .nav-parent--rail-flat .nav-sub__rail-icon { display: block; }
+    .nav-parent--rail-flat > .nav-sub > .nav-item { height: 34px; }
+    .nav-parent--rail-flat > .nav-sub > .nav-item.is-active::before { display: block; }
+}
+@container (max-width: 700px) {
+    .app.is-drawer-open .nav-parent--rail-flat > .nav-item--group { display: flex; }
+    .app.is-drawer-open .nav-parent--rail-flat .nav-sub__rail-icon { display: none; }
+    .app.is-drawer-open .nav-parent--rail-flat > .nav-sub {
+        margin: 1px 0 var(--space-1) var(--space-4);
+        padding-left: var(--space-4);
+        border-left: 1px solid var(--border);
+    }
+    .app.is-drawer-open .nav-parent--rail-flat > .nav-sub > .nav-item { height: 30px; }
+    .app.is-drawer-open .nav-parent--rail-flat > .nav-sub > .nav-item.is-active::before { display: none; }
+}
+
 /* <FocusOnNavigate Selector="h1"> in Routes.razor moves focus to the page's
    heading after every navigation, so a screen reader announces the new page
    instead of leaving the user where the old one was. That is right and stays.

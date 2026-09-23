@@ -1,4 +1,4 @@
-@page "/releases/{Id:int}"
+@page "/pipelines/deployments/{Id:int}"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
@@ -22,42 +22,42 @@
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
-    One release pipeline (.design/handoff/PageReleasePipeline.dc.html and
+    One deployment pipeline (.design/handoff/PageReleasePipeline.dc.html and
     ReleasePipelineBody.dc.html, issue #929): a summary card that answers "is this
-    healthy", then the releases, each opening into its failure, its steps, its apps and
+    healthy", then the deployments, each opening into its failure, its steps, its apps and
     its log. Data stored by AL Workbench and data mirrored from Business Central sit in
     separate, labelled blocks, and nothing here calls Business Central to render.
 
-    Named user: an ops engineer who was just told "the release to CRONUS's test
+    Named user: an ops engineer who was just told "the deployment to CRONUS's test
     environment failed" and needs what, when, how long and why without leaving the page.
 
     Where the sheet draws something the product does not record, the cell is hidden
-    rather than filled in: old releases have no per-app timings, no previous version and
+    rather than filled in: old deployments have no per-app timings, no previous version and
     no "uploaded" moment (#929 started recording them), and their skipped apps fall back
-    to "skipped after X failed". A failed release can be released again (#931), with Force
-    sync for that one release. A release the pipeline prepared from a new build (#934)
+    to "skipped after X failed". A failed deployment can be deployed again (#931), with Force
+    sync for that one deployment. A deployment the pipeline prepared from a new build (#934)
     sits in the "Waiting for approval" band at the top of the list, not among the rows:
     it has not happened, and nothing has been sent.
 *@
 
-<PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Workbench</PageTitle>
+<PageTitle>@(_rp?.Name ?? "Deployment pipeline") · AL Workbench</PageTitle>
 
 <DetailPage IsLoading="@(_loading)"
-            LoadingText="Loading release pipeline..."
+            LoadingText="Loading deployment pipeline..."
             IsNotFound="@(_rp is null)"
             Title="@(_rp?.Name)"
             ShowMeta="false"
             PageClass="rp-page">
     <NotFound>
-        <EmptyState Icon="send" Title="This release pipeline doesn't exist" Heading="true">
+        <EmptyState Icon="send" Title="This deployment pipeline doesn't exist" Heading="true">
             <Text>It may have been deleted. Head back to the list to pick another.</Text>
             <Action>
-                <a class="btn btn--primary" href="/releases"><Icon Name="arrow-left" Width="16" Height="16" /><span>All releases</span></a>
+                <a class="btn btn--primary" href="/pipelines/deployments"><Icon Name="arrow-left" Width="16" Height="16" /><span>All deployment pipelines</span></a>
             </Action>
         </EmptyState>
     </NotFound>
     <Crumbs>
-        <a href="/releases">Releases</a>
+        <a href="/pipelines/deployments">Deployment pipelines</a>
         <Icon Name="chevron-right" Width="12" Height="12" />
         <span>@_rp!.Name</span>
     </Crumbs>
@@ -81,7 +81,7 @@
         <text> into the @EnvType environment </text><a href="@EnvHref">"@EnvName"</a>.
     </SubtitleContent>
     <Actions>
-        <a class="btn" href="/releases"><Icon Name="arrow-left" Width="15" Height="15" /><span>All releases</span></a>
+        <a class="btn" href="/pipelines/deployments"><Icon Name="arrow-left" Width="15" Height="15" /><span>All deployment pipelines</span></a>
         @if (_canManage)
         {
             <button type="button" class="btn" @onclick="EditAsync">
@@ -91,7 +91,7 @@
                state, and the head keeps an outline copy so the action never vanishes. *@
             <button type="button" class="btn@(IsEmpty ? "" : " btn--primary")" @onclick="OpenReleaseAsync" disabled="@(!HasSomethingToRelease)"
                     title="@(HasSomethingToRelease ? null : NothingToReleaseReason)">
-                <Icon Name="send" Width="15" Height="15" /><span>Release</span>
+                <Icon Name="send" Width="15" Height="15" /><span>Deploy</span>
             </button>
         }
     </Actions>
@@ -100,20 +100,20 @@
         {
             <Alert Tone="AlertTone.Danger">
                 <span>
-                    This release pipeline's target environment is no longer present in Business Central. Refresh the
-                    environments on <a href="@($"/solutions/{_rp!.ProjectId}")">the solution's Business Central page</a> before releasing.
+                    This deployment pipeline's target environment is no longer present in Business Central. Refresh the
+                    environments on <a href="@($"/solutions/{_rp!.ProjectId}")">the solution's Business Central page</a> before deploying.
                 </span>
             </Alert>
         }
         else if (BcEnvironmentStatus.Classify(_rp.ProjectEnvironment.Status) is BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed)
         {
-            @* Not Busy: an environment that is mid-update takes releases again on its
+            @* Not Busy: an environment that is mid-update takes deployments again on its
                own. One that is being removed or has failed never will, so the pipeline
-               says it is broken now rather than when the next release is refused. *@
+               says it is broken now rather than when the next deployment is refused. *@
             <Alert Tone="AlertTone.Danger">
                 <span>
                     @BcEnvironmentStatus.RefusalMessage(_rp.ProjectEnvironment.Name, _rp.ProjectEnvironment.Status)
-                    Releases through this pipeline are refused until it points at a different environment.
+                    Deployments through this pipeline are refused until it points at a different environment.
                 </span>
             </Alert>
         }
@@ -126,13 +126,13 @@
             <Alert Tone="AlertTone.Info">
                 @if (_fromReleases)
                 {
-                    <span><b>@SourceName</b> has no release with app files attached yet. Publish one there, then come back to install it.</span>
+                    <span><b>@SourceName</b> has no GitHub release with app files attached yet. Publish one there, then come back to install it.</span>
                 }
                 else
                 {
                     <span>
                         <b>@SourceName</b> has no successful build yet. Run a build on
-                        <a href="@SourceHref">the build pipeline</a>, then come back to release it.
+                        <a href="@SourceHref">the build pipeline</a>, then come back to deploy it.
                     </span>
                 }
             </Alert>
@@ -153,12 +153,12 @@
                 </div>
             </div>
             <div class="card">
-                <div class="card__head"><h2 class="card__title">Releases</h2></div>
+                <div class="card__head"><h2 class="card__title">Deployments</h2></div>
                 @foreach (var w in SkeletonWidths)
                 {
                     <div class="rp-skel-row"><span class="skeleton rp-skel-glyph"></span><span class="skeleton rp-skel-line" style="width: @w"></span><span class="rp-skel-fill"></span><span class="skeleton rp-skel-end"></span></div>
                 }
-                <LoadingBlock Text="Loading releases..." />
+                <LoadingBlock Text="Loading deployments..." />
             </div>
         }
         else
@@ -212,7 +212,7 @@
                                 }
                             </span>
                             <span class="meta-item rp-fact">
-                                <span class="meta-item__label">Last release</span>
+                                <span class="meta-item__label">Last deployment</span>
                                 <span class="meta-item__value">
                                     @if (LastRelease is { } last)
                                     {
@@ -228,7 +228,7 @@
                                 </span>
                             </span>
                             <span class="meta-item rp-fact">
-                                <span class="meta-item__label">Next release</span>
+                                <span class="meta-item__label">Next deployment</span>
                                 @if (NextRelease is { } next)
                                 {
                                     <span class="meta-item__value rp-strong" title="@Exact(next.ScheduledFor)">@When(next.ScheduledFor)</span>
@@ -284,27 +284,27 @@
             @if (IsEmpty)
             {
                 <div class="card">
-                    <div class="card__head"><h2 class="card__title">Releases</h2></div>
-                    <EmptyState Icon="send" Title="No releases yet">
+                    <div class="card__head"><h2 class="card__title">Deployments</h2></div>
+                    <EmptyState Icon="send" Title="No deployments yet">
                         <Text>
                             @if (HasSomethingToRelease || !_canManage)
                             {
-                                <text>Nothing has been installed by this pipeline yet. Release the latest build to install it now.</text>
+                                <text>Nothing has been installed by this pipeline yet. Deploy the latest build to install it now.</text>
                             }
                             else if (_fromReleases)
                             {
-                                <text>Nothing has been installed by this pipeline yet. Publish a release with app files on GitHub, then release it here.</text>
+                                <text>Nothing has been installed by this pipeline yet. Publish a release with app files on GitHub, then deploy it here.</text>
                             }
                             else
                             {
-                                <text>Nothing has been installed by this pipeline yet. Run a build on the build pipeline, then release it here.</text>
+                                <text>Nothing has been installed by this pipeline yet. Run a build on the build pipeline, then deploy it here.</text>
                             }
                         </Text>
                         <Action>
                             @if (_canManage && HasSomethingToRelease)
                             {
                                 <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync">
-                                    <Icon Name="send" Width="16" Height="16" /><span>Release</span>
+                                    <Icon Name="send" Width="16" Height="16" /><span>Deploy</span>
                                 </button>
                             }
                             else if (_canManage && !_fromReleases)
@@ -320,8 +320,8 @@
                 <div class="card rp-releases">
                     <div class="card__head">
                         <div>
-                            <h2 class="card__title">Releases</h2>
-                            <p class="card__sub">Newest first. Open a release for its apps, timings and log. Times are in @_tzPhrase.</p>
+                            <h2 class="card__title">Deployments</h2>
+                            <p class="card__sub">Newest first. Open a deployment for its apps, timings and log. Times are in @_tzPhrase.</p>
                         </div>
                     </div>
 
@@ -332,7 +332,7 @@
                             <div class="rp-approval__body">
                                 <span class="rp-approval__head">
                                     <span class="rp-approval__eyebrow">Waiting for approval</span>
-                                    <span class="rp-approval__title">Release @p.Number - build #@p.ProjectBuildId</span>
+                                    <span class="rp-approval__title">Deployment @p.Number - build #@p.ProjectBuildId</span>
                                 </span>
                                 <span class="rp-approval__text">@ApprovalSentence(p)</span>
                                 @if (_canManage)
@@ -353,7 +353,7 @@
                     @if (Rows.Count > 0)
                     {
                         <div class="rp-cols" aria-hidden="true">
-                            <span></span><span></span><span>Release</span><span>Outcome</span><span>Started</span><span class="rp-cols__num">Took</span><span>Apps</span><span></span>
+                            <span></span><span></span><span>Deployment</span><span>Outcome</span><span>Started</span><span class="rp-cols__num">Took</span><span>Apps</span><span></span>
                         </div>
                     }
                     else
@@ -371,18 +371,18 @@
                             <div class="rp-rel__row" @onclick="() => ToggleAsync(d)">
                                 <button type="button" class="btn btn--icon btn--sm btn--ghost rp-rel__toggle"
                                         aria-expanded="@(open ? "true" : "false")"
-                                        aria-label="@($"{(open ? "Hide" : "Show")} details for release {d.Number}")">
+                                        aria-label="@($"{(open ? "Hide" : "Show")} details for deployment {d.Number}")">
                                     <Icon Name="chevron-right" Width="14" Height="14" />
                                 </button>
                                 <span class="@GlyphClass(state)" role="img" aria-label="@state.Word" title="@state.Word">
                                     <Icon Name="@state.Icon" Width="15" Height="15" />
                                 </span>
                                 <span class="cell-stack rp-rel__name">
-                                    <span class="cell-stack__main rp-rel__title">Release @d.Number <span class="@($"rp-rel__word rp-tone--{state.Tone}")">- @state.Word</span></span>
+                                    <span class="cell-stack__main rp-rel__title">Deployment @d.Number <span class="@($"rp-rel__word rp-tone--{state.Tone}")">- @state.Word</span></span>
                                     <span class="cell-stack__sub rp-rel__build">@BuildLine(d)</span>
                                     @if (OneTimeForceSync(d))
                                     {
-                                        <span class="cell-stack__sub rp-rel__force">Force sync, this release only</span>
+                                        <span class="cell-stack__sub rp-rel__force">Force sync, this deployment only</span>
                                     }
                                     @if (DismissedLine(d) is { } setAside)
                                     {
@@ -410,7 +410,7 @@
                                 <span class="rp-rel__acts">
                                     @if (CanReleaseAgain(d))
                                     {
-                                        <button type="button" class="btn btn--sm" @onclick="() => OpenReleaseAgainAsync(d, false)" @onclick:stopPropagation="true">Release again</button>
+                                        <button type="button" class="btn btn--sm" @onclick="() => OpenReleaseAgainAsync(d, false)" @onclick:stopPropagation="true">Deploy again</button>
                                     }
                                     @if (d.IsScheduled && _canManage)
                                     {
@@ -439,7 +439,7 @@
                                                     <p class="rp-what__bc-text">@said</p>
                                                     @if (failure.Clipped)
                                                     {
-                                                        <span class="rp-what__bc-label">Only the start of this message was kept for this older release.</span>
+                                                        <span class="rp-what__bc-label">Only the start of this message was kept for this older deployment.</span>
                                                     }
                                                 </div>
                                             }
@@ -457,7 +457,7 @@
                                                 {
                                                     <span class="rp-next__acts">
                                                         <button type="button" class="btn" @onclick="() => OpenReleaseAgainAsync(d, true)">
-                                                            <Icon Name="rotate-cw" Width="15" Height="15" /><span>Release again with Force sync</span>
+                                                            <Icon Name="rotate-cw" Width="15" Height="15" /><span>Deploy again with Force sync</span>
                                                         </button>
                                                     </span>
                                                 }
@@ -487,7 +487,7 @@
                                     @if (d.Apps.Count > 0)
                                     {
                                         <div class="rp-apps">
-                                            <p class="section-label rp-summary__label">Apps in this release</p>
+                                            <p class="section-label rp-summary__label">Apps in this deployment</p>
                                             <div class="rp-apps__list">
                                                 @for (var i = 0; i < d.Apps.Count; i++)
                                                 {
@@ -530,7 +530,7 @@
                                                 <pre class="rp-raw__text" id="@($"rp-raw-{d.Id}")">@SupportText(d, raw)</pre>
                                                 <span class="rp-raw__foot">
                                                     <CopyButton Target="@($"#rp-raw-{d.Id}")" Label="Copy for support" />
-                                                    <span>Includes the release, the environment and the time.</span>
+                                                    <span>Includes the deployment, the environment and the time.</span>
                                                 </span>
                                             </div>
                                         </details>
@@ -559,7 +559,7 @@
                                     @if (CanReleaseAgain(d))
                                     {
                                         <div class="rp-rel__phone-acts rp-rel__phone-acts--one">
-                                            <button type="button" class="btn" @onclick="() => OpenReleaseAgainAsync(d, false)">Release again</button>
+                                            <button type="button" class="btn" @onclick="() => OpenReleaseAgainAsync(d, false)">Deploy again</button>
                                         </div>
                                     }
                                     @if (d.IsScheduled && _canManage)
@@ -580,7 +580,7 @@
                     {
                         <div class="card__foot rp-foot">
                             <button type="button" class="btn btn--sm btn--ghost" @onclick="ShowOlderAsync" disabled="@_loadingOlder">
-                                @(_loadingOlder ? "Loading..." : "Show older releases")
+                                @(_loadingOlder ? "Loading..." : "Show older deployments")
                             </button>
                         </div>
                     }
@@ -593,10 +593,10 @@
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnEditedAsync" />
 <ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
 <ReleaseAgainDialog @ref="_releaseAgainDialog" OnReleased="OnReleasedAsync" />
-<ConfirmDialog @ref="_cancelConfirm" Title="Cancel this release?"
-               ConfirmLabel="Cancel release" CancelLabel="Keep it scheduled"
+<ConfirmDialog @ref="_cancelConfirm" Title="Cancel this deployment?"
+               ConfirmLabel="Cancel deployment" CancelLabel="Keep it scheduled"
                ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
-<ConfirmDialog @ref="_approveConfirm" Title="Approve this release?"
+<ConfirmDialog @ref="_approveConfirm" Title="Approve this deployment?"
                ConfirmLabel="Approve" CancelLabel="Not yet"
                ConfirmButtonClass="btn--primary" ConfirmIcon="check"
                ConfirmDisabled="@(_isProduction && !_approveProdAck)">
@@ -617,15 +617,15 @@
         </label>
     }
 </ConfirmDialog>
-<ConfirmDialog @ref="_dismissConfirm" Title="Dismiss this release?"
-               ConfirmLabel="Dismiss release" CancelLabel="Keep it"
+<ConfirmDialog @ref="_dismissConfirm" Title="Dismiss this deployment?"
+               ConfirmLabel="Dismiss deployment" CancelLabel="Keep it"
                ConfirmButtonClass="btn--primary" ConfirmIcon="x">
     <div class="field">
         <label class="field__label" for="rp-dismiss-why">Reason <span class="u-muted">(optional)</span></label>
         <input id="rp-dismiss-why" type="text" class="input" maxlength="@DeliveryService.DismissReasonMaxLength"
                placeholder="e.g. CRONUS asked us to wait until after month-end"
                @bind="_dismissReason" @bind:event="oninput" />
-        <small class="field__hint">Kept with the release in this pipeline's history.</small>
+        <small class="field__hint">Kept with the deployment in this pipeline's history.</small>
     </div>
 </ConfirmDialog>
 
@@ -638,7 +638,7 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="calendar" Width="17" Height="17" />
                 </span>
-                <h2 id="rs-title" class="confirm-dialog__title">Reschedule release</h2>
+                <h2 id="rs-title" class="confirm-dialog__title">Reschedule deployment</h2>
             </div>
             <div class="confirm-dialog__body">
             <div class="field">
@@ -668,7 +668,7 @@
 @code {
     [Parameter] public int Id { get; set; }
 
-    /// <summary>How many releases the list shows at first, and how many more each "Show older releases" adds.</summary>
+    /// <summary>How many deployments the list shows at first, and how many more each "Show older deployments" adds.</summary>
     internal const int PageSize = 10;
 
     private bool _loading = true;
@@ -682,8 +682,8 @@
     private readonly HashSet<int> _open = new();
     private bool _openedDefault;
 
-    // Why each opened release's skipped apps were skipped, read from the build's
-    // manifests once per release (null = no failed app to point at, or unreadable).
+    // Why each opened deployment's skipped apps were skipped, read from the build's
+    // manifests once per deployment (null = no failed app to point at, or unreadable).
     private readonly Dictionary<int, DeliverySkipReasons?> _skipReasons = new();
 
     private List<ReleaseBuildDialog.ReleasableBuildOption> _successfulBuilds = new();
@@ -743,25 +743,25 @@
     private string EnvType => string.IsNullOrWhiteSpace(_rp?.ProjectEnvironment?.Type) ? "Business Central" : _rp!.ProjectEnvironment!.Type;
     private string EnvHref => $"/environments/{_rp?.ProjectEnvironmentId}";
 
-    /// <summary>True when there is at least one build (or release) the person could send.</summary>
+    /// <summary>True when there is at least one build (or deployment) the person could send.</summary>
     private bool HasSomethingToRelease => _fromReleases ? _releaseOptions.Count > 0 : _successfulBuilds.Count > 0;
 
     private string NothingToReleaseReason => _fromReleases
-        ? "This repository has no release with app files attached yet."
-        : "The build pipeline has no successful build to release yet.";
+        ? "This repository has no GitHub release with app files attached yet."
+        : "The build pipeline has no successful build to deploy yet.";
 
     private bool IsEmpty => !_historyLoading && _deliveries.Count == 0;
     private bool IsForceSync => BcSyncMode.Normalize(_rp?.SchemaSyncMode) == BcSyncMode.ForceSync;
 
-    /// <summary>Releases the pipeline prepared from a new build, waiting for someone to approve them (#934). Drawn in the band, not as rows.</summary>
+    /// <summary>Deployments the pipeline prepared from a new build, waiting for someone to approve them (#934). Drawn in the band, not as rows.</summary>
     private List<DeliveryHistoryRow> Proposals => _deliveries.Where(d => d.IsProposed).ToList();
 
-    /// <summary>The releases list proper: everything but the prepared ones waiting in the band.</summary>
+    /// <summary>The deployments list proper: everything but the prepared ones waiting in the band.</summary>
     private List<DeliveryHistoryRow> Rows => _deliveries.Where(d => !d.IsProposed).ToList();
 
     private string CustomerName => string.IsNullOrWhiteSpace(_rp?.Project?.Name) ? "this solution" : _rp!.Project!.Name;
 
-    /// <summary>A row numbered above 1 at the bottom of the list means the pipeline has older releases.</summary>
+    /// <summary>A row numbered above 1 at the bottom of the list means the pipeline has older deployments.</summary>
     private bool HasOlder => _deliveries.Count > 0 && _deliveries[^1].Number > 1;
 
     protected override async Task OnInitializedAsync()
@@ -817,7 +817,7 @@
         {
             // Asking GitHub is the one thing on this page that can be slow or fail; a
             // refusal is shown above the history rather than replacing the page, so the
-            // releases already made stay readable.
+            // deployments already made stay readable.
             try
             {
                 _releaseOptions = (await GitHubReleases.ListReleasesAsync(Id))
@@ -830,7 +830,7 @@
             }
             catch (Exception ex)
             {
-                Log.LogError(ex, "Reading GitHub releases failed for release pipeline {ReleasePipelineId}.", Id);
+                Log.LogError(ex, "Reading GitHub releases failed for deployment pipeline {ReleasePipelineId}.", Id);
                 _releasesError = "Couldn't read this repository's releases from GitHub. Try again in a moment.";
             }
         }
@@ -838,7 +838,7 @@
         {
             // The releasable builds are the source build pipeline's successful builds, newest first.
             var builds = await Artifacts.ListBuildsAsync(buildPipelineId);
-            // The apps each build carries, so the release dialog can show what is about
+            // The apps each build carries, so the deployment dialog can show what is about
             // to be installed before the consultant confirms (#714).
             var appsByBuild = await Artifacts.ListBuildAppsAsync(buildPipelineId);
             _successfulBuilds = builds
@@ -867,7 +867,7 @@
     }
 
     /// <summary>
-    /// Opens the newest release once, when it is the one someone came to look at: a
+    /// Opens the newest deployment once, when it is the one someone came to look at: a
     /// failure, one that is running, or one waiting for its time. Only on the first load,
     /// so a row the person closed stays closed while the page polls.
     /// </summary>
@@ -892,7 +892,7 @@
     }
 
     /// <summary>
-    /// Reads, once per opened release, why its skipped apps were skipped. Its own DI
+    /// Reads, once per opened deployment, why its skipped apps were skipped. Its own DI
     /// scope, because a click can land while the page's context is mid-query.
     /// </summary>
     private async Task LoadSkipReasonsAsync()
@@ -917,7 +917,7 @@
         catch (Exception ex)
         {
             // The row falls back to "skipped after X failed", which is still true.
-            Log.LogWarning(ex, "Couldn't read why apps were skipped on release pipeline {ReleasePipelineId}.", Id);
+            Log.LogWarning(ex, "Couldn't read why apps were skipped on deployment pipeline {ReleasePipelineId}.", Id);
             foreach (var id in wanted) _skipReasons.TryAdd(id, null);
         }
     }
@@ -972,25 +972,25 @@
 
     private async Task OnReleasedAsync(int _)
     {
-        _openedDefault = false; // the new release is the one to watch
+        _openedDefault = false; // the new deployment is the one to watch
         await ReloadAsync();
-        EnsurePolling(); // a release-now delivery is active → start watching
+        EnsurePolling(); // a deploy-now delivery is active → start watching
     }
 
-    // ── Release again (failed releases only, #931) ────────────────────────────
+    // ── Deploy again (failed deployments only, #931) ────────────────────────────
 
-    /// <summary>A failed release can be released again by someone who manages the pipeline.</summary>
+    /// <summary>A failed deployment can be deployed again by someone who manages the pipeline.</summary>
     private bool CanReleaseAgain(DeliveryHistoryRow d) => _canManage && d.Status == ProjectDeliveryStatus.Failed;
 
     /// <summary>
     /// The failure's next step offers Force sync only where it is the fix: Business Central
-    /// refused a schema change, and this release did not already use it.
+    /// refused a schema change, and this deployment did not already use it.
     /// </summary>
     private static bool SuggestsForceSync(DeliveryHistoryRow d, FailureView failure) =>
         failure.Code == BcFailureText.ExtensionChangeFailed
         && BcSyncMode.Normalize(d.SchemaSyncMode) != BcSyncMode.ForceSync;
 
-    /// <summary>True when this release used Force sync and the pipeline does not: it was asked for once.</summary>
+    /// <summary>True when this deployment used Force sync and the pipeline does not: it was asked for once.</summary>
     private bool OneTimeForceSync(DeliveryHistoryRow d) =>
         BcSyncMode.Normalize(d.SchemaSyncMode) == BcSyncMode.ForceSync && !IsForceSync;
 
@@ -998,9 +998,9 @@
     {
         if (_releaseAgainDialog is null || _rp is null) return;
         var source = !string.IsNullOrWhiteSpace(d.BuildReleaseTag)
-            ? $"from release {d.BuildReleaseTag}"
+            ? $"from GitHub release {d.BuildReleaseTag}"
             : $"from build pipeline \"{SourceName}\"";
-        // What this release left in place at the build's version: the apps it installed
+        // What this deployment left in place at the build's version: the apps it installed
         // before the failure, and any the environment already had. The run skips them.
         var alreadyOn = d.Apps
             .Where(a => a.Status == ProjectDeliveryResultStatus.Completed
@@ -1019,28 +1019,28 @@
     }
 
     /// <summary>
-    /// Releasing again runs now; when the environment has a delivery window that is not
-    /// open, say so, as the Release dialog does for "Now".
+    /// Deploying again runs now; when the environment has a delivery window that is not
+    /// open, say so, as the Deployment dialog does for "Now".
     /// </summary>
     private string? ReleaseNowOutsideWindow()
     {
         var env = _rp?.ProjectEnvironment;
         if (env is null || !UpdateWindow.IsConfigured(env.UpdateWindowStart, env.UpdateWindowEnd)) return null;
         if (UpdateWindow.IsWithin(env.UpdateWindowStart, env.UpdateWindowEnd, _tz, DateTime.UtcNow)) return null;
-        return $"{EnvName}'s delivery window ({DeliveryWindow}) isn't open now. Releasing again installs outside the hours agreed with the customer, and the release history will record that.";
+        return $"{EnvName}'s delivery window ({DeliveryWindow}) isn't open now. Deploying again installs outside the hours agreed with the customer, and the deployment history will record that.";
     }
 
     // ── Waiting for approval (#934) ───────────────────────────────────────────
 
     /// <summary>
-    /// The band's sentence: which build, when it finished, where the release would go and
+    /// The band's sentence: which build, when it finished, where the deployment would go and
     /// when it would install once approved. The time is the pipeline's rule, as approving
     /// applies it: the next opening of the delivery window, or right away.
     /// </summary>
     private string ApprovalSentence(DeliveryHistoryRow p)
     {
         var where = _isProduction ? $"the Production environment \"{EnvName}\"" : $"\"{EnvName}\"";
-        var sentence = $"Build #{p.ProjectBuildId} finished {WhenPhrase(p.CreatedAt)} and a release was prepared for {where}.";
+        var sentence = $"Build #{p.ProjectBuildId} finished {WhenPhrase(p.CreatedAt)} and a deployment was prepared for {where}.";
         if (!_canManage)
         {
             return sentence + " Someone who manages this solution can approve or dismiss it.";
@@ -1048,7 +1048,7 @@
         return sentence + $" Approve it to install it {InstallsWhen()}, or dismiss it.";
     }
 
-    /// <summary>When an approved release installs, as a phrase: "right away", "in the next delivery window (today at 22:00)".</summary>
+    /// <summary>When an approved deployment installs, as a phrase: "right away", "in the next delivery window (today at 22:00)".</summary>
     private string InstallsWhen()
     {
         var env = _rp?.ProjectEnvironment;
@@ -1076,7 +1076,7 @@
             ? $"{CustomerName}'s Production environment \"{EnvName}\""
             : $"the {EnvType} environment \"{EnvName}\"";
         var confirmed = await _approveConfirm.OpenAsync(
-            $"Approve release {p.Number}?",
+            $"Approve deployment {p.Number}?",
             $"This installs build #{p.ProjectBuildId}, {apps}, into {where} {InstallsWhen()}. You can still cancel it on this page until it starts.",
             "Approve", "btn--primary", "check");
         if (!confirmed) return;
@@ -1089,17 +1089,17 @@
         }
         catch (PlanValidationException ex)
         {
-            _approvalError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't approve this release.";
+            _approvalError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't approve this deployment.";
             await ReloadAsync();
         }
         catch (ProjectAccessDeniedException)
         {
-            _approvalError = "Only the solution owner or an admin can approve releases here.";
+            _approvalError = "Only the solution owner or an admin can approve deployments here.";
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to approve delivery {DeliveryId}.", p.Id);
-            _approvalError = "Couldn't approve this release. Try again, and if it keeps failing tell an administrator.";
+            _approvalError = "Couldn't approve this deployment. Try again, and if it keeps failing tell an administrator.";
         }
         finally
         {
@@ -1113,9 +1113,9 @@
         _approvalError = null;
         _dismissReason = string.Empty;
         var confirmed = await _dismissConfirm.OpenAsync(
-            $"Dismiss release {p.Number}?",
-            $"Build #{p.ProjectBuildId} won't be installed. The next successful build prepares a new release.",
-            "Dismiss release", "btn--primary", "x");
+            $"Dismiss deployment {p.Number}?",
+            $"Build #{p.ProjectBuildId} won't be installed. The next successful build prepares a new deployment.",
+            "Dismiss deployment", "btn--primary", "x");
         if (!confirmed) return;
 
         _deciding = true;
@@ -1126,17 +1126,17 @@
         }
         catch (PlanValidationException ex)
         {
-            _approvalError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't dismiss this release.";
+            _approvalError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't dismiss this deployment.";
             await ReloadAsync();
         }
         catch (ProjectAccessDeniedException)
         {
-            _approvalError = "Only the solution owner or an admin can dismiss releases here.";
+            _approvalError = "Only the solution owner or an admin can dismiss deployments here.";
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to dismiss delivery {DeliveryId}.", p.Id);
-            _approvalError = "Couldn't dismiss this release. Try again, and if it keeps failing tell an administrator.";
+            _approvalError = "Couldn't dismiss this deployment. Try again, and if it keeps failing tell an administrator.";
         }
         finally
         {
@@ -1144,15 +1144,15 @@
         }
     }
 
-    // ── Cancel + reschedule (scheduled releases only) ─────────────────────────
+    // ── Cancel + reschedule (scheduled deployments only) ─────────────────────────
 
     private async Task CancelAsync(DeliveryHistoryRow d)
     {
         if (_cancelConfirm is null) return;
         var confirmed = await _cancelConfirm.OpenAsync(
-            "Cancel this release?",
-            $"Cancel release {d.Number} of build #{d.ProjectBuildId}, scheduled for {ScheduledWhen(d)}? It won't run.",
-            "Cancel release");
+            "Cancel this deployment?",
+            $"Cancel deployment {d.Number} of build #{d.ProjectBuildId}, scheduled for {ScheduledWhen(d)}? It won't run.",
+            "Cancel deployment");
         if (!confirmed) return;
         try
         {
@@ -1177,7 +1177,7 @@
         _rescheduleId = d.Id;
         _rescheduleError = null;
         _rescheduling = false;
-        // Prefill to the release's current time in the customer's tz.
+        // Prefill to the deployment's current time in the customer's tz.
         var local = Local(d.ScheduledFor);
         _rescheduleLocal = new DateTime(local.Year, local.Month, local.Day, local.Hour, local.Minute, 0, DateTimeKind.Unspecified);
     }
@@ -1189,7 +1189,7 @@
     }
 
     /// <summary>
-    /// Warn-but-allow, mirroring the release dialog: flag when the new time falls after the
+    /// Warn-but-allow, mirroring the deployment dialog: flag when the new time falls after the
     /// BC client secret expires (the run would hard-fail). See .design/saas-delivery.md.
     /// </summary>
     private string? RescheduleSecretWarning
@@ -1226,12 +1226,12 @@
         }
         catch (PlanValidationException ex)
         {
-            _rescheduleError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't reschedule the release.";
+            _rescheduleError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't reschedule the deployment.";
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to reschedule delivery {DeliveryId}.", id);
-            _rescheduleError = "Couldn't reschedule the release.";
+            _rescheduleError = "Couldn't reschedule the deployment.";
         }
         finally
         {
@@ -1239,7 +1239,7 @@
         }
     }
 
-    // ── Live polling of in-flight releases ────────────────────────────────────
+    // ── Live polling of in-flight deployments ────────────────────────────────────
 
     private void EnsurePolling()
     {
@@ -1272,7 +1272,7 @@
                 await InvokeAsync(async () =>
                 {
                     _deliveries = rows;
-                    // A release that just finished may have skipped apps worth explaining.
+                    // A deployment that just finished may have skipped apps worth explaining.
                     await LoadSkipReasonsAsync();
                     StateHasChanged();
                 });
@@ -1283,7 +1283,7 @@
         catch (ObjectDisposedException) when (token.IsCancellationRequested) { /* torn down mid-poll */ }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Delivery poll failed for release pipeline {ReleasePipelineId}.", Id);
+            Log.LogError(ex, "Deployment poll failed for deployment pipeline {ReleasePipelineId}.", Id);
         }
         finally
         {
@@ -1327,14 +1327,14 @@
         var active = _deliveries.FirstOrDefault(d => d.IsActive);
         if (active is not null)
         {
-            return new HealthView("running", "refresh-cw", "Releasing now",
-                $"Release {active.Number} is {DeliveryLook(active.Status).Word.ToLowerInvariant()} into \"{EnvName}\". {RunningSentence(active)}");
+            return new HealthView("running", "refresh-cw", "Deploying now",
+                $"Deployment {active.Number} is {DeliveryLook(active.Status).Word.ToLowerInvariant()} into \"{EnvName}\". {RunningSentence(active)}");
         }
 
         var last = LastRelease;
         if (last is { Status: ProjectDeliveryStatus.Failed })
         {
-            var sentence = $"Release {last.Number} failed {RelativeTime.Ago(LastWhen(last))}";
+            var sentence = $"Deployment {last.Number} failed {RelativeTime.Ago(LastWhen(last))}";
             var failedApp = last.Apps.FirstOrDefault(a => a.Status == ProjectDeliveryResultStatus.Failed);
             sentence += failedApp is null ? "." : $" on {failedApp.AppName}.";
             // The apps before the failure did install, so the environment is on a mix of
@@ -1351,20 +1351,20 @@
             }
             if (NextRelease is { } queued)
             {
-                sentence += $" Release {queued.Number} is scheduled {WhenPhrase(queued.ScheduledFor)}.";
+                sentence += $" Deployment {queued.Number} is scheduled {WhenPhrase(queued.ScheduledFor)}.";
             }
-            return new HealthView("failed", "circle-x", "Last release failed", sentence);
+            return new HealthView("failed", "circle-x", "Last deployment failed", sentence);
         }
 
         if (Proposals.FirstOrDefault() is { } waiting)
         {
             return new HealthView("draft", "user", "Waiting for approval",
-                $"Release {waiting.Number} (build #{waiting.ProjectBuildId}) was prepared {RelativeTime.Ago(waiting.CreatedAt)} and waits for approval under Releases below. Nothing has been sent to \"{EnvName}\".");
+                $"Deployment {waiting.Number} (build #{waiting.ProjectBuildId}) was prepared {RelativeTime.Ago(waiting.CreatedAt)} and waits for approval under Deployments below. Nothing has been sent to \"{EnvName}\".");
         }
 
         if (NextRelease is { } next)
         {
-            var sentence = $"Release {next.Number} installs into \"{EnvName}\" {WhenPhrase(next.ScheduledFor)}.";
+            var sentence = $"Deployment {next.Number} installs into \"{EnvName}\" {WhenPhrase(next.ScheduledFor)}.";
             if (IsForceSync && _isProduction) sentence += " Force sync is on for this Production environment.";
             return new HealthView("queued", "clock", "Scheduled", sentence);
         }
@@ -1372,22 +1372,22 @@
         if (last is { Status: ProjectDeliveryStatus.Deployed })
         {
             return new HealthView("succeeded", "circle-check", "Healthy",
-                $"The last release deployed {RelativeTime.Ago(LastWhen(last))}. Nothing is scheduled.");
+                $"The last deployment succeeded {RelativeTime.Ago(LastWhen(last))}. Nothing is scheduled.");
         }
         if (last is { Status: ProjectDeliveryStatus.HandedOff })
         {
             return new HealthView("handed", "send", "Handed to Business Central",
-                $"Release {last.Number} was handed to Business Central {RelativeTime.Ago(LastWhen(last))}, to install with its own update. Nothing else is scheduled.");
+                $"Deployment {last.Number} was handed to Business Central {RelativeTime.Ago(LastWhen(last))}, to install with its own update. Nothing else is scheduled.");
         }
 
-        return new HealthView("none", "circle-dashed", "Nothing released yet",
+        return new HealthView("none", "circle-dashed", "Nothing deployed yet",
             $"This pipeline has not installed anything into \"{EnvName}\" yet.");
     }
 
     /// <summary>
     /// What the environment has of the app that failed, and where that fact came from.
     /// A panel read still in the cache is Business Central's word after the run (a
-    /// finished release clears the cache, so it is only there when someone read the
+    /// finished deployment clears the cache, so it is only there when someone read the
     /// environment since); otherwise the version the run itself read before it began.
     /// </summary>
     private string? ReportedVersion(DeliveryAppRow failed)
@@ -1401,14 +1401,14 @@
             return $"The environment reports {installed.Name} {installed.Version} installed ({RelativeTime.Ago(panel!.FetchedAtUtc)}).";
         }
         return failed.PreviousVersion is { } before
-            ? $"Before this release the environment had {failed.AppName} {before} installed."
+            ? $"Before this deployment the environment had {failed.AppName} {before} installed."
             : null;
     }
 
     /// <summary>
-    /// The newest release that has started or finished. Cancelled ones count: they are
-    /// what happened last. A prepared release that is waiting, or that was dismissed or
-    /// replaced before anyone approved it, does not: it never was a release (#934).
+    /// The newest deployment that has started or finished. Cancelled ones count: they are
+    /// what happened last. A prepared deployment that is waiting, or that was dismissed or
+    /// replaced before anyone approved it, does not: it never was a deployment (#934).
     /// </summary>
     private DeliveryHistoryRow? LastRelease => _deliveries.FirstOrDefault(d =>
         !d.IsScheduled && !d.IsActive && !d.IsProposed && !d.IsDismissed);
@@ -1460,11 +1460,11 @@
         }
     }
 
-    // ── One release ───────────────────────────────────────────────────────────
+    // ── One deployment ───────────────────────────────────────────────────────────
 
     internal readonly record struct Look(string Tone, string Icon, bool Spin, string Word);
 
-    /// <summary>A release's state in the sheet's vocabulary: tone (colour and keyline), glyph, the word.</summary>
+    /// <summary>A deployment's state in the sheet's vocabulary: tone (colour and keyline), glyph, the word.</summary>
     internal static Look DeliveryLook(string status) => status switch
     {
         ProjectDeliveryStatus.Proposed => new("draft", "user", false, "Waiting for approval"),
@@ -1481,7 +1481,7 @@
     };
 
     /// <summary>
-    /// A row's look. A dismissed prepared release says whether a person dismissed it or a
+    /// A row's look. A dismissed prepared deployment says whether a person dismissed it or a
     /// newer build replaced it - read from the stored build id, never from the log.
     /// </summary>
     private static Look LookOf(DeliveryHistoryRow d) => d.IsDismissed && d.ReplacedByBuildId is not null
@@ -1489,9 +1489,9 @@
         : DeliveryLook(d.Status);
 
     /// <summary>
-    /// What became of a dismissed prepared release, in one line: "Replaced by build #41
+    /// What became of a dismissed prepared deployment, in one line: "Replaced by build #41
     /// before anyone approved it." or "Dismissed by K. Jensen: wrong branch". Built from
-    /// the stored facts; null for every other release.
+    /// the stored facts; null for every other deployment.
     /// </summary>
     private static string? DismissedLine(DeliveryHistoryRow d)
     {
@@ -1521,7 +1521,7 @@
         $"data-table__state data-table__state--icon rp-glyph rp-tone--{look.Tone}{(look.Spin ? " data-table__state--spin" : "")}";
 
     private static string BuildLine(DeliveryHistoryRow d) =>
-        !string.IsNullOrWhiteSpace(d.BuildReleaseTag) ? $"Build #{d.ProjectBuildId} from release {d.BuildReleaseTag}"
+        !string.IsNullOrWhiteSpace(d.BuildReleaseTag) ? $"Build #{d.ProjectBuildId} from GitHub release {d.BuildReleaseTag}"
         : !string.IsNullOrWhiteSpace(d.BuildBranch) ? $"Build #{d.ProjectBuildId} from {d.BuildBranch}"
         : $"Build #{d.ProjectBuildId}";
 
@@ -1568,7 +1568,7 @@
         return $"{verb} {current.AppName}, app {index} of {d.Apps.Count}.";
     }
 
-    /// <summary>The sentence a release that did not fail opens with, when it has one worth saying.</summary>
+    /// <summary>The sentence a deployment that did not fail opens with, when it has one worth saying.</summary>
     private string? InfoSentence(DeliveryHistoryRow d)
     {
         switch (d.Status)
@@ -1602,7 +1602,7 @@
 
     /// <summary>
     /// The step strip. Only the steps whose moments were recorded are drawn: an old
-    /// release has no "uploaded" moment, and a scheduled one has not reached the rest,
+    /// deployment has no "uploaded" moment, and a scheduled one has not reached the rest,
     /// which show as pending rather than invented.
     /// </summary>
     private List<StepView> Steps(DeliveryHistoryRow d)
@@ -1716,13 +1716,13 @@
                 if (!string.IsNullOrWhiteSpace(a.Message)) return a.Message;
                 return failed is not null
                     ? $"Skipped after {failed.AppName} failed."
-                    : "Not attempted: the release stopped before this app.";
+                    : "Not attempted: the deployment stopped before this app.";
             }
             case ProjectDeliveryResultStatus.Scheduled:
                 return a.Message ?? "Business Central installs it with its own update.";
             case ProjectDeliveryResultStatus.Failed when Failure(d) is { } failure:
                 // "What happened" above already carries why; the app says where it was
-                // left, so the release and the app never say the same thing twice (#930).
+                // left, so the deployment and the app never say the same thing twice (#930).
                 return failure.FromBusinessCentral
                     ? a.PreviousVersion is { } still ? $"Not installed. Still on {still}." : "Not installed."
                     : null;
@@ -1739,15 +1739,15 @@
     /// <param name="Raw">The text Business Central sent, for support; null when the failure was ours.</param>
     /// <param name="FailedApp">The app that failed, when one did.</param>
     /// <param name="FromBusinessCentral">True when Business Central reported the failure, rather than the run refusing to go on.</param>
-    /// <param name="Clipped">True when only the start of the message was stored (releases before #930 were cut at 300 characters).</param>
+    /// <param name="Clipped">True when only the start of the message was stored (deployments before #930 were cut at 300 characters).</param>
     internal sealed record FailureView(
         string Collapsed, string? Code, string WhatHappened, string? BcMessage, string? NextStep,
         string? Raw, DeliveryAppRow? FailedApp, bool FromBusinessCentral, bool Clipped = false);
 
     /// <summary>
-    /// A failed release's text, taken apart for the page (#930). Business Central's
+    /// A failed deployment's text, taken apart for the page (#930). Business Central's
     /// response is read back from the log line the run wrote for the failed app, which
-    /// keeps it whole; a release stored before #930 has only the long line it kept as its
+    /// keeps it whole; a deployment stored before #930 has only the long line it kept as its
     /// failure message, and goes through the same parser so it reads the same way. A
     /// failure the run raised itself (the environment was busy, the build changed) is
     /// shown as the run wrote it.
@@ -1771,7 +1771,7 @@
         // more of Business Central's message is the one to show.
         if ((!parsed.FromBusinessCentral || parsed.Truncated) && stored is not null)
         {
-            // Before #930 the release kept "{app} {version} failed: " and the whole response.
+            // Before #930 the deployment kept "{app} {version} failed: " and the whole response.
             var legacy = label is not null && stored.StartsWith($"{label} failed: ", StringComparison.Ordinal)
                 ? stored[$"{label} failed: ".Length..]
                 : stored;
@@ -1786,7 +1786,7 @@
 
         if (!parsed.FromBusinessCentral)
         {
-            var ours = stored ?? failedApp?.Message ?? "The release failed.";
+            var ours = stored ?? failedApp?.Message ?? "The deployment failed.";
             return new FailureView(ours, null, ours, null, null, null, failedApp, false);
         }
 
@@ -1808,13 +1808,13 @@
     }
 
     /// <summary>
-    /// What "Copy for support" copies: which release, where and when, then Business
+    /// What "Copy for support" copies: which deployment, where and when, then Business
     /// Central's response as it came. Shown as it is copied, so nothing hidden travels.
     /// </summary>
     private string SupportText(DeliveryHistoryRow d, string raw)
     {
         var when = d.FinishedAt ?? d.StartedAt ?? d.CreatedAt;
-        return $"Release {d.Number} of \"{_rp?.Name}\" into \"{d.EnvironmentName}\", failed {when.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC\n{raw}";
+        return $"Deployment {d.Number} of \"{_rp?.Name}\" into \"{d.EnvironmentName}\", failed {when.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC\n{raw}";
     }
 
     internal sealed record LogLine(string Time, string Message, bool Error);

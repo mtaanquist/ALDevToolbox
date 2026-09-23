@@ -151,7 +151,7 @@ public sealed class ProjectsBrowserTests : IDisposable
         {
             var rows = cut.FindAll("tbody tr");
             var deployed = rows[0].Children[3].QuerySelector("a.sol-list__shipped")!;
-            deployed.GetAttribute("href").Should().Be($"/releases/{deployedPipeline}");
+            deployed.GetAttribute("href").Should().Be($"/pipelines/deployments/{deployedPipeline}");
             deployed.TextContent.Trim().Should().Be("10 Sep 2026");
             deployed.ClassList.Should().NotContain("sol-list__shipped--handed-off");
 
