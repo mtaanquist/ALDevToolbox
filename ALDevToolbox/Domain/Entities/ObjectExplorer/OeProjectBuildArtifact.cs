@@ -21,6 +21,15 @@ public class OeProjectBuildArtifact
     /// <summary>The deliverable's file name, e.g. <c>CRONUS_My Extension_1.2.3.0.app</c>.</summary>
     public string FileName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The extension's app id, lower-case GUID text, read from the manifest when the
+    /// row is written. A later build resolves a dependency on this app by it (#901,
+    /// Part 3). Null only for a row whose bytes are not a readable <c>.app</c>; rows
+    /// written before the column existed are stamped once at startup by
+    /// <see cref="Services.ObjectExplorer.Projects.BuildArtifactAppIdBackfill"/>.
+    /// </summary>
+    public string? AppId { get; set; }
+
     /// <summary>The extension's app.json <c>name</c> (display label).</summary>
     public string AppName { get; set; } = string.Empty;
 

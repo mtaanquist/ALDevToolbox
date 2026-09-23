@@ -224,6 +224,27 @@ internal static class StartupTasks
         // survives the scope's disposal.
         app.Services.GetRequiredService<StartupReadinessState>().MarkReady();
         logger.LogInformation("Startup complete; /readyz is now green.");
+
+        // Stamp the app id on build artifacts retained before the column existed
+        // (#901, Part 3). Off the startup path: it reads every such package once,
+        // and nothing needs it before a build looks up a dependency - a build that
+        // runs first only misses those older artifacts as candidates.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ALDevToolbox.Services.ObjectExplorer.Projects.BuildArtifactAppIdBackfill
+                    .RunAsync(app.Services, logger, stopping);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+            {
+                // Shutting down mid-pass; the next start picks up where this left off.
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Stamping app ids on build artifacts failed; retried on the next start.");
+            }
+        }, stopping);
     }
 
     /// <summary>

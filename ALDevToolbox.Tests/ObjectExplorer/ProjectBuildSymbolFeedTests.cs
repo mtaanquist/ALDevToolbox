@@ -20,7 +20,8 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// and the symbol feeds behind one HTTP handler. The fake compiler succeeds when
 /// every dependency its <c>app.json</c> declares is in the package cache, and
 /// fails the way <c>alc</c> does when one is not - which is what makes "the feed
-/// supplied it" observable as "it compiled". Issue #901, Part 2.
+/// supplied it" observable as "it compiled". Issue #901, Parts 2 and 3 - the
+/// latter being a PTE resolved from another solution's retained build output.
 /// </summary>
 public sealed class ProjectBuildSymbolFeedTests : IDisposable
 {
@@ -118,6 +119,269 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
         _tools.SeenVersions["CRONUS Continia Extension"][CoreId].Should().Be("28.0.0.7", "the upload is the deliberate override");
         _http.Requests.Should().NotContain(r => r.Contains(CoreId, StringComparison.OrdinalIgnoreCase),
             "an app a stored upload supplies is never fetched");
+    }
+
+    // ── Part 3: our own PTEs from the builds we already hold ───────────
+
+    [Fact]
+    public async Task A_PTE_another_Public_solution_built_resolves_from_its_build()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        var siblingBuild = await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.2.0.0");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Compiled,
+            "nothing was committed or uploaded, and solution Contoso's build holds the PTE");
+        _tools.SeenVersions["CRONUS PTE Extension"][PteId].Should().Be("1.2.0.0");
+        var log = await SymbolsLogAsync(buildId);
+        log.Should().Contain($"Resolved Someone's PTE 1.2.0.0 from solution Contoso's build #{siblingBuild}.");
+        log.Should().NotContain("Could not resolve Someone's PTE", "the feed's miss is not the last word when a build had it");
+    }
+
+    [Fact]
+    public async Task A_Read_only_solution_is_a_source_too()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.ReadOnly, "1.2.0.0");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Compiled);
+    }
+
+    [Fact]
+    public async Task A_Private_solution_never_supplies_another_solution()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Private, "1.2.0.0");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Failed,
+            "the build has no person behind it, so a Private solution's builds stay its own");
+        (await SymbolsLogAsync(buildId)).Should()
+            .Contain($"Could not resolve Someone's PTE ({PteId}) 1.0.0.0 or later")
+            .And.Contain("no successful build of this solution or of a Public or Read-only solution has it");
+    }
+
+    [Fact]
+    public async Task A_Private_solution_still_resolves_from_its_own_earlier_builds()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await using (var seed = _db.NewContext())
+        {
+            var project = await seed.OeProjects.SingleAsync(p => p.Id == projectId);
+            project.Visibility = ProjectVisibility.Private;
+            await seed.SaveChangesAsync();
+        }
+        var earlier = await SeedSiblingBuildAsync("CRONUS", ProjectVisibility.Private, "1.2.0.0", projectId: projectId);
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Compiled);
+        (await SymbolsLogAsync(buildId)).Should().Contain($"from this solution's build #{earlier}.");
+    }
+
+    [Fact]
+    public async Task Another_organisations_build_is_never_a_source()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+        await SeedSiblingBuildAsync("Elsewhere", ProjectVisibility.Public, "1.2.0.0", organizationId: TestDb.OtherOrgId);
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Failed,
+            "the organisation's query filter scopes the lookup, and nothing here goes round it");
+    }
+
+    [Fact]
+    public async Task The_version_floor_skips_an_older_artifact_for_a_newer_one()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+        // The newest build carries a version below the floor; an older build carries one above it.
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.1.0.0", finishedAt: DateTime.UtcNow.AddDays(-2));
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "0.9.0.0", finishedAt: DateTime.UtcNow.AddDays(-1));
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Compiled);
+        _tools.SeenVersions["CRONUS PTE Extension"][PteId].Should().Be("1.1.0.0", "0.9.0.0 is below the app.json floor of 1.0.0.0");
+    }
+
+    [Fact]
+    public async Task Only_versions_below_the_floor_resolve_nothing()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "0.9.0.0");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Failed);
+    }
+
+    [Fact]
+    public async Task A_failed_build_a_pull_request_build_or_one_on_a_newer_Business_Central_is_not_a_source()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.2.0.0", status: ProjectBuildStatus.Failed);
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.3.0.0", trigger: ProjectBuildTrigger.PullRequest);
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.4.0.0", bcVersion: "30.0");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Failed);
+    }
+
+    [Fact]
+    public async Task An_app_this_build_compiles_is_never_taken_from_an_earlier_build()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        _tools.Extensions =
+        [
+            new("base-ext", "33333333-0000-0000-0000-000000000003", "CRONUS Base Extension", []),
+            new("on-base", "44444444-0000-0000-0000-000000000004", "CRONUS On Base", [("33333333-0000-0000-0000-000000000003", "CRONUS Base Extension", "1.0.0.0")]),
+        ];
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "5.0.0.0",
+            appId: "33333333-0000-0000-0000-000000000003", appName: "CRONUS Base Extension");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS On Base").Should().Be(ProjectBuildResultStatus.Compiled);
+        _tools.SeenVersions["CRONUS On Base"]["33333333-0000-0000-0000-000000000003"].Should().Be("1.0.0.0",
+            "the sibling this build compiles is the one its dependents see");
+        (await SymbolsLogAsync(buildId)).Should().NotContain("Resolved CRONUS Base Extension");
+    }
+
+    [Fact]
+    public async Task What_a_resolved_PTE_depends_on_is_fetched_from_the_feed()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        // Only the PTE extension, so nothing else asks the feed for Continia Core.
+        _tools.Extensions = [Extensions[1]];
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.2.0.0",
+            dependencies: [(CoreId, "Continia Core", "25.0.0.0")]);
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        Status(outcome, "CRONUS PTE Extension").Should().Be(ProjectBuildResultStatus.Compiled);
+        var log = await SymbolsLogAsync(buildId);
+        log.Should().Contain("Resolved Someone's PTE 1.2.0.0 from solution Contoso's build");
+        log.Should().Contain("Resolved Continia Core 29.0.0.199323 from the AppSource symbol feed.");
+    }
+
+    [Fact]
+    public async Task The_feed_beats_an_earlier_build()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "30.0.0.0", appId: CoreId, appName: "Continia Core");
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        _tools.SeenVersions["CRONUS Continia Extension"][CoreId].Should().Be("29.0.0.199323", "a published package wins over our own build of it");
+        (await SymbolsLogAsync(buildId)).Should().NotContain("Resolved Continia Core 30.0.0.0");
+    }
+
+    [Fact]
+    public async Task A_stored_upload_beats_an_earlier_build()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await SeedSiblingBuildAsync("Contoso", ProjectVisibility.Public, "1.2.0.0");
+        await using (var seed = _db.NewContext())
+        {
+            var content = SyntheticApp.Build(PteId, "Someone's PTE", "Vendor", "1.0.0.5");
+            seed.OeProjectSymbols.Add(new OeProjectSymbol
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ProjectId = projectId,
+                FileName = "Vendor_Someone's PTE_1.0.0.5.app",
+                Content = content,
+                ContentLength = content.Length,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var outcome = await BuildAsync(projectId, releaseId);
+
+        _tools.SeenVersions["CRONUS PTE Extension"][PteId].Should().Be("1.0.0.5", "the upload is the deliberate override");
+        (await SymbolsLogAsync(buildId)).Should().NotContain("from solution Contoso's build");
+    }
+
+    [Fact]
+    public async Task A_compiled_artifact_is_stamped_with_its_app_id()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+
+        await BuildAsync(projectId, releaseId);
+
+        await using var read = _db.NewContext();
+        var stamped = await read.OeProjectBuildArtifacts.AsNoTracking()
+            .Where(a => a.ProjectBuildId == buildId)
+            .Select(a => new { a.AppName, a.AppId })
+            .ToListAsync();
+        stamped.Should().ContainSingle(a => a.AppName == "CRONUS Base Extension")
+            .Which.AppId.Should().Be("33333333-0000-0000-0000-000000000003");
+    }
+
+    /// <summary>
+    /// A finished build of another (or this) solution that retained one
+    /// <c>.app</c>. Returns the build id.
+    /// </summary>
+    private async Task<int> SeedSiblingBuildAsync(
+        string solution, ProjectVisibility visibility, string version,
+        string appId = PteId, string appName = "Someone's PTE",
+        IReadOnlyList<(string Id, string Name, string Version)>? dependencies = null,
+        int organizationId = TestDb.DefaultOrgId, int? projectId = null,
+        string status = ProjectBuildStatus.Ready, string trigger = ProjectBuildTrigger.Manual,
+        string bcVersion = "29.0", DateTime? finishedAt = null)
+    {
+        await using var seed = _db.NewContext();
+        var now = DateTime.UtcNow;
+        // A second build of the same solution reuses it; names are unique per organisation.
+        projectId ??= organizationId == TestDb.DefaultOrgId
+            ? await seed.OeProjects.Where(p => p.Name == solution).Select(p => (int?)p.Id).FirstOrDefaultAsync()
+            : null;
+        if (projectId is null)
+        {
+            var project = new OeProject
+            {
+                OrganizationId = organizationId,
+                Name = solution,
+                Visibility = visibility,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            seed.OeProjects.Add(project);
+            await seed.SaveChangesAsync();
+            projectId = project.Id;
+        }
+
+        var content = SyntheticApp.Build(appId, appName, "Vendor", version, dependencies);
+        var build = new OeProjectBuild
+        {
+            OrganizationId = organizationId,
+            ProjectId = projectId.Value,
+            Status = status,
+            Trigger = trigger,
+            BcVersion = bcVersion,
+            StartedAt = (finishedAt ?? now).AddMinutes(-5),
+            FinishedAt = finishedAt ?? now,
+        };
+        build.Artifacts.Add(new OeProjectBuildArtifact
+        {
+            OrganizationId = organizationId,
+            AppId = appId,
+            FileName = $"Vendor_{appName.Replace(" ", string.Empty)}_{version}.app",
+            AppName = appName,
+            AppVersion = version,
+            SizeBytes = content.LongLength,
+            Content = content,
+            CreatedAt = now,
+        });
+        seed.OeProjectBuilds.Add(build);
+        await seed.SaveChangesAsync();
+        return build.Id;
     }
 
     // ── Harness ────────────────────────────────────────────────────────
