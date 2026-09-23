@@ -122,7 +122,7 @@ else
         }
         else if (_chooseError is { } chooseError)
         {
-            <span class="field-error" role="alert"><Icon Name="triangle-alert" Width="13" Height="13" />@chooseError</span>
+            <FieldError Message="@chooseError" />
         }
         else if (_chosen.Count == 0)
         {
