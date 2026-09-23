@@ -192,6 +192,23 @@ The MCP server (`Services/Mcp/Tools/*Tools.cs`) is a parallel front-end on the s
   tool's existing "not found" message, never a distinct refusal — see the
   project-visibility fence in `.design/teams-and-visibility.md` for the worked example.
 
+- **A read-only area gets a read-only class, and a test that says so.** The Deliver
+  area's reads (#912) live in `DeliverTools`, apart from `DeliveryTools` where the one
+  write (`publish_build`) sits behind its own gate. `DeliverToolsTests` walks the class
+  and fails if any public method is not an `[McpServerTool(ReadOnly = true)]`, so a write
+  added there by accident is a red build. Its ten tools, one line each:
+  `get_solution` (hosting, version, address, connection, environments in a line),
+  `list_environments` (the fleet with solution/type/status/version/storage/next-update
+  filters), `get_environment` (one environment with its installed apps),
+  `list_environment_history` (the Workbench history), `list_upgrades` (the Upgrades fleet,
+  behind the environment-updates grant), `list_recent_deliveries` (deliveries across
+  solutions), `list_customer_contacts` (contacts with phone and email, each call logged),
+  `get_customer_access` (getting-in and hosting notes, integrations),
+  `list_customer_knowledge` (who knows a customer, or which customers a colleague knows)
+  and `list_customer_modules` (the module catalogue, by module or by solution). None of
+  them calls a customer's tenant: they read the mirror, and every mirrored fact carries
+  the time it was read.
+
 Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (resizers, badge styling, keyboard shortcuts), authoring flows that already have a dedicated MCP tool, or per-org admin pages that aren't part of the AL-reading surface. When in doubt, expose it through MCP; agents tend to want the same answers humans do.
 
 ## Releases and image publishing

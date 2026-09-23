@@ -281,4 +281,11 @@ There is no sheet for a list with a rail; the design project's
 - **No helpdesk or Azure DevOps links.** They were in the AL prototype; not wanted.
 - **No comments thread.** Notes are one text field; history is the audit log.
 - **No MCP surface** in these slices. Contacts are personal data; handing them to an
-  agent is a conversation of its own.
+  agent is a conversation of its own. *That conversation was had in #912:* the Customer
+  tab is now readable through four read-only tools (`list_customer_contacts`,
+  `get_customer_access`, `list_customer_knowledge`, `list_customer_modules`) under the
+  same gate as the tab - the Solution's visibility, a Private one absent rather than
+  locked. `list_customer_contacts` returns phone numbers and email addresses, because
+  "who do we call" is the question, and logs each call with the solution and the
+  caller's user id (the tab itself records no view, so the log line is the floor). Still
+  no writes. See `.design/saas-delivery.md`, "MCP parity".

@@ -151,6 +151,100 @@ public sealed class UpgradeFleetService
     }
 
     /// <summary>
+    /// The fleet with each row's detail - what <see cref="GetEnvironmentAsync"/> gives one
+    /// environment - for a caller that needs the windows of every row, which is the
+    /// <c>list_environments</c> MCP tool. One extra query for the whole list rather than
+    /// one per row, and it goes through the same visibility join as the fleet itself, so
+    /// the two halves cannot disagree about which environments exist.
+    /// </summary>
+    public async Task<List<EnvironmentDetailRow>> ListFleetDetailsAsync(
+        bool includeSoftDeleted = false, CancellationToken ct = default)
+    {
+        var fleet = await ListFleetAsync(includeSoftDeleted, ct).ConfigureAwait(false);
+        if (fleet.Count == 0) return [];
+
+        var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var ids = fleet.Select(r => r.EnvironmentId).ToList();
+        var rest = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => ids.Contains(e.Id))
+            .Where(e => _db.OeProjects.Where(visible)
+                .Any(p => p.Id == e.ProjectId && p.DeletedAt == null))
+            .Select(e => new
+            {
+                e.Id,
+                e.Project!.CreatedByUserId,
+                e.CountryCode,
+                e.LocationName,
+                e.UpdateWindowStart,
+                e.UpdateWindowEnd,
+                e.BcUpdateWindowStart,
+                e.BcUpdateWindowEnd,
+                e.BcUpdateWindowTimeZoneIana,
+                e.BcUpdateWindowFetchedAt,
+                e.AppSourceAppsUpdateCadence,
+            })
+            .ToDictionaryAsync(e => e.Id, ct).ConfigureAwait(false);
+
+        return fleet
+            .Where(r => rest.ContainsKey(r.EnvironmentId))
+            .Select(r =>
+            {
+                var x = rest[r.EnvironmentId];
+                return new EnvironmentDetailRow(
+                    r, x.CreatedByUserId, x.CountryCode, x.LocationName,
+                    x.UpdateWindowStart, x.UpdateWindowEnd,
+                    x.BcUpdateWindowStart, x.BcUpdateWindowEnd,
+                    x.BcUpdateWindowTimeZoneIana, x.BcUpdateWindowFetchedAt,
+                    x.AppSourceAppsUpdateCadence);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// What Business Central last reported as installed in one environment, from the
+    /// <c>oe_environment_apps</c> mirror - never a live read, so it answers for anyone who
+    /// can see the solution without the customer's credentials. Null when the environment
+    /// is not one this caller can see (the same answer as one that does not exist); empty
+    /// when it has not been read yet. Each app says whether this workbench has ever
+    /// delivered it to the environment, by app id, which is what tells "one of ours" from
+    /// a vendor's.
+    /// </summary>
+    public async Task<List<InstalledAppRow>?> ListInstalledAppsAsync(int environmentId, CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var env = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId && e.MissingSince == null)
+            .Where(e => _db.OeProjects.Where(visible)
+                .Any(p => p.Id == e.ProjectId && p.DeletedAt == null))
+            .Select(e => new { e.ProjectId, e.Name })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (env is null) return null;
+
+        var apps = await _db.OeEnvironmentApps.AsNoTracking()
+            .Where(a => a.EnvironmentId == environmentId)
+            .Select(a => new { a.AppId, a.Name, a.Publisher, a.Version, a.FetchedAt })
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var delivered = (await _db.OeProjectDeliveryResults.AsNoTracking()
+                .Where(r => r.AppId != null
+                            && r.ProjectDelivery!.ProjectId == env.ProjectId
+                            && r.ProjectDelivery.EnvironmentName == env.Name)
+                .Select(r => r.AppId!)
+                .Distinct()
+                .ToListAsync(ct).ConfigureAwait(false))
+            .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+            .ToHashSet();
+
+        return apps
+            .OrderBy(a => a.Publisher, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(a => new InstalledAppRow(a.AppId, a.Name, a.Publisher, a.Version, a.FetchedAt, delivered.Contains(a.AppId)))
+            .ToList();
+    }
+
+    /// <summary>
     /// The fleet row for one environment. Shared by the list and the single read so the
     /// two cannot disagree about what a row says; both "may act" answers stay subqueries
     /// either way.
@@ -406,3 +500,10 @@ public sealed record EnvironmentDetailRow(
     string? BcUpdateWindowTimeZoneIana,
     DateTime? BcUpdateWindowFetchedAt,
     string? AppSourceAppsUpdateCadence);
+
+/// <summary>
+/// One app from the installed-apps mirror. <paramref name="DeliveredFromWorkbench"/> is true
+/// when a delivery from this workbench has carried the app to the environment.
+/// </summary>
+public sealed record InstalledAppRow(
+    Guid AppId, string Name, string Publisher, string Version, DateTime FetchedAt, bool DeliveredFromWorkbench);
