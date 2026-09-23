@@ -26,6 +26,7 @@ public static class McpRegistration
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ArtifactsTools>();
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.DeliveryTools>();
+        services.AddScoped<ALDevToolbox.Services.Mcp.Tools.DeliverTools>();
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
         services.AddScoped<ALDevToolbox.Services.Mcp.Tools.GitHubTools>();
         services

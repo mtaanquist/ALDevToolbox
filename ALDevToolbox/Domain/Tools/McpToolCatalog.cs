@@ -34,13 +34,14 @@ public static class McpToolCatalog
     public const string ObjectExplorer = "Object Explorer";
     public const string Cookbook = "Cookbook";
     public const string Translator = "Translator";
-    public const string Projects = "Projects and pipelines";
+    public const string Projects = "Solutions and pipelines";
+    public const string Operations = "Environments and customers";
     public const string Repositories = "GitHub repositories";
     public const string BcQuality = "Quality guidance";
 
     /// <summary>Group order for the docs table — the order the tools appear in the sidebar.</summary>
     public static readonly IReadOnlyList<string> Groups =
-        new[] { Generation, ObjectExplorer, Cookbook, Translator, Projects, Repositories, BcQuality };
+        new[] { Generation, ObjectExplorer, Cookbook, Translator, Projects, Operations, Repositories, BcQuality };
 
     public static readonly IReadOnlyList<McpToolDescriptor> All = new[]
     {
@@ -120,7 +121,7 @@ public static class McpToolCatalog
         new McpToolDescriptor("remove_translation", Translator,
             "Withdraws a translation the assistant suggested.", true),
 
-        // ---- Projects and pipelines ----
+        // ---- Solutions and pipelines ----
         new McpToolDescriptor("list_solutions", Projects,
             "Lists the customer solutions you can see.", false),
         new McpToolDescriptor("list_solution_builds", Projects,
@@ -143,6 +144,30 @@ public static class McpToolCatalog
             "Lists the GitHub releases a release pipeline can install.", false),
         new McpToolDescriptor("stage_github_release", Projects,
             "Fetches the app files from a GitHub release so they can be published.", true),
+
+        // ---- Environments and customers (read-only; see DeliverTools) ----
+        new McpToolDescriptor("get_solution", Operations,
+            "Shows where a customer's Business Central runs, which version, and whether it is connected.", false),
+        new McpToolDescriptor("list_environments", Operations,
+            "Lists your customers' Business Central environments with version, storage and next update, "
+            + "filtered the way you ask.", false),
+        new McpToolDescriptor("get_environment", Operations,
+            "Shows one environment in full, including the apps installed in it.", false),
+        new McpToolDescriptor("list_environment_history", Operations,
+            "Lists what was done to an environment from the workbench, and by whom.", false),
+        new McpToolDescriptor("list_upgrades", Operations,
+            "Lists the platform updates coming to each environment, and when. Needs permission to "
+            + "manage environment updates.", false),
+        new McpToolDescriptor("list_recent_deliveries", Operations,
+            "Lists recent deliveries across all your customers, and why any of them failed.", false),
+        new McpToolDescriptor("list_customer_contacts", Operations,
+            "Lists who to call or write to at a customer, with phone numbers and email addresses.", false),
+        new McpToolDescriptor("get_customer_access", Operations,
+            "Returns the notes on how to get into a customer's system, and what it is integrated with.", false),
+        new McpToolDescriptor("list_customer_knowledge", Operations,
+            "Tells you who here knows a customer, or which customers a colleague knows.", false),
+        new McpToolDescriptor("list_customer_modules", Operations,
+            "Tells you which customers have a module, or which modules a customer has.", false),
 
         // ---- GitHub repositories ----
         new McpToolDescriptor("list_repositories", Repositories,

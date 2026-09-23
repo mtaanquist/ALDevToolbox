@@ -97,7 +97,7 @@
                     <div class="field">
                         <label class="field__label" for="rpe-name">Name</label>
                         <input id="rpe-name" type="text" class="input" maxlength="200" @bind="_name"
-                               disabled="@_saving" placeholder="e.g. CRONUS App → Production" />
+                               disabled="@_saving" placeholder="e.g. CRONUS App to Production" />
                         <small class="field__hint">Name it for what it publishes and where, so a colleague can tell your release pipelines apart.</small>
                     </div>
 
@@ -106,7 +106,7 @@
                         <div class="field">
                             <label class="field__label" for="rpe-source">Where the apps come from</label>
                             <SelectBox>
-                                <select id="rpe-source" class="select" @bind="_artifactSource" disabled="@_saving">
+                                <select id="rpe-source" class="select" @bind="_artifactSource" @bind:after="SuggestName" disabled="@_saving">
                                     <option value="@ReleaseArtifactSource.Build">Builds from a build pipeline</option>
                                     <option value="@ReleaseArtifactSource.GithubRelease">Releases published on a GitHub repository</option>
                                 </select>
@@ -120,7 +120,7 @@
                         <div class="field">
                             <label class="field__label" for="rpe-repo">Repository to release from</label>
                             <SelectBox>
-                                <select id="rpe-repo" class="select" @bind="_releaseRepositoryId" disabled="@_saving">
+                                <select id="rpe-repo" class="select" @bind="_releaseRepositoryId" @bind:after="SuggestName" disabled="@_saving">
                                     <option value="0">Choose a repository...</option>
                                     @foreach (var repo in _releaseRepositories ?? [])
                                     {
@@ -136,7 +136,7 @@
                         <div class="field">
                             <label class="field__label" for="rpe-build">Build pipeline to release from</label>
                             <SelectBox>
-                                <select id="rpe-build" class="select" @bind="_buildPipelineId" disabled="@_saving">
+                                <select id="rpe-build" class="select" @bind="_buildPipelineId" @bind:after="SuggestName" disabled="@_saving">
                                     <option value="0">Choose a build pipeline...</option>
                                     @foreach (var bp in _buildPipelines)
                                     {
@@ -161,7 +161,7 @@
                     <div class="field">
                         <label class="field__label" for="rpe-env">Target environment</label>
                         <SelectBox>
-                            <select id="rpe-env" class="select" @bind="_environmentId" disabled="@_saving">
+                            <select id="rpe-env" class="select" @bind="_environmentId" @bind:after="SuggestName" disabled="@_saving">
                                 <option value="0">Choose an environment...</option>
                                 @foreach (var env in _environments)
                                 {
@@ -252,6 +252,14 @@
     private string? _nextStep;
 
     private string _name = string.Empty;
+
+    /// <summary>
+    /// The name this dialog last filled in by itself, or null when the Name holds
+    /// nothing it wrote. While the Name still equals it (or is empty) the person
+    /// hasn't typed one, so a new source or environment may replace it; anything
+    /// else is theirs and is never overwritten (issue #933).
+    /// </summary>
+    private string? _suggestedName;
     private string _artifactSource = ReleaseArtifactSource.Build;
     private int _buildPipelineId;
     private int _releaseRepositoryId;
@@ -357,6 +365,7 @@
         _editing = false;
         _releasePipelineId = null;
         _name = string.Empty;
+        _suggestedName = null;
         _artifactSource = ReleaseArtifactSource.Build;
         _buildPipelineId = 0;
         _releaseRepositoryId = 0;
@@ -379,8 +388,48 @@
         _environments = null;
         _releaseRepositories = null;
         _releaseRepositoryId = 0;
+        // The previous solution's picks mean nothing here: its build pipeline and
+        // environment ids would otherwise survive, invisible, into the save.
+        _artifactSource = ReleaseArtifactSource.Build;
+        _buildPipelineId = 0;
+        _environmentId = 0;
+        SuggestName();
         if (_projectId != 0) await LoadProjectAsync();
     }
+
+    /// <summary>
+    /// On create, names the pipeline "{source} to {environment}" once both are chosen,
+    /// so nobody has to invent a name for something the form already knows. Only a
+    /// name this dialog suggested is replaced - one the person typed is kept - and
+    /// an existing pipeline's name is never touched. A clash with another pipeline's
+    /// name is still caught by the save.
+    /// </summary>
+    private void SuggestName()
+    {
+        if (_editing) return;
+        if (!string.IsNullOrWhiteSpace(_name) && _name != _suggestedName) return;
+
+        var source = _artifactSource == ReleaseArtifactSource.GithubRelease
+            ? _releaseRepositories?.FirstOrDefault(r => r.Id == _releaseRepositoryId)?.DisplayName
+            : _buildPipelines?.FirstOrDefault(p => p.Id == _buildPipelineId)?.Name;
+        var environment = _environments?.FirstOrDefault(e => e.Id == _environmentId)?.Name;
+
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(environment))
+        {
+            // A half-made choice leaves no stale suggestion behind.
+            _name = string.Empty;
+            _suggestedName = null;
+            return;
+        }
+
+        var suggestion = $"{source.Trim()} to {environment.Trim()}";
+        if (suggestion.Length > NameMaxLength) suggestion = suggestion[..NameMaxLength].TrimEnd();
+        _name = suggestion;
+        _suggestedName = suggestion;
+    }
+
+    /// <summary>Mirrors the Name input's <c>maxlength</c>.</summary>
+    private const int NameMaxLength = 200;
 
     /// <summary>
     /// Loads the chosen solution's active build pipelines and the environments still

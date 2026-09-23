@@ -342,6 +342,36 @@ public sealed class ProjectCustomerInfoService
         return rows.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    /// <summary>
+    /// The other direction of the "who knows this customer" list: which solutions a
+    /// colleague is on, and as what. <paramref name="person"/> matches a user's email
+    /// exactly or any part of their name, ignoring case, so "anne" finds Anne Hansen.
+    /// Only solutions the caller can see are answered - a Private one they are not on is
+    /// left out, not listed with its name - which is the same rule the per-solution list
+    /// applies through <see cref="ListPeopleAsync"/>. Ordered by colleague, then solution.
+    /// Built for the <c>list_customer_knowledge</c> MCP tool; the Customer tab only ever
+    /// reads one solution.
+    /// </summary>
+    public async Task<List<KnownCustomer>> ListCustomersKnownByAsync(string person, CancellationToken ct = default)
+    {
+        var needle = Clean(person);
+        if (needle is null) return [];
+        var lowered = needle.ToLower();
+
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var rows = await _db.OeProjectPeople.AsNoTracking()
+            .Where(p => p.User!.Email.ToLower() == lowered || p.User.DisplayName.ToLower().Contains(lowered))
+            .Where(p => _db.OeProjects.Where(visible).Any(x => x.Id == p.ProjectId && x.DeletedAt == null))
+            .Select(p => new KnownCustomer(
+                p.ProjectId, p.Project!.Name, p.UserId, p.User!.DisplayName, p.User.Email, p.Role, p.Areas))
+            .ToListAsync(ct);
+        return rows
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.ProjectName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     /// <summary>The organisation's active users, for the picker.</summary>
     public async Task<List<CustomerPersonOption>> ListAssignableUsersAsync(CancellationToken ct = default)
     {
@@ -526,6 +556,10 @@ public sealed record CustomerContactInput(ProjectContactType Type, string? Name,
 
 public sealed record CustomerPerson(int Id, int UserId, string Name, string Email, ProjectPersonRole Role, string? Areas);
 public sealed record CustomerPersonOption(int UserId, string Name, string Email);
+
+/// <summary>One solution a colleague knows, from <see cref="ProjectCustomerInfoService.ListCustomersKnownByAsync"/>.</summary>
+public sealed record KnownCustomer(
+    int ProjectId, string ProjectName, int UserId, string Name, string Email, ProjectPersonRole Role, string? Areas);
 public sealed record CustomerPersonInput(int? UserId, ProjectPersonRole Role, string? Areas);
 
 public sealed record CustomerIntegration(int Id, string Name, ProjectIntegrationDirection Direction);
