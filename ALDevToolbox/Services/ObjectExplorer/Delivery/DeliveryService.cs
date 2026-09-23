@@ -168,7 +168,10 @@ public sealed class DeliveryService
         // old wording ("Current Version", "Force Sync"), which that API rejects outright.
         // Refuse here with something the user can act on rather than letting the upload
         // fail hours later inside the worker.
-        if (!BcDeploymentSchedule.IsValid(rp.DeploymentSchedule))
+        // A pipeline set to the environment's delivery window sends Immediate: the
+        // window decided the time, and Business Central installs on arrival.
+        var wireSchedule = BcDeploymentSchedule.ToWire(rp.DeploymentSchedule);
+        if (wireSchedule is null)
         {
             throw Validation("DeploymentSchedule",
                 "This release pipeline's install timing is no longer a valid option. Open the release pipeline, choose when installs should run, and save it.");
@@ -181,7 +184,7 @@ public sealed class DeliveryService
         // Business Central decides the order it installs a window's queue in; our order
         // only decides the order things were uploaded. With one app that's harmless, with
         // several it can install a dependent before its dependency.
-        if (artifacts.Count > 1 && BcDeploymentSchedule.IsDeferred(rp.DeploymentSchedule))
+        if (artifacts.Count > 1 && BcDeploymentSchedule.IsDeferred(wireSchedule))
         {
             throw Validation("DeploymentSchedule",
                 $"This build has {artifacts.Count} apps, and Business Central chooses the order it installs them in when they wait for a later update. "
@@ -202,7 +205,8 @@ public sealed class DeliveryService
             ProjectBuildId = build.Id,
             TriggeredByUserId = _orgContext.CurrentUserId,
             EnvironmentName = rp.EnvName,
-            DeploymentSchedule = rp.DeploymentSchedule,
+            DeploymentSchedule = wireSchedule,
+            ScheduledByDeliveryWindow = BcDeploymentSchedule.IsOurDeliveryWindow(rp.DeploymentSchedule),
             SchemaSyncMode = rp.SchemaSyncMode,
             ScheduledFor = scheduledForUtc,
             ScheduledOutsideWindow = outsideWindow,

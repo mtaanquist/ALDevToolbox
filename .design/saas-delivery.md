@@ -182,7 +182,9 @@ separate columns, separate prose, and separate columns on screen.
 Neither is derived from the other. In particular the delivery slot is **not** implemented
 by the App Management API's `deploymentSchedule: "UpdateWindow"` — that value defers the
 install to *Microsoft's* window, which is a different time chosen by a different party,
-and it stays out of the release-pipeline picker for exactly that reason.
+and it stays out of the release-pipeline picker for exactly that reason. A release pipeline
+*can* be set to install in the delivery window (#928), and that is ours all the way down:
+see *Deployment schedules* below.
 
 The one relationship worth computing is **overlap**: a delivery slot that lands inside
 Microsoft's maintenance hours is the case the environment-status gate then refuses, so the
@@ -306,7 +308,7 @@ the naming suggested.
 | `build_pipeline_id` | FK → `oe_pipelines`, **nullable** | The artifact source when `artifact_source = build` — releases publish *this* build pipeline's builds. Null (and unused) for a Release-sourced pipeline. |
 | `github_release_repository_id` | FK → `oe_project_repositories`, nullable | The repository whose GitHub Releases the pipeline installs, when `artifact_source = github_release`. Exactly one of these two is set. |
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
-| `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate`. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Only three are offered in the picker — see *Deployment schedules* below. |
+| `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate` — or our own `OurDeliveryWindow` (#928), which is never sent and becomes `Immediate` at the wire. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Four are offered in the picker — see *Deployment schedules* below. |
 | `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
 | `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`OeProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
 
@@ -318,7 +320,10 @@ specific build. Mirrors how `OeProjectBuild` records a build run:
 - FKs: `release_pipeline_id`, `project_build_id` (the chosen build's `.app` blobs — already persisted
   as `OeProjectBuildArtifact`), `organization_id`, `triggered_by_user_id`.
 - **Snapshot** at creation (so later edits to the release pipeline don't rewrite history):
-  `environment_name`, `deployment_schedule`, `schema_sync_mode`.
+  `environment_name`, `deployment_schedule`, `schema_sync_mode`. `deployment_schedule` is the
+  **wire value actually sent**, so a delivery-window pipeline records `Immediate`;
+  `scheduled_by_delivery_window` (#928) records that the pipeline's rule was the delivery window.
+  Read beside `scheduled_outside_window`: both true means the person releasing overrode the rule.
 - Schedule: `scheduled_for` (the UTC instant the user picked), `claimed_at`, `started_at`, `finished_at`.
 - **Status lifecycle + the cancel/run race:**
   `scheduled → claimed → uploading → installing → deployed | failed`, plus `scheduled → cancelled`.
@@ -618,6 +623,20 @@ Central to install later, which changes what a delivery can promise:
   catches this against the installed-apps read and fails with a message naming the app, rather than
   letting BC answer with a 400 that doesn't say which rule was broken.
 
+**Installing in the delivery window is ours, not a schedule Business Central runs** (#928). A
+release pipeline can be set to `OurDeliveryWindow`, labelled "In {environment}'s delivery window"
+in the editor and "Delivery window" in lists. It only decides *when we send*: the Release dialog
+defaults the time to the next opening of the target environment's delivery window and says so
+("Scheduled for the next delivery window, Thursday 22:00, in the solution's time zone"), "Now" is
+the explicit override, and at the scheduled time the delivery goes to Business Central as
+`Immediate`. Nothing about it is deferred to Business Central, so none of the rules above apply —
+several apps are fine, and so is a first install. The choice is refused when the target environment
+has no delivery window, and the editor disables it with a link to the environment page. If the
+window is cleared later, the Release dialog says so and asks for a time. Microsoft's `UpdateWindow`
+remains a different thing and remains out of the picker: ours is when *we* start the install,
+Microsoft's is when *they* do. `publish_build` releases now whatever the pipeline says (see *MCP
+parity*).
+
 Because the stored values go to the API verbatim, a release pipeline saved under the retired API
 holds wording this one rejects. Those values were migrated with the columns, and both the edit screen
 and the scheduling path refuse an unmigrated value rather than guessing at it — that refusal is what
@@ -677,7 +696,13 @@ whole. The page reads the log line back through the same parser, so a release st
 - **Release pipelines:** a listable surface alongside Build pipelines (own icon — e.g. `rocket` for
   build stays, a `send`/`upload-cloud` for release), with a create/edit dialog: name, source build
   pipeline or GitHub repository, target environment (picker), when installs run, schema sync mode
-  (Force sync behind an acknowledgement).
+  (Force sync behind an acknowledgement). The list (`/releases`, #935) also says what each pipeline
+  is doing: a "Shipping now" band per release in flight (which app of how many, and how long the
+  last successful release took), the newest finished release's outcome, and the next one - a
+  scheduled release, or for one handed to Business Central, the environment's next update. It is
+  ordered by urgency (shipping now, needs attention, scheduled, the rest) and re-reads itself every
+  two seconds while something is shipping, the way the pipeline's own page does. The environment,
+  the solution and the source build pipeline are links.
 - **Schedule a release:** lives on the **Release pipeline** — a "Release" action that's enabled once
   the source Build pipeline has a *successful* build. It defaults to the **latest successful build**
   (with the option to pick an older one), then "pick the date+time" (prefilled to the **next opening
@@ -738,7 +763,9 @@ trio so the flow is usable end-to-end: `list_release_pipelines` (discover the id
 worker as the web "Release now", so `publish_build` returns the new delivery id to poll rather than
 blocking. Access-gating + validation come from `DeliveryService`/`ProjectAccess` unchanged; the tool
 only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpException`. Scheduling a
-*future* delivery and the Production extra-confirm stay web-only — the agent path is release-now.
+*future* delivery and the Production extra-confirm stay web-only — the agent path is release-now,
+including for a pipeline that installs in the delivery window (#928): the tool releases immediately
+and the delivery records that it ran outside the window when it did.
 
 **The Deliver reads (#912):** ten read-only tools in their own class, `DeliverTools`, so the
 area's one write stays in `DeliveryTools` and a test (`DeliverToolsTests`) can walk the new
@@ -824,8 +851,9 @@ class and fail on anything that is not `ReadOnly = true`. `get_solution`, `list_
   GDAP) are separate outcomes with separate remedies. GDAP is *not* assumed: the same connection
   serves the maintainer's own tenant, where no delegated-admin relationship exists at all. Manual
   entry is a fallback.
-- **Deployment schedule:** `Immediate` (default), `NextMinorUpdate` and `NextMajorUpdate` offered;
-  `UpdateWindow` is supported by the engine and deliberately not in the picker (see *Open questions*).
+- **Deployment schedule:** `Immediate` (default), our own delivery window (`OurDeliveryWindow`, #928),
+  `NextMinorUpdate` and `NextMajorUpdate` offered; `UpdateWindow` is supported by the engine and
+  deliberately not in the picker (see *Open questions*).
 - **Trigger model:** no auto-publish in v1. The user explicitly schedules a delivery for a concrete
   date+time; it then runs automatically at that time, and is **cancellable until a worker claims it**.
 - **Per-environment update window (revised):** each `OeProjectEnvironment` carries a recurring daily
@@ -849,8 +877,12 @@ not architecture:
   customer. It probably belongs on the release pipeline, beside the other per-target settings.
 - **Whether to offer "install in Business Central's update window".** The API's `UpdateWindow`
   schedule is supported by the engine and deliberately absent from the picker. It means *whenever
-  Microsoft next patches this environment*, which is a different promise from the delivery slot the
-  workbench already schedules; offering both without distinguishing them would mislead.
+  Microsoft next patches this environment*, which is a different promise from the delivery window
+  the picker now offers (#928). If it is ever offered, the two sit side by side in one list, so the
+  copy has to keep them apart: ours is named for the environment ("In Production's delivery
+  window") and starts when *we* send; Microsoft's must name Microsoft ("When Business Central next
+  updates Production") and starts when *they* do. The internal names are already apart —
+  `OurDeliveryWindow` against the wire's `UpdateWindow` — so the question is only the product one.
 - **Re-releasing a version that's already scheduled.** BC won't hold two versions of one app for the
   same schedule, so re-releasing the same version probably 400s. Decide between pre-checking,
   cancel-then-install, and mapping the error to a clear message.

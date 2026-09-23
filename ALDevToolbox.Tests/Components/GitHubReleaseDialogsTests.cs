@@ -307,6 +307,50 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
         cut.WaitForAssertion(() => cut.Find("#rpe-name").GetAttribute("value").Should().Be("Go-live"));
     }
 
+    [Fact]
+    public async Task The_delivery_window_choice_follows_the_chosen_environment()
+    {
+        var seed = await SeedAsync();
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+        var production = await EnvironmentIdAsync("Production");
+        var test = await EnvironmentIdAsync("Test");
+        await using (var ctx = _db.NewContext())
+        {
+            await ctx.OeProjectEnvironments.Where(e => e.Id == production)
+                .ExecuteUpdateAsync(u => u
+                    .SetProperty(e => e.UpdateWindowStart, new TimeOnly(22, 0))
+                    .SetProperty(e => e.UpdateWindowEnd, new TimeOnly(4, 0)));
+        }
+
+        var cut = _ctx.Render<ReleasePipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
+
+        const string windowOption = $"#rpe-schedule option[value='{BcDeploymentSchedule.OurDeliveryWindow}']";
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-build").Change(seed.PipelineId.ToString());
+            cut.Find("#rpe-env").Change(production.ToString());
+            var option = cut.Find(windowOption);
+            option.TextContent.Should().Be("In Production's delivery window");
+            option.HasAttribute("disabled").Should().BeFalse();
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-schedule").Change(BcDeploymentSchedule.OurDeliveryWindow);
+            cut.Markup.Should().Contain("22:00-04:00");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-env").Change(test.ToString());
+            var option = cut.Find(windowOption);
+            option.TextContent.Should().Be("In Test's delivery window (none set yet)");
+            option.HasAttribute("disabled").Should().BeTrue();
+            cut.Find($"a[href='/environments/{test}']").TextContent.Should().ContainEquivalentOf("set one on the environment's page");
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue(
+                "a pipeline cannot be saved to install in a window its environment does not have");
+        });
+    }
+
     // --- seeding -------------------------------------------------------------
 
     private sealed record Seed(int ProjectId, int PipelineId);

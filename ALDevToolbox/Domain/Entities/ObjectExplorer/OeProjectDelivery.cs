@@ -46,8 +46,23 @@ public class OeProjectDelivery
     /// <summary>The target environment name (keys the App Management API URL).</summary>
     public string EnvironmentName { get; set; } = string.Empty;
 
-    /// <summary>When BC installs the upload (App Management <c>deploymentSchedule</c>). One of <see cref="BcDeploymentSchedule"/>.</summary>
+    /// <summary>
+    /// When BC installs the upload (App Management <c>deploymentSchedule</c>): the wire
+    /// value actually sent, one of <see cref="BcDeploymentSchedule.All"/>. A pipeline set
+    /// to <see cref="BcDeploymentSchedule.OurDeliveryWindow"/> records
+    /// <see cref="BcDeploymentSchedule.Immediate"/> here, and says so in
+    /// <see cref="ScheduledByDeliveryWindow"/>.
+    /// </summary>
     public string DeploymentSchedule { get; set; } = BcDeploymentSchedule.Immediate;
+
+    /// <summary>
+    /// True when the release pipeline was set to install in the environment's delivery
+    /// window when this was scheduled, so the time was the pipeline's rule rather than a
+    /// schedule Business Central applies. Read with <see cref="ScheduledOutsideWindow"/>:
+    /// both true means the person releasing overrode the rule (for example with "Now").
+    /// A snapshot like the rest of this block, because the pipeline can be edited later.
+    /// </summary>
+    public bool ScheduledByDeliveryWindow { get; set; }
 
     /// <summary>The schema-sync mode (App Management <c>syncMode</c>). One of <see cref="BcSyncMode"/>.</summary>
     public string SchemaSyncMode { get; set; } = BcSyncMode.Add;
