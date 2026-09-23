@@ -26,6 +26,8 @@ internal sealed class ProjectDeliveryConfiguration : IEntityTypeConfiguration<Oe
         entity.Property(e => e.ScheduledByDeliveryWindow).HasColumnName("scheduled_by_delivery_window").IsRequired().HasDefaultValue(false);
         entity.Property(e => e.ClaimedAt).HasColumnName("claimed_at");
         entity.Property(e => e.StartedAt).HasColumnName("started_at");
+        entity.Property(e => e.InstallStartedAt).HasColumnName("install_started_at");
+        entity.Property(e => e.CancelledByUserId).HasColumnName("cancelled_by_user_id");
         entity.Property(e => e.FinishedAt).HasColumnName("finished_at");
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
         entity.Property(e => e.FailureMessage).HasColumnName("failure_message");
@@ -61,6 +63,11 @@ internal sealed class ProjectDeliveryConfiguration : IEntityTypeConfiguration<Oe
         entity.HasOne(e => e.TriggeredByUser)
             .WithMany()
             .HasForeignKey(e => e.TriggeredByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        entity.HasOne(e => e.CancelledByUser)
+            .WithMany()
+            .HasForeignKey(e => e.CancelledByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // History listings: a release pipeline's deliveries, newest first.

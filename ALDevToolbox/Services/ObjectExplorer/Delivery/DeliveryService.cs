@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
@@ -264,6 +265,7 @@ public sealed class DeliveryService
             .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Scheduled)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(d => d.Status, ProjectDeliveryStatus.Cancelled)
+                .SetProperty(d => d.CancelledByUserId, _orgContext.CurrentUserId)
                 .SetProperty(d => d.FinishedAt, now)
                 .SetProperty(d => d.UpdatedAt, now), ct);
         if (changed == 0)
@@ -486,7 +488,7 @@ public sealed class DeliveryService
         var artifacts = await _db.OeProjectBuildArtifacts.AsNoTracking()
             .Where(a => a.ProjectBuildId == delivery.ProjectBuildId)
             .OrderBy(a => a.Id)
-            .Select(a => new { a.Id, a.FileName })
+            .Select(a => new { a.Id, a.FileName, a.AppId })
             .ToListAsync(ct);
 
         // One read of what's already installed. The API only accepts a deferred schedule
@@ -501,6 +503,20 @@ public sealed class DeliveryService
         {
             await FailAsync(delivery, log, $"Couldn't read the apps installed on {delivery.EnvironmentName}. " + Short(ex.Message), ct);
             return;
+        }
+
+        // What each app is moving from, while the answer is at hand: the page reads it
+        // back as "2.2.0.104 to 2.3.0.118", and after a failure it is the version the
+        // environment was left on. The build's artifact knows the app id before Business
+        // Central does; the name is the fallback for an artifact written before the id
+        // was stamped on it.
+        var ordered = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var appId = i < artifacts.Count && Guid.TryParse(artifacts[i].AppId, out var parsed) ? parsed : (Guid?)null;
+            var match = (appId is { } id ? installed.FirstOrDefault(a => a.AppId == id) : null)
+                ?? installed.FirstOrDefault(a => string.Equals(a.Name, ordered[i].AppName, StringComparison.OrdinalIgnoreCase));
+            ordered[i].PreviousVersion = string.IsNullOrWhiteSpace(match?.Version) ? null : match.Version;
         }
 
         // "Next minor/major update" is an instruction to bump an app that's already
@@ -539,6 +555,7 @@ public sealed class DeliveryService
             {
                 failedIndex = i;
                 result.Status = ProjectDeliveryResultStatus.Failed;
+                result.FinishedAt = DateTime.UtcNow;
                 result.Message = "The build's deliverables changed under the delivery.";
                 Append(log, $"FAILED {label}: deliverable missing.");
                 break;
@@ -553,7 +570,8 @@ public sealed class DeliveryService
                     .FirstAsync(ct);
 
                 result.Status = ProjectDeliveryResultStatus.Uploading;
-                result.UpdatedAt = DateTime.UtcNow;
+                result.StartedAt = DateTime.UtcNow;
+                result.UpdatedAt = result.StartedAt.Value;
                 Append(log, $"Uploading {label} ({bytes.Length} bytes)...");
                 await SaveResultAsync(delivery, log, ct);
 
@@ -581,6 +599,7 @@ public sealed class DeliveryService
                 {
                     failedIndex = i;
                     result.Status = ProjectDeliveryResultStatus.Failed;
+                    result.FinishedAt = DateTime.UtcNow;
                     result.Message = $"Business Central read version {operation.TargetAppVersion} from the uploaded app, but this build says {result.AppVersion}.";
                     Append(log, $"FAILED {label}: {result.Message}");
                     await SaveResultAsync(delivery, log, ct);
@@ -592,6 +611,7 @@ public sealed class DeliveryService
                     // Nothing left to watch: BC runs this in its own window, and no poll
                     // of ours would ever see it go terminal.
                     result.Status = ProjectDeliveryResultStatus.Scheduled;
+                    result.FinishedAt = DateTime.UtcNow;
                     Append(log, $"Business Central has scheduled {label} (operation {operation.Id}).");
                     await SaveResultAsync(delivery, log, ct);
                     continue;
@@ -600,6 +620,7 @@ public sealed class DeliveryService
                 result.Status = ProjectDeliveryResultStatus.Installing;
                 result.UpdatedAt = DateTime.UtcNow;
                 delivery.Status = ProjectDeliveryStatus.Installing;
+                delivery.InstallStartedAt ??= result.UpdatedAt;
                 delivery.UpdatedAt = DateTime.UtcNow;
                 Append(log, $"Installing {label} (operation {operation.Id})...");
                 await SaveResultAsync(delivery, log, ct);
@@ -618,7 +639,8 @@ public sealed class DeliveryService
                     result.Message = outcome.Message;
                     Append(log, $"FAILED {label}: {outcome.Message}");
                 }
-                result.UpdatedAt = DateTime.UtcNow;
+                result.FinishedAt = DateTime.UtcNow;
+                result.UpdatedAt = result.FinishedAt.Value;
                 await SaveResultAsync(delivery, log, ct);
             }
             catch (BcApiException ex)
@@ -626,7 +648,8 @@ public sealed class DeliveryService
                 failedIndex = i;
                 result.Status = ProjectDeliveryResultStatus.Failed;
                 result.Message = Short(ex.Message);
-                result.UpdatedAt = DateTime.UtcNow;
+                result.FinishedAt = DateTime.UtcNow;
+                result.UpdatedAt = result.FinishedAt.Value;
                 Append(log, $"FAILED {label}: {Short(ex.Message)}");
             }
         }
@@ -797,12 +820,31 @@ public sealed class DeliveryService
     /// (ordered) — for the delivery-history UI. The result rows carry no blobs, so this
     /// stays cheap. Triggering-user display names are resolved alongside.
     /// </summary>
-    public async Task<List<DeliveryHistoryRow>> ListDeliveryHistoryAsync(int releasePipelineId, CancellationToken ct = default)
+    public Task<List<DeliveryHistoryRow>> ListDeliveryHistoryAsync(int releasePipelineId, CancellationToken ct = default)
+        => ListDeliveryHistoryAsync(releasePipelineId, int.MaxValue, ct);
+
+    /// <summary>
+    /// The newest <paramref name="limit"/> deliveries of a release pipeline, the way
+    /// <see cref="ListDeliveryHistoryAsync(int, CancellationToken)"/> reads them, for a
+    /// page that shows the latest few and extends the list on request. Each row carries
+    /// its per-pipeline <see cref="DeliveryHistoryRow.Number"/> (1 for the pipeline's
+    /// first release), so a row whose number is above 1 says there are older ones.
+    /// </summary>
+    public async Task<List<DeliveryHistoryRow>> ListDeliveryHistoryAsync(int releasePipelineId, int limit, CancellationToken ct = default)
     {
         await EnsureCanViewReleasePipelineAsync(releasePipelineId, ct);
-        return await _db.OeProjectDeliveries.AsNoTracking()
-            .Where(d => d.ReleasePipelineId == releasePipelineId)
-            .OrderByDescending(d => d.CreatedAt)
+        var query = _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.ReleasePipelineId == releasePipelineId);
+
+        // "Release 49" is display-only: the position in this pipeline's history, not a
+        // stored column. Counting once and numbering down from it is exact as long as
+        // the order below is total, hence the id tie-break.
+        var total = await query.CountAsync(ct);
+        if (total == 0) return new List<DeliveryHistoryRow>();
+
+        var rows = await query
+            .OrderByDescending(d => d.CreatedAt).ThenByDescending(d => d.Id)
+            .Take(Math.Max(1, limit))
             .Select(d => new DeliveryHistoryRow(
                 d.Id,
                 d.ProjectBuildId,
@@ -816,9 +858,104 @@ public sealed class DeliveryService
                 d.FailureMessage,
                 d.TriggeredByUser != null ? d.TriggeredByUser.DisplayName : null,
                 d.Results.OrderBy(r => r.Ordering)
-                    .Select(r => new DeliveryAppRow(r.AppName, r.AppVersion, r.Status, r.Message))
-                    .ToList()))
+                    .Select(r => new DeliveryAppRow(r.AppName, r.AppVersion, r.Status, r.Message)
+                    {
+                        AppId = r.AppId,
+                        OperationId = r.OperationId,
+                        PreviousVersion = r.PreviousVersion,
+                        StartedAt = r.StartedAt,
+                        FinishedAt = r.FinishedAt,
+                    })
+                    .ToList())
+            {
+                ClaimedAt = d.ClaimedAt,
+                InstallStartedAt = d.InstallStartedAt,
+                DeploymentSchedule = d.DeploymentSchedule,
+                SchemaSyncMode = d.SchemaSyncMode,
+                CancelledByName = d.CancelledByUser != null ? d.CancelledByUser.DisplayName : null,
+                BuildBranch = d.ProjectBuild != null ? d.ProjectBuild.Branch : null,
+                BuildReleaseTag = d.ProjectBuild != null ? d.ProjectBuild.GithubReleaseTag : null,
+                DiagnosticsLog = d.DiagnosticsLog,
+            })
             .ToListAsync(ct);
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            rows[i] = rows[i] with { Number = total - i };
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Why the skipped apps in one delivery were skipped, for the release page's per-app
+    /// rows. A run skips every app after the first failure whether or not it needed the
+    /// failed one, so a row may only say "because it depends on" when the build's own
+    /// manifests show that it does - directly or through another skipped app. The
+    /// manifests are read from the stored <c>.app</c> files one at a time, only for the
+    /// skipped apps, and only when asked (a row being opened), never on the list read.
+    /// Returns null when the delivery has no failed app to point at (a run refused before
+    /// its first upload skips everything with no app at fault) or does not exist.
+    /// </summary>
+    public async Task<DeliverySkipReasons?> GetSkipReasonsAsync(int deliveryId, CancellationToken ct = default)
+    {
+        var delivery = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new { d.ProjectId, d.ProjectBuildId })
+            .FirstOrDefaultAsync(ct);
+        if (delivery is null) return null;
+        await _access.EnsureCanViewAsync(delivery.ProjectId, ct);
+
+        var results = await _db.OeProjectDeliveryResults.AsNoTracking()
+            .Where(r => r.ProjectDeliveryId == deliveryId)
+            .OrderBy(r => r.Ordering)
+            .Select(r => new { r.Ordering, r.Status, r.AppId, r.AppName, r.AppVersion })
+            .ToListAsync(ct);
+        var failed = results.FirstOrDefault(r => r.Status == ProjectDeliveryResultStatus.Failed);
+        if (failed is null) return null;
+
+        // Results line up with the build's artifacts by position: both were taken from
+        // the artifacts ordered by id when the delivery was created.
+        var artifacts = await _db.OeProjectBuildArtifacts.AsNoTracking()
+            .Where(a => a.ProjectBuildId == delivery.ProjectBuildId)
+            .OrderBy(a => a.Id)
+            .Select(a => new { a.Id, a.AppId })
+            .ToListAsync(ct);
+
+        // The failed app's id as the manifests know it (the artifact's, stamped from its
+        // own manifest), and as Business Central reported it on the upload if it got
+        // that far. The two agree in practice; either is enough to match a dependency.
+        var blocked = new HashSet<Guid>();
+        if (failed.Ordering < artifacts.Count && Guid.TryParse(artifacts[failed.Ordering].AppId, out var fromManifest))
+        {
+            blocked.Add(fromManifest);
+        }
+        if (Guid.TryParse(failed.AppId, out var fromUpload))
+        {
+            blocked.Add(fromUpload);
+        }
+
+        var dependents = new HashSet<int>();
+        var readable = blocked.Count > 0;
+        foreach (var skipped in results.Where(r => r.Status == ProjectDeliveryResultStatus.Skipped && r.Ordering > failed.Ordering))
+        {
+            if (!readable || skipped.Ordering >= artifacts.Count) { readable = false; break; }
+            var bytes = await _db.OeProjectBuildArtifacts.AsNoTracking()
+                .Where(a => a.Id == artifacts[skipped.Ordering].Id)
+                .Select(a => a.Content)
+                .FirstAsync(ct);
+            var manifest = await Import.AppPackageReader.TryReadManifestAsync(bytes, ct);
+            if (manifest is null) { readable = false; break; }
+
+            // Dependency order means anything this app needs came before it, so one pass
+            // in order carries a transitive dependency through.
+            if (manifest.Dependencies.Any(dep => blocked.Contains(dep.AppId)))
+            {
+                dependents.Add(skipped.Ordering);
+                blocked.Add(manifest.AppId);
+            }
+        }
+
+        return new DeliverySkipReasons(failed.AppName, failed.AppVersion, readable ? dependents : null);
     }
 
     /// <summary>
@@ -887,6 +1024,40 @@ public sealed record DeliveryHistoryRow(
     string? TriggeredByName,
     IReadOnlyList<DeliveryAppRow> Apps)
 {
+    /// <summary>The release's position in its pipeline's history, 1 for the first. Display only (#929); not stored.</summary>
+    public int Number { get; init; }
+
+    /// <summary>When the worker took the row.</summary>
+    public DateTime? ClaimedAt { get; init; }
+
+    /// <summary>When the first app's upload was accepted and installing began. Null for rows written before it was recorded.</summary>
+    public DateTime? InstallStartedAt { get; init; }
+
+    /// <summary>The install timing the delivery was made with (snapshot).</summary>
+    public string DeploymentSchedule { get; init; } = string.Empty;
+
+    /// <summary>The schema-sync mode the delivery was made with (snapshot).</summary>
+    public string SchemaSyncMode { get; init; } = string.Empty;
+
+    /// <summary>Who cancelled it. Null unless cancelled, and for cancellations before this was recorded.</summary>
+    public string? CancelledByName { get; init; }
+
+    /// <summary>The branch the released build was made from, when it was built here.</summary>
+    public string? BuildBranch { get; init; }
+
+    /// <summary>The GitHub release tag the build was staged from, for a release-sourced pipeline.</summary>
+    public string? BuildReleaseTag { get; init; }
+
+    /// <summary>The run's secret-free log, <c>HH:mm:ss  message</c> lines in UTC. Null until the run starts.</summary>
+    /// <summary>
+    /// The run's own log, for the page's diagnostics block. Kept out of the MCP
+    /// serialisation: list_deliveries would otherwise carry every run's log on
+    /// every call, and an assistant that needs it has the failure text and the
+    /// per-app results already.
+    /// </summary>
+    [JsonIgnore]
+    public string? DiagnosticsLog { get; init; }
+
     /// <summary>True while the delivery is still working (so the page keeps polling).</summary>
     public bool IsLive => !ProjectDeliveryStatus.IsTerminal(Status);
 
@@ -898,4 +1069,28 @@ public sealed record DeliveryHistoryRow(
 }
 
 /// <summary>One app's outcome within a delivery, for the history's per-app breakdown.</summary>
-public sealed record DeliveryAppRow(string AppName, string AppVersion, string Status, string? Message);
+public sealed record DeliveryAppRow(string AppName, string AppVersion, string Status, string? Message)
+{
+    /// <summary>The app id Business Central read from the upload. Null before the upload.</summary>
+    public string? AppId { get; init; }
+
+    /// <summary>The Business Central install operation, for finding the install in the admin center.</summary>
+    public Guid? OperationId { get; init; }
+
+    /// <summary>The version installed before the run. Null when the app was new to the environment, or the row predates the recording.</summary>
+    public string? PreviousVersion { get; init; }
+
+    /// <summary>When this app's upload began.</summary>
+    public DateTime? StartedAt { get; init; }
+
+    /// <summary>When this app reached its outcome.</summary>
+    public DateTime? FinishedAt { get; init; }
+}
+
+/// <summary>
+/// Why a delivery's skipped apps were skipped: the app that failed, and which of the
+/// skipped apps (by publish order) depend on it. <see cref="DependentOrderings"/> is null
+/// when the build's manifests could not be read, and the page then says only that the
+/// app was skipped after the failure.
+/// </summary>
+public sealed record DeliverySkipReasons(string FailedAppName, string FailedAppVersion, IReadOnlySet<int>? DependentOrderings);

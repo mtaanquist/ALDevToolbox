@@ -37,6 +37,15 @@ public class OeProjectDeliveryResult
     public string AppVersion { get; set; } = string.Empty;
 
     /// <summary>
+    /// The version of this app the environment had installed when the run started, read
+    /// from the installed-apps list the run takes before its first upload (matched on the
+    /// app id, falling back to the name). Null when the app was not installed yet, when
+    /// the run never got as far as that read, and for rows written before it was recorded
+    /// (#929) - a page shows nothing rather than guessing.
+    /// </summary>
+    public string? PreviousVersion { get; set; }
+
+    /// <summary>
     /// The App Management operation Business Central created for this app's install —
     /// what the run polls, and what identifies the install in the admin center
     /// afterwards. Null before the upload / on an early failure.
@@ -48,6 +57,12 @@ public class OeProjectDeliveryResult
 
     /// <summary>A short, secret-free message — the BC deployment status detail, or the failure reason.</summary>
     public string? Message { get; set; }
+
+    /// <summary>When this app's upload began. Null for an app that was never attempted (pending, skipped) and for rows written before it was recorded.</summary>
+    public DateTime? StartedAt { get; set; }
+
+    /// <summary>When this app reached its outcome (completed, failed, or handed to Business Central's schedule). Null while it is still going and for rows written before it was recorded.</summary>
+    public DateTime? FinishedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
