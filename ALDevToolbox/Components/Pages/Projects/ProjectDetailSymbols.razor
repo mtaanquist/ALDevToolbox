@@ -15,7 +15,7 @@
     Named user: a BC consultant whose build just failed because it could not find
     Continia Core. They know what a .app symbol package is and where to download
     one; they know nothing about how the build assembles its symbols. They arrive
-    from the failed build's "Add symbols" link, upload the package, and build again.
+    from the failed build's "Upload symbols" link, upload the package, and build again.
 
     Owner and admin only, like Pipelines - the page renders the tab only then. The
     tab still takes CanManage so it never offers a write the service would refuse.
@@ -28,7 +28,7 @@
         Symbols
         @if (_rows is not null)
         {
-            <StatusPill Tone="muted"><span>@_rows.Count package@(_rows.Count == 1 ? "" : "s")</span></StatusPill>
+            <StatusPill Tone="muted"><span>@_rows.Count symbol package@(_rows.Count == 1 ? "" : "s")</span></StatusPill>
         }
     </h2>
     @if (CanManage && _rows is { Count: > 0 })
@@ -60,7 +60,7 @@ else if (_rows.Count == 0)
 {
     <div class="card">
         <div class="card__body">
-            <EmptyState Icon="package" Title="No symbols stored">
+            <EmptyState Icon="package" Title="No symbol packages yet">
                 <Text>
                     When a build fails because it can't find an app your extensions depend on,
                     upload that app's <span class="u-nowrap"><code>.app</code> file</span> here and build again.
@@ -201,7 +201,7 @@ else
 
         var confirmed = await _upload.OpenAsync(
             "Upload symbols",
-            "The .app symbol packages of the apps your build could not find. Uploading a file with the same name as a stored one replaces it.",
+            "Choose the .app file of each app your build could not find. A file with the same name as one already stored replaces it.",
             "Upload", "btn", "upload");
         var files = _chosen;
         _chosen = new();

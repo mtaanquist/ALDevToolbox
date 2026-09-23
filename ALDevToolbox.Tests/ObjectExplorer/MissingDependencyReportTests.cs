@@ -58,7 +58,9 @@ public sealed class MissingDependencyReportTests
             Manifest(new AppJsonDependency(ContiniaCoreId, "Continia Core", "12.1.0.0")),
             [ContiniaCore], [stored], [], LookedIn);
 
-        message.Should().EndWith("This solution has Continia Core 12.0.0.0 stored; the build needs 12.1.0.0 or later.");
+        message.Should().Contain(
+            "12.1.0.0 or later (app id " + ContiniaCoreId + "). This solution has Continia Core 12.0.0.0 stored; the build needs 12.1.0.0 or later. Looked in",
+            "what to fetch comes before where the build looked");
     }
 
     [Fact]
@@ -76,9 +78,9 @@ public sealed class MissingDependencyReportTests
             Manifest(new AppJsonDependency(ContiniaCoreId, "Continia Core", "12.1.0.0")),
             [ContiniaCore], [stored], [], LookedIn, installed);
 
-        message.Should().EndWith(
+        message.Should().Contain(
             "The customer's PROD environment has Continia Core 12.1.0.4 installed. "
-            + "This solution has Continia Core 12.0.0.0 stored; the build needs 12.1.0.0 or later.");
+            + "This solution has Continia Core 12.0.0.0 stored; the build needs 12.1.0.0 or later. Looked in");
     }
 
     [Fact]

@@ -75,10 +75,8 @@ public static class MissingDependencyReport
         {
             var named = external.Select(e => Describe(e.Package, e.AppId)).ToList();
             sentences.Add((named.Count == 1 ? SinglePrefix : ManyPrefix) + string.Join("; ", named) + ".");
-            if (lookedIn.Count > 0)
-            {
-                sentences.Add("Looked in " + JoinList(lookedIn) + ".");
-            }
+            // What tells the reader which version to fetch comes before where the
+            // build looked: that part is for the reader who doubts the build.
             foreach (var (package, appId) in external)
             {
                 if (InstalledMatch(installed, appId) is { } running)
@@ -90,6 +88,10 @@ public static class MissingDependencyReport
                 {
                     sentences.Add($"This solution has {have.Name} {have.Version} stored; the build needs {package.Version} or later.");
                 }
+            }
+            if (lookedIn.Count > 0)
+            {
+                sentences.Add("Looked in " + JoinList(lookedIn) + ".");
             }
         }
         foreach (var sibling in siblings)

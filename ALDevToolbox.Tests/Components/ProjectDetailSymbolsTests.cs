@@ -123,7 +123,7 @@ public sealed class ProjectDetailSymbolsTests : IDisposable
 
         var cut = Render(id);
 
-        cut.Find(".empty-state__title").TextContent.Should().Be("No symbols stored");
+        cut.Find(".empty-state__title").TextContent.Should().Be("No symbol packages yet");
         cut.Markup.Should().Contain("When a build fails because it can't find an app your extensions depend on");
         Buttons(cut).Should().Equal("Upload symbols");
     }
@@ -137,7 +137,7 @@ public sealed class ProjectDetailSymbolsTests : IDisposable
 
         cut.FindAll(".sub-row__name").Select(n => n.TextContent).Should()
             .BeEquivalentTo("Continia Core 12.1.app", "ForNAV Core 7.0.app");
-        cut.Markup.Should().Contain("2 KB").And.Contain("2 packages");
+        cut.Markup.Should().Contain("2 KB").And.Contain("2 symbol packages");
         Buttons(cut).Should().Equal("Upload symbols", "Remove", "Remove");
     }
 
@@ -214,7 +214,7 @@ public sealed class ProjectDetailSymbolsTests : IDisposable
         cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Trim() == "Remove").Click());
         cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog button").Single(b => b.TextContent.Trim() == "Remove").Click());
 
-        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should().Be("No symbols stored"));
+        cut.WaitForAssertion(() => cut.Find(".empty-state__title").TextContent.Should().Be("No symbol packages yet"));
         await using (var read = _db.NewContext())
         {
             (await read.OeProjectSymbols.CountAsync()).Should().Be(0);
