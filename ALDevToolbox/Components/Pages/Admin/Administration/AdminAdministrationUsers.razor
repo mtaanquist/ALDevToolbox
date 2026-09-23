@@ -317,9 +317,7 @@
                                     <button type="button" class="btn btn--sm" @onclick="CloseNameRow">Cancel</button>
                                     @if (_nameError is not null)
                                     {
-                                        <span class="field-error" role="alert">
-                                            <Icon Name="circle-alert" Width="13" Height="13" />@_nameError
-                                        </span>
+                                        <FieldError Message="@_nameError" />
                                     }
                                 </div>
                             </td>
