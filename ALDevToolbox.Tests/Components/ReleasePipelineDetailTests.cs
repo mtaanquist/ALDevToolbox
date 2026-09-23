@@ -553,8 +553,37 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
             cut.Find(".rp-summary__title").TextContent.Should().Be("Nothing released yet", "a dismissed proposal never was a release");
         });
 
-        (await _db.NewContext().OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id)).CancelledByUserId
-            .Should().Be(OwnerUserId);
+        var stored = await _db.NewContext().OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id);
+        stored.Status.Should().Be(ProjectDeliveryStatus.Dismissed);
+        stored.CancelledByUserId.Should().Be(OwnerUserId);
+        stored.DismissReason.Should().Be("CRONUS asked us to wait");
+    }
+
+    [Fact]
+    public async Task A_replaced_proposal_says_which_build_replaced_it_from_what_is_stored()
+    {
+        var seed = await SeedAsync();
+        var id = await AddProposalAsync(seed);
+        await using (var ctx = _db.NewContext())
+        {
+            // The log says nothing about it: the page must read the stored facts.
+            await ctx.OeProjectDeliveries.Where(d => d.Id == id).ExecuteUpdateAsync(u => u
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Dismissed)
+                .SetProperty(d => d.ReplacedByProjectBuildId, 4242)
+                .SetProperty(d => d.DismissReason, "Replaced by build #4242")
+                .SetProperty(d => d.FinishedAt, DateTime.UtcNow)
+                .SetProperty(d => d.DiagnosticsLog, (string?)null));
+        }
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-approval").Should().BeEmpty();
+            cut.Find(".rp-rel__word").TextContent.Should().Be("- Replaced");
+            cut.Find(".rp-rel__why").TextContent.Should().Be("Replaced by build #4242 before anyone approved it.");
+            cut.FindAll(".rp-rel__cell").Select(c => c.TextContent).Should().Contain("None sent");
+        });
     }
 
     /// <summary>A release the pipeline prepared from the seeded build, the way the service writes one.</summary>

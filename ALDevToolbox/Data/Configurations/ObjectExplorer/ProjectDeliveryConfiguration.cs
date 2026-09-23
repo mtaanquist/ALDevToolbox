@@ -30,6 +30,8 @@ internal sealed class ProjectDeliveryConfiguration : IEntityTypeConfiguration<Oe
         entity.Property(e => e.CancelledByUserId).HasColumnName("cancelled_by_user_id");
         entity.Property(e => e.FinishedAt).HasColumnName("finished_at");
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
+        entity.Property(e => e.DismissReason).HasColumnName("dismiss_reason");
+        entity.Property(e => e.ReplacedByProjectBuildId).HasColumnName("replaced_by_project_build_id");
         entity.Property(e => e.FailureMessage).HasColumnName("failure_message");
         entity.Property(e => e.DiagnosticsLog).HasColumnName("diagnostics_log");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();

@@ -328,8 +328,9 @@ specific build. Mirrors how `OeProjectBuild` records a build run:
 - Schedule: `scheduled_for` (the UTC instant the user picked), `claimed_at`, `started_at`, `finished_at`.
 - **Status lifecycle + the cancel/run race:**
   `scheduled → claimed → uploading → installing → deployed | failed`, plus `scheduled → cancelled`,
-  and for a prepared release (#934) `proposed → scheduled` (approved) or `proposed → cancelled`
-  (dismissed, or replaced by a newer build). `proposed` is never enqueued and never claimed: the
+  and for a prepared release (#934) `proposed → scheduled` (approved) or `proposed → dismissed`
+  (dismissed, or replaced by a newer build; terminal, and deliberately not `cancelled`, because
+  it never was a release). `proposed` is never enqueued and never claimed: the
   scheduler's due sweep and the worker's claim both match `scheduled` only.
   - While `scheduled`, the delivery is **cancellable**. Cancel is an atomic compare-and-set
     (`UPDATE ... SET status='cancelled' WHERE id=? AND status='scheduled'`) — it only succeeds if the
@@ -783,8 +784,9 @@ the gap the issue names - and a prepared release closes that gap without moving 
   multi-app build on a deferred schedule - is skipped with a warning in the log; the build is fine.
   Pull-request builds are never prepared. `triggered_by_user_id` stays null until someone approves.
 - **One at a time.** A newer build **replaces** an unapproved proposal rather than stacking a
-  queue: the older row goes `proposed → cancelled` (compare-and-set on `proposed`), with the line
-  "Replaced by build #N before anyone approved it." in its log. The same build twice, or an older
+  queue: the older row goes `proposed → dismissed` (compare-and-set on `proposed`) with
+  `replaced_by_project_build_id` set to the newer build, `dismiss_reason` "Replaced by build #N",
+  and `cancelled_by_user_id` left null - no person did it. The same build twice, or an older
   build finishing after a newer one, changes nothing.
 - **Approve.** `ApproveProposalAsync` (manage-gated) re-runs every check a hand-made release has,
   re-snapshots the pipeline's settings as they are now, makes the approver the triggering user the
@@ -793,15 +795,20 @@ the gap the issue names - and a prepared release closes that gap without moving 
   there it is an ordinary release: cancellable until claimed, reschedulable, run by the worker. The
   page asks for the Production acknowledgement before it calls this, as it does for every release.
 - **Dismiss.** `DismissProposalAsync` (manage-gated) takes an optional reason (500 characters),
-  `proposed → cancelled` by compare-and-set, `cancelled_by_user_id` set, and the line "Dismissed
-  by K. Jensen: <reason>" in its log. Nothing was sent, so nothing needs undoing.
-- **Where the history lives.** The delivery's `diagnostics_log` is its history, as it already was
-  for a run: "Prepared from build #N ...", then "Approved by ...", "Dismissed by ..." or "Replaced
-  by build #N ...". A run of an approved release appends to those lines rather than writing over
-  them. The words are one class, `DeliveryProposalLog`, which both the service and the page read,
-  so a dismissed or replaced proposal can be told from a release someone cancelled without a
-  second new column; `DeliveryHistoryRow.SetAsideLine` is that reading. Such a row never was a
-  release, so it is not "the last release" on the pipeline's page or the list.
+  `proposed → dismissed` by compare-and-set, with `cancelled_by_user_id` (the column #929 added
+  for who cancelled) naming the person and `dismiss_reason` holding their reason, or null. The
+  apps are marked "Not sent". Nothing was sent, so nothing needs undoing.
+- **Stored facts, not log text.** What became of a prepared release is its status and three
+  columns: `cancelled_by_user_id` (who dismissed it), `dismiss_reason` and
+  `replaced_by_project_build_id` (a plain id, no foreign key: a fact about history, and the build
+  may be removed later). The last two arrived in the same migration as the pipeline setting. The
+  log still gets a line for each step ("Prepared from build #N ...", "Approved by ...",
+  "Dismissed by ...", "Replaced by build #N ..."), and a run of an approved release appends to
+  those lines rather than writing over them, but the log is for reading: nothing parses it back.
+  A first version did, telling a dismissed proposal from a cancelled release by its log lines;
+  that was replaced before merging because a change of wording would have silently changed what
+  the pages said. A `dismissed` row never was a release, so it is not "the last release" on the
+  pipeline's page or the list.
 - **Pages.** The pipeline page draws a proposal in the "Waiting for approval" band at the top of
   the releases card (`ReleasePipelineBody.dc.html`), not as a row: its number and build, one
   sentence (which build finished when, where it would go, when it installs once approved), and
@@ -814,9 +821,9 @@ the gap the issue names - and a prepared release closes that gap without moving 
   list gives such a pipeline the draft keyline and a person glyph, counts it under "Needs
   attention", fills its Next release cell with "Waiting for approval", and opens with "1 release
   waiting for approval: <pipeline>". The solution page opens with the same line, naming the build.
-  The status is `proposed` in `ProjectDeliveryStatus` and `RowStateIcon` (draft keyline, `user`).
+  The status is `proposed` in `ProjectDeliveryStatus` and `RowStateIcon` (draft keyline, `user`), and `dismissed` beside it (the cancelled keyline, `x`).
 - **Never automatic, never an agent.** Nothing approves a proposal but a person pressing Approve.
-  The MCP tools read it - `list_deliveries` and `list_recent_deliveries` report `proposed`, and
+  The MCP tools read it - `list_deliveries` and `list_recent_deliveries` report `proposed` and `dismissed`, and
   `list_release_pipelines` reports the setting - and there is no tool to approve or dismiss one.
 - **Not built.** A notification when a release is prepared is a later slice; the list's line and
   the band are the v1 signal. A pipeline that installs **GitHub releases** does not prepare one:
@@ -851,7 +858,7 @@ and the delivery records that it ran outside the window when it did. `publish_bu
 the pipeline's own schema sync mode and has no parameter to change it: a one-time Force sync
 (#931) is a person's decision, taken in the web UI behind its acknowledgement, and no agent or
 palette write may escalate to it. A release the pipeline prepared from a new build (#934) is
-read-only to agents: it reads as `proposed`, and approving or dismissing it is a person's act in
+read-only to agents: it reads as `proposed`, then `dismissed` if set aside, and approving or dismissing it is a person's act in
 the web UI.
 
 **The Deliver reads (#912):** ten read-only tools in their own class, `DeliverTools`, so the

@@ -1095,7 +1095,10 @@ public sealed class DeliveryServiceTests : IDisposable
         var rows = await read.OeProjectDeliveries.AsNoTracking()
             .Where(d => d.ReleasePipelineId == seed.ReleasePipelineId).OrderBy(d => d.Id).ToListAsync();
         rows.Should().HaveCount(2, "a newer build replaces the proposal rather than stacking a queue");
-        rows[0].Status.Should().Be(ProjectDeliveryStatus.Cancelled);
+        rows[0].Status.Should().Be(ProjectDeliveryStatus.Dismissed, "a replaced proposal is never a cancelled release");
+        rows[0].ReplacedByProjectBuildId.Should().Be(newer);
+        rows[0].DismissReason.Should().Be($"Replaced by build #{newer}");
+        rows[0].CancelledByUserId.Should().BeNull("nobody replaced it; a newer build did");
         rows[0].FinishedAt.Should().NotBeNull();
         rows[0].DiagnosticsLog.Should().Contain($"Replaced by build #{newer} before anyone approved it.");
         rows[1].Status.Should().Be(ProjectDeliveryStatus.Proposed);
@@ -1105,7 +1108,9 @@ public sealed class DeliveryServiceTests : IDisposable
         (await NewService(_db.NewContext()).ProposeReleasesForBuildAsync(newer)).Should().Be(0);
         // And the history row says what became of the replaced one.
         var history = await NewService(_db.NewContext()).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
-        history.Single(h => h.Id == rows[0].Id).SetAsideLine.Should().StartWith("Replaced by build #");
+        var replaced = history.Single(h => h.Id == rows[0].Id);
+        replaced.IsDismissed.Should().BeTrue();
+        replaced.ReplacedByBuildId.Should().Be(newer);
         history.Single(h => h.Id == rows[1].Id).IsProposed.Should().BeTrue();
     }
 
@@ -1161,7 +1166,8 @@ public sealed class DeliveryServiceTests : IDisposable
         ran.Status.Should().Be(ProjectDeliveryStatus.Deployed);
         ran.DiagnosticsLog.Should().Contain("Prepared from build #").And.Contain("Approved by K. Jensen.");
         var history = await NewService(after).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
-        history.Single().SetAsideLine.Should().BeNull("an approved release is a release");
+        history.Single().IsDismissed.Should().BeFalse("an approved release is a release");
+        history.Single().DismissReason.Should().BeNull();
     }
 
     [Fact]
@@ -1218,13 +1224,18 @@ public sealed class DeliveryServiceTests : IDisposable
 
         await using var read = _db.NewContext();
         var delivery = await read.OeProjectDeliveries.AsNoTracking().Include(d => d.Results).SingleAsync(d => d.Id == id);
-        delivery.Status.Should().Be(ProjectDeliveryStatus.Cancelled);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Dismissed);
+        delivery.DismissReason.Should().Be("CRONUS asked us to wait until after month-end");
+        delivery.ReplacedByProjectBuildId.Should().BeNull();
+        ProjectDeliveryStatus.IsTerminal(delivery.Status).Should().BeTrue();
         delivery.Results.Should().OnlyContain(r => r.Status == ProjectDeliveryResultStatus.Skipped && r.Message == "Not sent: the release was dismissed.");
         delivery.CancelledByUserId.Should().Be(who);
         delivery.FinishedAt.Should().NotBeNull();
         delivery.DiagnosticsLog.Should().Contain("Dismissed by K. Jensen: CRONUS asked us to wait until after month-end");
         var history = await NewService(read).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
-        history.Single().SetAsideLine.Should().Be("Dismissed by K. Jensen: CRONUS asked us to wait until after month-end");
+        history.Single().IsDismissed.Should().BeTrue();
+        history.Single().CancelledByName.Should().Be("K. Jensen");
+        history.Single().DismissReason.Should().Be("CRONUS asked us to wait until after month-end");
 
         // Dismissed once is dismissed: a second go is refused rather than written twice.
         var again = () => NewService(_db.NewContext()).DismissProposalAsync(id, null);

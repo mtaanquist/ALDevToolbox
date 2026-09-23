@@ -96,6 +96,9 @@
         // band draws it: nothing is queued yet, so the clock of "queued" would claim
         // it is only waiting for its time.
         "proposed" => ("draft", "user", "Waiting for approval", false),
+        // One set aside before anyone approved it: as dead as a cancelled release,
+        // under its own word, because it never was one.
+        "dismissed" => ("cancelled", "x", "Dismissed", false),
         // A delivery Business Central has accepted and will install on its own
         // schedule. It reads as a success because our side finished cleanly, but the
         // glyph says "sent" rather than "done" - the install itself hasn't happened

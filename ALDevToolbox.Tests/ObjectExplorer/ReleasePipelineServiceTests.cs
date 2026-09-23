@@ -596,10 +596,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var deployed = await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Deployed,
             startedAt: t0, finishedAt: t0.AddMinutes(4), apps: [ProjectDeliveryResultStatus.Completed]);
         // One dismissed before anyone approved it: it never was a release, so it is not "the last release".
-        var dismissed = await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Cancelled,
+        await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Dismissed,
             startedAt: null, finishedAt: t0.AddHours(2), apps: [], scheduledFor: t0.AddHours(1));
-        await ctx.OeProjectDeliveries.Where(d => d.Id == dismissed).ExecuteUpdateAsync(u => u.SetProperty(d => d.DiagnosticsLog,
-            $"11:00:00  {DeliveryProposalLog.Prepared(buildId)}\n12:00:00  {DeliveryProposalLog.Dismissed("K. Jensen", null)}\n"));
         var waiting = await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Proposed,
             startedAt: null, finishedAt: null, apps: [], scheduledFor: t0.AddHours(3));
 

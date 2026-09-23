@@ -108,6 +108,23 @@ public class OeProjectDelivery
     public int? CancelledByUserId { get; set; }
     public User? CancelledByUser { get; set; }
 
+    /// <summary>
+    /// Why a prepared release (#934) was set aside, for a <see cref="ProjectDeliveryStatus.Dismissed"/>
+    /// row: the reason the person who dismissed it gave (null when they gave none), or
+    /// "Replaced by build #N" when a newer build replaced it. Who dismissed it is
+    /// <see cref="CancelledByUserId"/>; a replacement has nobody behind it. Null on every
+    /// other row. Stored rather than read back from the log, which is for reading only.
+    /// </summary>
+    public string? DismissReason { get; set; }
+
+    /// <summary>
+    /// The newer build that replaced this prepared release before anyone approved it
+    /// (#934), for a <see cref="ProjectDeliveryStatus.Dismissed"/> row; null when a person
+    /// dismissed it, and on every other row. A plain id, not a foreign key: it is a fact
+    /// about history, and the build it names may be removed later.
+    /// </summary>
+    public int? ReplacedByProjectBuildId { get; set; }
+
     /// <summary>Lifecycle state. See <see cref="ProjectDeliveryStatus"/>.</summary>
     public string Status { get; set; } = ProjectDeliveryStatus.Scheduled;
 
@@ -132,7 +149,7 @@ public class OeProjectDelivery
 /// The lifecycle states a <see cref="OeProjectDelivery"/> moves through:
 /// <c>scheduled → claimed → uploading → installing → deployed | handed_off | failed</c>,
 /// plus <c>scheduled → cancelled</c>, and for a prepared release
-/// <c>proposed → scheduled</c> (approved) or <c>proposed → cancelled</c> (dismissed or
+/// <c>proposed → scheduled</c> (approved) or <c>proposed → dismissed</c> (dismissed or
 /// replaced). The transitions out of <c>scheduled</c> and <c>proposed</c> are atomic
 /// compare-and-set so a claim and a cancel, or an approval and a replacement, can't both win.
 /// </summary>
@@ -143,9 +160,17 @@ public static class ProjectDeliveryStatus
     /// approve it (#934). Nothing has been sent and nothing will be until someone
     /// approves it: the scheduler never enqueues this state. Approving moves it to
     /// <see cref="Scheduled"/>; dismissing it, or a newer build replacing it, moves it to
-    /// <see cref="Cancelled"/>.
+    /// <see cref="Dismissed"/>.
     /// </summary>
     public const string Proposed = "proposed";
+
+    /// <summary>
+    /// A prepared release that was set aside before anyone approved it (#934): a person
+    /// dismissed it, or a newer build replaced it. Terminal, and distinct from
+    /// <see cref="Cancelled"/> because it never was a release - nothing was ever
+    /// scheduled or sent. <see cref="OeProjectDelivery.DismissReason"/> says why.
+    /// </summary>
+    public const string Dismissed = "dismissed";
 
     /// <summary>Created and due; the worker hasn't claimed it yet. The only cancellable state.</summary>
     public const string Scheduled = "scheduled";
@@ -179,5 +204,5 @@ public static class ProjectDeliveryStatus
     public const string HandedOff = "handed_off";
 
     /// <summary>The states from which no further work happens.</summary>
-    public static bool IsTerminal(string status) => status is Deployed or Failed or Cancelled or HandedOff;
+    public static bool IsTerminal(string status) => status is Deployed or Failed or Cancelled or HandedOff or Dismissed;
 }

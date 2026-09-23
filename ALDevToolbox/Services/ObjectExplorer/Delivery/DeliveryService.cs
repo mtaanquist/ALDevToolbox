@@ -343,8 +343,8 @@ public sealed class DeliveryService
     /// pipeline that draws from its build pipeline and has "Prepare a release when a new
     /// build succeeds" on: a <see cref="ProjectDeliveryStatus.Proposed"/> delivery with
     /// the build's apps and the time the pipeline's rule gives, and nothing sent. A
-    /// proposal still waiting on an older build is replaced (cancelled, with a line in its
-    /// log saying by which build), so a pipeline never holds a queue of them. A pipeline
+    /// proposal still waiting on an older build is replaced (dismissed, with the newer
+    /// build recorded on it), so a pipeline never holds a queue of them. A pipeline
     /// the build can't be released through - its environment gone, its settings no longer
     /// valid - is skipped with a warning in the log, never an error: the build is fine.
     /// Called by the build worker under the build's own organisation once it is ready;
@@ -401,10 +401,14 @@ public sealed class DeliveryService
             foreach (var old in waiting)
             {
                 var now = DateTime.UtcNow;
+                var replacedBy = build.Id;
+                var replacedReason = DeliveryProposalLog.ReplacedReason(build.Id);
                 await _db.OeProjectDeliveries
                     .Where(d => d.Id == old.Id && d.Status == ProjectDeliveryStatus.Proposed)
                     .ExecuteUpdateAsync(u => u
-                        .SetProperty(d => d.Status, ProjectDeliveryStatus.Cancelled)
+                        .SetProperty(d => d.Status, ProjectDeliveryStatus.Dismissed)
+                        .SetProperty(d => d.DismissReason, replacedReason)
+                        .SetProperty(d => d.ReplacedByProjectBuildId, replacedBy)
                         .SetProperty(d => d.FinishedAt, now)
                         .SetProperty(d => d.DiagnosticsLog, d => (d.DiagnosticsLog ?? string.Empty) + replacedLine)
                         .SetProperty(d => d.UpdatedAt, now), ct);
@@ -478,9 +482,10 @@ public sealed class DeliveryService
     }
 
     /// <summary>
-    /// Dismisses a prepared release (atomic <c>proposed → cancelled</c>), recording who
-    /// did it and, when they gave one, why - in its log, which the page shows as the
-    /// release's history. Nothing was sent, so nothing needs undoing. Throws
+    /// Dismisses a prepared release (atomic <c>proposed → dismissed</c>), recording who
+    /// did it (<see cref="OeProjectDelivery.CancelledByUserId"/>) and, when they gave one,
+    /// why (<see cref="OeProjectDelivery.DismissReason"/>); the log gets a line too, for
+    /// reading. Nothing was sent, so nothing needs undoing. Throws
     /// <see cref="PlanValidationException"/> when it is no longer waiting or the reason is
     /// too long, <see cref="ProjectAccessDeniedException"/> when not permitted.
     /// </summary>
@@ -510,8 +515,9 @@ public sealed class DeliveryService
         var changed = await _db.OeProjectDeliveries
             .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Proposed)
             .ExecuteUpdateAsync(u => u
-                .SetProperty(d => d.Status, ProjectDeliveryStatus.Cancelled)
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Dismissed)
                 .SetProperty(d => d.CancelledByUserId, userId)
+                .SetProperty(d => d.DismissReason, why)
                 .SetProperty(d => d.FinishedAt, now)
                 .SetProperty(d => d.DiagnosticsLog, d => (d.DiagnosticsLog ?? string.Empty) + line)
                 .SetProperty(d => d.UpdatedAt, now), ct);
@@ -1313,6 +1319,8 @@ public sealed class DeliveryService
                 DeploymentSchedule = d.DeploymentSchedule,
                 SchemaSyncMode = d.SchemaSyncMode,
                 CancelledByName = d.CancelledByUser != null ? d.CancelledByUser.DisplayName : null,
+                DismissReason = d.DismissReason,
+                ReplacedByBuildId = d.ReplacedByProjectBuildId,
                 BuildBranch = d.ProjectBuild != null ? d.ProjectBuild.Branch : null,
                 BuildReleaseTag = d.ProjectBuild != null ? d.ProjectBuild.GithubReleaseTag : null,
                 DiagnosticsLog = d.DiagnosticsLog,
@@ -1465,28 +1473,28 @@ public sealed class DeliveryService
 }
 
 /// <summary>
-/// The lines a prepared release (#934) writes into its delivery's log, which is its
-/// history: where it came from, and who approved or dismissed it or which build replaced
-/// it. The page reads them back to say what became of a release that never ran, so the
-/// words are kept here, in one place, rather than matched as literals on both sides.
+/// The lines a prepared release (#934) writes into its delivery's log: where it came
+/// from, and who approved or dismissed it or which build replaced it. Written for a
+/// person reading the log, and never read back: what became of a prepared release is
+/// its status, <see cref="OeProjectDelivery.CancelledByUserId"/>,
+/// <see cref="OeProjectDelivery.DismissReason"/> and
+/// <see cref="OeProjectDelivery.ReplacedByProjectBuildId"/>.
 /// </summary>
 public static class DeliveryProposalLog
 {
-    public const string PreparedPrefix = "Prepared from build #";
-    public const string ApprovedPrefix = "Approved by ";
-    public const string DismissedPrefix = "Dismissed by ";
-    public const string ReplacedPrefix = "Replaced by build #";
-
     public static string Prepared(int buildId) =>
-        $"{PreparedPrefix}{buildId} when it succeeded. Nothing is sent until someone approves it.";
+        $"Prepared from build #{buildId} when it succeeded. Nothing is sent until someone approves it.";
 
-    public static string Approved(string who) => $"{ApprovedPrefix}{who}.";
+    public static string Approved(string who) => $"Approved by {who}.";
 
     public static string Dismissed(string who, string? reason) =>
-        reason is null ? $"{DismissedPrefix}{who}." : $"{DismissedPrefix}{who}: {reason}";
+        reason is null ? $"Dismissed by {who}." : $"Dismissed by {who}: {reason}";
 
     public static string Replaced(int newerBuildId) =>
-        $"{ReplacedPrefix}{newerBuildId} before anyone approved it.";
+        $"{ReplacedReason(newerBuildId)} before anyone approved it.";
+
+    /// <summary>What <see cref="OeProjectDelivery.DismissReason"/> holds for a replacement.</summary>
+    public static string ReplacedReason(int newerBuildId) => $"Replaced by build #{newerBuildId}";
 }
 
 /// <summary>A delivery for the history list, with its per-app rows resolved for display.</summary>
@@ -1552,34 +1560,19 @@ public sealed record DeliveryHistoryRow(
     public bool IsProposed => Status == ProjectDeliveryStatus.Proposed;
 
     /// <summary>
-    /// For a prepared release that was dismissed or replaced before anyone approved it,
-    /// the log line that says so ("Dismissed by K. Jensen: wrong branch"); null for every
-    /// other release, including a prepared one that was approved and later cancelled,
-    /// which is an ordinary cancelled release. Such a release never ran, so it is history
-    /// rather than "the last release".
+    /// A prepared release set aside before anyone approved it (#934): dismissed by a
+    /// person (<see cref="CancelledByName"/>) or replaced by a newer build
+    /// (<see cref="ReplacedByBuildId"/>). It never ran, so it is history rather than "the
+    /// last release".
     /// </summary>
     [JsonIgnore]
-    public string? SetAsideLine
-    {
-        get
-        {
-            if (Status != ProjectDeliveryStatus.Cancelled || string.IsNullOrEmpty(DiagnosticsLog)) return null;
-            string? found = null;
-            foreach (var raw in DiagnosticsLog.Split('\n'))
-            {
-                var line = raw.TrimEnd('\r');
-                var at = line.IndexOf("  ", StringComparison.Ordinal);
-                var message = at >= 0 ? line[(at + 2)..] : line;
-                if (message.StartsWith(DeliveryProposalLog.ApprovedPrefix, StringComparison.Ordinal)) return null;
-                if (message.StartsWith(DeliveryProposalLog.DismissedPrefix, StringComparison.Ordinal)
-                    || message.StartsWith(DeliveryProposalLog.ReplacedPrefix, StringComparison.Ordinal))
-                {
-                    found = message;
-                }
-            }
-            return found;
-        }
-    }
+    public bool IsDismissed => Status == ProjectDeliveryStatus.Dismissed;
+
+    /// <summary>For a dismissed prepared release: the reason given, or "Replaced by build #N". Null otherwise, or when no reason was given.</summary>
+    public string? DismissReason { get; init; }
+
+    /// <summary>For a prepared release a newer build replaced: that build's id. Null otherwise.</summary>
+    public int? ReplacedByBuildId { get; init; }
 }
 
 /// <summary>One app's outcome within a delivery, for the history's per-app breakdown.</summary>

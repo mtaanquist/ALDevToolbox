@@ -2836,6 +2836,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("diagnostics_log");
 
+                    b.Property<string>("DismissReason")
+                        .HasColumnType("text")
+                        .HasColumnName("dismiss_reason");
+
                     b.Property<string>("EnvironmentName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2869,6 +2873,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("ReleasePipelineId")
                         .HasColumnType("integer")
                         .HasColumnName("release_pipeline_id");
+
+                    b.Property<int?>("ReplacedByProjectBuildId")
+                        .HasColumnType("integer")
+                        .HasColumnName("replaced_by_project_build_id");
 
                     b.Property<bool>("ScheduledByDeliveryWindow")
                         .ValueGeneratedOnAdd()

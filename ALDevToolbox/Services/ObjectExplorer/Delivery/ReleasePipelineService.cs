@@ -115,17 +115,12 @@ public sealed class ReleasePipelineService
         // The newest release that has finished, one way or another. Ordered by when it
         // finished rather than by id: a release scheduled for tonight is created before
         // one released right now, and finishes after it.
-        // A prepared release that was dismissed or replaced before anyone approved it is
-        // cancelled too, but it never was a release: it would read as "Last release
-        // cancelled" every time a newer build came along (#934).
+        // A dismissed prepared release (#934) is left out on purpose: it never was a
+        // release, and would read as the last one every time a newer build came along.
         var latest = await deliveries
             .Where(d => d.Status == ProjectDeliveryStatus.Deployed
                         || d.Status == ProjectDeliveryStatus.Failed
-                        || (d.Status == ProjectDeliveryStatus.Cancelled
-                            && !(d.TriggeredByUserId == null
-                                 && d.DiagnosticsLog != null
-                                 && d.DiagnosticsLog.Contains(DeliveryProposalLog.PreparedPrefix)
-                                 && !d.DiagnosticsLog.Contains(DeliveryProposalLog.ApprovedPrefix)))
+                        || d.Status == ProjectDeliveryStatus.Cancelled
                         || d.Status == ProjectDeliveryStatus.HandedOff)
             .GroupBy(d => d.ReleasePipelineId)
             .Select(g => g
