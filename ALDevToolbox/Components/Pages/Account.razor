@@ -262,10 +262,7 @@ else
                                 </span>
                                 @if (_recoveryRemaining == 0)
                                 {
-                                    <span class="field-error">
-                                        <Icon Name="circle-alert" Width="13" Height="13" />
-                                        <span>No recovery codes left. Generate new ones so you're not locked out.</span>
-                                    </span>
+                                    <FieldError Message="No recovery codes left. Generate new ones so you're not locked out." />
                                 }
                                 else
                                 {

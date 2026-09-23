@@ -464,7 +464,7 @@
             <p class="upg-when__echo">@SlotEchoText()</p>
             @if (SlotProblem() is { } problem)
             {
-                <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@problem</span>
+                <FieldError Message="@problem" />
             }
             <small class="field__hint">
                 You can cancel a booked update from this page right up until it runs.

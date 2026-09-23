@@ -329,10 +329,7 @@
                     <ul class="ext-import__errors" role="alert">
                         @foreach (var err in _repoErrors)
                         {
-                            <li class="field-error">
-                                <Icon Name="circle-alert" Width="13" Height="13" />
-                                @err.Value
-                            </li>
+                            <li><FieldError Message="@err.Value" /></li>
                         }
                     </ul>
                 }
@@ -436,10 +433,7 @@
                     <ul class="ext-import__errors" role="alert">
                         @foreach (var err in _importErrors)
                         {
-                            <li class="field-error">
-                                <Icon Name="circle-alert" Width="13" Height="13" />
-                                @err.Key: @err.Value
-                            </li>
+                            <li><FieldError>@err.Key: @err.Value</FieldError></li>
                         }
                     </ul>
                 }
