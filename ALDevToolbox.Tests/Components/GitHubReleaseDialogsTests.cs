@@ -177,6 +177,136 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
         cut.FindAll("#rpe-build").Should().ContainSingle();
     }
 
+    // ── The suggested name (issue #933) ─────────────────────────────────────
+    //
+    // Named user: a consultant setting up their first release pipeline, who should not
+    // have to invent a name for something the form already knows - what it releases,
+    // and where to.
+
+    [Fact]
+    public async Task The_name_is_suggested_once_the_source_and_the_environment_are_both_chosen()
+    {
+        var seed = await SeedAsync();
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+        var production = await EnvironmentIdAsync("Production");
+
+        var cut = _ctx.Render<ReleasePipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
+
+        // Half a choice is not enough to name anything.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-build").Change(seed.PipelineId.ToString());
+            cut.Find("#rpe-name").GetAttribute("value").Should().BeNullOrEmpty();
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-env").Change(production.ToString());
+            cut.Find("#rpe-name").GetAttribute("value").Should().Be("Nightly to Production");
+        });
+    }
+
+    [Fact]
+    public async Task Changing_the_environment_updates_a_suggested_name()
+    {
+        var seed = await SeedAsync();
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+        var production = await EnvironmentIdAsync("Production");
+        var test = await EnvironmentIdAsync("Test");
+
+        var cut = _ctx.Render<ReleasePipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-build").Change(seed.PipelineId.ToString());
+            cut.Find("#rpe-env").Change(production.ToString());
+            cut.Find("#rpe-name").GetAttribute("value").Should().Be("Nightly to Production");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-env").Change(test.ToString());
+            cut.Find("#rpe-name").GetAttribute("value").Should().Be("Nightly to Test");
+        });
+    }
+
+    [Fact]
+    public async Task A_name_the_person_typed_survives_a_change_of_environment()
+    {
+        var seed = await SeedAsync();
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+        var production = await EnvironmentIdAsync("Production");
+        var test = await EnvironmentIdAsync("Test");
+
+        var cut = _ctx.Render<ReleasePipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-build").Change(seed.PipelineId.ToString());
+            cut.Find("#rpe-env").Change(production.ToString());
+            cut.Find("#rpe-name").Change("CRONUS go-live");
+            cut.Find("#rpe-name").GetAttribute("value").Should().Be("CRONUS go-live");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-env").Change(test.ToString());
+            cut.Find("#rpe-name").GetAttribute("value").Should().Be("CRONUS go-live");
+        });
+    }
+
+    [Fact]
+    public async Task A_github_repository_is_named_by_its_display_name()
+    {
+        var seed = await SeedAsync();
+        await ConnectOrganisationAsync();
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+        var production = await EnvironmentIdAsync("Production");
+
+        var cut = _ctx.Render<ReleasePipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForCreateAsync(seed.ProjectId, "CRONUS A/S"));
+
+        cut.WaitForAssertion(() => cut.Find("#rpe-source").Change(ReleaseArtifactSource.GithubRelease));
+        cut.WaitForAssertion(() =>
+        {
+            var repoId = cut.FindAll("#rpe-repo option").Last().GetAttribute("value")!;
+            cut.Find("#rpe-repo").Change(repoId);
+            cut.Find("#rpe-env").Change(production.ToString());
+            cut.Find("#rpe-name").GetAttribute("value").Should().Be("cronus-customer to Production");
+        });
+    }
+
+    [Fact]
+    public async Task Editing_an_existing_pipeline_never_replaces_its_name()
+    {
+        var seed = await SeedAsync();
+        _db.AddGitHubServices(_ctx.Services, new FakeGitHubApi());
+        var production = await EnvironmentIdAsync("Production");
+        var test = await EnvironmentIdAsync("Test");
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OeReleasePipelines.Add(new OeReleasePipeline
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = seed.ProjectId, Name = "Go-live",
+                BuildPipelineId = seed.PipelineId, ProjectEnvironmentId = production,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+        var row = (await _ctx.Services.GetRequiredService<ReleasePipelineService>()
+            .ListReleasePipelinesAsync(seed.ProjectId)).Single();
+
+        var cut = _ctx.Render<ReleasePipelineEditorDialog>();
+        await cut.InvokeAsync(() => cut.Instance.OpenForEditAsync(row));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rpe-env").Change(test.ToString());
+            cut.Find("#rpe-env").GetAttribute("value").Should().Be(test.ToString());
+        });
+        cut.WaitForAssertion(() => cut.Find("#rpe-name").GetAttribute("value").Should().Be("Go-live"));
+    }
+
     // --- seeding -------------------------------------------------------------
 
     private sealed record Seed(int ProjectId, int PipelineId);
@@ -209,8 +339,19 @@ public sealed class GitHubReleaseDialogsTests : IDisposable
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id,
             Name = "Production", Type = "Production", FetchedAt = now,
         });
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id,
+            Name = "Test", Type = "Sandbox", FetchedAt = now,
+        });
         await ctx.SaveChangesAsync();
         return new Seed(project.Id, pipeline.Id);
+    }
+
+    private async Task<int> EnvironmentIdAsync(string name)
+    {
+        await using var ctx = _db.NewContext();
+        return await ctx.OeProjectEnvironments.Where(e => e.Name == name).Select(e => e.Id).SingleAsync();
     }
 
     /// <summary>The deployment-wide app, with no organisation connected to it.</summary>
