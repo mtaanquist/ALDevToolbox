@@ -139,7 +139,7 @@
                             @FormatStatus(r.Status, r.Kind)
                             @if (r.Status == "failed" && !string.IsNullOrEmpty(r.StatusMessage))
                             {
-                                <p class="field-error" role="alert">@r.StatusMessage</p>
+                                <FieldError Message="@r.StatusMessage" />
                             }
                         </td>
                         <td>@r.SourceFileCount.ToString("N0")</td>

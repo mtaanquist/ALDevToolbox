@@ -209,6 +209,24 @@ public sealed class ArchetypeConformanceTests
             "a status pill is <StatusPill Tone=\"success\">...</StatusPill>, which always carries the dot the live and running tones pulse");
     }
 
+    [Fact]
+    public void No_component_hand_writes_a_field_error()
+    {
+        var root = RepoRoot();
+        var line = new Regex(@"class=""(?:[^""]*\s)?field-error(?:\s|"")", RegexOptions.Compiled);
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(Path.Combine("Shared", "FieldError.razor"), StringComparison.Ordinal))
+            .Where(p => line.IsMatch(Markup(File.ReadAllText(p))))
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "an inline error is <FieldError Field=\"name\" Errors=\"_errors\" /> for a keyed validation message or "
+            + "<FieldError Message=\"...\" /> for anything else: the glyph and the alert role are decided once there, "
+            + "where pages used to pick two different glyphs and forget the role");
+    }
+
     private static bool IsRoutable(string markup) => Regex.IsMatch(markup, @"^@page\s", RegexOptions.Multiline);
 
     private static bool Composes(string markup, IEnumerable<string> names) =>
