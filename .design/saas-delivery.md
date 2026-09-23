@@ -671,7 +671,13 @@ the message through only as display text.
 - **Release pipelines:** a listable surface alongside Build pipelines (own icon — e.g. `rocket` for
   build stays, a `send`/`upload-cloud` for release), with a create/edit dialog: name, source build
   pipeline or GitHub repository, target environment (picker), when installs run, schema sync mode
-  (Force sync behind an acknowledgement).
+  (Force sync behind an acknowledgement). The list (`/releases`, #935) also says what each pipeline
+  is doing: a "Shipping now" band per release in flight (which app of how many, and how long the
+  last successful release took), the newest finished release's outcome, and the next one - a
+  scheduled release, or for one handed to Business Central, the environment's next update. It is
+  ordered by urgency (shipping now, needs attention, scheduled, the rest) and re-reads itself every
+  two seconds while something is shipping, the way the pipeline's own page does. The environment,
+  the solution and the source build pipeline are links.
 - **Schedule a release:** lives on the **Release pipeline** — a "Release" action that's enabled once
   the source Build pipeline has a *successful* build. It defaults to the **latest successful build**
   (with the option to pick an older one), then "pick the date+time" (prefilled to the **next opening

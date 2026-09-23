@@ -93,6 +93,137 @@ public sealed class ReleasePipelineService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// <see cref="ListReleasePipelinesAsync"/> for the whole org, with each row's
+    /// deliveries summed up for the Releases list: the newest finished release, the
+    /// one running now (with how far through its apps it is, and how long the last
+    /// successful one here took), the next one waiting for its time, and Microsoft's
+    /// next update for the target environment. A fixed handful of queries for the
+    /// whole list, never one per row - the page re-reads this every two seconds
+    /// while something is shipping. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    public async Task<List<ReleasePipelineRow>> ListReleasePipelineOverviewAsync(CancellationToken ct = default)
+    {
+        var rows = await ListReleasePipelinesAsync(null, ct);
+        if (rows.Count == 0) return rows;
+
+        var pipelineIds = rows.Select(r => r.Id).ToList();
+        var deliveries = _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => pipelineIds.Contains(d.ReleasePipelineId));
+
+        // The newest release that has finished, one way or another. Ordered by when it
+        // finished rather than by id: a release scheduled for tonight is created before
+        // one released right now, and finishes after it.
+        var latest = await deliveries
+            .Where(d => d.Status == ProjectDeliveryStatus.Deployed
+                        || d.Status == ProjectDeliveryStatus.Failed
+                        || d.Status == ProjectDeliveryStatus.Cancelled
+                        || d.Status == ProjectDeliveryStatus.HandedOff)
+            .GroupBy(d => d.ReleasePipelineId)
+            .Select(g => g
+                .OrderByDescending(d => d.FinishedAt ?? d.UpdatedAt)
+                .ThenByDescending(d => d.Id)
+                .Select(d => new
+                {
+                    d.ReleasePipelineId,
+                    d.Id,
+                    d.Status,
+                    At = d.FinishedAt ?? d.UpdatedAt,
+                    d.DeploymentSchedule,
+                    FailedApp = d.Results
+                        .Where(r => r.Status == ProjectDeliveryResultStatus.Failed)
+                        .OrderBy(r => r.Ordering)
+                        .Select(r => r.AppName)
+                        .FirstOrDefault(),
+                })
+                .First())
+            .ToListAsync(ct);
+
+        // What is shipping right now. Few rows by nature, so the per-app states come
+        // back whole and are counted here.
+        var live = await deliveries
+            .Where(d => d.Status == ProjectDeliveryStatus.Claimed
+                        || d.Status == ProjectDeliveryStatus.Uploading
+                        || d.Status == ProjectDeliveryStatus.Installing)
+            .OrderBy(d => d.Id)
+            .Select(d => new
+            {
+                d.ReleasePipelineId,
+                d.Id,
+                d.Status,
+                StartedAt = d.StartedAt ?? d.ClaimedAt,
+                Apps = d.Results.OrderBy(r => r.Ordering).Select(r => r.Status).ToList(),
+            })
+            .ToListAsync(ct);
+
+        // How long the last successful release took, for the live band's "the last
+        // release here took 6 minutes". Only asked for pipelines that are shipping.
+        var livePipelineIds = live.Select(l => l.ReleasePipelineId).Distinct().ToList();
+        var previous = new Dictionary<int, TimeSpan>();
+        if (livePipelineIds.Count > 0)
+        {
+            var took = await deliveries
+                .Where(d => livePipelineIds.Contains(d.ReleasePipelineId)
+                            && d.Status == ProjectDeliveryStatus.Deployed
+                            && d.StartedAt != null && d.FinishedAt != null)
+                .GroupBy(d => d.ReleasePipelineId)
+                .Select(g => g
+                    .OrderByDescending(d => d.FinishedAt)
+                    .Select(d => new { d.ReleasePipelineId, d.StartedAt, d.FinishedAt })
+                    .First())
+                .ToListAsync(ct);
+            foreach (var t in took) previous[t.ReleasePipelineId] = t.FinishedAt!.Value - t.StartedAt!.Value;
+        }
+
+        // The next release waiting for its time.
+        var next = await deliveries
+            .Where(d => d.Status == ProjectDeliveryStatus.Scheduled)
+            .GroupBy(d => d.ReleasePipelineId)
+            .Select(g => g
+                .OrderBy(d => d.ScheduledFor)
+                .ThenBy(d => d.Id)
+                .Select(d => new
+                {
+                    d.ReleasePipelineId,
+                    d.Id,
+                    d.ScheduledFor,
+                    d.ScheduledOutsideWindow,
+                    By = d.TriggeredByUser != null ? d.TriggeredByUser.DisplayName : null,
+                })
+                .First())
+            .ToListAsync(ct);
+
+        // Microsoft's next update for each target, as last mirrored: a release handed
+        // to Business Central for "the next update" installs then.
+        var environmentIds = rows.Select(r => r.ProjectEnvironmentId).Distinct().ToList();
+        var updates = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => environmentIds.Contains(e.Id) && e.BcNextUpdateVersion != null)
+            .Select(e => new { e.Id, e.BcNextUpdateDate, Version = e.BcNextUpdateVersion!, e.BcNextUpdateType })
+            .ToListAsync(ct);
+
+        var latestBy = latest.ToDictionary(l => l.ReleasePipelineId);
+        var liveBy = live.GroupBy(l => l.ReleasePipelineId).ToDictionary(g => g.Key, g => g.First());
+        var nextBy = next.ToDictionary(n => n.ReleasePipelineId);
+        var updateBy = updates.ToDictionary(u => u.Id);
+
+        return rows.Select(r => r with
+        {
+            LastDelivery = latestBy.TryGetValue(r.Id, out var l)
+                ? new ReleasePipelineLastDelivery(l.Id, l.Status, l.At, l.FailedApp, l.DeploymentSchedule)
+                : null,
+            LiveDelivery = liveBy.TryGetValue(r.Id, out var v)
+                ? ReleasePipelineLiveDelivery.From(v.Id, v.Status, v.StartedAt, v.Apps,
+                    previous.TryGetValue(r.Id, out var took) ? took : null)
+                : null,
+            NextDelivery = nextBy.TryGetValue(r.Id, out var n)
+                ? new ReleasePipelineNextDelivery(n.Id, n.ScheduledFor, n.ScheduledOutsideWindow, n.By)
+                : null,
+            EnvironmentNextUpdate = updateBy.TryGetValue(r.ProjectEnvironmentId, out var u)
+                ? new EnvironmentNextUpdate(u.BcNextUpdateDate, u.Version, u.BcNextUpdateType)
+                : null,
+        }).ToList();
+    }
+
     /// <summary>A single active release pipeline, or null when not found in this org.</summary>
     public async Task<OeReleasePipeline?> GetReleasePipelineAsync(int id, CancellationToken ct = default)
     {
@@ -426,6 +557,27 @@ public sealed record ReleasePipelineRow(
     /// <summary>The environment's status as Business Central last reported it, verbatim.</summary>
     string? EnvironmentStatus = null)
 {
+    // ── The delivery summary: filled by ListReleasePipelineOverviewAsync only ──
+    //
+    // Not serialised: list_release_pipelines hands this record to agents as it is,
+    // and there these would always be null, which would read as "never released".
+
+    /// <summary>The newest release through this pipeline that has finished, or null when none has.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ReleasePipelineLastDelivery? LastDelivery { get; init; }
+
+    /// <summary>The release shipping through this pipeline right now, or null.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ReleasePipelineLiveDelivery? LiveDelivery { get; init; }
+
+    /// <summary>The next release waiting for its scheduled time, or null.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ReleasePipelineNextDelivery? NextDelivery { get; init; }
+
+    /// <summary>Microsoft's next platform update for the target environment, as last mirrored; null when there is none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public EnvironmentNextUpdate? EnvironmentNextUpdate { get; init; }
+
     /// <summary>
     /// Why nothing can be released through this pipeline at all, in a few words, or null
     /// when it can. Not a busy environment: that passes on its own. An environment that
@@ -450,3 +602,55 @@ public sealed record ReleasePipelineRow(
                 _ => null,
             };
 }
+
+/// <summary>The newest finished release through a pipeline, as the Releases list shows it.</summary>
+/// <param name="At">When it finished (deployed, failed, cancelled or handed over), UTC.</param>
+/// <param name="FailedAppName">The first app that failed, when the release failed on one.</param>
+/// <param name="DeploymentSchedule">When the release told Business Central to install, snapshotted at release time.</param>
+public sealed record ReleasePipelineLastDelivery(
+    int DeliveryId, string Status, DateTime At, string? FailedAppName, string DeploymentSchedule);
+
+/// <summary>
+/// A release shipping right now: what the app in hand is doing, which app it is and
+/// how many are done. The engine sends one app at a time, so "app 2 of 3" is the
+/// first app still uploading or installing.
+/// </summary>
+/// <param name="Phase">The in-hand app's state (uploading / installing), or null before the first upload.</param>
+/// <param name="CurrentApp">1-based position of the app in hand; 0 when the release lists no apps.</param>
+/// <param name="StartedAt">When the run started (or was claimed, before the first upload), UTC.</param>
+/// <param name="PreviousDuration">How long the last successful release through the same pipeline took, when there was one.</param>
+public sealed record ReleasePipelineLiveDelivery(
+    int DeliveryId, string Status, string? Phase, int CurrentApp, int AppsDone, int AppCount,
+    DateTime? StartedAt, TimeSpan? PreviousDuration)
+{
+    /// <summary>Counts the per-app states of a running release, in publish order, into the live summary.</summary>
+    public static ReleasePipelineLiveDelivery From(
+        int deliveryId, string status, DateTime? startedAt, IReadOnlyList<string> apps, TimeSpan? previousDuration)
+    {
+        var done = apps.Count(a => a is ProjectDeliveryResultStatus.Completed or ProjectDeliveryResultStatus.Scheduled);
+        var inHand = -1;
+        for (var i = 0; i < apps.Count; i++)
+        {
+            if (apps[i] is ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing)
+            {
+                inHand = i;
+                break;
+            }
+        }
+        var current = inHand >= 0 ? inHand + 1 : Math.Min(done + 1, apps.Count);
+        return new ReleasePipelineLiveDelivery(
+            deliveryId, status, inHand >= 0 ? apps[inHand] : null, current, done, apps.Count, startedAt, previousDuration);
+    }
+}
+
+/// <summary>The next release through a pipeline waiting for its scheduled time.</summary>
+/// <param name="ScheduledFor">When it is due, UTC.</param>
+/// <param name="OutsideWindow">True when the person chose a time outside the environment's update window.</param>
+/// <param name="ScheduledBy">Who scheduled it, while the account still exists.</param>
+public sealed record ReleasePipelineNextDelivery(int DeliveryId, DateTime ScheduledFor, bool OutsideWindow, string? ScheduledBy);
+
+/// <summary>Microsoft's next platform update for an environment, as last mirrored.</summary>
+/// <param name="Date">When it is set to run, UTC; null when no date is chosen yet.</param>
+/// <param name="Version">The version it moves to, e.g. <c>27.6</c>.</param>
+/// <param name="Type">The API's target version type (major / minor), verbatim.</param>
+public sealed record EnvironmentNextUpdate(DateTime? Date, string Version, string? Type);
