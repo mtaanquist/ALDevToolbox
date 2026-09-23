@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
@@ -437,14 +438,14 @@ public sealed class ProjectBuildService
                 // files, lazily fetching only their tiny blobs. This keeps discovery
                 // fast even on repos whose .git is bloated by committed binaries. The
                 // token travels in git config (http.extraHeader), never the URL or argv.
-                var (clone, used) = await CloneWithAsync(gitPath,
+                var (clone, used, cloneFailure) = await CloneWithAsync(gitPath,
                     new[] { "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--single-branch", "--no-tags", "--quiet", repo.Url, dest },
                     root, dest, DiscoveryCloneTimeout, credentials, repo, ct).ConfigureAwait(false);
                 var pat = used.Secret;
                 var env = GitAuthEnv(repo.Provider, pat);
                 if (!clone.Succeeded || !Directory.Exists(dest))
                 {
-                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, credentials)}".Trim());
+                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {cloneFailure}".Trim());
                     _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
                         repo.DisplayName, project.Id, clone.ExitCode);
                     continue;
@@ -890,7 +891,7 @@ public sealed class ProjectBuildService
             // (GIT_CONFIG_* http.extraHeader), never in the URL, on disk, or in the
             // world-readable process argv.
             var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
-            var (result, used) = await CloneWithAsync(gitPath, args, buildRoot, dest, BuildCloneTimeout(), credentials, repo, ct)
+            var (result, used, cloneFailure) = await CloneWithAsync(gitPath, args, buildRoot, dest, BuildCloneTimeout(), credentials, repo, ct)
                 .ConfigureAwait(false);
             var pat = used.Secret;
             var env = GitAuthEnv(repo.Provider, pat);
@@ -918,8 +919,8 @@ public sealed class ProjectBuildService
             else
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
-                    $"git clone failed: {Sanitize(result.StdErr, credentials)}".Trim(), RepoUrl: repo.Url));
-                logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"git clone failed (exit {result.ExitCode}): {cloneLog}".Trim()));
+                    $"git clone failed: {cloneFailure}".Trim(), RepoUrl: repo.Url));
+                logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"git clone failed (exit {result.ExitCode}): {cloneFailure}".Trim()));
                 _logger.LogWarning("Project {ProjectId}: clone of {Repo} exited {Exit}.", project.Id, repo.DisplayName, result.ExitCode);
             }
         }
@@ -936,19 +937,25 @@ public sealed class ProjectBuildService
     /// build token may reach more or fewer, and only git knows which for the
     /// repository in front of it. A failed attempt's directory is removed before
     /// the next, because git refuses to clone into a path that exists.</para>
+    ///
+    /// <para><c>Failure</c> describes every attempt, not just the last, so a person
+    /// reading a failed clone can tell which of their credentials was refused and
+    /// why - the last error alone once sent someone chasing the wrong token.</para>
     /// </summary>
-    private async Task<(ProcessRunResult Result, CloneCredential Used)> CloneWithAsync(
+    private async Task<(ProcessRunResult Result, CloneCredential Used, string Failure)> CloneWithAsync(
         string gitPath, IReadOnlyList<string> args, string workDir, string dest, TimeSpan timeout,
         IReadOnlyList<CloneCredential> credentials, OeProjectRepository repo, CancellationToken ct)
     {
         ProcessRunResult result = null!;
         CloneCredential used = null!;
+        var attempts = new List<(CloneCredential Credential, string StdErr)>(credentials.Count);
         for (var i = 0; i < credentials.Count; i++)
         {
             used = credentials[i];
             result = await _processRunner.RunAsync(new ProcessRunRequest(
                 gitPath, args, workDir, GitAuthEnv(repo.Provider, used.Secret), timeout), ct).ConfigureAwait(false);
-            if (result.Succeeded && Directory.Exists(dest)) return (result, used);
+            if (result.Succeeded && Directory.Exists(dest)) return (result, used, string.Empty);
+            attempts.Add((used, result.StdErr));
             if (i + 1 < credentials.Count)
             {
                 _logger.LogInformation(
@@ -957,7 +964,28 @@ public sealed class ProjectBuildService
                 TryDeleteDirectory(dest);
             }
         }
-        return (result, used);
+        return (result, used, DescribeCloneFailures(attempts, credentials));
+    }
+
+    /// <summary>
+    /// Words for a clone that failed with every credential it had. One attempt
+    /// reads as git's own error, as it always has; several name each credential
+    /// before its error, so "the build token was refused" and "the connected
+    /// account was refused" stop looking identical. Secrets are scrubbed from
+    /// every attempt's output, not only the one that produced it.
+    /// </summary>
+    internal static string DescribeCloneFailures(
+        IReadOnlyList<(CloneCredential Credential, string StdErr)> attempts,
+        IReadOnlyList<CloneCredential> credentials)
+    {
+        if (attempts.Count == 0) return string.Empty;
+        if (attempts.Count == 1) return Sanitize(attempts[0].StdErr ?? string.Empty, credentials).Trim();
+
+        return string.Join(" ", attempts.Select(a =>
+        {
+            var error = Regex.Replace(Sanitize(a.StdErr ?? string.Empty, credentials), @"\s+", " ").Trim().TrimEnd('.');
+            return $"With {a.Credential.Source}: {(error.Length > 0 ? error : "failed without a message")}.";
+        }));
     }
 
     /// <summary>
