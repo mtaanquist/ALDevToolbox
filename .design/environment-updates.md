@@ -699,8 +699,12 @@ Where it differs from the sheet, and why:
 ## Deliberately out of scope
 
 - **No MCP tools for the fleet actions.** These writes land on customers' production tenants
-  behind a typed confirmation; that is not a surface to hand an agent. The environment reads stay
-  web-only too.
+  behind a typed confirmation; that is not a surface to hand an agent. The environment
+  *reads* of the mirror are the exception, since #912: `list_environments`,
+  `get_environment`, `list_environment_history` and `list_upgrades` read what the sweep
+  and Refresh stored, each fact with the time it was read. Sessions and Business
+  Central's own operations log stay web-only - they are live reads made with the
+  customer's credentials. See `.design/saas-delivery.md`, "MCP parity".
 - **No per-batch job table.** `oe_environment_upgrade_actions` plus the on-page results are the
   whole record of a sweep. Revisit only if losing a batch to a disconnect mid-run turns out to
   bite.
