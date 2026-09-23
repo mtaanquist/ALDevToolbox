@@ -883,9 +883,11 @@ not architecture:
   window") and starts when *we* send; Microsoft's must name Microsoft ("When Business Central next
   updates Production") and starts when *they* do. The internal names are already apart —
   `OurDeliveryWindow` against the wire's `UpdateWindow` — so the question is only the product one.
-- **Re-releasing a version that's already scheduled.** BC won't hold two versions of one app for the
-  same schedule, so re-releasing the same version probably 400s. Decide between pre-checking,
-  cancel-then-install, and mapping the error to a clear message.
+- **Re-releasing a version that's already scheduled.** Decided (#937): pre-check. Before uploading
+  on a deferred schedule the run reads `scheduledPteOperations` once and refuses an app whose same
+  version is already waiting for the same schedule, with "{app} {version} is already waiting for the
+  next minor update on {environment}; cancel it there first." Still open: whether a *different*
+  version waiting for the same schedule also 400s, or replaces the waiting one.
 - **Mixed-tool invisibility.** A version scheduled through the web client's Extension Management page
   isn't visible in the admin center until it installs, and vice versa. If a customer's own consultant
   uploads that way while we schedule through the admin center, neither surface shows the other's
