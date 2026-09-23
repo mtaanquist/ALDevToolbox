@@ -54,6 +54,15 @@ the seven byte-locked sheets were compared the same way and found identical. The
 app deliberately diverges from the Environments sheet's copy in a few places;
 the design project's `briefs/2026-09-port-corrections.md` records which.
 
+`PageReleasePipelines.dc.html` / `ReleasePipelinesBody.dc.html`,
+`PageReleasePipeline.dc.html` / `ReleasePipelineBody.dc.html` and
+`DeliveryRowPanel.dc.html` were pulled on 2026-09-23 for the release-pipeline pages
+(issues #929, #930, #931, #932, #935), with the `Components.dc.html` section that hosts the
+delivery row and the `ShellFrame.dc.html` bodies that mount the two pages. Extracted from
+the transcript by script, as above. They are the versions after the design agent worked
+through `briefs/2026-09-release-pipelines-review.md`, which lists what the sheets first
+drew that the product cannot do and what they now draw from data not recorded yet.
+
 **What shipped without a sheet** is listed in the design project's
 `briefs/2026-09-shipped-without-a-sheet.md` (pushed 2026-09-21): the environment page's
 five tabs with the Operations and Sessions lists, the storage bar and the Deleted view on
