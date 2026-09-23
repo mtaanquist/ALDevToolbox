@@ -113,4 +113,67 @@ public sealed class AlcOutputParserTests
     [Fact]
     public void MakeRelative_without_a_clone_root_only_normalises() =>
         AlcOutputParser.MakeRelative(@"App\My.al", null).Should().Be("App/My.al");
+
+    /// <summary>
+    /// Captured verbatim from alc 17.0.34.45391 compiling an app.json that declares
+    /// the Microsoft application and platform plus two third-party dependencies,
+    /// against an empty package cache (issue #901). Not written from memory: the
+    /// wording is what the parser has to match.
+    /// </summary>
+    private const string CapturedMissingPackages = """
+        Microsoft (R) AL Compiler version 17.0.34.45391
+        Copyright (C) Microsoft Corporation. All rights reserved
+
+        Compilation started for project 'CRONUS Continia Extensions' containing '1' files at '10:14:50.006'.
+
+        error AL1022: A package with publisher 'Microsoft', name 'Application', and a version compatible with '26.0.0.0' could not be found in the package cache folders: /tmp/oe-build-x/symbols
+        error AL1022: A package with publisher 'Microsoft', name 'System', and a version compatible with '26.0.0.0' could not be found in the package cache folders: /tmp/oe-build-x/symbols
+        error AL1022: A package with publisher 'Continia Software', name 'Continia Core', and a version compatible with '12.1.0.0' could not be found in the package cache folders: /tmp/oe-build-x/symbols
+        error AL1022: A package with publisher 'ForNAV', name 'ForNAV Core', and a version compatible with '7.0.0.0' could not be found in the package cache folders: /tmp/oe-build-x/symbols
+
+        Compilation ended at '10:14:50.227'.
+        """;
+
+    [Fact]
+    public void Reads_each_package_the_compiler_could_not_find()
+    {
+        var missing = AlcOutputParser.ParseMissingPackages(CapturedMissingPackages);
+
+        missing.Should().Equal(
+            new AlcMissingPackage("Microsoft", "Application", "26.0.0.0"),
+            new AlcMissingPackage("Microsoft", "System", "26.0.0.0"),
+            new AlcMissingPackage("Continia Software", "Continia Core", "12.1.0.0"),
+            new AlcMissingPackage("ForNAV", "ForNAV Core", "7.0.0.0"));
+    }
+
+    [Fact]
+    public void A_missing_package_is_not_a_file_diagnostic()
+    {
+        // AL1022 names no file, so it cannot become a check-run annotation; the
+        // missing-package reader is the only thing that sees it.
+        AlcOutputParser.Parse(CapturedMissingPackages).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Reads_a_missing_package_line_with_windows_line_endings_once()
+    {
+        var line = "error AL1022: A package with publisher 'Continia Software', name 'Continia Core', and a version compatible with '12.1.0.0' could not be found in the package cache folders: C:\\build\\symbols\r\n";
+
+        AlcOutputParser.ParseMissingPackages(line + line)
+            .Should().ContainSingle("the compiler repeats itself when a folder is compiled twice")
+            .Which.Should().Be(new AlcMissingPackage("Continia Software", "Continia Core", "12.1.0.0"));
+    }
+
+    [Fact]
+    public void Other_errors_are_not_missing_packages()
+    {
+        var output = """
+            /src/App/My.al(12,5): error AL0118: The name 'CC Helper' does not exist in the current context
+            /src/App/My.al(4,1): warning AA0005: Braces are redundant
+            error AL1021: Some other package problem that is not a missing package
+            """;
+
+        AlcOutputParser.ParseMissingPackages(output).Should().BeEmpty();
+        AlcOutputParser.ParseMissingPackages(null).Should().BeEmpty();
+    }
 }

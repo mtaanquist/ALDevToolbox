@@ -81,3 +81,8 @@
 .data-table td:nth-child(5),
 .data-table th:nth-child(4),
 .data-table th:nth-child(5) { white-space: nowrap; }
+
+/* Why an extension did not build. A sentence, not a value: it wraps in body
+   text where .sub-row__val would truncate a mono line, because the part that
+   says what to do is at the end. */
+.pb-fail__msg { font-size: var(--text-sm); color: var(--ink-2); line-height: 1.45; overflow-wrap: anywhere; }

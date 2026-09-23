@@ -153,6 +153,7 @@ public sealed partial class PaletteContextService
         {
             if (!OeProject.IsOnPremisesHosting(project.HostingType)) items.Add(Tab("Business Central", root + "?tab=bc"));
             items.Add(Tab("Pipelines", root + "?tab=pipelines"));
+            items.Add(Tab("Symbols", root + "?tab=symbols"));
             if (canChangeAccess) items.Add(Tab("Access", root + "?tab=access"));
         }
 
