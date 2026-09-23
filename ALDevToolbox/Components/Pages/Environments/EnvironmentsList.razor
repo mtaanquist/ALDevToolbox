@@ -72,7 +72,9 @@
 
         @* One freshness strip for the page, never one per section. The rows are a
            cached copy and the age is the honest thing to lead with; Refresh is the
-           only way to make it newer, so it lives here beside the age it fixes. *@
+           only way to make it newer, so it lives here beside the age it fixes.
+           data-page-refresh is what the command palette's Refresh presses - a
+           read of Business Central, never a write. *@
         @if (_rows is { Count: > 0 })
         {
             <div class="freshness @FreshnessClass()">
@@ -95,7 +97,7 @@
                 </span>
                 <span class="freshness__spacer"></span>
                 <button type="button" class="btn btn--sm @(_refreshing ? "btn--loading" : "")"
-                        @onclick="RefreshAsync" disabled="@_refreshing">
+                        @onclick="RefreshAsync" disabled="@_refreshing" data-page-refresh>
                     <Icon Name="refresh-cw" Width="14" Height="14" />
                     <span class="btn__label">@(_refreshing ? "Refreshing" : "Refresh")</span>
                 </button>
@@ -176,6 +178,7 @@
     <Search>
         <input class="input" type="search" placeholder="Solution or environment"
                aria-label="Search solution or environment"
+               aria-keyshortcuts="F3" title="Search solution or environment (F3)"
                value="@_search" @oninput="OnSearchInput" />
     </Search>
     <Filters>

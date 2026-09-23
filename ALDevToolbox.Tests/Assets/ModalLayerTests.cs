@@ -48,6 +48,7 @@ public sealed class ModalLayerTests
     [
         "ALDevToolbox/wwwroot/components.css",
         "ALDevToolbox/wwwroot/app.css",
+        "ALDevToolbox/wwwroot/command-palette.css",
         "ALDevToolbox/wwwroot/code-editor.css",
         "ALDevToolbox/wwwroot/source-viewer.css",
         "ALDevToolbox/wwwroot/shell.css",
@@ -132,6 +133,17 @@ public sealed class ModalLayerTests
                    + "block in the top-left corner with nothing dimmed behind it");
     }
 
+    /// <summary>
+    /// The panel classes a <c>.modal-layer</c> may hold. <c>.confirm-dialog</c>
+    /// is the design system's own; <c>.cmdp</c> is the command palette's panel,
+    /// which is not a confirm and is styled in <c>command-palette.css</c>
+    /// because its rows are cloned by a script and a scoped sheet would match
+    /// nothing (see <c>.design/command-palette.md</c>). Add to this only with a
+    /// panel that has rules of its own somewhere - the point of the assertion
+    /// is that the layer never centres a bare div.
+    /// </summary>
+    private static readonly string[] Panels = ["confirm-dialog", "cmdp"];
+
     [Fact]
     public void Every_modal_layer_wraps_a_backdrop_and_a_dialog()
     {
@@ -145,7 +157,7 @@ public sealed class ModalLayerTests
 
             classes.Should().Contain("modal-backdrop",
                 because: $"{Relative(file)} opens a layer with nothing dimming the page under it");
-            classes.Should().Contain("confirm-dialog",
+            classes.Should().Contain(c => Panels.Contains(c),
                 because: $"{Relative(file)} opens a layer with no panel in it — the layer is "
                        + "`display: grid; place-items: center` around whatever it holds, so a "
                        + "raw div lands centred and unstyled");

@@ -133,9 +133,7 @@
 
                         @if (!string.IsNullOrEmpty(_localError))
                         {
-                            <span class="field-error" role="alert">
-                                <Icon Name="circle-alert" Width="13" Height="13" />@_localError
-                            </span>
+                            <FieldError Message="@_localError" />
                         }
                     </div>
                     <div class="card__foot">

@@ -4,6 +4,7 @@ using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -28,9 +29,10 @@ public sealed class ArtifactServiceTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             projectId = await SeedProjectAsync(ctx, "CRONUS A/S", shortName: "CRO");
+            var pipelineId = await SeedPipelineAsync(ctx, projectId);
             // An older successful build, then a newer failed one.
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc), bcVersion: "26.0", artifactCount: 2);
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 2, 9, 0, 0, DateTimeKind.Utc));
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc), bcVersion: "26.0", artifactCount: 2, pipelineId: pipelineId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 2, 9, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
         }
 
         await using var read = _db.NewContext();
@@ -46,12 +48,55 @@ public sealed class ArtifactServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListProjectsAsync_shows_no_build_status_for_a_solution_without_a_pipeline()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            // What a repository attached to a solution with no pipeline collects:
+            // pull-request builds the GitHub App started, which can fail for
+            // reasons that have nothing to do with the solution (superseded by a
+            // newer push, nothing to compile yet). None of them is a pipeline
+            // build, so none of them is the row's status.
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, DateTime.UtcNow.AddMinutes(-2));
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow.AddMinutes(-1), artifactCount: 1);
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+
+        row.Latest.Should().BeNull("a solution without a pipeline has no build status");
+        row.LatestSuccessfulBuildId.Should().BeNull("nor anything to download as its build");
+    }
+
+    [Fact]
+    public async Task ListProjectsAsync_ignores_pull_request_builds_beside_a_pipelines_own()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            var pipelineId = await SeedPipelineAsync(ctx, projectId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow.AddMinutes(-2), bcVersion: "26.0", pipelineId: pipelineId);
+            // Newer, but not the pipeline's: a failed pull-request build must not
+            // turn the row red.
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, DateTime.UtcNow.AddMinutes(-1));
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+
+        row.Latest!.Status.Should().Be(ProjectBuildStatus.Ready);
+        row.Latest.BcVersion.Should().Be("26.0");
+    }
+
+    [Fact]
     public async Task ListProjectsAsync_includes_the_latest_build_branch_and_representative_commit()
     {
         await using (var ctx = _db.NewContext())
         {
             var projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core", "trade" });
-            var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main");
+            var pipelineId = await SeedPipelineAsync(ctx, projectId);
+            var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main", pipelineId: pipelineId);
             // Two repos: the cell shows the first by display name ("core"), shortened to 7 chars.
             ctx.OeProjectBuildRepoCommits.AddRange(
                 new OeProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "trade", CommitHash = "9999999bbb" },
@@ -71,10 +116,12 @@ public sealed class ArtifactServiceTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core" });
-            await SeedProjectAsync(ctx, "Northwind", repoNames: new[] { "widgets" });
+            await SeedProjectAsync(ctx, "Northwind", repoNames: new[] { "widgets" }, shortName: "NWT");
         }
 
         await using var read = _db.NewContext();
+        // The list shows the short name beside the name, so it is something people type.
+        (await Svc(read).ListProjectsAsync("nwt")).Should().ContainSingle(r => r.Name == "Northwind");
         (await Svc(read).ListProjectsAsync("widgets")).Should().ContainSingle(r => r.Name == "Northwind");
         (await Svc(read).ListProjectsAsync("CRONUS")).Should().ContainSingle(r => r.Name == "CRONUS A/S");
     }
@@ -116,6 +163,45 @@ public sealed class ArtifactServiceTests : IDisposable
         detail.Changelog.Should().ContainSingle().Which.RepoName.Should().Be("core");
         detail.Changelog[0].Commits.Should().ContainSingle().Which.Message.Should().Be("Fix posting");
         detail.Logs.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// A partial build goes ready, so the extensions that failed have to be on the
+    /// build itself or the pipeline page shows a clean build. The rows whose reason
+    /// is a dependency the solution can supply are marked so the page can offer the
+    /// way to the Symbols tab (#901).
+    /// </summary>
+    [Fact]
+    public async Task GetBuildDetailAsync_lists_the_extensions_that_did_not_build()
+    {
+        int buildId;
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            var releaseId = await SeedReleaseAsync(ctx);
+            buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, releaseId: releaseId);
+            ctx.OeProjectBuildResults.AddRange(
+                Result(releaseId, "CRONUS Core", ProjectBuildResultStatus.Ingested, null),
+                Result(releaseId, "CRONUS Continia", ProjectBuildResultStatus.Failed,
+                    "Missing dependency: Continia Core by Continia Software, version 12.1.0.0 or later. Looked in ..."),
+                Result(releaseId, "CRONUS Banking", ProjectBuildResultStatus.Failed,
+                    "Compilation failed (see the build report for CRONUS Banking)."));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var detail = await Svc(read).GetBuildDetailAsync(buildId);
+
+        detail!.FailedApps.Should().Equal(
+            new FailedAppRow("CRONUS Banking", "Compilation failed (see the build report for CRONUS Banking).", NeedsSymbols: false),
+            new FailedAppRow("CRONUS Continia",
+                "Missing dependency: Continia Core by Continia Software, version 12.1.0.0 or later. Looked in ...", NeedsSymbols: true));
+
+        static OeProjectBuildResult Result(int releaseId, string app, string status, string? message) => new()
+        {
+            OrganizationId = TestDb.DefaultOrgId, ReleaseId = releaseId, AppName = app, AppId = Guid.NewGuid().ToString(),
+            Status = status, Message = message, CreatedAt = DateTime.UtcNow,
+        };
     }
 
     [Fact]
@@ -237,6 +323,179 @@ public sealed class ArtifactServiceTests : IDisposable
         await using var read = _db.NewContext(); // scoped to DefaultOrg
         (await Svc(read).ListProjectsAsync()).Should().BeEmpty("the other org's project is filtered out");
         (await Svc(read).GetBuildDetailAsync(otherBuildId)).Should().BeNull("the other org's build is filtered out");
+    }
+
+    // ── Last shipped to production (.design/solution-customer-info.md) ──
+
+    [Fact]
+    public async Task ListProjectsAsync_reads_the_newest_production_delivery_and_both_terminal_successes_count()
+    {
+        int deployedId, handedOffId, neverId, pipelineForDeployed;
+        await using (var ctx = _db.NewContext())
+        {
+            deployedId = await SeedProjectAsync(ctx, "CRONUS Denmark");
+            var build = await SeedBuildAsync(ctx, deployedId, ProjectBuildStatus.Ready, DateTime.UtcNow, pipelineId: await SeedPipelineAsync(ctx, deployedId));
+            pipelineForDeployed = await SeedReleasePipelineAsync(ctx, deployedId, "Production");
+            await SeedDeliveryAsync(ctx, deployedId, pipelineForDeployed, build, ProjectDeliveryStatus.Deployed, new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc));
+            var newest = await SeedDeliveryAsync(ctx, deployedId, pipelineForDeployed, build, ProjectDeliveryStatus.Deployed, new DateTime(2026, 9, 10, 8, 0, 0, DateTimeKind.Utc));
+            // Newer still, but it failed - a failure never reached the customer.
+            await SeedDeliveryAsync(ctx, deployedId, pipelineForDeployed, build, ProjectDeliveryStatus.Failed, new DateTime(2026, 9, 12, 8, 0, 0, DateTimeKind.Utc));
+
+            handedOffId = await SeedProjectAsync(ctx, "CRONUS Sweden");
+            var build2 = await SeedBuildAsync(ctx, handedOffId, ProjectBuildStatus.Ready, DateTime.UtcNow, pipelineId: await SeedPipelineAsync(ctx, handedOffId));
+            // The environment's type is compared the way Business Central's own spelling varies.
+            var rp2 = await SeedReleasePipelineAsync(ctx, handedOffId, " production ");
+            await SeedDeliveryAsync(ctx, handedOffId, rp2, build2, ProjectDeliveryStatus.HandedOff, new DateTime(2026, 9, 5, 8, 0, 0, DateTimeKind.Utc));
+
+            neverId = await SeedProjectAsync(ctx, "CRONUS Norway");
+        }
+
+        await using var read = _db.NewContext();
+        var rows = (await Svc(read).ListProjectsAsync()).ToDictionary(r => r.Id);
+
+        var deployed = rows[deployedId].LastProductionDelivery!;
+        deployed.Status.Should().Be(ProjectDeliveryStatus.Deployed);
+        deployed.FinishedAt.Should().Be(new DateTime(2026, 9, 10, 8, 0, 0, DateTimeKind.Utc), "the newest success wins, and a newer failure is not one");
+        deployed.ReleasePipelineId.Should().Be(pipelineForDeployed);
+        deployed.ReleasePipelineRemoved.Should().BeFalse();
+
+        rows[handedOffId].LastProductionDelivery!.Status.Should().Be(ProjectDeliveryStatus.HandedOff,
+            "Business Central accepting the apps for a later window counts as shipped");
+        rows[neverId].LastProductionDelivery.Should().BeNull("a solution with no release pipeline has never shipped");
+    }
+
+    [Fact]
+    public async Task ListProjectsAsync_ignores_a_delivery_to_a_sandbox()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS Denmark");
+            var build = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, pipelineId: await SeedPipelineAsync(ctx, projectId));
+            var sandbox = await SeedReleasePipelineAsync(ctx, projectId, "Sandbox");
+            await SeedDeliveryAsync(ctx, projectId, sandbox, build, ProjectDeliveryStatus.Deployed, DateTime.UtcNow);
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+        row.LastProductionDelivery.Should().BeNull("a sandbox is where it was tried, not where the customer got it");
+    }
+
+    [Fact]
+    public async Task ListProjectsAsync_still_counts_a_delivery_whose_release_pipeline_was_deleted()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS Denmark");
+            var build = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, pipelineId: await SeedPipelineAsync(ctx, projectId));
+            var rp = await SeedReleasePipelineAsync(ctx, projectId, "Production");
+            await SeedDeliveryAsync(ctx, projectId, rp, build, ProjectDeliveryStatus.Deployed, DateTime.UtcNow);
+            var pipeline = await ctx.OeReleasePipelines.SingleAsync(r => r.Id == rp);
+            pipeline.DeletedAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var shipped = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject.LastProductionDelivery;
+        shipped.Should().NotBeNull("the customer still got it");
+        shipped!.ReleasePipelineRemoved.Should().BeTrue("so the list does not link to a page that is gone");
+    }
+
+    [Fact]
+    public async Task ListProjectsAsync_carries_each_solutions_visibility_and_locks_a_private_one_as_private()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var readOnly = await SeedProjectAsync(ctx, "CRONUS Denmark");
+            (await ctx.OeProjects.SingleAsync(p => p.Id == readOnly)).Visibility = ProjectVisibility.ReadOnly;
+            await SeedProjectAsync(ctx, "CRONUS Norway");
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var rows = await Svc(read).ListProjectsAsync();
+        rows.Single(r => r.Name == "CRONUS Denmark").Visibility.Should().Be(ProjectVisibility.ReadOnly);
+        rows.Single(r => r.Name == "CRONUS Norway").Visibility.Should().Be(ProjectVisibility.Public);
+        // list_solutions hands the row to an assistant as JSON: a word, not an enum number.
+        System.Text.Json.JsonSerializer.Serialize(rows.Single(r => r.Name == "CRONUS Denmark"))
+            .Should().Contain("\"Visibility\":\"ReadOnly\"");
+    }
+
+    [Fact]
+    public async Task ListProjectsAsync_reads_the_list_in_the_same_number_of_commands_whatever_the_number_of_solutions()
+    {
+        async Task<int> CountFor()
+        {
+            var counter = new CommandCounter();
+            await using var read = _db.NewContext(counter);
+            await Svc(read).ListProjectsAsync();
+            return counter.Count;
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS Denmark");
+            var build = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, pipelineId: await SeedPipelineAsync(ctx, projectId));
+            await SeedDeliveryAsync(ctx, projectId, await SeedReleasePipelineAsync(ctx, projectId, "Production"), build, ProjectDeliveryStatus.Deployed, DateTime.UtcNow);
+        }
+        var one = await CountFor();
+
+        await using (var ctx = _db.NewContext())
+        {
+            foreach (var name in new[] { "CRONUS Norway", "CRONUS Sweden", "CRONUS Finland" })
+            {
+                var projectId = await SeedProjectAsync(ctx, name);
+                var build = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, pipelineId: await SeedPipelineAsync(ctx, projectId));
+                await SeedDeliveryAsync(ctx, projectId, await SeedReleasePipelineAsync(ctx, projectId, "Production"), build, ProjectDeliveryStatus.Deployed, DateTime.UtcNow);
+            }
+        }
+        var four = await CountFor();
+
+        four.Should().Be(one, "the last delivery is one query for every row, not one per row");
+    }
+
+    private sealed class CommandCounter : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public int Count { get; private set; }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Count++;
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private static async Task<int> SeedReleasePipelineAsync(Data.AppDbContext ctx, int projectId, string environmentType)
+    {
+        var environment = new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = environmentType.Trim(), Type = environmentType,
+            FetchedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjectEnvironments.Add(environment);
+        await ctx.SaveChangesAsync();
+        var pipeline = new OeReleasePipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = $"To {environment.Name}",
+            ProjectEnvironmentId = environment.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeReleasePipelines.Add(pipeline);
+        await ctx.SaveChangesAsync();
+        return pipeline.Id;
+    }
+
+    private static async Task<int> SeedDeliveryAsync(Data.AppDbContext ctx, int projectId, int releasePipelineId, int buildId, string status, DateTime finishedAt)
+    {
+        var delivery = new OeProjectDelivery
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, ReleasePipelineId = releasePipelineId, ProjectBuildId = buildId,
+            EnvironmentName = "Production", Status = status, ScheduledFor = finishedAt, StartedAt = finishedAt, FinishedAt = finishedAt,
+            CreatedAt = finishedAt, UpdatedAt = finishedAt,
+        };
+        ctx.OeProjectDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+        return delivery.Id;
     }
 
     // ── seeding helpers ─────────────────────────────────────────────────

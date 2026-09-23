@@ -61,6 +61,12 @@
         syncButtons();
     }
 
+    // The same two operations the toggle uses, for the command palette's theme
+    // commands - so there is one place that knows how a theme is stored and
+    // applied, not a second copy in command-palette.js.
+    window.aldt = window.aldt || {};
+    window.aldt.theme = { current: currentTheme, set: setTheme };
+
     // Click delegation survives Blazor enhanced navigation, which can replace
     // the top-bar DOM nodes when a new page renders.
     document.addEventListener("click", (event) => {

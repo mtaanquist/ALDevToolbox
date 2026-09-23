@@ -375,8 +375,9 @@
     /// <summary>
     /// Cache-first load: read the solution's discovered extensions, render them
     /// instantly when present, poll while a background discovery is in flight, and
-    /// auto-trigger a first discovery for a solution that's never been discovered
-    /// (e.g. a solution migrated before the cache existed).
+    /// auto-trigger a discovery for a solution that has nothing usable cached: never
+    /// discovered (e.g. a solution migrated before the cache existed), or whose last
+    /// attempt failed.
     /// </summary>
     private async Task LoadDiscoveryAsync()
     {
@@ -388,9 +389,12 @@
         try
         {
             _discovery = await Discovery.GetDiscoveryAsync(_projectId);
-            if (_discovery.Extensions.Count == 0 && !_discovery.InFlight && _discovery.Error is null)
+            if (_discovery.Extensions.Count == 0 && !_discovery.InFlight)
             {
-                // Never discovered — kick one off and poll for it.
+                // Never discovered, or the last attempt failed. A cached failure is
+                // retried rather than shown: whatever caused it (a token, the App's
+                // reach) is often fixed elsewhere since, and the stale error would
+                // otherwise outlive the fix until someone thought to press Try again.
                 await StartRefreshAsync();
                 return;
             }

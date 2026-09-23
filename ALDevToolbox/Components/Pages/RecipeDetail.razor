@@ -386,10 +386,7 @@
                                           Hint="The files are committed to a new branch, in their own folders, and opened as a pull request from your GitHub account. Nothing on the default branch changes until someone merges it." />
                         @if (!string.IsNullOrEmpty(_repoError))
                         {
-                            <p class="field-error" role="alert">
-                                <Icon Name="circle-alert" Width="13" Height="13" />
-                                <span>@_repoError</span>
-                            </p>
+                            <FieldError Message="@_repoError" />
                         }
                     </div>
                 }

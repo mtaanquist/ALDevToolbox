@@ -84,6 +84,12 @@ public class ServiceRegistrationTests : IClassFixture<TestDb>
             // that true: a tool that quietly falls off the registration list
             // still works today (the SDK activates it) but loses its lifetime.
             notInContainer.Should().BeEquivalentTo(new[] { "BcQualityTools" });
+
+            // The build pipeline is resolved per job inside the import worker, so a
+            // dependency missing from its graph (the symbol feed resolver, #901)
+            // would only show as a failed build.
+            scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildService>()
+                .Should().NotBeNull();
         }
         finally
         {

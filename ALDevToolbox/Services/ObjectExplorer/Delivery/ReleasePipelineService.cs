@@ -435,12 +435,20 @@ public sealed record ReleasePipelineRow(
     /// until somebody re-points it - so the list says so instead of looking healthy
     /// until the next release is refused.
     /// </summary>
-    public string? EnvironmentProblem => EnvironmentMissing
-        ? "no longer present"
-        : BcEnvironmentStatus.Classify(EnvironmentStatus) switch
-        {
-            BcEnvironmentReadiness.Deleting => "being removed",
-            BcEnvironmentReadiness.Failed => "failed in Business Central",
-            _ => null,
-        };
+    public string? EnvironmentProblem => DescribeEnvironmentProblem(EnvironmentMissing, EnvironmentStatus);
+
+    /// <summary>
+    /// <see cref="EnvironmentProblem"/> for a caller holding the two facts rather
+    /// than a whole row - the command palette's release-pipeline source, which has
+    /// to say what the Releases page says, in the same words.
+    /// </summary>
+    public static string? DescribeEnvironmentProblem(bool environmentMissing, string? environmentStatus) =>
+        environmentMissing
+            ? "no longer present"
+            : BcEnvironmentStatus.Classify(environmentStatus) switch
+            {
+                BcEnvironmentReadiness.Deleting => "being removed",
+                BcEnvironmentReadiness.Failed => "failed in Business Central",
+                _ => null,
+            };
 }

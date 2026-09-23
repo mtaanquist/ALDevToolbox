@@ -32,9 +32,9 @@ public sealed class GitHubApiException : Exception
     /// <para>Matched on the two words rather than on the whole sentence:
     /// GitHub appends the rules that fired ("Changes must be made through a
     /// pull request.") and that tail is not something to depend on. The
-    /// distinction matters because the caller can often work within the rule -
-    /// see issue #811, where creating the repository's first commit falls back
-    /// to a pull request.</para>
+    /// distinction matters because a rule violation has a specific remedy the
+    /// caller can name - on a new repository, the GitHub App missing from the
+    /// ruleset's bypass list - where any other refusal does not.</para>
     /// </summary>
     public bool IsRuleViolation =>
         StatusCode == HttpStatusCode.UnprocessableEntity

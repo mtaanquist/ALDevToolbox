@@ -872,7 +872,8 @@ public class CallSiteReferenceEmitter
     /// </summary>
     /// <summary>
     /// Resolves the set of "winning" module ids visible from
-    /// <paramref name="releaseId"/> across its parent-release chain — the same
+    /// <paramref name="releaseId"/> across its parent-release chain and its
+    /// dependency links (the vendor releases a pipeline build resolved) — the same
     /// recursive ancestry + app-id shadowing (closest depth wins) the
     /// find-references queries use (<see cref="ReleaseAncestrySql.WinningModules"/>).
     /// The Phase-2 reference resolver builds its type / member / visibility

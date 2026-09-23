@@ -1,17 +1,50 @@
 @*
-    Renders an inline form validation error for a single field. Pass the field
-    key and the dictionary returned by PlanValidationException.Errors. Renders
-    nothing when there is no message for that key - keeps the call sites tidy.
+    One inline error line: the design system's .field-error, a triangle glyph
+    and the message, announced as an alert.
+
+    Two ways in. Pass Field and the dictionary PlanValidationException.Errors
+    returns and it renders that field's message, or nothing when the key is
+    absent - the shape every form uses for inline validation. Pass Message (or
+    child content, when the line needs a link inside it) for an error that is
+    not keyed to a field: a save that failed, a read that could not be made.
+    Either way the glyph and the role are decided here, because the pages used
+    to pick them by hand and picked two different glyphs (issue #842).
 *@
 
-@if (Errors is not null && Errors.TryGetValue(Field, out var message))
+@if (Text is { } text)
 {
-    <span class="field-error" role="alert">
-        <Icon Name="circle-alert" Width="13" Height="13" />@message
+    <span id="@Id" class="@CssClass" role="alert">
+        <Icon Name="triangle-alert" Width="13" Height="13" />@text
+    </span>
+}
+else if (ChildContent is not null)
+{
+    <span id="@Id" class="@CssClass" role="alert">
+        <Icon Name="triangle-alert" Width="13" Height="13" />@ChildContent
     </span>
 }
 
 @code {
-    [Parameter, EditorRequired] public string Field { get; set; } = string.Empty;
+    /// <summary>The key to look up in <see cref="Errors"/>. Ignored when <see cref="Message"/> or child content is given.</summary>
+    [Parameter] public string Field { get; set; } = string.Empty;
     [Parameter] public IReadOnlyDictionary<string, string>? Errors { get; set; }
+
+    /// <summary>A message not keyed to a field. Renders nothing when null or empty.</summary>
+    [Parameter] public string? Message { get; set; }
+
+    /// <summary>The line's body when it needs markup (a link, a count). Wins over <see cref="Message"/> only when that is empty.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Extra classes on the span, for a page that positions the line (kept in scope with <c>::deep</c>).</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>An id for <c>aria-describedby</c> on the input the line explains.</summary>
+    [Parameter] public string? Id { get; set; }
+
+    private string CssClass => string.IsNullOrWhiteSpace(Class) ? "field-error" : $"field-error {Class.Trim()}";
+
+    private string? Text =>
+        !string.IsNullOrEmpty(Message) ? Message
+        : Errors is not null && Field.Length > 0 && Errors.TryGetValue(Field, out var keyed) ? keyed
+        : null;
 }

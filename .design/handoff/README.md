@@ -64,10 +64,31 @@ should settle. It also carries one **correction to `components.css`**: `.modal-b
 mixes from `--ink`, which flips with the theme, so the dark scrim comes out nearly white.
 The app overrides it in `app.css` until the sheet is fixed upstream and re-pulled; delete
 the override then. When a doc in `.design/` says something "needs a design pass upstream",
-that brief is where it is tracked.
+that brief is where it is tracked. The Solutions list's entry has an addendum checked in
+here, `briefs/2026-09-solutions-list-rail.md` (#906: the row as the selector, the rail
+reserved with an empty state, new columns), waiting to be folded into it upstream.
+
+**The command palette** has its own brief, `briefs/2026-09-command-palette.md`, for the
+same reason and written to the same shape: the palette ([#880]-[#888]) shipped without a
+sheet because the system has nothing like it. It covers the overlay, the result row, the
+group header, the best-match row, the foot, the four list states, light and dark, and
+phone width - with the class names and tokens the built palette actually uses, so the
+design side can draw what shipped rather than reconstruct it. It also carries one
+**measurement for the system, not for the palette**: the selection keyline `--primary` is
+2.45:1 against `--surface` in light, under the 3:1 WCAG asks of a state indicator, and it
+is the same keyline as `.nav-item.is-active::before`, `.data-table tr.is-selected` and
+`.run-row.is-selected` - so it wants deciding once, upstream, rather than diverging in one
+sheet.
+
+Unlike `briefs/2026-09-shipped-without-a-sheet.md`, which lives in the design project, this
+one is checked in here first: it was written in a session with no `DesignSync` access. Push
+it upstream with `finalize_plan` + `write_files` next time one is open, and then treat the
+design project as the copy of record like the rest of this folder.
 
 [#570]: https://github.com/mtaanquist/ALDevToolbox/issues/570
 [#818]: https://github.com/mtaanquist/ALDevToolbox/issues/818
+[#880]: https://github.com/mtaanquist/al-workbench/issues/880
+[#888]: https://github.com/mtaanquist/al-workbench/issues/888
 
 PR 12 is the exception: it ported archetypes 12-14, and their three sheets
 (`PageDocs.dc.html`, `PageMcpSetup.dc.html`, `PageErrorStates.dc.html`) were

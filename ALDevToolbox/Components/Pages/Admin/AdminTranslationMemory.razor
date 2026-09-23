@@ -63,7 +63,8 @@
         }
 
         <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
-            <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
+            <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..."
+                   data-page-search aria-keyshortcuts="F3" title="Search source or target (F3)" @bind="_text" @bind:event="oninput" />
             <input class="input tr-mem-mini" aria-label="Target language" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
             <SelectBox>
                 <select class="select tr-mem-mini" aria-label="Kind" @bind="_kind">

@@ -2,6 +2,8 @@ using ALDevToolbox.Components.Pages;
 using ALDevToolbox.Components.Pages.Docs;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Palette;
+using System.Runtime.CompilerServices;
 using Bunit;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Diagnostics;
@@ -204,6 +206,7 @@ public sealed class ContentPageTests : IDisposable
     [Theory]
     [InlineData(typeof(WhatsNextDocs))]
     [InlineData(typeof(McpDocs))]
+    [InlineData(typeof(SearchDocs))]
     public void Every_contents_link_points_at_a_heading_on_the_page(Type page)
     {
         // McpDocs reads ?client= off the URL and renders a different block per
@@ -224,6 +227,59 @@ public sealed class ContentPageTests : IDisposable
 
         targets.Should().NotBeEmpty();
         targets.Should().OnlyContain(t => ids.Contains(t));
+    }
+
+    // ---------- /docs/search ----------
+
+    /// <summary>
+    /// The palette's docs page (#888), written for someone who has never used a
+    /// command palette. Two things about it are load-bearing rather than
+    /// decorative: it has to name every group the palette can show - a group
+    /// heading the reader cannot look up is a word with no meaning - and it has
+    /// to say that nothing here changes anything, which is the question a
+    /// person asks before they will type a customer's name into a box they do
+    /// not understand.
+    /// </summary>
+    [Fact]
+    public void The_search_docs_name_every_group_the_palette_can_show()
+    {
+        Navigate("/docs/search");
+        var page = _ctx.Render<SearchDocs>();
+
+        var text = page.Find(".prose").TextContent;
+        // Every source's own heading, read off the sources themselves rather than
+        // listed here, so a source added later fails this until the page names it.
+        // Label is a constant on every source, so an uninitialised instance
+        // answers it without the database the source would need to search.
+        var groups = typeof(IPaletteSource).Assembly.GetTypes()
+            .Where(t => typeof(IPaletteSource).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false })
+            .Select(t => ((IPaletteSource)RuntimeHelpers.GetUninitializedObject(t)).Label)
+            .Append("Go to")
+            .ToList();
+        groups.Should().Contain(["Solutions", "People", "Docs"]);
+
+        foreach (var group in groups)
+        {
+            text.Should().Contain(group,
+                "a group heading the reader cannot look up is a word with no meaning");
+        }
+
+        text.Should().Contain("Voice account number").And.Contain("tenant ID",
+            "these are the fields support types mid-call, and the page is where "
+            + "someone learns they can");
+        text.Should().Contain("Ctrl").And.Contain("Cmd").And.Contain("Esc");
+    }
+
+    [Fact]
+    public void The_search_docs_promise_that_nothing_is_changed()
+    {
+        Navigate("/docs/search");
+        var page = _ctx.Render<SearchDocs>();
+
+        System.Text.RegularExpressions.Regex.Replace(page.Find(".prose").TextContent, @"\s+", " ")
+            .Should().Contain("Nothing you type here publishes, deletes or updates",
+            "no palette result ever writes to a customer's tenant, and the person "
+            + "deciding whether to trust the box is the one who needs to know");
     }
 
     // ---------- /not-found ----------

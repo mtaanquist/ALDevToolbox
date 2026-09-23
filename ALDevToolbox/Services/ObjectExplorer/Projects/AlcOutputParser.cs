@@ -18,6 +18,14 @@ public sealed record AlcDiagnostic(
     string Message);
 
 /// <summary>
+/// One dependency package the AL compiler looked for and did not find (its
+/// <c>AL1022</c> error). The compiler names the package by publisher, name and the
+/// lowest version it will accept - never by app id, which is why
+/// <see cref="MissingDependencyReport"/> matches it back to the manifest.
+/// </summary>
+public sealed record AlcMissingPackage(string Publisher, string Name, string Version);
+
+/// <summary>
 /// Reads <c>alc</c>'s console output into structured diagnostics.
 ///
 /// <para>The compiler prints one diagnostic per line in the long-standing
@@ -90,6 +98,54 @@ public static class AlcOutputParser
                 Severity: match.Groups["severity"].Value.ToLowerInvariant(),
                 Code: match.Groups["code"].Success ? match.Groups["code"].Value.ToUpperInvariant() : string.Empty,
                 Message: match.Groups["message"].Value.Trim()));
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The compiler's "package not found" error. Captured from a real compile
+    /// (alc 17.0.34.45391, an app.json declaring a dependency the package cache did
+    /// not hold):
+    /// <code>
+    /// error AL1022: A package with publisher 'Continia Software', name 'Continia Core', and a version compatible with '12.1.0.0' could not be found in the package cache folders: /tmp/oe-build-x/symbols
+    /// </code>
+    /// Unlike every other diagnostic it carries no <c>path(line,col):</c> prefix,
+    /// so <see cref="Parse"/> never sees it. The compiler prints the same line when
+    /// the package is there at a lower version than the one asked for, so it
+    /// covers "stored, but too old" as well as "absent".
+    /// </summary>
+    private static readonly Regex MissingPackageLine = new(
+        @"error\s+AL1022\s*:\s*A package with publisher '(?<publisher>.*?)', name '(?<name>.*?)', and a version compatible with '(?<version>[^']*)' could not be found",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeout: TimeSpan.FromSeconds(1));
+
+    /// <summary>
+    /// Every dependency package the compiler reported missing in
+    /// <paramref name="output"/>, once each, in the order it printed them.
+    /// </summary>
+    public static IReadOnlyList<AlcMissingPackage> ParseMissingPackages(string? output)
+    {
+        if (string.IsNullOrWhiteSpace(output)) return [];
+
+        var found = new List<AlcMissingPackage>();
+        foreach (var raw in output.Split('\n'))
+        {
+            Match match;
+            try
+            {
+                match = MissingPackageLine.Match(raw);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                continue;
+            }
+            if (!match.Success) continue;
+
+            var package = new AlcMissingPackage(
+                match.Groups["publisher"].Value.Trim(),
+                match.Groups["name"].Value.Trim(),
+                match.Groups["version"].Value.Trim());
+            if (!found.Contains(package)) found.Add(package);
         }
         return found;
     }

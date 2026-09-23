@@ -333,82 +333,50 @@ The repository name suggestion and the registration of the created repository on
 
 Generation is unchanged: in memory, synchronous. The repository is created with
 the installation token via `POST /orgs/{org}/repos` and `auto_init: false`, and
-then filled by **creating its default branch at a commit that already holds
-everything** - never by updating that branch. Issue #811 is why: an organisation
-ruleset targeting `~DEFAULT_BRANCH` applies from the instant the repository
-exists, and its `pull_request` rule refuses every *update* of that branch. The
-old shape (seed, then move the branch on to the workspace, then move it again
-for the standards) put one file in and lost the rest.
+then filled with two writes, both to the default branch:
 
 1. **One file through the Contents API** (`PUT /repos/{owner}/{repo}/contents/{path}`),
-   which creates the repository's initial commit. This is not optional: a
-   repository with no commits refuses *every* Git Data call with `409 Conflict:
-   Git Repository is empty.`, so blobs and trees have nothing to attach to until
-   something has committed. It goes onto a throwaway branch, `aldt/seed`, so the
-   default branch stays unborn and can be created outright. The seeded file is
+   which creates the repository's initial commit and, with it, the default
+   branch. This is not optional: a repository with no commits refuses *every* Git
+   Data call with `409 Conflict: Git Repository is empty.`, so blobs and trees
+   have nothing to attach to until something has committed. The seeded file is
    the generated `README.md` when the template produces one, else `.gitignore`,
    else the first path in order.
-2. **One root commit through the Git Data API** (blobs → tree from *nothing* →
-   commit with no parent), holding every generated file **and** the
+2. **One commit through the Git Data API** (blobs → tree from *nothing* → commit
+   parented on the seed), holding every generated file **and** the
    organisation's standards files, the seeded one included. Standards win on a
-   shared path, which is what #628 already meant by applying them on top.
-3. **`POST /git/refs`** to create `refs/heads/{default branch}` at that commit -
-   a creation, not an update.
-4. **`PATCH /repos/{owner}/{repo}`** with `default_branch`. Seeding made
-   `aldt/seed` the default (on an empty repository the first branch to receive a
-   commit becomes it), and pointing the setting back is a change to the
-   repository, not to a ref.
-5. **Delete `aldt/seed`**, which by then is not the default branch.
+   shared path, which is what #628 already meant by applying them on top. The
+   default branch is then moved on to it with `PATCH /git/refs/heads/{branch}`
+   and `force: false`.
 
-Step 4 has been seen to answer `422 Validation Failed` against a real
-organisation, two milliseconds after step 3 returned. A 422 that is not a rule
-violation is therefore asked again (three attempts, a second and then two
-apart), with GitHub's `errors[]` logged each time. If it still refuses and the
-repository's default really is something else, the flow **succeeds with a
-warning** rather than failing: the workspace is whole on its branch by then, so
-the success state tells the person where on GitHub to switch the default branch,
-`aldt/seed` is left alone (GitHub does not delete a default branch), and the
-solution and audit entry are still written.
+The history reads "Initial commit" followed by "Add the {workspace} workspace".
 
-The result is a repository whose history is a single "Initial commit", which
-also reads better than the seed-plus-workspace-plus-standards trio it replaced.
+**Why a plain update of the default branch is allowed.** The GitHub App is on
+the bypass list of the organisation ruleset that governs the default branch, so
+the installation token is exempt from its `pull_request` rule. That is a
+deployment decision, taken after issue #811: the flow before it went to great
+lengths never to update the default branch - a throwaway `aldt/seed` branch, a
+root commit, `refs/heads/main` created outright at it, a `PATCH /repos` to
+switch the default branch back, and a pull-request fallback when any of that
+was refused - and it was the default-branch switch that failed against the real
+organisation every time. With the bypass in place none of that machinery is
+needed, and it has been removed rather than kept as a fallback: two routes is
+what made the flow hard to get right.
 
-**Why steps 3 and 4 are allowed.** The ruleset in #811 targets
-`~DEFAULT_BRANCH`, and between step 1 and step 4 the default branch *is*
-`aldt/seed`. So `refs/heads/main` is not a protected branch when it is created -
-the rules are pointed at a different branch entirely - and the default-branch
-switch is a change to repository settings, which no branch ruleset governs.
-Neither step needs the weaker claim that creating a ref is never rule-checked.
+A rule violation (a 422 whose message opens "Repository rule violations found")
+on either write therefore means one thing - the bypass is missing - and is
+reported as such rather than routed around: the refusal names the GitHub
+organisation, says an owner has to allow AL Workbench to bypass the rules for
+the default branch, names the repository and what it is left holding (at most
+the one seeded file), and points at the ZIP. The ref update is never forced: a
+`non_fast_forward` answer means something else pushed between the seed and the
+workspace, which is reported as a race, the same as a seed path that already
+exists.
 
-That weaker claim is only load-bearing for a ruleset that names the branch
-outright (`refs/heads/main`) instead of symbolically, where `main` is protected
-from the moment the repository exists. It has not been verified against a live
-organisation, and the fallback is what covers it: a rule violation (a 422 whose
-message opens "Repository rule violations found") on step 3 or 4 drops into the
-pull-request route inside the same operation. That route still leaves the
-repository in the right shape - `main` exists, holds the seeded file, and is the
-default branch, `aldt/seed` is gone - and the workspace is committed onto
-`aldt/initial-workspace` parented on `main`, with a pull request open against
-it. `main` is brought into being there with a Contents write rather than a ref
-creation, since a ref creation is what was just refused and a Contents write
-onto the branch is what the workbench did before this issue - which the bug report
-shows such an organisation allows, because a `.gitignore` did land on `main`; it
-was the update after it that was refused. The result says which route was taken and carries the
-pull request's URL, and the success card and the MCP result say so in their own
-words. Both routes are legitimate under the rule; only one needs a human to
-press merge. If GitHub refuses the pull request as well, the refusal names what
-is on the repository (the one seeded file) and points at the ZIP - the workbench
-does not leave a failure the person cannot read.
-
-Adding the app to the ruleset's bypass list would also have worked and is
-deliberately not done: that list is for org admins unsticking a member, and the
-workbench has to work within the rule rather than around it.
-
-`GET /repos/{owner}/{repo}/rules/branches/{branch}` is read once before any
-write and logged. It steers nothing - GitHub's own refusal is the authority, and
-attempting the direct route is how the primary path stays exercised - but it is
-what makes "why did my workspace arrive as a pull request" answerable from the
-log.
+The repository ruleset the flow applies afterwards (#628) is unaffected: it is
+created after the files, so it never governs this flow's own writes. The
+extension, translation and recipe flows write as the *user*, not the app, so
+the bypass does not reach them and they keep going through pull requests.
 
 Ordered, in-process, behind the Generate button's existing loading state. No
 queue.
@@ -526,9 +494,18 @@ reports is what a build will use, and the tab says so when a repository is picke
 rather than offering a field with one legal value. Choosing a branch per repository
 is a schema change and a change to the clone, and belongs with whatever asks for it.
 
-The clone itself keeps using the user's PAT (`UserRepositoryTokenService`). Moving
-solution builds onto the linked token changes who a build fails for and is a separate,
-later decision.
+**The clone uses the linked token first, the PAT after it.** A manual build or a
+discovery asks `CloneCredentialResolver` for the acting user's credentials in order:
+the user-to-server token from their GitHub link, then the PAT from
+`UserRepositoryTokenService`, and Azure DevOps only ever has the PAT. Each is tried
+against the clone in turn, because only git knows which one reaches the repository
+in front of it: the linked token reaches the repositories the App is installed on,
+which a customer's own organisation may not be. Both act as the person with the
+person's own access, so *who a build fails for* is unchanged - the one who lacks
+access - and the linked token is simply the one that needs nothing pasted or renewed.
+The PAT stays for what the App cannot reach, and the Account page says so. The
+installation token is never used for a manual build; it is the pull-request build's
+credential, where there is no user (phase 2, #627).
 
 ### #625 Translator → open from and save to a repository
 
