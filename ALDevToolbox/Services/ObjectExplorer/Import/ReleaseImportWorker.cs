@@ -76,6 +76,37 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
     }
 
     /// <summary>
+    /// Prepares a release of the finished build through every release pipeline that has
+    /// "Prepare a release when a new build succeeds" on (#934). Nothing is sent: the
+    /// release waits for a person to approve it. Swallows everything for the same reason
+    /// <see cref="PublishReleaseAsync"/> does - the build has already succeeded, and
+    /// nothing about preparing a release may turn it into a failed one.
+    /// </summary>
+    private async Task PrepareReleasesAsync(IServiceProvider services, int releaseId, CancellationToken ct)
+    {
+        try
+        {
+            var db = services.GetRequiredService<AppDbContext>();
+            var buildId = await db.OeProjectBuilds.AsNoTracking()
+                .Where(b => b.ReleaseId == releaseId)
+                .Select(b => (int?)b.Id)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (buildId is not { } id) return;
+
+            var deliveries = services.GetRequiredService<Delivery.DeliveryService>();
+            await deliveries.ProposeReleasesForBuildAsync(id, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // Shutdown, not a failure.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Preparing releases of release {ReleaseId}'s build failed.", releaseId);
+        }
+    }
+
+    /// <summary>
     /// Runs one pull-request build end to end and completes its check run.
     ///
     /// <para>The build's own failures are captured on the build row exactly as a
@@ -343,6 +374,9 @@ public sealed class ReleaseImportWorker : QueueDrainWorker<ReleaseImportJob>
                     // Release, and every refusal is recorded on the build rather than
                     // failing it (issue #632).
                     await PublishReleaseAsync(scope.ServiceProvider, job.ReleaseId, ct).ConfigureAwait(false);
+                    // Release pipelines that ask for it get a release prepared from this
+                    // build, waiting for a person to approve it (#934).
+                    await PrepareReleasesAsync(scope.ServiceProvider, job.ReleaseId, ct).ConfigureAwait(false);
                     jobSucceeded = true;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)

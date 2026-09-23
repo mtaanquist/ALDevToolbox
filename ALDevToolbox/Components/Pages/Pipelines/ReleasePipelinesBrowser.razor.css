@@ -106,6 +106,8 @@
 .rp-card.is-queued { border-right-color: var(--bar-queued); }
 .rp-card.is-succeeded { border-right-color: var(--bar-succeeded); }
 .rp-card.is-cancelled { border-right-color: var(--bar-cancelled); }
+.rp-card.is-draft { border-right-color: var(--bar-draft); }
+.rp-card.is-draft .rp-card__state { color: var(--warning-text); }
 .rp-card.is-running .rp-card__state { color: var(--info-text); }
 .rp-card.is-failed .rp-card__state { color: var(--danger-text); }
 .rp-card.is-succeeded .rp-card__state { color: var(--success-text); }

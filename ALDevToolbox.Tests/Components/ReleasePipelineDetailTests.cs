@@ -433,6 +433,182 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         cut.WaitForAssertion(() => cut.FindAll(".rp-foot").Should().BeEmpty());
     }
 
+    // ── Waiting for approval (#934) ───────────────────────────────────────────
+
+    [Fact]
+    public async Task A_prepared_release_waits_in_the_band_above_the_releases_not_among_them()
+    {
+        var seed = await SeedAsync();
+        var start = DateTime.UtcNow.AddDays(-1);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Deployed, start, d =>
+        {
+            d.ClaimedAt = start; d.StartedAt = start; d.FinishedAt = start.AddMinutes(3); d.CreatedAt = start;
+        }, Result(0, "CRONUS Base", ProjectDeliveryResultStatus.Completed, "2.2.0.104", start, start.AddMinutes(1)));
+        await AddProposalAsync(seed);
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            var band = cut.Find(".rp-approval");
+            band.QuerySelector(".rp-approval__eyebrow")!.TextContent.Should().Be("Waiting for approval");
+            band.QuerySelector(".rp-approval__title")!.TextContent.Should().Be($"Release 2 - build #{seed.BuildId}");
+            band.QuerySelector(".rp-approval__text")!.TextContent.Should()
+                .StartWith($"Build #{seed.BuildId} finished today at")
+                .And.EndWith("a release was prepared for \"Test\". Approve it to install it right away, or dismiss it.");
+            cut.FindAll(".rp-approval__acts button").Select(b => b.TextContent).Should().Equal("Approve", "Dismiss");
+            cut.FindAll(".rp-rel").Should().ContainSingle("the prepared release is not a row: it has not happened");
+            cut.Find(".rp-summary__title").TextContent.Should().Be("Waiting for approval");
+            cut.FindAll(".btn--primary").Select(b => b.TextContent.Trim()).Should().Equal("Release");
+        });
+    }
+
+    [Fact]
+    public async Task Approving_a_prepared_release_schedules_it_and_clears_the_band()
+    {
+        var seed = await SeedAsync();
+        var id = await AddProposalAsync(seed);
+
+        var cut = Render(seed.ReleasePipelineId);
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-approval__acts button")[0].Click();
+            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Approve release 1?");
+            cut.Find(".confirm-dialog__body").TextContent.Should()
+                .Contain($"This installs build #{seed.BuildId}, 3 apps (CRONUS Base, CRONUS Warehouse, CRONUS Reports), into the Sandbox environment \"Test\" right away. You can still cancel it on this page until it starts.");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            // Clicked only while the dialog is up: a retry after it closed has nothing to click.
+            if (cut.FindAll(".confirm-dialog__actions .btn--primary") is { Count: 1 } confirm) confirm[0].Click();
+            cut.FindAll(".rp-approval").Should().BeEmpty();
+            cut.Find(".rp-rel__title").TextContent.Should().StartWith("Release 1");
+        });
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Scheduled);
+        delivery.TriggeredByUserId.Should().Be(OwnerUserId);
+        delivery.DiagnosticsLog.Should().Contain("Approved by K. Jensen.");
+    }
+
+    [Fact]
+    public async Task Approving_into_Production_needs_the_acknowledgement()
+    {
+        var seed = await SeedAsync(production: true);
+        var id = await AddProposalAsync(seed);
+
+        var cut = Render(seed.ReleasePipelineId);
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-approval__acts button")[0].Click();
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeTrue();
+            cut.Find(".confirm-dialog .check--ack").TextContent.Should().Contain("CRONUS Denmark's live Production environment");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".confirm-dialog .check--ack input").Change(true);
+            cut.Find(".confirm-dialog__actions .btn--primary").HasAttribute("disabled").Should().BeFalse();
+        });
+        cut.WaitForAssertion(() =>
+        {
+            // Clicked only while the dialog is up: a retry after it closed has nothing to click.
+            if (cut.FindAll(".confirm-dialog__actions .btn--primary") is { Count: 1 } confirm) confirm[0].Click();
+            cut.FindAll(".rp-approval").Should().BeEmpty();
+        });
+
+        (await _db.NewContext().OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id)).Status
+            .Should().Be(ProjectDeliveryStatus.Scheduled);
+    }
+
+    [Fact]
+    public async Task Dismissing_a_prepared_release_keeps_who_and_why_in_the_history()
+    {
+        var seed = await SeedAsync();
+        var id = await AddProposalAsync(seed);
+
+        var cut = Render(seed.ReleasePipelineId);
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-approval__acts button")[1].Click();
+            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Dismiss release 1?");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rp-dismiss-why").Input("CRONUS asked us to wait");
+            cut.Find("#rp-dismiss-why").GetAttribute("value").Should().Be("CRONUS asked us to wait");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            // Clicked only while the dialog is up: a retry after it closed has nothing to click.
+            if (cut.FindAll(".confirm-dialog__actions .btn--primary") is { Count: 1 } confirm) confirm[0].Click();
+            cut.FindAll(".rp-approval").Should().BeEmpty();
+            cut.Find(".rp-rel__word").TextContent.Should().Be("- Dismissed");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".rp-rel__row").Click();
+            cut.Markup.Should().Contain("Dismissed by K. Jensen: CRONUS asked us to wait. Nothing was sent.");
+            cut.FindAll(".rp-step__label").Select(e => e.TextContent).Should().Equal("Prepared", "Dismissed");
+            cut.Find(".rp-summary__title").TextContent.Should().Be("Nothing released yet", "a dismissed proposal never was a release");
+        });
+
+        var stored = await _db.NewContext().OeProjectDeliveries.AsNoTracking().SingleAsync(d => d.Id == id);
+        stored.Status.Should().Be(ProjectDeliveryStatus.Dismissed);
+        stored.CancelledByUserId.Should().Be(OwnerUserId);
+        stored.DismissReason.Should().Be("CRONUS asked us to wait");
+    }
+
+    [Fact]
+    public async Task A_replaced_proposal_says_which_build_replaced_it_from_what_is_stored()
+    {
+        var seed = await SeedAsync();
+        var id = await AddProposalAsync(seed);
+        await using (var ctx = _db.NewContext())
+        {
+            // The log says nothing about it: the page must read the stored facts.
+            await ctx.OeProjectDeliveries.Where(d => d.Id == id).ExecuteUpdateAsync(u => u
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Dismissed)
+                .SetProperty(d => d.ReplacedByProjectBuildId, 4242)
+                .SetProperty(d => d.DismissReason, "Replaced by build #4242")
+                .SetProperty(d => d.FinishedAt, DateTime.UtcNow)
+                .SetProperty(d => d.DiagnosticsLog, (string?)null));
+        }
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".rp-approval").Should().BeEmpty();
+            cut.Find(".rp-rel__word").TextContent.Should().Be("- Replaced");
+            cut.Find(".rp-rel__why").TextContent.Should().Be("Replaced by build #4242 before anyone approved it.");
+            cut.FindAll(".rp-rel__cell").Select(c => c.TextContent).Should().Contain("None sent");
+        });
+    }
+
+    /// <summary>A release the pipeline prepared from the seeded build, the way the service writes one.</summary>
+    private async Task<int> AddProposalAsync(Seed seed)
+    {
+        await using var ctx = _db.NewContext();
+        var now = DateTime.UtcNow;
+        var delivery = new OeProjectDelivery
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = seed.ProjectId, ReleasePipelineId = seed.ReleasePipelineId,
+            ProjectBuildId = seed.BuildId, TriggeredByUserId = null, EnvironmentName = "Test",
+            DeploymentSchedule = BcDeploymentSchedule.Immediate, SchemaSyncMode = BcSyncMode.Add,
+            ScheduledFor = now, Status = ProjectDeliveryStatus.Proposed,
+            DiagnosticsLog = $"{now:HH:mm:ss}  {DeliveryProposalLog.Prepared(seed.BuildId)}\n",
+            CreatedAt = now, UpdatedAt = now,
+        };
+        foreach (var (name, i) in new[] { "CRONUS Base", "CRONUS Warehouse", "CRONUS Reports" }.Select((n, i) => (n, i)))
+        {
+            delivery.Results.Add(Result(i, name, ProjectDeliveryResultStatus.Pending, null, null, null));
+        }
+        ctx.OeProjectDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+        return delivery.Id;
+    }
+
     // ── Seeding ───────────────────────────────────────────────────────────────
 
     private sealed record Seed(int ProjectId, int EnvironmentId, int BuildPipelineId, int ReleasePipelineId, int BuildId);

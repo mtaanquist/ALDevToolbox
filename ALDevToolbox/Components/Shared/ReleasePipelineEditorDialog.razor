@@ -242,6 +242,20 @@
                             <span>I understand Force sync can drop columns and permanently lose data in this environment.</span>
                         </label>
                     }
+
+                    @* Only a build pipeline has "a new build" to follow (#934). *@
+                    @if (_artifactSource == ReleaseArtifactSource.Build)
+                    {
+                        <div class="field">
+                            <label class="check">
+                                <input type="checkbox" checked="@_prepareOnNewBuild" disabled="@_saving"
+                                       @onchange="e => _prepareOnNewBuild = (bool)(e.Value ?? false)" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>Prepare a release when a new build succeeds</span>
+                            </label>
+                            <small class="field__hint">The release waits on this pipeline's page until someone approves it. A newer build replaces one still waiting. Nothing is installed before then.</small>
+                        </div>
+                    }
                 }
 
                 @if (_saveError is { } se)
@@ -291,6 +305,7 @@
     private string _deploymentSchedule = BcDeploymentSchedule.Immediate;
     private string _schemaSyncMode = BcSyncMode.Add;
     private bool _forceSyncAck;
+    private bool _prepareOnNewBuild;
 
     private bool _loading;
     private bool _saving;
@@ -412,6 +427,7 @@
         _deploymentSchedule = row.DeploymentSchedule;
         _schemaSyncMode = row.SchemaSyncMode;
         _forceSyncAck = row.SchemaSyncMode == BcSyncMode.ForceSync; // already-saved choice is pre-acknowledged
+        _prepareOnNewBuild = row.PrepareReleaseOnNewBuild;
         _open = true;
         _focusPending = true;
         await LoadProjectAsync();
@@ -430,6 +446,7 @@
         _deploymentSchedule = BcDeploymentSchedule.Immediate;
         _schemaSyncMode = BcSyncMode.Add;
         _forceSyncAck = false;
+        _prepareOnNewBuild = false;
         _saveError = null;
         _buildPipelines = null;
         _environments = null;
@@ -570,7 +587,8 @@
             var input = new ReleasePipelineInput(
                 _projectId, _name.Trim(), _buildPipelineId, _environmentId, _deploymentSchedule, _schemaSyncMode,
                 _artifactSource,
-                _releaseRepositoryId == 0 ? null : _releaseRepositoryId);
+                _releaseRepositoryId == 0 ? null : _releaseRepositoryId,
+                _prepareOnNewBuild && _artifactSource == ReleaseArtifactSource.Build);
 
             int id;
             if (_editing && _releasePipelineId is { } rid)

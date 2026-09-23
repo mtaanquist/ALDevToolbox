@@ -310,6 +310,7 @@ the naming suggested.
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
 | `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate` — or our own `OurDeliveryWindow` (#928), which is never sent and becomes `Immediate` at the wire. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Four are offered in the picker — see *Deployment schedules* below. |
 | `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
+| `prepare_release_on_new_build` | `bool` | #934. Off by default. When on, a new successful build of the source build pipeline **prepares** a release through this pipeline - a `proposed` delivery - and a person approves or dismisses it (see *Prepared releases* below). Nothing is ever approved on its own. Ignored (saved as false) for a pipeline that installs GitHub releases. |
 | `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`OeProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
 
 ### 4. Delivery = one run of a release pipeline (the analogue of `OeProjectBuild`)
@@ -326,7 +327,11 @@ specific build. Mirrors how `OeProjectBuild` records a build run:
   Read beside `scheduled_outside_window`: both true means the person releasing overrode the rule.
 - Schedule: `scheduled_for` (the UTC instant the user picked), `claimed_at`, `started_at`, `finished_at`.
 - **Status lifecycle + the cancel/run race:**
-  `scheduled → claimed → uploading → installing → deployed | failed`, plus `scheduled → cancelled`.
+  `scheduled → claimed → uploading → installing → deployed | failed`, plus `scheduled → cancelled`,
+  and for a prepared release (#934) `proposed → scheduled` (approved) or `proposed → dismissed`
+  (dismissed, or replaced by a newer build; terminal, and deliberately not `cancelled`, because
+  it never was a release). `proposed` is never enqueued and never claimed: the
+  scheduler's due sweep and the worker's claim both match `scheduled` only.
   - While `scheduled`, the delivery is **cancellable**. Cancel is an atomic compare-and-set
     (`UPDATE ... SET status='cancelled' WHERE id=? AND status='scheduled'`) — it only succeeds if the
     worker hasn't taken the row yet.
@@ -669,7 +674,8 @@ whole. The page reads the log line back through the same parser, so a release st
 - **`ReleasePipelineService`** — CRUD over `OeReleasePipeline` (name, source build pipeline or GitHub
   repository, target environment, deployment schedule, schema sync mode). Access-gated like `PipelineService`.
 - **`DeliveryService`** — creates an `OeProjectDelivery` when the user schedules a release of a chosen
-  build (no auto-on-build in v1); converts the picked local date+time to a UTC `scheduled_for` using
+  build (no auto-on-build in v1; from #934 a new build may *prepare* one for a person to approve,
+  never send one); converts the picked local date+time to a UTC `scheduled_for` using
   the project's timezone; owns the atomic cancel/claim transitions. **As built:** the engine slice
   ships `ReleaseBuildNowAsync` (immediate run, `scheduled_for = now`) + `RunDeliveryAsync` (claim →
   upload → install → poll); it takes the access token through a narrow **`IDeliveryTokenSource`**
@@ -738,7 +744,8 @@ whole. The page reads the log line back through the same parser, so a release st
   records per-app `started_at` / `finished_at` and `previous_version` (from the installed-apps
   read before the first upload, matched on app id then name), the delivery's
   `install_started_at` (the first upload accepted), and `cancelled_by_user_id`. Rows written
-  before that have nulls and the page hides those cells. The approval band (#934) is not built.
+  before that have nulls and the page hides those cells. The approval band (#934) is described
+  under *Prepared releases*.
 - **Release again (#931):** a failed row carries "Release again" (manage-gated; the phone layout
   moves it to a full-width button in the opened row), and when Business Central refused a schema
   change (`ExtensionChangeFailed`) on a release that did not already use Force sync, the failure's
@@ -753,6 +760,75 @@ whole. The page reads the log line back through the same parser, so a release st
   the delivery's own `schema_sync_mode` and nowhere else, so the pipeline and the release after
   this one stay on the pipeline's mode. The row reads "Force sync, this release only" and the
   run's log says the same. No new column: the snapshot was already there.
+- **Prepared releases (#934):** see the section of that name below.
+
+## Prepared releases (#934)
+
+v1 said "no auto-on-build" and "auto-deliver on build success is explicitly not v1", and for the
+*install* that still stands. What #934 lifts is the step before it: with the pipeline setting
+"Prepare a release when a new build succeeds" on, a new successful build **prepares** a release
+through the pipeline, and a person decides. The exclusion was about the workbench installing into
+a customer's environment without anyone choosing to; nothing here does that. What it cost to keep
+it whole was that somebody had to notice a build had landed, open the pipeline and press Release -
+the gap the issue names - and a prepared release closes that gap without moving the decision.
+
+- **What is prepared.** When a build flips to `ready` (`ReleaseImportWorker`, after the build and
+  its GitHub publish), `DeliveryService.ProposeReleasesForBuildAsync` writes a `proposed` delivery
+  for every active release pipeline that draws from that build pipeline and has the setting on:
+  the build, its apps as pending rows, and `scheduled_for` by the pipeline's rule (the next opening
+  of the delivery window for `OurDeliveryWindow`, otherwise the moment it was prepared). The
+  release is checked the way a hand-made one is (`ResolveReleaseAsync`, shared), except for the
+  cached environment status and the access check: an environment mid-update when a build lands is
+  ready again long before anyone approves, and preparing sends nothing, so the approval is where
+  both are checked. A pipeline the build can't go through - environment gone, a stale setting, a
+  multi-app build on a deferred schedule - is skipped with a warning in the log; the build is fine.
+  Pull-request builds are never prepared. `triggered_by_user_id` stays null until someone approves.
+- **One at a time.** A newer build **replaces** an unapproved proposal rather than stacking a
+  queue: the older row goes `proposed → dismissed` (compare-and-set on `proposed`) with
+  `replaced_by_project_build_id` set to the newer build, `dismiss_reason` "Replaced by build #N",
+  and `cancelled_by_user_id` left null - no person did it. The same build twice, or an older
+  build finishing after a newer one, changes nothing.
+- **Approve.** `ApproveProposalAsync` (manage-gated) re-runs every check a hand-made release has,
+  re-snapshots the pipeline's settings as they are now, makes the approver the triggering user the
+  worker runs as, and schedules it by the pipeline's rule *from now*; then `proposed → scheduled`
+  by compare-and-set, and a release due now is queued, exactly as the Release dialog does. From
+  there it is an ordinary release: cancellable until claimed, reschedulable, run by the worker. The
+  page asks for the Production acknowledgement before it calls this, as it does for every release.
+- **Dismiss.** `DismissProposalAsync` (manage-gated) takes an optional reason (500 characters),
+  `proposed → dismissed` by compare-and-set, with `cancelled_by_user_id` (the column #929 added
+  for who cancelled) naming the person and `dismiss_reason` holding their reason, or null. The
+  apps are marked "Not sent". Nothing was sent, so nothing needs undoing.
+- **Stored facts, not log text.** What became of a prepared release is its status and three
+  columns: `cancelled_by_user_id` (who dismissed it), `dismiss_reason` and
+  `replaced_by_project_build_id` (a plain id, no foreign key: a fact about history, and the build
+  may be removed later). The last two arrived in the same migration as the pipeline setting. The
+  log still gets a line for each step ("Prepared from build #N ...", "Approved by ...",
+  "Dismissed by ...", "Replaced by build #N ..."), and a run of an approved release appends to
+  those lines rather than writing over them, but the log is for reading: nothing parses it back.
+  A first version did, telling a dismissed proposal from a cancelled release by its log lines;
+  that was replaced before merging because a change of wording would have silently changed what
+  the pages said. A `dismissed` row never was a release, so it is not "the last release" on the
+  pipeline's page or the list.
+- **Pages.** The pipeline page draws a proposal in the "Waiting for approval" band at the top of
+  the releases card (`ReleasePipelineBody.dc.html`), not as a row: its number and build, one
+  sentence (which build finished when, where it would go, when it installs once approved), and
+  Approve / Dismiss for somebody who manages the solution - outline buttons, so Release stays the
+  page's one primary. Approve opens a confirm naming the build, the apps, the environment and when;
+  Production adds the Release dialog's acknowledgement. Dismiss opens one with the optional
+  reason. A dismissed or replaced proposal stays in the list, reading "Dismissed" or "Replaced",
+  and opens into who and why with a two-step strip (Prepared, then Dismissed or Replaced). The
+  summary card says "Waiting for approval" after a failure and before a schedule. The Releases
+  list gives such a pipeline the draft keyline and a person glyph, counts it under "Needs
+  attention", fills its Next release cell with "Waiting for approval", and opens with "1 release
+  waiting for approval: <pipeline>". The solution page opens with the same line, naming the build.
+  The status is `proposed` in `ProjectDeliveryStatus` and `RowStateIcon` (draft keyline, `user`), and `dismissed` beside it (the cancelled keyline, `x`).
+- **Never automatic, never an agent.** Nothing approves a proposal but a person pressing Approve.
+  The MCP tools read it - `list_deliveries` and `list_recent_deliveries` report `proposed` and `dismissed`, and
+  `list_release_pipelines` reports the setting - and there is no tool to approve or dismiss one.
+- **Not built.** A notification when a release is prepared is a later slice; the list's line and
+  the band are the v1 signal. A pipeline that installs **GitHub releases** does not prepare one:
+  there is no sweep that sees a new release on GitHub today (releases are listed on demand when
+  somebody opens the dialog), so the setting is hidden for that source and saved as false.
 
 ## Security & tenant isolation
 
@@ -781,7 +857,9 @@ including for a pipeline that installs in the delivery window (#928): the tool r
 and the delivery records that it ran outside the window when it did. `publish_build` always uses
 the pipeline's own schema sync mode and has no parameter to change it: a one-time Force sync
 (#931) is a person's decision, taken in the web UI behind its acknowledgement, and no agent or
-palette write may escalate to it.
+palette write may escalate to it. A release the pipeline prepared from a new build (#934) is
+read-only to agents: it reads as `proposed`, then `dismissed` if set aside, and approving or dismissing it is a person's act in
+the web UI.
 
 **The Deliver reads (#912):** ten read-only tools in their own class, `DeliverTools`, so the
 area's one write stays in `DeliveryTools` and a test (`DeliverToolsTests`) can walk the new
@@ -817,7 +895,7 @@ class and fail on anything that is not `ReadOnly = true`. `get_solution`, `list_
 3. **Scheduling** (pick a concrete date+time per delivery, `DeliveryScheduler`/`Queue`/`Worker`, the
    atomic claim/cancel transition, cancellable-until-claimed, restart-resume, delivery history UI).
 4. **Polish** (partial-failure reporting, Production confirms, secret-expiry-vs-scheduled-time
-   guard, audit-log entries, MCP tool). *Auto-deliver on build success is explicitly **not** v1.*
+   guard, audit-log entries, MCP tool). *Auto-deliver on build success is explicitly **not** v1* (#934 later added a prepared release a person approves; the install is still never automatic).
    **As built:** partial-failure reporting + Production/Force-Sync confirms shipped in phases 2–3.
    **Phase 4a** adds the secret-expiry-vs-schedule guard (a warn-but-allow note in the release dialog
    and reschedule modal when the picked time is past the secret's expiry — the run's hard-fail stays
@@ -872,6 +950,8 @@ class and fail on anything that is not `ReadOnly = true`. `get_solution`, `list_
   deliberately not in the picker (see *Open questions*).
 - **Trigger model:** no auto-publish in v1. The user explicitly schedules a delivery for a concrete
   date+time; it then runs automatically at that time, and is **cancellable until a worker claims it**.
+  **Revised by #934:** a pipeline may *prepare* a release when a new build succeeds, for a person to
+  approve; it still never publishes on its own (see *Prepared releases*).
 - **Per-environment update window (revised):** each `OeProjectEnvironment` carries a recurring daily
   update window (start/end time in `bc_time_zone`, nullable = any time), mirroring BC's admin-center
   environment update window — the model BC admins already know. It is a **default, not a lock**:

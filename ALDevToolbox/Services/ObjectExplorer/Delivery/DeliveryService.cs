@@ -121,6 +121,85 @@ public sealed class DeliveryService
         var orgId = RequireOrganizationId();
         scheduledForUtc = DateTime.SpecifyKind(scheduledForUtc, DateTimeKind.Utc);
 
+        var plan = await ResolveReleaseAsync(releasePipelineId, projectBuildId, checkAccess: true, ct);
+        var delivery = await WriteDeliveryAsync(orgId, plan, scheduledForUtc, forceSyncOnce, proposed: false, ct);
+
+        // Due now (or in the past) → enqueue immediately so "Release now" is snappy;
+        // a future delivery is left for the DeliveryScheduler to enqueue when due.
+        if (scheduledForUtc <= delivery.CreatedAt)
+        {
+            await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "capturing identity for a delivery")), ct);
+        }
+
+        _logger.LogInformation(
+            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}{ForceOnce}.",
+            delivery.Id, plan.BuildId, plan.Id, plan.EnvName, scheduledForUtc, plan.Artifacts.Count,
+            delivery.ScheduledOutsideWindow ? " (outside the update window)" : "",
+            forceSyncOnce ? " (Force sync, this release only)" : "");
+        return delivery.Id;
+    }
+
+    /// <summary>
+    /// Writes one delivery of a resolved release, with a pending row per app. A proposed
+    /// one (#934) has nobody behind it yet - the person who approves it becomes its
+    /// triggering user - and opens its log with the line that says where it came from.
+    /// </summary>
+    private async Task<OeProjectDelivery> WriteDeliveryAsync(
+        int orgId, ReleasePlan plan, DateTime scheduledForUtc, bool forceSyncOnce, bool proposed, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var delivery = new OeProjectDelivery
+        {
+            OrganizationId = orgId,
+            ProjectId = plan.ProjectId,
+            ReleasePipelineId = plan.Id,
+            ProjectBuildId = plan.BuildId,
+            TriggeredByUserId = proposed ? null : _orgContext.CurrentUserId,
+            EnvironmentName = plan.EnvName,
+            DeploymentSchedule = plan.WireSchedule,
+            ScheduledByDeliveryWindow = plan.ByDeliveryWindow,
+            // A one-time Force sync lives on this delivery only; the pipeline keeps its mode.
+            SchemaSyncMode = forceSyncOnce ? BcSyncMode.ForceSync : plan.SchemaSyncMode,
+            ScheduledFor = scheduledForUtc,
+            // Audit the override: a window exists and the chosen time falls outside it.
+            ScheduledOutsideWindow = plan.IsOutsideWindow(scheduledForUtc),
+            Status = proposed ? ProjectDeliveryStatus.Proposed : ProjectDeliveryStatus.Scheduled,
+            DiagnosticsLog = proposed ? LogLine(DeliveryProposalLog.Prepared(plan.BuildId)) : null,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        for (var i = 0; i < plan.Artifacts.Count; i++)
+        {
+            delivery.Results.Add(new OeProjectDeliveryResult
+            {
+                OrganizationId = orgId,
+                Ordering = i,
+                AppName = plan.Artifacts[i].AppName,
+                AppVersion = plan.Artifacts[i].AppVersion,
+                Status = ProjectDeliveryResultStatus.Pending,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        _db.OeProjectDeliveries.Add(delivery);
+        await _db.SaveChangesAsync(ct);
+        return delivery;
+    }
+
+    /// <summary>
+    /// Everything a release of <paramref name="projectBuildId"/> through
+    /// <paramref name="releasePipelineId"/> needs, checked the way every release is: the
+    /// pipeline and its target still exist and can take an install, the build is a
+    /// successful build of this pipeline's source with apps in it, and the pipeline's
+    /// timing and schema sync are values Business Central still accepts. Shared by a
+    /// hand-made release, an approval of a prepared one, and the preparing itself, so the
+    /// three can never disagree about what is releasable. Throws
+    /// <see cref="PlanValidationException"/>; with <paramref name="checkAccess"/> also
+    /// <see cref="ProjectAccessDeniedException"/>.
+    /// </summary>
+    private async Task<ReleasePlan> ResolveReleaseAsync(int releasePipelineId, int projectBuildId, bool checkAccess, CancellationToken ct, bool checkEnvironmentStatus = true)
+    {
         var rp = await _db.OeReleasePipelines.AsNoTracking()
             .Where(r => r.Id == releasePipelineId && r.DeletedAt == null)
             .Select(r => new
@@ -142,7 +221,10 @@ public sealed class DeliveryService
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("ReleasePipeline", "This release pipeline no longer exists.");
 
-        await _access.EnsureCanManageAsync(rp.ProjectId, rp.OwnerId, ct);
+        if (checkAccess)
+        {
+            await _access.EnsureCanManageAsync(rp.ProjectId, rp.OwnerId, ct);
+        }
 
         if (rp.EnvMissing)
         {
@@ -152,7 +234,9 @@ public sealed class DeliveryService
         // The cached status catches the obvious cases at the point the user is looking
         // at the screen. The live re-read before the upload (see PublishAsync) is the
         // one that catches an update that lands between scheduling and running.
-        if (BcEnvironmentStatus.RefusalMessage(rp.EnvName, rp.EnvStatus) is { } statusRefusal)
+        // Preparing a release skips it: an environment busy with an update when a build
+        // lands is ready again long before anyone approves, and the approval checks again.
+        if (checkEnvironmentStatus && BcEnvironmentStatus.RefusalMessage(rp.EnvName, rp.EnvStatus) is { } statusRefusal)
         {
             throw Validation("ProjectEnvironment", statusRefusal);
         }
@@ -186,7 +270,7 @@ public sealed class DeliveryService
         var artifacts = await _db.OeProjectBuildArtifacts.AsNoTracking()
             .Where(a => a.ProjectBuildId == build.Id)
             .OrderBy(a => a.Id)
-            .Select(a => new { a.AppName, a.AppVersion })
+            .Select(a => new ReleaseApp(a.AppName, a.AppVersion))
             .ToListAsync(ct);
         if (artifacts.Count == 0)
         {
@@ -220,61 +304,248 @@ public sealed class DeliveryService
                 + "Set this release pipeline to install right away, or release the apps one at a time.");
         }
 
-        // Audit the override: a window exists and the chosen time falls outside it.
-        var tz = UpdateWindow.ResolveTimeZone(rp.TimeZone);
-        var outsideWindow = UpdateWindow.IsConfigured(rp.WindowStart, rp.WindowEnd)
-            && !UpdateWindow.IsWithin(rp.WindowStart, rp.WindowEnd, tz, scheduledForUtc);
+        return new ReleasePlan(
+            rp.Id, rp.ProjectId, rp.EnvName, wireSchedule,
+            BcDeploymentSchedule.IsOurDeliveryWindow(rp.DeploymentSchedule), rp.SchemaSyncMode,
+            UpdateWindow.ResolveTimeZone(rp.TimeZone), rp.WindowStart, rp.WindowEnd, build.Id, artifacts);
+    }
+
+    /// <summary>One app a release will install, in the build's order.</summary>
+    private sealed record ReleaseApp(string AppName, string AppVersion);
+
+    /// <summary>A release checked and ready to be written: see <see cref="ResolveReleaseAsync"/>.</summary>
+    private sealed record ReleasePlan(
+        int Id, int ProjectId, string EnvName, string WireSchedule, bool ByDeliveryWindow, string SchemaSyncMode,
+        TimeZoneInfo Tz, TimeOnly? WindowStart, TimeOnly? WindowEnd, int BuildId, List<ReleaseApp> Artifacts)
+    {
+        /// <summary>True when a window is set and <paramref name="utc"/> falls outside it: the audited override.</summary>
+        public bool IsOutsideWindow(DateTime utc) =>
+            UpdateWindow.IsConfigured(WindowStart, WindowEnd) && !UpdateWindow.IsWithin(WindowStart, WindowEnd, Tz, utc);
+
+        /// <summary>
+        /// When the pipeline's own rule puts a release made at <paramref name="fromUtc"/>:
+        /// the next opening of the delivery window for a pipeline set to it, else right
+        /// away. This is what a prepared release is scheduled for, and what an approval
+        /// schedules it for, so it runs the way the Release dialog's prefill would have.
+        /// </summary>
+        public DateTime RuleTime(DateTime fromUtc) => ByDeliveryWindow
+            ? UpdateWindow.NextOpeningUtc(WindowStart, WindowEnd, Tz, fromUtc)
+            : fromUtc;
+    }
+
+    // ── Prepared releases (#934) ──────────────────────────────────────────────
+
+    /// <summary>The longest reason a person can give for dismissing a prepared release.</summary>
+    public const int DismissReasonMaxLength = 500;
+
+    /// <summary>
+    /// Prepares a release of <paramref name="projectBuildId"/> through every release
+    /// pipeline that draws from its build pipeline and has "Prepare a release when a new
+    /// build succeeds" on: a <see cref="ProjectDeliveryStatus.Proposed"/> delivery with
+    /// the build's apps and the time the pipeline's rule gives, and nothing sent. A
+    /// proposal still waiting on an older build is replaced (dismissed, with the newer
+    /// build recorded on it), so a pipeline never holds a queue of them. A pipeline
+    /// the build can't be released through - its environment gone, its settings no longer
+    /// valid - is skipped with a warning in the log, never an error: the build is fine.
+    /// Called by the build worker under the build's own organisation once it is ready;
+    /// needs no access check, because preparing sends nothing and approving checks.
+    /// Pull-request builds are never prepared. Returns how many were prepared.
+    /// </summary>
+    public async Task<int> ProposeReleasesForBuildAsync(int projectBuildId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var build = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.Id == projectBuildId)
+            .Select(b => new { b.Id, b.PipelineId, b.Status, b.Trigger })
+            .FirstOrDefaultAsync(ct);
+        if (build?.PipelineId is not { } buildPipelineId
+            || build.Status != ProjectBuildStatus.Ready
+            || build.Trigger == ProjectBuildTrigger.PullRequest)
+        {
+            return 0;
+        }
+
+        var pipelineIds = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => r.DeletedAt == null
+                        && r.PrepareReleaseOnNewBuild
+                        && r.ArtifactSource == ReleaseArtifactSource.Build
+                        && r.BuildPipelineId == buildPipelineId)
+            .OrderBy(r => r.Id)
+            .Select(r => r.Id)
+            .ToListAsync(ct);
+
+        var prepared = 0;
+        foreach (var releasePipelineId in pipelineIds)
+        {
+            var waiting = await _db.OeProjectDeliveries.AsNoTracking()
+                .Where(d => d.ReleasePipelineId == releasePipelineId && d.Status == ProjectDeliveryStatus.Proposed)
+                .Select(d => new { d.Id, d.ProjectBuildId })
+                .ToListAsync(ct);
+            // The same build twice, or a newer one already waiting: nothing to do.
+            if (waiting.Any(w => w.ProjectBuildId >= build.Id)) continue;
+
+            ReleasePlan plan;
+            try
+            {
+                plan = await ResolveReleaseAsync(releasePipelineId, build.Id, checkAccess: false, ct, checkEnvironmentStatus: false);
+            }
+            catch (PlanValidationException ex)
+            {
+                _logger.LogWarning(
+                    "Not preparing a release of build {BuildId} through release pipeline {ReleasePipelineId}: {Reason}",
+                    build.Id, releasePipelineId, string.Join(" ", ex.Errors.Values));
+                continue;
+            }
+
+            var replacedLine = LogLine(DeliveryProposalLog.Replaced(build.Id));
+            foreach (var old in waiting)
+            {
+                var now = DateTime.UtcNow;
+                var replacedBy = build.Id;
+                var replacedReason = DeliveryProposalLog.ReplacedReason(build.Id);
+                await _db.OeProjectDeliveries
+                    .Where(d => d.Id == old.Id && d.Status == ProjectDeliveryStatus.Proposed)
+                    .ExecuteUpdateAsync(u => u
+                        .SetProperty(d => d.Status, ProjectDeliveryStatus.Dismissed)
+                        .SetProperty(d => d.DismissReason, replacedReason)
+                        .SetProperty(d => d.ReplacedByProjectBuildId, replacedBy)
+                        .SetProperty(d => d.FinishedAt, now)
+                        .SetProperty(d => d.DiagnosticsLog, d => (d.DiagnosticsLog ?? string.Empty) + replacedLine)
+                        .SetProperty(d => d.UpdatedAt, now), ct);
+                await MarkAppsNotSentAsync(old.Id, $"Not sent: build #{build.Id} replaced this release.", ct);
+            }
+
+            var delivery = await WriteDeliveryAsync(orgId, plan, plan.RuleTime(DateTime.UtcNow), forceSyncOnce: false, proposed: true, ct);
+            prepared++;
+            _logger.LogInformation(
+                "Prepared delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}), waiting for approval; replaced {Replaced} older.",
+                delivery.Id, build.Id, releasePipelineId, plan.EnvName, waiting.Count);
+        }
+        return prepared;
+    }
+
+    /// <summary>
+    /// Approves a prepared release (atomic <c>proposed → scheduled</c>). From here it is
+    /// an ordinary release: every check a hand-made one has is made again now, the
+    /// pipeline's settings are snapshotted as they are now, the approver becomes the
+    /// person it runs as, and it is scheduled by the pipeline's rule from now - the next
+    /// opening of the delivery window, or right away. The Production acknowledgement is
+    /// the page's, as it is for every release. Throws <see cref="PlanValidationException"/>
+    /// when it is no longer waiting (replaced by a newer build, or dismissed) or can't be
+    /// released, <see cref="ProjectAccessDeniedException"/> when not permitted.
+    /// </summary>
+    public async Task ApproveProposalAsync(int deliveryId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var proposal = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new { d.ReleasePipelineId, d.ProjectBuildId, d.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Delivery", "That release no longer exists.");
+
+        // Access first, so somebody who may not approve learns that rather than the state.
+        var plan = await ResolveReleaseAsync(proposal.ReleasePipelineId, proposal.ProjectBuildId, checkAccess: true, ct);
+        if (proposal.Status != ProjectDeliveryStatus.Proposed)
+        {
+            throw Validation("Delivery", NoLongerWaiting);
+        }
 
         var now = DateTime.UtcNow;
-        var delivery = new OeProjectDelivery
+        var when = plan.RuleTime(now);
+        var outsideWindow = plan.IsOutsideWindow(when);
+        var line = LogLine(DeliveryProposalLog.Approved(await CurrentUserNameAsync(ct)));
+        var userId = _orgContext.CurrentUserId;
+
+        var changed = await _db.OeProjectDeliveries
+            .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Proposed)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Scheduled)
+                .SetProperty(d => d.TriggeredByUserId, userId)
+                .SetProperty(d => d.EnvironmentName, plan.EnvName)
+                .SetProperty(d => d.DeploymentSchedule, plan.WireSchedule)
+                .SetProperty(d => d.ScheduledByDeliveryWindow, plan.ByDeliveryWindow)
+                .SetProperty(d => d.SchemaSyncMode, plan.SchemaSyncMode)
+                .SetProperty(d => d.ScheduledFor, when)
+                .SetProperty(d => d.ScheduledOutsideWindow, outsideWindow)
+                .SetProperty(d => d.DiagnosticsLog, d => (d.DiagnosticsLog ?? string.Empty) + line)
+                .SetProperty(d => d.UpdatedAt, now), ct);
+        if (changed == 0)
         {
-            OrganizationId = orgId,
-            ProjectId = rp.ProjectId,
-            ReleasePipelineId = rp.Id,
-            ProjectBuildId = build.Id,
-            TriggeredByUserId = _orgContext.CurrentUserId,
-            EnvironmentName = rp.EnvName,
-            DeploymentSchedule = wireSchedule,
-            ScheduledByDeliveryWindow = BcDeploymentSchedule.IsOurDeliveryWindow(rp.DeploymentSchedule),
-            // A one-time Force sync lives on this delivery only; the pipeline keeps its mode.
-            SchemaSyncMode = forceSyncOnce ? BcSyncMode.ForceSync : rp.SchemaSyncMode,
-            ScheduledFor = scheduledForUtc,
-            ScheduledOutsideWindow = outsideWindow,
-            Status = ProjectDeliveryStatus.Scheduled,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-        for (var i = 0; i < artifacts.Count; i++)
-        {
-            delivery.Results.Add(new OeProjectDeliveryResult
-            {
-                OrganizationId = orgId,
-                Ordering = i,
-                AppName = artifacts[i].AppName,
-                AppVersion = artifacts[i].AppVersion,
-                Status = ProjectDeliveryResultStatus.Pending,
-                CreatedAt = now,
-                UpdatedAt = now,
-            });
+            throw Validation("Delivery", NoLongerWaiting);
         }
 
-        _db.OeProjectDeliveries.Add(delivery);
-        await _db.SaveChangesAsync(ct);
-
-        // Due now (or in the past) → enqueue immediately so "Release now" is snappy;
-        // a future delivery is left for the DeliveryScheduler to enqueue when due.
-        if (scheduledForUtc <= now)
+        if (when <= now)
         {
-            await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "capturing identity for a delivery")), ct);
+            await _queue.EnqueueAsync(new DeliveryJob(deliveryId, AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "capturing identity for a delivery")), ct);
         }
-
-        _logger.LogInformation(
-            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}{ForceOnce}.",
-            delivery.Id, build.Id, rp.Id, rp.EnvName, scheduledForUtc, artifacts.Count,
-            outsideWindow ? " (outside the update window)" : "",
-            forceSyncOnce ? " (Force sync, this release only)" : "");
-        return delivery.Id;
+        _logger.LogInformation("Approved prepared delivery {DeliveryId}, scheduled for {ScheduledFor:o}.", deliveryId, when);
     }
+
+    /// <summary>
+    /// Dismisses a prepared release (atomic <c>proposed → dismissed</c>), recording who
+    /// did it (<see cref="OeProjectDelivery.CancelledByUserId"/>) and, when they gave one,
+    /// why (<see cref="OeProjectDelivery.DismissReason"/>); the log gets a line too, for
+    /// reading. Nothing was sent, so nothing needs undoing. Throws
+    /// <see cref="PlanValidationException"/> when it is no longer waiting or the reason is
+    /// too long, <see cref="ProjectAccessDeniedException"/> when not permitted.
+    /// </summary>
+    public async Task DismissProposalAsync(int deliveryId, string? reason, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var why = string.IsNullOrWhiteSpace(reason) ? null : OneLine(reason).Trim();
+        if (why is { Length: > DismissReasonMaxLength })
+        {
+            throw Validation("Reason", $"Keep the reason to {DismissReasonMaxLength} characters or fewer.");
+        }
+
+        var owner = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new { d.ProjectId, d.Status, OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Delivery", "That release no longer exists.");
+        await _access.EnsureCanManageAsync(owner.ProjectId, owner.OwnerId, ct);
+        if (owner.Status != ProjectDeliveryStatus.Proposed)
+        {
+            throw Validation("Delivery", NoLongerWaiting);
+        }
+
+        var line = LogLine(DeliveryProposalLog.Dismissed(await CurrentUserNameAsync(ct), why));
+        var userId = _orgContext.CurrentUserId;
+        var now = DateTime.UtcNow;
+        var changed = await _db.OeProjectDeliveries
+            .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Proposed)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Dismissed)
+                .SetProperty(d => d.CancelledByUserId, userId)
+                .SetProperty(d => d.DismissReason, why)
+                .SetProperty(d => d.FinishedAt, now)
+                .SetProperty(d => d.DiagnosticsLog, d => (d.DiagnosticsLog ?? string.Empty) + line)
+                .SetProperty(d => d.UpdatedAt, now), ct);
+        if (changed == 0)
+        {
+            throw Validation("Delivery", NoLongerWaiting);
+        }
+        await MarkAppsNotSentAsync(deliveryId, "Not sent: the release was dismissed.", ct);
+        _logger.LogInformation("Dismissed prepared delivery {DeliveryId}.", deliveryId);
+    }
+
+    /// <summary>
+    /// A prepared release that was set aside never reaches its apps, so they stop reading
+    /// "Pending" - which says they are still on their way - and say why instead.
+    /// </summary>
+    private async Task MarkAppsNotSentAsync(int deliveryId, string message, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        await _db.OeProjectDeliveryResults
+            .Where(r => r.ProjectDeliveryId == deliveryId && r.Status == ProjectDeliveryResultStatus.Pending)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(r => r.Status, ProjectDeliveryResultStatus.Skipped)
+                .SetProperty(r => r.Message, message)
+                .SetProperty(r => r.UpdatedAt, now), ct);
+    }
+
+    private const string NoLongerWaiting =
+        "This release is no longer waiting for approval. A newer build may have replaced it, or someone else approved or dismissed it.";
 
     /// <summary>
     /// Cancels a <em>scheduled</em> delivery (atomic <c>scheduled → cancelled</c>). Access-gated.
@@ -450,7 +721,9 @@ public sealed class DeliveryService
             return;
         }
 
-        var log = new StringBuilder();
+        // A release that was prepared and approved (#934) already carries those lines;
+        // the run writes after them rather than over them.
+        var log = new StringBuilder(delivery.DiagnosticsLog ?? string.Empty);
         try
         {
             await PublishAsync(delivery, log, ct);
@@ -1046,6 +1319,8 @@ public sealed class DeliveryService
                 DeploymentSchedule = d.DeploymentSchedule,
                 SchemaSyncMode = d.SchemaSyncMode,
                 CancelledByName = d.CancelledByUser != null ? d.CancelledByUser.DisplayName : null,
+                DismissReason = d.DismissReason,
+                ReplacedByBuildId = d.ReplacedByProjectBuildId,
                 BuildBranch = d.ProjectBuild != null ? d.ProjectBuild.Branch : null,
                 BuildReleaseTag = d.ProjectBuild != null ? d.ProjectBuild.GithubReleaseTag : null,
                 DiagnosticsLog = d.DiagnosticsLog,
@@ -1173,13 +1448,53 @@ public sealed class DeliveryService
         await _db.SaveChangesAsync(ct);
     }
 
-    private static void Append(StringBuilder log, string line) =>
-        log.Append(DateTime.UtcNow.ToString("HH:mm:ss")).Append("  ").AppendLine(line);
+    private static void Append(StringBuilder log, string line) => log.Append(LogLine(line));
+
+    /// <summary>One line of a delivery's log as the run writes it: <c>HH:mm:ss  message</c>, UTC.</summary>
+    private static string LogLine(string line) =>
+        DateTime.UtcNow.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + "  " + line + Environment.NewLine;
+
+    /// <summary>The acting person's name for a history line, or "someone" once there is none to read.</summary>
+    private async Task<string> CurrentUserNameAsync(CancellationToken ct)
+    {
+        var userId = _orgContext.CurrentUserId;
+        if (userId is null) return "someone";
+        var name = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.DisplayName)
+            .FirstOrDefaultAsync(ct);
+        return string.IsNullOrWhiteSpace(name) ? "someone" : name.Trim();
+    }
 
     private static string Short(string message) => message.Length > 300 ? message[..300] : message;
 
     private static PlanValidationException Validation(string field, string message) =>
         new(new Dictionary<string, string> { [field] = message });
+}
+
+/// <summary>
+/// The lines a prepared release (#934) writes into its delivery's log: where it came
+/// from, and who approved or dismissed it or which build replaced it. Written for a
+/// person reading the log, and never read back: what became of a prepared release is
+/// its status, <see cref="OeProjectDelivery.CancelledByUserId"/>,
+/// <see cref="OeProjectDelivery.DismissReason"/> and
+/// <see cref="OeProjectDelivery.ReplacedByProjectBuildId"/>.
+/// </summary>
+public static class DeliveryProposalLog
+{
+    public static string Prepared(int buildId) =>
+        $"Prepared from build #{buildId} when it succeeded. Nothing is sent until someone approves it.";
+
+    public static string Approved(string who) => $"Approved by {who}.";
+
+    public static string Dismissed(string who, string? reason) =>
+        reason is null ? $"Dismissed by {who}." : $"Dismissed by {who}: {reason}";
+
+    public static string Replaced(int newerBuildId) =>
+        $"{ReplacedReason(newerBuildId)} before anyone approved it.";
+
+    /// <summary>What <see cref="OeProjectDelivery.DismissReason"/> holds for a replacement.</summary>
+    public static string ReplacedReason(int newerBuildId) => $"Replaced by build #{newerBuildId}";
 }
 
 /// <summary>A delivery for the history list, with its per-app rows resolved for display.</summary>
@@ -1239,6 +1554,25 @@ public sealed record DeliveryHistoryRow(
 
     /// <summary>True for a delivery waiting for its scheduled time — the cancellable/reschedulable state.</summary>
     public bool IsScheduled => Status == ProjectDeliveryStatus.Scheduled;
+
+    /// <summary>A release the pipeline prepared from a new build, waiting for someone to approve it (#934).</summary>
+    [JsonIgnore]
+    public bool IsProposed => Status == ProjectDeliveryStatus.Proposed;
+
+    /// <summary>
+    /// A prepared release set aside before anyone approved it (#934): dismissed by a
+    /// person (<see cref="CancelledByName"/>) or replaced by a newer build
+    /// (<see cref="ReplacedByBuildId"/>). It never ran, so it is history rather than "the
+    /// last release".
+    /// </summary>
+    [JsonIgnore]
+    public bool IsDismissed => Status == ProjectDeliveryStatus.Dismissed;
+
+    /// <summary>For a dismissed prepared release: the reason given, or "Replaced by build #N". Null otherwise, or when no reason was given.</summary>
+    public string? DismissReason { get; init; }
+
+    /// <summary>For a prepared release a newer build replaced: that build's id. Null otherwise.</summary>
+    public int? ReplacedByBuildId { get; init; }
 }
 
 /// <summary>One app's outcome within a delivery, for the history's per-app breakdown.</summary>

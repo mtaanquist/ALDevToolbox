@@ -542,6 +542,74 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         rp.GithubReleaseRepositoryId.Should().Be(repositoryId);
     }
 
+    // ── Prepared releases (#934) ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Prepare_a_release_when_a_new_build_succeeds_is_off_by_default_and_saved_when_asked()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
+        var svc = NewService(ctx);
+
+        var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+        (await _db.NewContext().OeReleasePipelines.SingleAsync(r => r.Id == id)).PrepareReleaseOnNewBuild.Should().BeFalse();
+
+        await svc.UpdateReleasePipelineAsync(id, new ReleasePipelineInput(
+            projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add,
+            PrepareReleaseOnNewBuild: true));
+
+        (await _db.NewContext().OeReleasePipelines.SingleAsync(r => r.Id == id)).PrepareReleaseOnNewBuild.Should().BeTrue();
+        (await NewService(_db.NewContext()).ListReleasePipelinesAsync(projectId)).Single().PrepareReleaseOnNewBuild.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_pipeline_that_installs_github_releases_never_prepares_on_a_new_build()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var repositoryId = await SeedRepositoryAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
+
+        var id = await NewService(ctx).CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "Rel", 0, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add,
+            ReleaseArtifactSource.GithubRelease, repositoryId, PrepareReleaseOnNewBuild: true));
+
+        (await _db.NewContext().OeReleasePipelines.SingleAsync(r => r.Id == id)).PrepareReleaseOnNewBuild
+            .Should().BeFalse("there is no build pipeline whose new builds it could follow");
+    }
+
+    [Fact]
+    public async Task The_overview_and_the_solution_name_the_release_waiting_for_approval()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildPipelineId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "UAT");
+        var svc = NewService(ctx);
+        var rpId = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
+            projectId, "CRONUS to UAT", buildPipelineId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+        var buildId = await SeedBuildAsync(ctx, projectId, buildPipelineId);
+        var t0 = new DateTime(2026, 9, 20, 10, 0, 0, DateTimeKind.Utc);
+        var deployed = await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Deployed,
+            startedAt: t0, finishedAt: t0.AddMinutes(4), apps: [ProjectDeliveryResultStatus.Completed]);
+        // One dismissed before anyone approved it: it never was a release, so it is not "the last release".
+        await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Dismissed,
+            startedAt: null, finishedAt: t0.AddHours(2), apps: [], scheduledFor: t0.AddHours(1));
+        var waiting = await SeedDeliveryAsync(ctx, projectId, rpId, buildId, ProjectDeliveryStatus.Proposed,
+            startedAt: null, finishedAt: null, apps: [], scheduledFor: t0.AddHours(3));
+
+        var row = (await NewService(_db.NewContext()).ListReleasePipelineOverviewAsync()).Single(r => r.Id == rpId);
+        row.ProposedDelivery.Should().Be(new ReleasePipelineProposedDelivery(waiting, buildId, t0.AddHours(3)));
+        row.NextDelivery.Should().BeNull("a prepared release is not scheduled until someone approves it");
+        row.LastDelivery!.DeliveryId.Should().Be(deployed);
+
+        var solution = await NewService(_db.NewContext()).ListWaitingForApprovalAsync(projectId);
+        solution.Should().ContainSingle().Which.Should().Be(new ReleaseWaitingForApproval(rpId, "CRONUS to UAT", waiting, buildId));
+    }
+
     private static async Task<int> SeedRepositoryAsync(AppDbContext ctx, int projectId)
     {
         var repository = new OeProjectRepository
