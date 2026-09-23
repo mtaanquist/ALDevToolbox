@@ -208,8 +208,10 @@ app). The **New build** action lets the user pick which to build:
   before builds fetched third-party symbols from the public feeds), walked for `app.json`. The
   request side (`ProjectDiscoveryService`) gates the enqueue (owner/Admin + existence) and reads the
   cache back. A refresh fires on repo changes (create/update with repos) and from the editor's
-  **Refresh** button; the editor polls while a discovery is in flight and auto-triggers a first one
-  for a project that's never been discovered. A failed refresh records `discovery_error` and leaves
+  **Refresh** button; the editor polls while a discovery is in flight and auto-triggers one whenever
+  it opens on a project with no usable list — never discovered, or whose last attempt failed (a
+  cached failure is retried, not shown, because its cause is often fixed elsewhere in the
+  meantime). A failed refresh records `discovery_error` and leaves
   the prior good list intact — discovery is a picker convenience, so the build re-clones and filters
   by the pipeline's saved app-ids regardless. The discovery clone is intentionally separate from the
   build's full clone (the changelog needs history).
