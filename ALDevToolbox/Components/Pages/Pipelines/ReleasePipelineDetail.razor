@@ -7,25 +7,35 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache PanelCache
 @inject NavigationManager Nav
 @inject ILogger<ReleasePipelineDetail> Log
 @inject IServiceScopeFactory ScopeFactory
+@using System.Globalization
+@using System.Text.RegularExpressions
 @using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
-    A release pipeline's detail page: its target + how it publishes, the canonical
-    "Release" action (enabled once the source has something to send - a successful build,
-    or a GitHub release with app files on it),
-    and the delivery history with live status. Mirrors the build pipeline's
-    /pipelines/{id} (builds) for the release side. See .design/saas-delivery.md.
+    One release pipeline (.design/handoff/PageReleasePipeline.dc.html and
+    ReleasePipelineBody.dc.html, issue #929): a summary card that answers "is this
+    healthy", then the releases, each opening into its failure, its steps, its apps and
+    its log. Data stored by AL Workbench and data mirrored from Business Central sit in
+    separate, labelled blocks, and nothing here calls Business Central to render.
 
-    Named user: a BC consultant who set up a release target and now ships a build to it,
-    then watches it install.
+    Named user: an ops engineer who was just told "the release to CRONUS's test
+    environment failed" and needs what, when, how long and why without leaving the page.
+
+    Where the sheet draws something the product does not record, the cell is hidden
+    rather than filled in: old releases have no per-app timings, no previous version and
+    no "uploaded" moment (#929 started recording them), and their skipped apps fall back
+    to "skipped after X failed". "Release again" (#931) and the approval band (#934) are
+    not built yet; the row's action cell and the list's top are where they go.
 *@
 
 <PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Workbench</PageTitle>
@@ -33,7 +43,9 @@
 <DetailPage IsLoading="@(_loading)"
             LoadingText="Loading release pipeline..."
             IsNotFound="@(_rp is null)"
-            Title="@(_rp?.Name)">
+            Title="@(_rp?.Name)"
+            ShowMeta="false"
+            PageClass="rp-page">
     <NotFound>
         <EmptyState Icon="send" Title="This release pipeline doesn't exist" Heading="true">
             <Text>It may have been deleted. Head back to the list to pick another.</Text>
@@ -48,20 +60,23 @@
         <span>@_rp!.Name</span>
     </Crumbs>
     <TitleRow>
-        <StatusPill Tone="@(_isProduction ? "danger" : "muted")">
-            <span>@_rp!.ProjectEnvironment!.Type</span>
+        <StatusPill Tone="@(_isProduction ? "danger" : "muted")" title="Environment type">
+            <span>@EnvType</span>
         </StatusPill>
     </TitleRow>
     <SubtitleContent>
+        In <a href="@($"/solutions/{_rp!.ProjectId}")">@(_rp.Project?.Name ?? "its solution")</a>.
         @if (_fromReleases)
         {
-            <text>Releases @SourceName into @_rp!.ProjectEnvironment!.Name</text>
+            <text>Installs from the GitHub releases of </text>
+            <a href="@SourceHref" target="_blank" rel="noopener">"@SourceName"</a>
         }
         else
         {
-            <text>Releases <a href="@($"/pipelines/{_rp!.BuildPipelineId}")">@SourceName</a> into @_rp!.ProjectEnvironment!.Name</text>
+            <text>Installs from build pipeline </text>
+            <a href="@SourceHref">"@SourceName"</a>
         }
-
+        <text> into the @EnvType environment </text><a href="@EnvHref">"@EnvName"</a>.
     </SubtitleContent>
     <Actions>
         <a class="btn" href="/releases"><Icon Name="arrow-left" Width="15" Height="15" /><span>All releases</span></a>
@@ -70,29 +85,15 @@
             <button type="button" class="btn" @onclick="EditAsync">
                 <Icon Name="pencil" Width="15" Height="15" /><span>Edit</span>
             </button>
-            <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync" disabled="@(!HasSomethingToRelease)"
-                    title="@(HasSomethingToRelease ? null : _fromReleases ? "This repository has no release with app files attached yet." : "The build pipeline has no successful build to release yet.")">
+            @* The one primary. When there is nothing to list it moves into the empty
+               state, and the head keeps an outline copy so the action never vanishes. *@
+            <button type="button" class="btn@(IsEmpty ? "" : " btn--primary")" @onclick="OpenReleaseAsync" disabled="@(!HasSomethingToRelease)"
+                    title="@(HasSomethingToRelease ? null : NothingToReleaseReason)">
                 <Icon Name="send" Width="15" Height="15" /><span>Release</span>
             </button>
         }
     </Actions>
-    <Meta>
-        <span class="meta-item">
-            <span class="meta-item__label">Environment</span>
-            <span class="meta-item__value">@_rp!.ProjectEnvironment!.Name</span>
-        </span>
-        <span class="meta-item">
-            <span class="meta-item__label">@(_fromReleases ? "Releases from" : "Build pipeline")</span>
-            <span class="meta-item__value">@SourceName</span>
-        </span>
-        <span class="meta-item">
-            <span class="meta-item__label">Releases</span>
-            <span class="meta-item__value">@_deliveries.Count</span>
-        </span>
-    </Meta>
     <ChildContent>
-        @* Archetype: PageDetail.dc.html - crumbs outside the head, the state
-           pill beside the title, facts in a .meta-row underneath. *@
         @if (_rp!.ProjectEnvironment!.MissingSince is not null)
         {
             <Alert Tone="AlertTone.Danger">
@@ -116,129 +117,369 @@
         }
         else if (_canManage && _releasesError is { } gre)
         {
-            <Alert Tone="AlertTone.Danger">
-                <span>@gre</span>
-            </Alert>
+            <Alert Tone="AlertTone.Danger"><span>@gre</span></Alert>
         }
         else if (_canManage && !HasSomethingToRelease)
         {
-            @if (_fromReleases)
-            {
-                <p class="u-muted">
-                    <b>@SourceName</b> has no release with app files attached yet. Publish one there, then come back to install it.
-                </p>
-            }
-            else
-            {
-                <p class="u-muted">
-                    <b>@SourceName</b> has no successful build yet. Run a build on
-                    <a href="@($"/pipelines/{_rp!.BuildPipelineId}")">the build pipeline</a>, then come back to release it.
-                </p>
-            }
+            <Alert Tone="AlertTone.Info">
+                @if (_fromReleases)
+                {
+                    <span><b>@SourceName</b> has no release with app files attached yet. Publish one there, then come back to install it.</span>
+                }
+                else
+                {
+                    <span>
+                        <b>@SourceName</b> has no successful build yet. Run a build on
+                        <a href="@SourceHref">the build pipeline</a>, then come back to release it.
+                    </span>
+                }
+            </Alert>
         }
 
-        <p class="state-label">Deliveries, newest first</p>
-
-        @if (_deliveries.Count == 0)
+        @if (_historyLoading)
         {
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
-                <div class="empty-state__title">No releases yet</div>
-                <p class="empty-state__text">
-                    When you release, the apps are uploaded and installed into
-                    @_rp!.ProjectEnvironment!.Name and the run shows up here.
-                </p>
-                @if (_canManage && HasSomethingToRelease)
+            <div class="card">
+                <div class="card__head rp-skel-head">
+                    <span class="skeleton rp-skel-glyph"></span>
+                    <span class="rp-skel-stack"><span class="skeleton rp-skel-title"></span><span class="skeleton rp-skel-sub"></span></span>
+                </div>
+                <div class="card__body rp-skel-grid">
+                    @foreach (var w in SkeletonWidths)
+                    {
+                        <span class="rp-skel-stack"><span class="skeleton rp-skel-label"></span><span class="skeleton" style="width: @w"></span></span>
+                    }
+                </div>
+            </div>
+            <div class="card">
+                <div class="card__head"><h2 class="card__title">Releases</h2></div>
+                @foreach (var w in SkeletonWidths)
                 {
-                    <button type="button" class="btn btn--primary empty-state__action" @onclick="OpenReleaseAsync">
-                        <Icon Name="send" Width="16" Height="16" /><span>Release</span>
-                    </button>
+                    <div class="rp-skel-row"><span class="skeleton rp-skel-glyph"></span><span class="skeleton rp-skel-line" style="width: @w"></span><span class="rp-skel-fill"></span><span class="skeleton rp-skel-end"></span></div>
                 }
+                <LoadingBlock Text="Loading releases..." />
             </div>
         }
         else
         {
-            @* .run-list, not a .data-table: the archetype sheet reserves it for
-               "card-like histories that are not tabular", and a delivery is
-               exactly that - each release expands into one sub-row per app it
-               installed, which no table column can hold. The build history on
-               the pipeline page IS tabular and went the other way (#528). *@
-            <div class="run-list">
-                @foreach (var d in _deliveries)
-                {
-                    <div class="run-row run-row--@RowStateIcon.RunState(d.Status)">
-                        @* The build number reads once, in the id track the run-list
-                           archetype reserves for it - the title line says what the
-                           release carried instead of repeating the number (#714). *@
-                        <span class="run-row__id" title="Build #@d.ProjectBuildId">#@d.ProjectBuildId</span>
-                        <div class="run-row__main">
-                            <span class="run-row__title">
-                                @RowTitle(d)
-                                @if (d.ScheduledOutsideWindow)
+            var health = Health();
+            <div class="@SummaryClass">
+                <div class="card__head rp-summary__head">
+                    <span class="rp-summary__glyph" aria-hidden="true"><Icon Name="@health.Icon" Width="20" Height="20" /></span>
+                    <div class="rp-summary__text">
+                        <h2 class="card__title rp-summary__title">@health.Title</h2>
+                        <p class="card__sub rp-summary__sentence">@health.Sentence</p>
+                    </div>
+                </div>
+                <div class="rp-summary__blocks">
+                    <div class="card__body rp-summary__block">
+                        <p class="section-label rp-summary__label">This pipeline</p>
+                        <div class="rp-facts">
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Source</span>
+                                <span class="meta-item__value">
+                                    @if (_fromReleases)
+                                    {
+                                        <a href="@SourceHref" target="_blank" rel="noopener">@SourceName</a> <span class="u-muted">GitHub releases</span>
+                                    }
+                                    else
+                                    {
+                                        <a href="@SourceHref">@SourceName</a> <span class="u-muted">build pipeline</span>
+                                    }
+                                </span>
+                            </span>
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Installs run</span>
+                                <span class="meta-item__value">@DeliveryModeDisplay.Schedule(_rp.DeploymentSchedule)</span>
+                            </span>
+                            @if (DeliveryWindow is { } window)
+                            {
+                                <span class="meta-item rp-fact">
+                                    <span class="meta-item__label">Delivery window</span>
+                                    <span class="meta-item__value">@window <span class="u-muted">in the solution's time zone (@_tzCity)</span></span>
+                                </span>
+                            }
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Schema sync</span>
+                                @if (IsForceSync)
                                 {
-                                    <span class="rp-outside" title="Scheduled outside the environment's update window"><Icon Name="triangle-alert" Width="12" Height="12" />outside window</span>
+                                    <span class="meta-item__value rp-force"><Icon Name="triangle-alert" Width="14" Height="14" />Force sync</span>
+                                }
+                                else
+                                {
+                                    <span class="meta-item__value">@DeliveryModeDisplay.SyncMode(_rp.SchemaSyncMode)</span>
                                 }
                             </span>
-                            @if (!string.IsNullOrEmpty(d.FailureMessage))
-                            {
-                                <span class="run-row__sub rp-fail">@d.FailureMessage</span>
-                            }
-                            else if (d.Status == ProjectDeliveryStatus.HandedOff)
-                            {
-                                <span class="run-row__sub">Business Central has the apps and installs them with the customer's next update. Cancel it there if you need to stop it.</span>
-                            }
-                        </div>
-                        <span class="run-row__state">
-                            <Icon Name="@RowStateIcon.Glyph(d.Status)" Width="13" Height="13" />
-                            <span>@RowStateIcon.StateLabel(d.Status)</span>
-                        </span>
-                        <span class="run-row__time" title="@(d.IsScheduled ? ScheduledAbsolute(d) : AbsoluteWhen(d))">
-                            @(d.IsScheduled ? $"for {ScheduledWhen(d)}" : RelativeWhen(d))
-                        </span>
-                        <span class="run-row__dur">@(d.TriggeredByName ?? "")</span>
-                        <span class="run-row__acts">
-                            @if (d.IsScheduled && _canManage)
-                            {
-                                <button type="button" class="btn btn--sm" @onclick="() => OpenRescheduleAsync(d)">Reschedule</button>
-                                <button type="button" class="btn btn--sm btn--danger" @onclick="() => CancelAsync(d)">Cancel</button>
-                            }
-                        </span>
-
-                        @if (d.Apps.Count > 0)
-                        {
-                            @* The sub-rows the whole component choice is for. They
-                               span the row's six tracks, the way .run-progress
-                               does, so each app lines up under the release it
-                               belongs to rather than starting a row of its own. *@
-                            <div class="rp-apps">
-                                @foreach (var a in d.Apps)
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Last release</span>
+                                <span class="meta-item__value">
+                                    @if (LastRelease is { } last)
+                                    {
+                                        var lastLook = DeliveryLook(last.Status);
+                                        var rowState = $"rp-strong rp-tone--{lastLook.Tone}";
+                                        <span class="@rowState">@lastLook.Word</span>
+                                        <span class="u-muted" title="@Exact(LastWhen(last))"> @RelativeTime.Ago(LastWhen(last))</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="u-muted">None yet</span>
+                                    }
+                                </span>
+                            </span>
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Next release</span>
+                                @if (NextRelease is { } next)
                                 {
-                                    <div class="rp-app">
-                                        <span class="rp-app__state rp-app__state--@AppState(a.Status)"
-                                              role="img" aria-label="@AppLabel(a.Status)" title="@AppLabel(a.Status)">
-                                            <Icon Name="@RowStateIcon.Glyph(AppState(a.Status))" Width="12" Height="12" />
-                                        </span>
-                                        <span class="rp-app__name">@a.AppName</span>
-                                        <span class="rp-app__ver">@a.AppVersion</span>
-                                        @if (a.Status == ProjectDeliveryResultStatus.Failed && !string.IsNullOrEmpty(a.Message))
-                                        {
-                                            <span class="rp-app__msg">@a.Message</span>
-                                        }
-                                    </div>
+                                    <span class="meta-item__value rp-strong" title="@Exact(next.ScheduledFor)">@When(next.ScheduledFor)</span>
                                 }
-                            </div>
+                                else
+                                {
+                                    <span class="meta-item__value">None scheduled</span>
+                                }
+                            </span>
+                        </div>
+                        @if (IsForceSync && _isProduction)
+                        {
+                            <Alert Tone="AlertTone.Warn">
+                                <span>Force sync is on for a Production environment. If a new build removes a table or field, its data in Production is deleted during the install.</span>
+                            </Alert>
                         }
                     </div>
-                }
+                    <div class="card__body rp-summary__block rp-summary__block--bc">
+                        <p class="section-label rp-summary__label">
+                            <Icon Name="cloud-download" Width="13" Height="13" />From Business Central@(MirrorAge is { } age ? $", {age}" : "")
+                        </p>
+                        <div class="rp-facts rp-facts--narrow">
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Environment</span>
+                                <span class="meta-item__value">
+                                    <a href="@EnvHref">@EnvName</a>
+                                    <span class="@(_isProduction ? "rp-env-type rp-env-type--prod" : "rp-env-type")">@EnvType</span>
+                                </span>
+                            </span>
+                            <span class="meta-item rp-fact">
+                                <span class="meta-item__label">Health</span>
+                                <span class="meta-item__value">@EnvHealth</span>
+                            </span>
+                            @if (!string.IsNullOrWhiteSpace(_rp.ProjectEnvironment.Version))
+                            {
+                                <span class="meta-item rp-fact">
+                                    <span class="meta-item__label">Version</span>
+                                    <span class="meta-item__value">@_rp.ProjectEnvironment.Version</span>
+                                </span>
+                            }
+                            @if (NextUpdate is { } nextUpdate)
+                            {
+                                <span class="meta-item rp-fact">
+                                    <span class="meta-item__label">Next update</span>
+                                    <span class="meta-item__value">@nextUpdate</span>
+                                </span>
+                            }
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            @if (IsEmpty)
+            {
+                <div class="card">
+                    <div class="card__head"><h2 class="card__title">Releases</h2></div>
+                    <EmptyState Icon="send" Title="No releases yet">
+                        <Text>
+                            @if (HasSomethingToRelease || !_canManage)
+                            {
+                                <text>Nothing has been installed by this pipeline yet. Release the latest build to install it now.</text>
+                            }
+                            else if (_fromReleases)
+                            {
+                                <text>Nothing has been installed by this pipeline yet. Publish a release with app files on GitHub, then release it here.</text>
+                            }
+                            else
+                            {
+                                <text>Nothing has been installed by this pipeline yet. Run a build on the build pipeline, then release it here.</text>
+                            }
+                        </Text>
+                        <Action>
+                            @if (_canManage && HasSomethingToRelease)
+                            {
+                                <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync">
+                                    <Icon Name="send" Width="16" Height="16" /><span>Release</span>
+                                </button>
+                            }
+                            else if (_canManage && !_fromReleases)
+                            {
+                                <a class="btn" href="@SourceHref"><Icon Name="hammer" Width="16" Height="16" /><span>Open the build pipeline</span></a>
+                            }
+                        </Action>
+                    </EmptyState>
+                </div>
+            }
+            else
+            {
+                <div class="card rp-releases">
+                    <div class="card__head">
+                        <div>
+                            <h2 class="card__title">Releases</h2>
+                            <p class="card__sub">Newest first. Open a release for its apps, timings and log. Times are in @_tzPhrase.</p>
+                        </div>
+                    </div>
+
+                    <div class="rp-cols" aria-hidden="true">
+                        <span></span><span></span><span>Release</span><span>Outcome</span><span>Started</span><span class="rp-cols__num">Took</span><span>Apps</span><span></span>
+                    </div>
+
+                    @foreach (var d in _deliveries)
+                    {
+                        var state = DeliveryLook(d.Status);
+                        var open = _open.Contains(d.Id);
+                        var rowState = $"rp-rel rp-bar--{state.Tone}{(open ? " is-open" : "")}";
+                        <div class="@rowState" @key="d.Id">
+                            <div class="rp-rel__row" @onclick="() => ToggleAsync(d)">
+                                <button type="button" class="btn btn--icon btn--sm btn--ghost rp-rel__toggle"
+                                        aria-expanded="@(open ? "true" : "false")"
+                                        aria-label="@($"{(open ? "Hide" : "Show")} details for release {d.Number}")">
+                                    <Icon Name="chevron-right" Width="14" Height="14" />
+                                </button>
+                                <span class="@GlyphClass(state)" role="img" aria-label="@state.Word" title="@state.Word">
+                                    <Icon Name="@state.Icon" Width="15" Height="15" />
+                                </span>
+                                <span class="cell-stack rp-rel__name">
+                                    <span class="cell-stack__main rp-rel__title">Release @d.Number <span class="@($"rp-rel__word rp-tone--{state.Tone}")">- @state.Word</span></span>
+                                    <span class="cell-stack__sub rp-rel__build">@BuildLine(d)</span>
+                                    <span class="cell-stack__sub rp-rel__compact">@CompactLine(d)</span>
+                                </span>
+                                <span class="cell-stack rp-rel__outcome">
+                                    <span class="@($"cell-stack__main rp-strong rp-tone--{state.Tone}")">@state.Word</span>
+                                    <span class="cell-stack__sub" title="@OutcomeExact(d)">@OutcomeWhen(d)</span>
+                                </span>
+                                <span class="rp-rel__cell" title="@(StartOf(d) is { } s ? Exact(s) : null)">@(StartOf(d) is { } started ? When(started) : "Not started")</span>
+                                <span class="rp-rel__cell rp-rel__took u-num">@(Took(d) ?? "-")</span>
+                                <span class="rp-rel__cell">@AppsSummary(d)</span>
+                                <span class="rp-rel__acts">
+                                    @if (d.IsScheduled && _canManage)
+                                    {
+                                        <button type="button" class="btn btn--sm" @onclick="() => OpenReschedule(d)" @onclick:stopPropagation="true">Reschedule</button>
+                                        <button type="button" class="btn btn--sm btn--ghost" @onclick="() => CancelAsync(d)" @onclick:stopPropagation="true">Cancel</button>
+                                    }
+                                </span>
+                            </div>
+
+                            @if (open)
+                            {
+                                <div class="rp-rel__detail">
+                                    @if (d.Status == ProjectDeliveryStatus.Failed && !string.IsNullOrWhiteSpace(d.FailureMessage))
+                                    {
+                                        <Alert Tone="AlertTone.Danger" Class="rp-fail"><span>@d.FailureMessage</span></Alert>
+                                    }
+                                    else if (InfoSentence(d) is { } info)
+                                    {
+                                        <Alert Tone="AlertTone.Info"><span>@info</span></Alert>
+                                    }
+
+                                    @if (Steps(d) is { Count: > 0 } steps)
+                                    {
+                                        <ol class="rp-steps" aria-label="Steps">
+                                            @foreach (var step in steps)
+                                            {
+                                                var cssClass = $"rp-step rp-step--{step.Tone}";
+                                                <li class="@cssClass">
+                                                    <span class="rp-step__label">@step.Label</span>
+                                                    <span class="rp-step__at u-num" title="@step.Exact">@step.At</span>
+                                                    <span class="rp-step__took u-num">@step.Took</span>
+                                                </li>
+                                            }
+                                        </ol>
+                                    }
+
+                                    @if (d.Apps.Count > 0)
+                                    {
+                                        <div class="rp-apps">
+                                            <p class="section-label rp-summary__label">Apps in this release</p>
+                                            <div class="rp-apps__list">
+                                                @for (var i = 0; i < d.Apps.Count; i++)
+                                                {
+                                                    var a = d.Apps[i];
+                                                    var status = AppLook(a.Status);
+                                                    var row = $"rp-app rp-bar--{status.Tone}";
+                                                    var message = AppMessage(d, a, i);
+                                                    <div class="@row">
+                                                        <span class="@GlyphClass(status)" role="img" aria-label="@status.Word">
+                                                            <Icon Name="@status.Icon" Width="15" Height="15" />
+                                                        </span>
+                                                        <span class="rp-app__main">
+                                                            <span class="rp-app__line">
+                                                                <span class="rp-app__name" title="@(a.OperationId is { } op ? $"Business Central operation {op}" : null)">@a.AppName</span>
+                                                                <span class="rp-app__ver u-num">@AppVersionText(a)</span>
+                                                            </span>
+                                                            @if (message is not null)
+                                                            {
+                                                                <span class="@(a.Status == ProjectDeliveryResultStatus.Failed ? "rp-app__msg rp-app__msg--failed" : "rp-app__msg")">@message</span>
+                                                            }
+                                                        </span>
+                                                        <span class="rp-app__end">
+                                                            <span class="@($"rp-strong rp-tone--{status.Tone}")">@status.Word</span>
+                                                            @if (AppTook(a) is { } appTook)
+                                                            {
+                                                                <span class="rp-app__took u-num">@appTook</span>
+                                                            }
+                                                        </span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (LogLines(d) is { Count: > 0 } lines)
+                                    {
+                                        <details class="rp-log" open="@(d.Status == ProjectDeliveryStatus.Failed)">
+                                            <summary class="rp-log__summary">
+                                                <span>Diagnostics log</span>
+                                                <span class="u-muted">@(lines.Count == 1 ? "1 line" : $"{lines.Count} lines"), times in UTC</span>
+                                                <span class="rp-log__spacer"></span>
+                                                <CopyButton Target="@($"#rp-log-{d.Id}")" Label="Copy log" />
+                                            </summary>
+                                            <div class="rp-log__scroll">
+                                                <div class="rp-log__lines" id="@($"rp-log-{d.Id}")">
+                                                    @foreach (var line in lines)
+                                                    {
+                                                        <div class="@(line.Error ? "rp-log__line rp-log__line--err" : "rp-log__line")"><span class="rp-log__t">@line.Time</span> <span>@line.Message</span></div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </details>
+                                    }
+
+                                    @if (d.IsScheduled && _canManage)
+                                    {
+                                        @* The phone layout's actions: the row's own cell is hidden
+                                           there, and a 44px full-width pair takes its place. *@
+                                        <div class="rp-rel__phone-acts">
+                                            <button type="button" class="btn" @onclick="() => OpenReschedule(d)">Reschedule</button>
+                                            <button type="button" class="btn btn--ghost" @onclick="() => CancelAsync(d)">Cancel</button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (HasOlder)
+                    {
+                        <div class="card__foot rp-foot">
+                            <button type="button" class="btn btn--sm btn--ghost" @onclick="ShowOlderAsync" disabled="@_loadingOlder">
+                                @(_loadingOlder ? "Loading..." : "Show older releases")
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
         }
     </ChildContent>
 </DetailPage>
 
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnEditedAsync" />
 <ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
-<ConfirmDialog @ref="_cancelConfirm" Title="Cancel this delivery?"
-               ConfirmLabel="Cancel delivery" CancelLabel="Keep it scheduled"
+<ConfirmDialog @ref="_cancelConfirm" Title="Cancel this release?"
+               ConfirmLabel="Cancel release" CancelLabel="Keep it scheduled"
                ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
 
 @if (_rescheduleId is not null)
@@ -250,7 +491,7 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="calendar" Width="17" Height="17" />
                 </span>
-                <h2 id="rs-title" class="confirm-dialog__title">Reschedule delivery</h2>
+                <h2 id="rs-title" class="confirm-dialog__title">Reschedule release</h2>
             </div>
             <div class="confirm-dialog__body">
             <div class="field">
@@ -280,11 +521,24 @@
 @code {
     [Parameter] public int Id { get; set; }
 
+    /// <summary>How many releases the list shows at first, and how many more each "Show older releases" adds.</summary>
+    internal const int PageSize = 10;
+
     private bool _loading = true;
+    private bool _historyLoading = true;
+    private bool _loadingOlder;
     private OeReleasePipeline? _rp;
     private bool _canManage;
     private bool _isProduction;
     private List<DeliveryHistoryRow> _deliveries = new();
+    private int _limit = PageSize;
+    private readonly HashSet<int> _open = new();
+    private bool _openedDefault;
+
+    // Why each opened release's skipped apps were skipped, read from the build's
+    // manifests once per release (null = no failed app to point at, or unreadable).
+    private readonly Dictionary<int, DeliverySkipReasons?> _skipReasons = new();
+
     private List<ReleaseBuildDialog.ReleasableBuildOption> _successfulBuilds = new();
     // A Release-sourced pipeline offers the repository's release tags instead of the
     // build pipeline's builds (#632).
@@ -294,20 +548,14 @@
     /// <summary>True when this pipeline installs apps from a repository's GitHub releases.</summary>
     private bool _fromReleases;
 
-    /// <summary>What this pipeline draws from: the build pipeline's name, or the repository's.</summary>
-    private string SourceName => _fromReleases
-        ? _rp?.GithubReleaseRepository?.DisplayName ?? "the repository"
-        : _rp?.BuildPipeline?.Name ?? "the build pipeline";
-
-    /// <summary>True when there is at least one build (or release) the person could send.</summary>
-    private bool HasSomethingToRelease => _fromReleases ? _releaseOptions.Count > 0 : _successfulBuilds.Count > 0;
-
     private ReleasePipelineEditorDialog? _editor;
     private ReleaseBuildDialog? _releaseDialog;
     private ConfirmDialog? _cancelConfirm;
 
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
     private string _tzLabel = "UTC";
+    private string _tzCity = "UTC";
+    private string _tzPhrase = "UTC";
 
     // Reschedule modal state.
     private int? _rescheduleId;
@@ -318,12 +566,51 @@
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
     private PeriodicTimer? _poll;
     private CancellationTokenSource? _pollCts;
-
-    protected override async Task OnInitializedAsync() => await LoadAsync(startPollIfActive: true);
-
     private DateTime? _secretExpiresAt;
 
-    private async Task LoadAsync(bool startPollIfActive)
+    private static readonly string[] SkeletonWidths = ["70%", "50%", "62%", "44%", "58%", "66%"];
+
+    /// <summary>What this pipeline draws from: the build pipeline's name, or the repository's.</summary>
+    private string SourceName => _fromReleases
+        ? _rp?.GithubReleaseRepository?.DisplayName ?? "the repository"
+        : _rp?.BuildPipeline?.Name ?? "the build pipeline";
+
+    /// <summary>
+    /// Where the source lives. Same-named source and environment ("Test" into "Test") are
+    /// told apart by where their links go, which is the point of #932.
+    /// </summary>
+    private string SourceHref => _fromReleases
+        ? (_rp?.GithubReleaseRepository?.Url is { Length: > 0 } url ? RepositoryWebUrl(url) : $"/solutions/{_rp?.ProjectId}")
+        : $"/pipelines/{_rp?.BuildPipelineId}";
+
+    private string EnvName => _rp?.ProjectEnvironment?.Name ?? "";
+    private string EnvType => string.IsNullOrWhiteSpace(_rp?.ProjectEnvironment?.Type) ? "Business Central" : _rp!.ProjectEnvironment!.Type;
+    private string EnvHref => $"/environments/{_rp?.ProjectEnvironmentId}";
+
+    /// <summary>True when there is at least one build (or release) the person could send.</summary>
+    private bool HasSomethingToRelease => _fromReleases ? _releaseOptions.Count > 0 : _successfulBuilds.Count > 0;
+
+    private string NothingToReleaseReason => _fromReleases
+        ? "This repository has no release with app files attached yet."
+        : "The build pipeline has no successful build to release yet.";
+
+    private bool IsEmpty => !_historyLoading && _deliveries.Count == 0;
+    private bool IsForceSync => BcSyncMode.Normalize(_rp?.SchemaSyncMode) == BcSyncMode.ForceSync;
+
+    /// <summary>A row numbered above 1 at the bottom of the list means the pipeline has older releases.</summary>
+    private bool HasOlder => _deliveries.Count > 0 && _deliveries[^1].Number > 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPipelineAsync();
+        if (_rp is null) return;
+        // Draw the head and the skeleton while the history loads, as the sheet does.
+        StateHasChanged();
+        await LoadHistoryAsync();
+        EnsurePolling();
+    }
+
+    private async Task LoadPipelineAsync()
     {
         _loading = true;
         try
@@ -350,12 +637,14 @@
         }
 
         _isProduction = string.Equals(_rp.ProjectEnvironment?.Type, "Production", StringComparison.OrdinalIgnoreCase);
-        _tz = ALDevToolbox.Domain.ValueObjects.ObjectExplorer.UpdateWindow.ResolveTimeZone(_rp.Project?.BcTimeZone);
-        _tzLabel = string.IsNullOrWhiteSpace(_rp.Project?.BcTimeZone) ? "UTC" : _rp.Project!.BcTimeZone!;
+        _tz = UpdateWindow.ResolveTimeZone(_rp.Project?.BcTimeZone);
+        var tzId = _rp.Project?.BcTimeZone;
+        _tzLabel = string.IsNullOrWhiteSpace(tzId) ? "UTC" : tzId!;
+        _tzCity = string.IsNullOrWhiteSpace(tzId) ? "UTC" : tzId![(tzId!.LastIndexOf('/') + 1)..].Replace('_', ' ');
+        _tzPhrase = string.IsNullOrWhiteSpace(tzId) ? "UTC" : $"the solution's time zone ({_tzCity})";
         _canManage = await Releases.CanManageAsync(Id);
-        _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id);
 
-        _fromReleases = _rp.ArtifactSource == ALDevToolbox.Domain.ValueObjects.ObjectExplorer.ReleaseArtifactSource.GithubRelease;
+        _fromReleases = _rp.ArtifactSource == ReleaseArtifactSource.GithubRelease;
         _successfulBuilds = new();
         _releaseOptions = new();
         _releasesError = null;
@@ -364,7 +653,7 @@
         {
             // Asking GitHub is the one thing on this page that can be slow or fail; a
             // refusal is shown above the history rather than replacing the page, so the
-            // deliveries already made stay readable.
+            // releases already made stay readable.
             try
             {
                 _releaseOptions = (await GitHubReleases.ListReleasesAsync(Id))
@@ -403,7 +692,91 @@
         }
 
         _loading = false;
-        if (startPollIfActive) EnsurePolling();
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id, _limit);
+        _historyLoading = false;
+        OpenDefault();
+        await LoadSkipReasonsAsync();
+    }
+
+    /// <summary>
+    /// Opens the newest release once, when it is the one someone came to look at: a
+    /// failure, one that is running, or one waiting for its time. Only on the first load,
+    /// so a row the person closed stays closed while the page polls.
+    /// </summary>
+    private void OpenDefault()
+    {
+        if (_openedDefault || _deliveries.Count == 0) return;
+        _openedDefault = true;
+        var newest = _deliveries[0];
+        if (newest.Status == ProjectDeliveryStatus.Failed || newest.IsActive || newest.IsScheduled)
+        {
+            _open.Add(newest.Id);
+        }
+    }
+
+    private async Task ToggleAsync(DeliveryHistoryRow d)
+    {
+        if (!_open.Remove(d.Id))
+        {
+            _open.Add(d.Id);
+            await LoadSkipReasonsAsync();
+        }
+    }
+
+    /// <summary>
+    /// Reads, once per opened release, why its skipped apps were skipped. Its own DI
+    /// scope, because a click can land while the page's context is mid-query.
+    /// </summary>
+    private async Task LoadSkipReasonsAsync()
+    {
+        var wanted = _deliveries
+            .Where(d => _open.Contains(d.Id) && !_skipReasons.ContainsKey(d.Id)
+                        && d.Status == ProjectDeliveryStatus.Failed
+                        && d.Apps.Any(a => a.Status == ProjectDeliveryResultStatus.Skipped))
+            .Select(d => d.Id)
+            .ToList();
+        if (wanted.Count == 0) return;
+
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<DeliveryService>();
+            foreach (var id in wanted)
+            {
+                _skipReasons[id] = await service.GetSkipReasonsAsync(id);
+            }
+        }
+        catch (Exception ex)
+        {
+            // The row falls back to "skipped after X failed", which is still true.
+            Log.LogWarning(ex, "Couldn't read why apps were skipped on release pipeline {ReleasePipelineId}.", Id);
+            foreach (var id in wanted) _skipReasons.TryAdd(id, null);
+        }
+    }
+
+    private async Task ShowOlderAsync()
+    {
+        _loadingOlder = true;
+        try
+        {
+            _limit += PageSize;
+            _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id, _limit);
+        }
+        finally
+        {
+            _loadingOlder = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await LoadPipelineAsync();
+        if (_rp is null) return;
+        await LoadHistoryAsync();
     }
 
     private async Task EditAsync()
@@ -418,7 +791,7 @@
         await _editor.OpenForEditAsync(row);
     }
 
-    private async Task OnEditedAsync(int _) => await LoadAsync(startPollIfActive: false);
+    private async Task OnEditedAsync(int _) => await ReloadAsync();
 
     private async Task OpenReleaseAsync()
     {
@@ -434,30 +807,32 @@
 
     private async Task OnReleasedAsync(int _)
     {
-        await LoadAsync(startPollIfActive: false);
+        _openedDefault = false; // the new release is the one to watch
+        await ReloadAsync();
         EnsurePolling(); // a release-now delivery is active → start watching
     }
 
-    // ── Cancel + reschedule (scheduled deliveries only) ───────────────────────
+    // ── Cancel + reschedule (scheduled releases only) ─────────────────────────
 
     private async Task CancelAsync(DeliveryHistoryRow d)
     {
         if (_cancelConfirm is null) return;
         var confirmed = await _cancelConfirm.OpenAsync(
-            "Cancel this delivery?",
-            $"Cancel the delivery of build #{d.ProjectBuildId} scheduled for {ScheduledWhen(d)}? It won't run.",
-            "Cancel delivery");
+            "Cancel this release?",
+            $"Cancel release {d.Number} of build #{d.ProjectBuildId}, scheduled for {ScheduledWhen(d)}? It won't run.",
+            "Cancel release");
         if (!confirmed) return;
         try
         {
             await Deliveries.CancelDeliveryAsync(d.Id);
-            await LoadAsync(startPollIfActive: false);
+            await ReloadAsync();
         }
         catch (PlanValidationException ex)
         {
             // Lost the race — it already started. Reflect the new state.
             Log.LogInformation(ex, "Cancel race on delivery {DeliveryId}.", d.Id);
-            await LoadAsync(startPollIfActive: true);
+            await ReloadAsync();
+            EnsurePolling();
         }
         catch (Exception ex)
         {
@@ -465,13 +840,13 @@
         }
     }
 
-    private void OpenRescheduleAsync(DeliveryHistoryRow d)
+    private void OpenReschedule(DeliveryHistoryRow d)
     {
         _rescheduleId = d.Id;
         _rescheduleError = null;
         _rescheduling = false;
-        // Prefill to the delivery's current time in the customer's tz.
-        var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(d.ScheduledFor, DateTimeKind.Utc), _tz);
+        // Prefill to the release's current time in the customer's tz.
+        var local = Local(d.ScheduledFor);
         _rescheduleLocal = new DateTime(local.Year, local.Month, local.Day, local.Hour, local.Minute, 0, DateTimeKind.Unspecified);
     }
 
@@ -497,7 +872,7 @@
             var utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_rescheduleLocal, DateTimeKind.Unspecified), _tz);
             if (utc > expiry)
             {
-                var localExpiry = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(expiry, DateTimeKind.Utc), _tz);
+                var localExpiry = Local(expiry);
                 return $"The Business Central client secret expires {localExpiry:yyyy-MM-dd}. This time is after that and will fail unless the secret is rotated first.";
             }
             return null;
@@ -514,16 +889,17 @@
             var utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_rescheduleLocal, DateTimeKind.Unspecified), _tz);
             await Deliveries.RescheduleDeliveryAsync(id, utc);
             _rescheduleId = null;
-            await LoadAsync(startPollIfActive: true);
+            await ReloadAsync();
+            EnsurePolling();
         }
         catch (PlanValidationException ex)
         {
-            _rescheduleError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't reschedule the delivery.";
+            _rescheduleError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't reschedule the release.";
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to reschedule delivery {DeliveryId}.", id);
-            _rescheduleError = "Couldn't reschedule the delivery.";
+            _rescheduleError = "Couldn't reschedule the release.";
         }
         finally
         {
@@ -531,7 +907,7 @@
         }
     }
 
-    // ── Live polling of in-flight deliveries ──────────────────────────────────
+    // ── Live polling of in-flight releases ────────────────────────────────────
 
     private void EnsurePolling()
     {
@@ -555,13 +931,19 @@
                 await using (var scope = ScopeFactory.CreateAsyncScope())
                 {
                     rows = await scope.ServiceProvider.GetRequiredService<DeliveryService>()
-                        .ListDeliveryHistoryAsync(Id, token);
+                        .ListDeliveryHistoryAsync(Id, _limit, token);
                 }
 
                 // Disposal can happen while we were parked on the query; touching the
                 // renderer after that logs an error for what is a normal navigate-away.
                 if (token.IsCancellationRequested) break;
-                await InvokeAsync(() => { _deliveries = rows; StateHasChanged(); });
+                await InvokeAsync(async () =>
+                {
+                    _deliveries = rows;
+                    // A release that just finished may have skipped apps worth explaining.
+                    await LoadSkipReasonsAsync();
+                    StateHasChanged();
+                });
                 if (!rows.Any(d => d.IsActive)) { StopPoll(); break; }
             }
         }
@@ -597,7 +979,452 @@
         return ValueTask.CompletedTask;
     }
 
-    // ── Display helpers ───────────────────────────────────────────────────────
+    // ── The summary card ──────────────────────────────────────────────────────
+
+    private sealed record HealthView(string Tone, string Icon, string Title, string Sentence);
+
+    /// <summary>
+    /// The card's keyline, title and one sentence. Facts only: what happened last, what
+    /// the environment reported, what is next. Never a reassurance the product cannot
+    /// back ("nothing is broken for users"), per the review brief.
+    /// </summary>
+    private string SummaryClass => $"card rp-summary rp-summary--{Health().Tone}";
+
+    private HealthView Health()
+    {
+        var active = _deliveries.FirstOrDefault(d => d.IsActive);
+        if (active is not null)
+        {
+            return new HealthView("running", "refresh-cw", "Releasing now",
+                $"Release {active.Number} is {DeliveryLook(active.Status).Word.ToLowerInvariant()} into \"{EnvName}\". {RunningSentence(active)}");
+        }
+
+        var last = LastRelease;
+        if (last is { Status: ProjectDeliveryStatus.Failed })
+        {
+            var sentence = $"Release {last.Number} failed {RelativeTime.Ago(LastWhen(last))}";
+            var failedApp = last.Apps.FirstOrDefault(a => a.Status == ProjectDeliveryResultStatus.Failed);
+            sentence += failedApp is null ? "." : $" on {failedApp.AppName}.";
+            // The apps before the failure did install, so the environment is on a mix of
+            // versions; say which went in rather than leave "failed" to imply none did.
+            var installed = last.Apps.Where(a => a.Status == ProjectDeliveryResultStatus.Completed).ToList();
+            if (failedApp is not null && installed.Count > 0)
+            {
+                sentence += " " + string.Join(", ", installed.Select(a => $"{a.AppName} {a.AppVersion}"))
+                    + (installed.Count == 1 ? " was" : " were") + " installed before it.";
+            }
+            if (failedApp is not null && ReportedVersion(failedApp) is { } reported)
+            {
+                sentence += " " + reported;
+            }
+            if (NextRelease is { } queued)
+            {
+                sentence += $" Release {queued.Number} is scheduled {WhenPhrase(queued.ScheduledFor)}.";
+            }
+            return new HealthView("failed", "circle-x", "Last release failed", sentence);
+        }
+
+        if (NextRelease is { } next)
+        {
+            var sentence = $"Release {next.Number} installs into \"{EnvName}\" {WhenPhrase(next.ScheduledFor)}.";
+            if (IsForceSync && _isProduction) sentence += " Force sync is on for this Production environment.";
+            return new HealthView("queued", "clock", "Scheduled", sentence);
+        }
+
+        if (last is { Status: ProjectDeliveryStatus.Deployed })
+        {
+            return new HealthView("succeeded", "circle-check", "Healthy",
+                $"The last release deployed {RelativeTime.Ago(LastWhen(last))}. Nothing is scheduled.");
+        }
+        if (last is { Status: ProjectDeliveryStatus.HandedOff })
+        {
+            return new HealthView("handed", "send", "Handed to Business Central",
+                $"Release {last.Number} was handed to Business Central {RelativeTime.Ago(LastWhen(last))}, to install with its own update. Nothing else is scheduled.");
+        }
+
+        return new HealthView("none", "circle-dashed", "Nothing released yet",
+            $"This pipeline has not installed anything into \"{EnvName}\" yet.");
+    }
+
+    /// <summary>
+    /// What the environment has of the app that failed, and where that fact came from.
+    /// A panel read still in the cache is Business Central's word after the run (a
+    /// finished release clears the cache, so it is only there when someone read the
+    /// environment since); otherwise the version the run itself read before it began.
+    /// </summary>
+    private string? ReportedVersion(DeliveryAppRow failed)
+    {
+        var panel = _rp is null ? null : PanelCache.Get(_rp.ProjectId, _rp.ProjectEnvironmentId);
+        var installed = panel?.InstalledApps.FirstOrDefault(a =>
+            (Guid.TryParse(failed.AppId, out var id) && a.AppId == id)
+            || string.Equals(a.Name, failed.AppName, StringComparison.OrdinalIgnoreCase));
+        if (installed is not null)
+        {
+            return $"The environment reports {installed.Name} {installed.Version} installed ({RelativeTime.Ago(panel!.FetchedAtUtc)}).";
+        }
+        return failed.PreviousVersion is { } before
+            ? $"Before this release the environment had {failed.AppName} {before} installed."
+            : null;
+    }
+
+    /// <summary>The newest release that has started or finished. Cancelled ones count: they are what happened last.</summary>
+    private DeliveryHistoryRow? LastRelease => _deliveries.FirstOrDefault(d => !d.IsScheduled && !d.IsActive);
+
+    private DeliveryHistoryRow? NextRelease => _deliveries.Where(d => d.IsScheduled).MinBy(d => d.ScheduledFor);
+
+    private static DateTime LastWhen(DeliveryHistoryRow d) => d.FinishedAt ?? d.StartedAt ?? d.CreatedAt;
+
+    private string? DeliveryWindow
+    {
+        get
+        {
+            var env = _rp?.ProjectEnvironment;
+            if (env?.UpdateWindowStart is not { } start || env.UpdateWindowEnd is not { } end) return null;
+            return $"{start:HH\\:mm}-{end:HH\\:mm}";
+        }
+    }
+
+    /// <summary>How old the stored mirror of the environment is, as "4 minutes ago".</summary>
+    private string? MirrorAge
+    {
+        get
+        {
+            var env = _rp?.ProjectEnvironment;
+            if (env is null || env.FetchedAt == default) return null;
+            var at = env.StatusFetchedAt is { } s && s > env.FetchedAt ? s : env.FetchedAt;
+            return RelativeTime.Ago(at);
+        }
+    }
+
+    private string EnvHealth => _rp?.ProjectEnvironment?.MissingSince is not null
+        ? "No longer in Business Central"
+        : BcEnvironmentStatus.StatusWord(_rp?.ProjectEnvironment?.Status);
+
+    /// <summary>The mirrored next platform update, e.g. "28.3, 14 Oct"; "None scheduled" once read and empty; hidden if never read.</summary>
+    private string? NextUpdate
+    {
+        get
+        {
+            var env = _rp?.ProjectEnvironment;
+            if (env is null) return null;
+            if (!string.IsNullOrWhiteSpace(env.BcNextUpdateVersion))
+            {
+                return env.BcNextUpdateDate is { } date
+                    ? $"{env.BcNextUpdateVersion}, {Local(date).ToString("d MMM", CultureInfo.InvariantCulture)}"
+                    : env.BcNextUpdateVersion;
+            }
+            return env.BcNextUpdateFetchedAt is not null ? "None scheduled" : null;
+        }
+    }
+
+    // ── One release ───────────────────────────────────────────────────────────
+
+    internal readonly record struct Look(string Tone, string Icon, bool Spin, string Word);
+
+    /// <summary>A release's state in the sheet's vocabulary: tone (colour and keyline), glyph, the word.</summary>
+    internal static Look DeliveryLook(string status) => status switch
+    {
+        ProjectDeliveryStatus.Scheduled => new("queued", "clock", false, "Scheduled"),
+        ProjectDeliveryStatus.Claimed => new("running", "refresh-cw", true, "Claimed"),
+        ProjectDeliveryStatus.Uploading => new("running", "refresh-cw", true, "Uploading"),
+        ProjectDeliveryStatus.Installing => new("running", "refresh-cw", true, "Installing"),
+        ProjectDeliveryStatus.Deployed => new("succeeded", "circle-check", false, "Deployed"),
+        ProjectDeliveryStatus.Failed => new("failed", "circle-x", false, "Failed"),
+        ProjectDeliveryStatus.Cancelled => new("cancelled", "x", false, "Cancelled"),
+        ProjectDeliveryStatus.HandedOff => new("handed", "send", false, "Handed to Business Central"),
+        _ => new("queued", "clock", false, status),
+    };
+
+    /// <summary>
+    /// An app's state. Every state gets its word, not only Failed: a Skipped app with
+    /// the Failed app's glyph beside it read as a second failed install (#929).
+    /// </summary>
+    internal static Look AppLook(string status) => status switch
+    {
+        ProjectDeliveryResultStatus.Pending => new("pending", "circle-dashed", false, "Pending"),
+        ProjectDeliveryResultStatus.Uploading => new("running", "refresh-cw", true, "Uploading"),
+        ProjectDeliveryResultStatus.Installing => new("running", "refresh-cw", true, "Installing"),
+        ProjectDeliveryResultStatus.Scheduled => new("queued", "clock", false, "Scheduled"),
+        ProjectDeliveryResultStatus.Completed => new("succeeded", "circle-check", false, "Completed"),
+        ProjectDeliveryResultStatus.Failed => new("failed", "circle-x", false, "Failed"),
+        ProjectDeliveryResultStatus.Skipped => new("skipped", "circle-minus", false, "Skipped"),
+        _ => new("pending", "circle-dashed", false, status),
+    };
+
+    private static string GlyphClass(Look look) =>
+        $"data-table__state data-table__state--icon rp-glyph rp-tone--{look.Tone}{(look.Spin ? " data-table__state--spin" : "")}";
+
+    private static string BuildLine(DeliveryHistoryRow d) =>
+        !string.IsNullOrWhiteSpace(d.BuildReleaseTag) ? $"Build #{d.ProjectBuildId} from release {d.BuildReleaseTag}"
+        : !string.IsNullOrWhiteSpace(d.BuildBranch) ? $"Build #{d.ProjectBuildId} from {d.BuildBranch}"
+        : $"Build #{d.ProjectBuildId}";
+
+    /// <summary>The phone layout's second line, which carries what the hidden columns do.</summary>
+    private string CompactLine(DeliveryHistoryRow d) =>
+        string.Join(" - ", new[] { OutcomeWhen(d), Took(d), AppsSummary(d) }.Where(s => !string.IsNullOrEmpty(s)));
+
+    private static DateTime? StartOf(DeliveryHistoryRow d) => d.ClaimedAt ?? d.StartedAt;
+
+    private string OutcomeWhen(DeliveryHistoryRow d) => d.IsScheduled
+        ? $"for {When(d.ScheduledFor)}"
+        : RelativeTime.Ago(LastWhen(d));
+
+    private string OutcomeExact(DeliveryHistoryRow d) => Exact(d.IsScheduled ? d.ScheduledFor : LastWhen(d));
+
+    private static string? Took(DeliveryHistoryRow d) =>
+        d.FinishedAt is { } end && (StartOf(d) ?? (d.Status == ProjectDeliveryStatus.Cancelled ? null : d.CreatedAt)) is { } start
+            ? Duration(end - start)
+            : d.IsActive && StartOf(d) is { } running ? Duration(DateTime.UtcNow - running) : null;
+
+    private static string AppsSummary(DeliveryHistoryRow d)
+    {
+        var n = d.Apps.Count;
+        var done = d.Apps.Count(a => a.Status == ProjectDeliveryResultStatus.Completed);
+        string Apps(int k) => k == 1 ? "1 app" : $"{k} apps";
+        return d.Status switch
+        {
+            ProjectDeliveryStatus.Scheduled => $"{Apps(n)} pending",
+            ProjectDeliveryStatus.HandedOff => $"{n} handed over",
+            ProjectDeliveryStatus.Cancelled => done == 0 ? "None installed" : $"{done} of {n} installed",
+            ProjectDeliveryStatus.Claimed or ProjectDeliveryStatus.Uploading or ProjectDeliveryStatus.Installing
+                => $"App {Math.Min(n, done + 1)} of {n}",
+            _ => $"{done} of {n} installed",
+        };
+    }
+
+    private string RunningSentence(DeliveryHistoryRow d)
+    {
+        var current = d.Apps.FirstOrDefault(a => a.Status is ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing);
+        if (current is null) return "Connecting to the environment.";
+        var index = d.Apps.ToList().IndexOf(current) + 1;
+        var verb = current.Status == ProjectDeliveryResultStatus.Uploading ? "Uploading" : "Installing";
+        return $"{verb} {current.AppName}, app {index} of {d.Apps.Count}.";
+    }
+
+    /// <summary>The sentence a release that did not fail opens with, when it has one worth saying.</summary>
+    private string? InfoSentence(DeliveryHistoryRow d)
+    {
+        switch (d.Status)
+        {
+            case ProjectDeliveryStatus.Cancelled:
+                return d.CancelledByName is { } who
+                    ? $"Cancelled by {who} before it started. No app was uploaded."
+                    : "Cancelled before it started. No app was uploaded.";
+            case ProjectDeliveryStatus.HandedOff:
+                return "Business Central has the apps and installs them with the customer's next update. Cancel it there if you need to stop it.";
+            case ProjectDeliveryStatus.Scheduled:
+            {
+                var sentence = $"Installs {WhenPhrase(d.ScheduledFor)}";
+                sentence += d.ScheduledOutsideWindow ? ", outside the environment's delivery window." : ".";
+                if (BcSyncMode.Normalize(d.SchemaSyncMode) == BcSyncMode.ForceSync)
+                {
+                    sentence += " Force sync is on: if this build removes tables or fields, their data is deleted.";
+                }
+                return sentence;
+            }
+            case ProjectDeliveryStatus.Claimed or ProjectDeliveryStatus.Uploading or ProjectDeliveryStatus.Installing:
+                return RunningSentence(d);
+            default:
+                return null;
+        }
+    }
+
+    internal sealed record StepView(string Label, string Tone, string At, string? Exact, string Took);
+
+    /// <summary>
+    /// The step strip. Only the steps whose moments were recorded are drawn: an old
+    /// release has no "uploaded" moment, and a scheduled one has not reached the rest,
+    /// which show as pending rather than invented.
+    /// </summary>
+    private List<StepView> Steps(DeliveryHistoryRow d)
+    {
+        var steps = new List<StepView>
+        {
+            new("Scheduled", "queued", When(d.ScheduledFor, seconds: true), Exact(d.ScheduledFor),
+                d.TriggeredByName is { } by ? $"by {by}" : ""),
+        };
+
+        if (d.Status == ProjectDeliveryStatus.Cancelled)
+        {
+            if (d.FinishedAt is { } cancelledAt)
+            {
+                steps.Add(new("Cancelled", "cancelled", Clock(cancelledAt), Exact(cancelledAt),
+                    d.CancelledByName is { } who ? $"by {who}" : ""));
+            }
+            return steps;
+        }
+
+        if (d.ClaimedAt is { } claimed)
+        {
+            var wait = claimed - d.ScheduledFor;
+            steps.Add(new("Claimed", "running", Clock(claimed), Exact(claimed),
+                wait > TimeSpan.FromSeconds(1) ? $"after {(wait.TotalSeconds < 60 ? $"{(int)wait.TotalSeconds}s" : Duration(wait))}" : ""));
+        }
+        else if (d.IsScheduled)
+        {
+            steps.Add(new("Claim", "pending", "-", null, ""));
+        }
+
+        if (d.InstallStartedAt is { } uploaded)
+        {
+            steps.Add(new(d.Apps.Count > 1 ? "First app uploaded" : "Uploaded", "running", Clock(uploaded), Exact(uploaded),
+                (d.StartedAt ?? d.ClaimedAt) is { } from ? Duration(uploaded - from) : ""));
+        }
+        else if (d.IsScheduled || (d.IsActive && d.InstallStartedAt is null && d.DeploymentSchedule == BcDeploymentSchedule.Immediate))
+        {
+            steps.Add(new("Upload", "pending", "-", null, ""));
+        }
+
+        if (d.IsScheduled || d.IsActive)
+        {
+            steps.Add(new("Install", "pending", "-", null, ""));
+            return steps;
+        }
+
+        if (d.FinishedAt is { } end)
+        {
+            var from = d.InstallStartedAt ?? d.StartedAt;
+            var word = DeliveryLook(d.Status);
+            var stepLabel = d.Status switch
+            {
+                ProjectDeliveryStatus.Deployed => "Installed",
+                ProjectDeliveryStatus.HandedOff => "Handed over",
+                _ => d.InstallStartedAt is not null ? "Installing failed" : null,
+            };
+            if (stepLabel is not null && from is { } began)
+            {
+                steps.Add(new(stepLabel, word.Tone, Clock(end), Exact(end), Duration(end - began)));
+            }
+            var totalFrom = d.ClaimedAt ?? d.StartedAt;
+            steps.Add(new(word.Word, word.Tone, Clock(end), Exact(end),
+                totalFrom is { } t ? $"total {Duration(end - t)}" : ""));
+        }
+        return steps;
+    }
+
+    /// <summary>"2.2.0.104 to 2.3.0.118" when the previous version was recorded; the new version alone when it was not.</summary>
+    private static string AppVersionText(DeliveryAppRow a)
+    {
+        if (a.PreviousVersion is not { } before) return a.AppVersion;
+        if (a.Status == ProjectDeliveryResultStatus.Skipped) return $"{before}, not changed";
+        if (string.Equals(before, a.AppVersion, StringComparison.OrdinalIgnoreCase)) return $"{a.AppVersion}, already installed";
+        return $"{before} to {a.AppVersion}";
+    }
+
+    private static string? AppTook(DeliveryAppRow a) =>
+        a.StartedAt is { } s && a.FinishedAt is { } f ? Duration(f - s) : null;
+
+    /// <summary>
+    /// The line under an app. For a Skipped app it says why (#929's comment): "because
+    /// it depends on X" only when the build's manifests show it does, else "after X
+    /// failed", which is true either way.
+    /// </summary>
+    private string? AppMessage(DeliveryHistoryRow d, DeliveryAppRow a, int ordering)
+    {
+        switch (a.Status)
+        {
+            case ProjectDeliveryResultStatus.Skipped:
+            {
+                _skipReasons.TryGetValue(d.Id, out var reasons);
+                var failed = d.Apps.FirstOrDefault(x => x.Status == ProjectDeliveryResultStatus.Failed);
+                if (reasons?.DependentOrderings is { } dependents && dependents.Contains(ordering))
+                {
+                    return $"Skipped because it depends on {reasons.FailedAppName} {reasons.FailedAppVersion}.";
+                }
+                return failed is not null
+                    ? $"Skipped after {failed.AppName} failed."
+                    : "Not attempted: the release stopped before this app.";
+            }
+            case ProjectDeliveryResultStatus.Scheduled:
+                return a.Message ?? "Business Central installs it with its own update.";
+            default:
+                return string.IsNullOrWhiteSpace(a.Message) ? null : a.Message;
+        }
+    }
+
+    internal sealed record LogLine(string Time, string Message, bool Error);
+
+    private static readonly Regex LogLinePattern = new(@"^(\d{2}:\d{2}:\d{2})\s{1,2}(.*)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The stored log is <c>HH:mm:ss  message</c> lines; the time goes in its own column.
+    /// A line the run wrote about a failure is tinted, keyed on the words the run itself
+    /// writes ("FAILED", "Delivery failed"), not on anything Business Central said.
+    /// </summary>
+    private static List<LogLine> LogLines(DeliveryHistoryRow d)
+    {
+        if (string.IsNullOrWhiteSpace(d.DiagnosticsLog)) return [];
+        return d.DiagnosticsLog
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.TrimEnd('\r'))
+            .Where(l => l.Length > 0)
+            .Select(l =>
+            {
+                var m = LogLinePattern.Match(l);
+                var time = m.Success ? m.Groups[1].Value : "";
+                var message = m.Success ? m.Groups[2].Value : l;
+                var error = message.StartsWith("FAILED", StringComparison.Ordinal)
+                            || message.StartsWith("Delivery failed", StringComparison.Ordinal);
+                return new LogLine(time, message, error);
+            })
+            .ToList();
+    }
+
+    // ── Time ──────────────────────────────────────────────────────────────────
+
+    private DateTime Local(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), _tz);
+
+    /// <summary>"Today 02:00", "Yesterday 15:02", "Tomorrow 22:00", else "20 Sep 11:40" - in the solution's time zone.</summary>
+    private string When(DateTime utc, bool seconds = false)
+    {
+        var local = Local(utc);
+        var today = Local(DateTime.UtcNow).Date;
+        var time = local.ToString(seconds ? "HH:mm:ss" : "HH:mm", CultureInfo.InvariantCulture);
+        var days = (local.Date - today).Days;
+        return days switch
+        {
+            0 => $"Today {time}",
+            -1 => $"Yesterday {time}",
+            1 => $"Tomorrow {time}",
+            _ => $"{local.ToString("d MMM", CultureInfo.InvariantCulture)} {time}",
+        };
+    }
+
+    /// <summary>The same moment inside a sentence: "today at 22:00", "on 20 Sep at 11:40".</summary>
+    private string WhenPhrase(DateTime utc)
+    {
+        var local = Local(utc);
+        var time = local.ToString("HH:mm", CultureInfo.InvariantCulture);
+        return (local.Date - Local(DateTime.UtcNow).Date).Days switch
+        {
+            0 => $"today at {time}",
+            -1 => $"yesterday at {time}",
+            1 => $"tomorrow at {time}",
+            _ => $"on {local.ToString("d MMM", CultureInfo.InvariantCulture)} at {time}",
+        };
+    }
+
+    private string Clock(DateTime utc) => Local(utc).ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
+    private string Exact(DateTime utc) =>
+        $"{Local(utc).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} ({_tzLabel})";
+
+    /// <summary>The scheduled time in the customer's timezone, e.g. "2026-07-01 22:00".</summary>
+    private string ScheduledWhen(DeliveryHistoryRow d) => Local(d.ScheduledFor).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>"3m 32s", "0m 48s", "1h 05m" - the sheet's durations.</summary>
+    internal static string Duration(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span.TotalHours >= 1
+            ? $"{(int)span.TotalHours}h {span.Minutes:00}m"
+            : $"{(int)span.TotalMinutes}m {span.Seconds:00}s";
+    }
+
+    /// <summary>A repository's web address from its clone URL, for the source link.</summary>
+    private static string RepositoryWebUrl(string url) =>
+        url.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? url[..^4] : url;
 
     /// <summary>
     /// The picker label for one releasable build: what it is, not just when it ran.
@@ -619,69 +1446,8 @@
 
         if (appCount > 0) parts.Add(appCount == 1 ? "1 app" : $"{appCount} apps");
         if (!string.IsNullOrEmpty(b.BcVersion)) parts.Add($"BC {b.BcVersion}");
-        parts.Add("built " + (b.FinishedAt ?? b.StartedAt).ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+        parts.Add("built " + (b.FinishedAt ?? b.StartedAt).ToString("d MMM HH:mm", CultureInfo.InvariantCulture));
 
         return string.Join(" · ", parts);
-    }
-
-    /// <summary>
-    /// The history row's title line. The build number is already in the row's id
-    /// chip, so the title says what the release carried instead of repeating it.
-    /// </summary>
-    private static string RowTitle(DeliveryHistoryRow d) => d.Apps.Count switch
-    {
-        0 => d.IsScheduled ? "Scheduled release" : "Release",
-        1 => "1 app",
-        var n => $"{n} apps",
-    };
-
-    /// <summary>
-    /// A per-app result in the run-family vocabulary, so its glyph comes off the
-    /// same table as the delivery's own. The old private CSS spelled these as
-    /// five coloured dots (ok / fail / busy / skip / pending) with the state word
-    /// only on a title attribute - colour alone, which is the one thing the
-    /// design system's status rule exists to prevent.
-    /// </summary>
-    private static string AppState(string status) => status switch
-    {
-        ProjectDeliveryResultStatus.Completed => "succeeded",
-        ProjectDeliveryResultStatus.Failed => "failed",
-        ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing => "running",
-        ProjectDeliveryResultStatus.Skipped => "cancelled",
-        ProjectDeliveryResultStatus.Scheduled => "handed_off",
-        _ => "queued",
-    };
-
-    private static string AppLabel(string status) => status switch
-    {
-        ProjectDeliveryResultStatus.Completed => "Installed",
-        ProjectDeliveryResultStatus.Failed => "Failed",
-        ProjectDeliveryResultStatus.Uploading => "Uploading",
-        ProjectDeliveryResultStatus.Installing => "Installing",
-        ProjectDeliveryResultStatus.Skipped => "Skipped",
-        ProjectDeliveryResultStatus.Scheduled => "Waiting for Business Central to install it",
-        _ => "Pending",
-    };
-
-    private static string AbsoluteWhen(DeliveryHistoryRow d) => d.CreatedAt.ToString("yyyy-MM-dd HH:mm");
-
-    /// <summary>The scheduled time in the customer's timezone, e.g. "2026-07-01 22:00".</summary>
-    private string ScheduledWhen(DeliveryHistoryRow d) =>
-        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(d.ScheduledFor, DateTimeKind.Utc), _tz).ToString("yyyy-MM-dd HH:mm");
-
-    private string ScheduledAbsolute(DeliveryHistoryRow d) => $"{ScheduledWhen(d)} ({_tzLabel})";
-
-    private static string RelativeWhen(DeliveryHistoryRow d)
-    {
-        var span = DateTime.UtcNow - d.CreatedAt;
-        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
-        return span switch
-        {
-            { TotalSeconds: < 60 } => "just now",
-            { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes} min ago",
-            { TotalHours: < 24 } => $"{(int)span.TotalHours} hr ago",
-            { TotalDays: < 7 } => $"{(int)span.TotalDays} day{((int)span.TotalDays == 1 ? "" : "s")} ago",
-            _ => $"on {d.CreatedAt:yyyy-MM-dd}",
-        };
     }
 }

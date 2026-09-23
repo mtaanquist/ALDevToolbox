@@ -382,3 +382,12 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .data-table tbody tr.is-target { scroll-margin-top: var(--space-7); }
 .data-table tbody tr.is-target:focus { outline: none; }
 .data-table tbody tr.is-target td:first-child { box-shadow: inset 2px 0 0 var(--primary); }
+
+/* The release pipeline head wraps as its sheet draws it (ReleasePipelineBody.dc.html:
+   flex-wrap on the head and the actions, the title block 300px before it wraps), so
+   on a phone the three actions drop under the title instead of squeezing it to one
+   word a line. On the page, not the frame, because DetailPage is shared (#929). */
+.rp-page .detail-head { flex-wrap: wrap; }
+.rp-page .detail-head > div:first-child { min-width: 0; flex: 1 1 300px; }
+.rp-page .detail-head__title-row { flex-wrap: wrap; }
+.rp-page .page-head__actions { flex-wrap: wrap; }

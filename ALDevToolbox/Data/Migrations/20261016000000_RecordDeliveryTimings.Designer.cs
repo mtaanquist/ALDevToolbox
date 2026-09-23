@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261016000000_RecordDeliveryTimings")]
+    partial class RecordDeliveryTimings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2869,12 +2872,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("ReleasePipelineId")
                         .HasColumnType("integer")
                         .HasColumnName("release_pipeline_id");
-
-                    b.Property<bool>("ScheduledByDeliveryWindow")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("scheduled_by_delivery_window");
 
                     b.Property<DateTime>("ScheduledFor")
                         .HasColumnType("timestamp with time zone")

@@ -585,6 +585,160 @@ public sealed class DeliveryServiceTests : IDisposable
             .Contain("ExtensionChangeFailed").And.Contain("TenantSyncFailure");
     }
 
+    // ── What the run records for the release page (#929) ──────────────────────
+
+    [Fact]
+    public async Task RunDeliveryAsync_records_previous_versions_per_app_timings_and_when_installing_began()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales" });
+        // The environment has an older Core already; Sales is new to it.
+        _apps.Installed.Add(InstalledApp("CRONUS Core") with { Version = "0.9.0.0" });
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries.Include(d => d.Results).SingleAsync(d => d.Id == deliveryId);
+        var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        results[0].PreviousVersion.Should().Be("0.9.0.0", "the run read what was installed before its first upload");
+        results[1].PreviousVersion.Should().BeNull("an app the environment never had has nothing to move from");
+        foreach (var r in results)
+        {
+            r.StartedAt.Should().NotBeNull();
+            r.FinishedAt.Should().NotBeNull();
+            r.FinishedAt.Should().BeOnOrAfter(r.StartedAt!.Value);
+        }
+        delivery.InstallStartedAt.Should().NotBeNull("the first upload was accepted and installing began");
+        delivery.InstallStartedAt.Should().BeOnOrAfter(delivery.StartedAt!.Value).And.BeOnOrBefore(delivery.FinishedAt!.Value);
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_matches_the_previous_version_on_the_app_id_before_the_name()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var appId = Guid.NewGuid();
+        await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.AppId, appId.ToString()));
+        // The same app under the name it had before a rename, and an unrelated app that
+        // happens to carry today's name: the id decides.
+        _apps.Installed.Add(InstalledApp("CRONUS Core (old name)") with { AppId = appId, Version = "0.8.0.0" });
+        _apps.Installed.Add(InstalledApp("CRONUS Core") with { Version = "0.1.0.0" });
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveryResults.SingleAsync(r => r.ProjectDeliveryId == deliveryId))
+            .PreviousVersion.Should().Be("0.8.0.0");
+    }
+
+    [Fact]
+    public async Task CancelDeliveryAsync_records_who_cancelled_and_the_history_names_them()
+    {
+        const int userId = 73_001;
+        await using (var users = _db.NewContext())
+        {
+            users.Users.Add(new ALDevToolbox.Domain.Entities.User
+            {
+                Id = userId, OrganizationId = TestDb.DefaultOrgId, Email = "k.jensen@example.com",
+                PasswordHash = "x", DisplayName = "K. Jensen",
+                Role = ALDevToolbox.Domain.Entities.UserRole.Editor, Status = ALDevToolbox.Domain.Entities.UserStatus.Active,
+            });
+            await users.SaveChangesAsync();
+        }
+        _db.OrgContext.CurrentUserId = userId;
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var deliveryId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+
+        await NewService(_db.NewContext()).CancelDeliveryAsync(deliveryId);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId)).CancelledByUserId.Should().Be(userId);
+        var row = (await NewService(_db.NewContext()).ListDeliveryHistoryAsync(seed.ReleasePipelineId)).Single();
+        row.CancelledByName.Should().Be("K. Jensen");
+    }
+
+    [Fact]
+    public async Task ListDeliveryHistoryAsync_numbers_releases_per_pipeline_and_takes_the_newest_first()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var ids = new List<int>();
+        for (var i = 0; i < 3; i++)
+        {
+            ids.Add(await NewService(_db.NewContext()).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1 + i)));
+        }
+
+        var newestTwo = await NewService(_db.NewContext()).ListDeliveryHistoryAsync(seed.ReleasePipelineId, 2);
+        var all = await NewService(_db.NewContext()).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
+
+        newestTwo.Select(r => r.Id).Should().Equal(ids[2], ids[1]);
+        newestTwo.Select(r => r.Number).Should().Equal(3, 2);
+        all.Select(r => r.Number).Should().Equal(3, 2, 1);
+        all.Should().OnlyContain(r => r.DeploymentSchedule == BcDeploymentSchedule.Immediate && r.SchemaSyncMode == BcSyncMode.Add);
+    }
+
+    [Fact]
+    public async Task GetSkipReasonsAsync_names_the_skipped_apps_that_depend_on_the_failed_one()
+    {
+        await using var ctx = _db.NewContext();
+        var names = new[] { "CRONUS Core", "CRONUS Sales", "CRONUS Reports", "CRONUS Tools", "CRONUS Extras" };
+        var seed = await SeedAsync(ctx, appNames: names);
+        var ids = names.Select(_ => Guid.NewGuid()).ToArray();
+        // Reports needs Sales, Tools needs Reports (so Sales through it), Extras needs
+        // only Core - it was skipped by the run's rule, not because it needed Sales.
+        var deps = new (string Id, string Name, string Version)[][]
+        {
+            [],
+            [(ids[0].ToString(), names[0], "1.0.0.0")],
+            [(ids[1].ToString(), names[1], "1.0.1.0")],
+            [(ids[2].ToString(), names[2], "1.0.2.0")],
+            [(ids[0].ToString(), names[0], "1.0.0.0")],
+        };
+        var artifacts = await ctx.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == seed.BuildId).OrderBy(a => a.Id).ToListAsync();
+        for (var i = 0; i < artifacts.Count; i++)
+        {
+            artifacts[i].AppId = ids[i].ToString();
+            artifacts[i].Content = SyntheticApp.Build(ids[i].ToString(), names[i], "CRONUS", artifacts[i].AppVersion, deps[i]);
+        }
+        await ctx.SaveChangesAsync();
+        _apps.StatusByApp["CRONUS Sales"] = "failed";
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        var reasons = await NewService(_db.NewContext()).GetSkipReasonsAsync(deliveryId);
+
+        reasons.Should().NotBeNull();
+        reasons!.FailedAppName.Should().Be("CRONUS Sales");
+        reasons.FailedAppVersion.Should().Be("1.0.1.0");
+        reasons.DependentOrderings.Should().BeEquivalentTo(new[] { 2, 3 });
+
+        await using var read = _db.NewContext();
+        var skipped = await read.OeProjectDeliveryResults
+            .Where(r => r.ProjectDeliveryId == deliveryId && r.Status == ProjectDeliveryResultStatus.Skipped).ToListAsync();
+        skipped.Should().HaveCount(3).And.OnlyContain(r => r.StartedAt == null && r.FinishedAt == null,
+            "an app that was never attempted has no timings to show");
+    }
+
+    [Fact]
+    public async Task GetSkipReasonsAsync_says_nothing_about_dependencies_when_the_manifests_cannot_be_read()
+    {
+        await using var ctx = _db.NewContext();
+        // The seed's artifacts are three bytes each: no manifest to read.
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales" });
+        _apps.StatusByApp["CRONUS Core"] = "failed";
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using (var run = _db.NewContext()) await NewService(run).RunDeliveryAsync(deliveryId);
+
+        var reasons = await NewService(_db.NewContext()).GetSkipReasonsAsync(deliveryId);
+
+        reasons!.FailedAppName.Should().Be("CRONUS Core");
+        reasons.DependentOrderings.Should().BeNull("the page then says only that the app was skipped after the failure");
+    }
+
     private static BcInstalledApp InstalledApp(string name) => new(
         AppId: Guid.NewGuid(), Name: name, Publisher: "CRONUS A/S", Version: "1.0.0.0",
         State: "Installed", AppType: "tenant", CanBeUninstalled: true,

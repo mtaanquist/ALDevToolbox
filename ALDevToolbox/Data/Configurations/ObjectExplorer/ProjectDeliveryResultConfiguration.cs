@@ -20,6 +20,9 @@ internal sealed class ProjectDeliveryResultConfiguration : IEntityTypeConfigurat
         entity.Property(e => e.OperationId).HasColumnName("operation_id");
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
         entity.Property(e => e.Message).HasColumnName("message");
+        entity.Property(e => e.PreviousVersion).HasColumnName("previous_version").HasMaxLength(50);
+        entity.Property(e => e.StartedAt).HasColumnName("started_at");
+        entity.Property(e => e.FinishedAt).HasColumnName("finished_at");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
 
