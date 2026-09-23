@@ -74,6 +74,8 @@ public static class ObjectExplorerRegistration
         // a singleton hand-off to the hosted worker, mirroring ProjectDiscoveryQueue/Worker. The
         // worker runs the upload→install→poll publish off the request thread. No external queue.
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryService>();
+        // The cross-solution delivery feed behind list_recent_deliveries; read-only.
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryFeedService>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryQueue>();
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryWorker>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService>();
