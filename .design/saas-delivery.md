@@ -683,6 +683,29 @@ the message through only as display text.
   dialog as a convenience, but the canonical action is on the release pipeline.
 - **Delivery history:** per release pipeline, the `OeProjectDelivery` runs with status,
   scheduled/started times, per-app results, and **Cancel** (only while `scheduled`) / **Reschedule**.
+- **Release pipeline page (`/releases/{id}`), as built (#929, #932):** ports
+  `.design/handoff/ReleasePipelineBody.dc.html` on the `DetailPage` frame. The head names the
+  solution, the source (build pipeline, or the repository for a GitHub-release pipeline) and the
+  target environment as links, so a source and an environment with the same name are told apart.
+  A summary card carries a health keyline and one factual sentence (releasing now / last release
+  failed / scheduled / healthy / handed to Business Central / nothing yet), a "This pipeline"
+  block of stored facts (source, install timing, the environment's delivery window when set,
+  schema sync with the Force sync warning, last and next release) and a sunken "From Business
+  Central" block read from the stored environment mirror - the page never calls Business Central
+  to render. The failure sentence names the version the environment had before the run, or what
+  the panel cache reports if someone read the environment since. The releases list numbers
+  releases per pipeline for display ("Release 49"), shows the newest ten and extends in place
+  with "Show older releases"; a row opens into the stored failure message whole, a step strip
+  (only the steps whose moments were recorded), per-app rows with their state word, version
+  change, message and duration, and the diagnostics log (UTC, open on failures, with a copy
+  button). A skipped app says "Skipped because it depends on X" only when the build's manifests
+  show it does (`DeliveryService.GetSkipReasonsAsync`, read when a row opens), else "Skipped
+  after X failed". The phone layout is a container query on the page. To feed it, the run now
+  records per-app `started_at` / `finished_at` and `previous_version` (from the installed-apps
+  read before the first upload, matched on app id then name), the delivery's
+  `install_started_at` (the first upload accepted), and `cancelled_by_user_id`. Rows written
+  before that have nulls and the page hides those cells. "Release again" (#931) and the
+  approval band (#934) are not built.
 
 ## Security & tenant isolation
 

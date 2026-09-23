@@ -72,8 +72,26 @@ public class OeProjectDelivery
     /// <summary>Set when the publish actually starts (first upload).</summary>
     public DateTime? StartedAt { get; set; }
 
+    /// <summary>
+    /// When the delivery moved from uploading to installing: the first app's upload was
+    /// accepted and Business Central began installing it. Apps go one at a time (upload,
+    /// install, then the next), so with several apps later uploads follow this moment -
+    /// it marks the first hand-over, not the last byte. Null for a delivery that never
+    /// got that far, for one handed to Business Central's own schedule (nothing installs
+    /// while we watch), and for rows written before it was recorded (#929).
+    /// </summary>
+    public DateTime? InstallStartedAt { get; set; }
+
     /// <summary>Set when the delivery reaches a terminal state (<c>deployed</c> / <c>failed</c> / <c>cancelled</c>).</summary>
     public DateTime? FinishedAt { get; set; }
+
+    /// <summary>
+    /// Who cancelled the delivery, when it was cancelled from a scheduled state. Null for
+    /// every other outcome, for a delivery cancelled before this was recorded (#929), and
+    /// once the account is gone (<c>ON DELETE SET NULL</c>).
+    /// </summary>
+    public int? CancelledByUserId { get; set; }
+    public User? CancelledByUser { get; set; }
 
     /// <summary>Lifecycle state. See <see cref="ProjectDeliveryStatus"/>.</summary>
     public string Status { get; set; } = ProjectDeliveryStatus.Scheduled;
