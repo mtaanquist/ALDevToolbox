@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261018000000_RecordDeliveryWindowRule")]
+    partial class RecordDeliveryWindowRule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2814,10 +2817,6 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("CancelledByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("cancelled_by_user_id");
-
                     b.Property<DateTime?>("ClaimedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("claimed_at");
@@ -2849,10 +2848,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("finished_at");
-
-                    b.Property<DateTime?>("InstallStartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("install_started_at");
 
                     b.Property<int>("OrganizationId")
                         .HasColumnType("integer")
@@ -2912,8 +2907,6 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CancelledByUserId");
-
                     b.HasIndex("OrganizationId");
 
                     b.HasIndex("ProjectBuildId");
@@ -2961,10 +2954,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<DateTime?>("FinishedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("finished_at");
-
                     b.Property<string>("Message")
                         .HasColumnType("text")
                         .HasColumnName("message");
@@ -2981,18 +2970,9 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("organization_id");
 
-                    b.Property<string>("PreviousVersion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("previous_version");
-
                     b.Property<int>("ProjectDeliveryId")
                         .HasColumnType("integer")
                         .HasColumnName("project_delivery_id");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -7034,11 +7014,6 @@ namespace ALDevToolbox.Data.Migrations
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.OeProjectDelivery", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "CancelledByUser")
-                        .WithMany()
-                        .HasForeignKey("CancelledByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
                         .HasForeignKey("OrganizationId")
@@ -7067,8 +7042,6 @@ namespace ALDevToolbox.Data.Migrations
                         .WithMany()
                         .HasForeignKey("TriggeredByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("CancelledByUser");
 
                     b.Navigation("Organization");
 

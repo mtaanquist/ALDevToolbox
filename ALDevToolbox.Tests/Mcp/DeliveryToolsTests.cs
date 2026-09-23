@@ -89,6 +89,37 @@ public sealed class DeliveryToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task Publish_build_releases_now_even_when_the_pipeline_installs_in_the_delivery_window()
+    {
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+            var envId = await ctx.OeReleasePipelines.Where(r => r.Id == seed.ReleasePipelineId)
+                .Select(r => r.ProjectEnvironmentId).SingleAsync();
+            // A window that opens an hour from now: the web dialog would default to it.
+            var opens = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(1));
+            await ctx.OeProjectEnvironments.Where(e => e.Id == envId)
+                .ExecuteUpdateAsync(u => u
+                    .SetProperty(e => e.UpdateWindowStart, opens)
+                    .SetProperty(e => e.UpdateWindowEnd, opens.AddHours(2)));
+            await ctx.OeReleasePipelines.Where(r => r.Id == seed.ReleasePipelineId)
+                .ExecuteUpdateAsync(u => u.SetProperty(r => r.DeploymentSchedule, BcDeploymentSchedule.OurDeliveryWindow));
+        }
+
+        await using var read = _db.NewContext();
+        var result = await NewTools(read).PublishBuildAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        await using var verify = _db.NewContext();
+        var delivery = await verify.OeProjectDeliveries.AsNoTracking()
+            .SingleAsync(d => d.Id == result.DeliveryId);
+        delivery.ScheduledFor.Should().BeBefore(DateTime.UtcNow.AddMinutes(1), "the tool releases now, not at the window");
+        delivery.DeploymentSchedule.Should().Be(BcDeploymentSchedule.Immediate);
+        delivery.ScheduledByDeliveryWindow.Should().BeTrue();
+        delivery.ScheduledOutsideWindow.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Publish_build_surfaces_validation_as_mcp_exception()
     {
         Seed seed;
