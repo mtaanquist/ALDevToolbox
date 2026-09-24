@@ -102,3 +102,22 @@ uploads, anything about Business Central update windows, and any promise like "n
 broken for users". Times are relative with the exact time in a tooltip; a follow-up in the
 app will show them in the organisation's time zone (issue #942), so do not write "UTC" or
 "local time" anywhere on the sheet.
+
+## Port notes, after the sheet came back (2026-09-24)
+
+`PagePipelines.dc.html` and `PipelinesBody.dc.html` follow the brief; the shell now marks the
+Pipelines parent as a link. Three sentences on the sheet state things the product does not do,
+and the port adapts them without changing the layout:
+
+1. Empty state: "A build pipeline compiles a solution's repositories on every push." Builds run
+   when a person presses Build, when an agent asks, or for a pull request. Port as: "A build
+   pipeline compiles a solution's repositories when you press Build, or for each pull request."
+2. The "Auto" avatar, "Started by a push". The only automatic build is the pull-request build,
+   so the avatar reads "PR" with the title "Started by a pull request". Keep the sunken style.
+3. Half-empty attention row: "Create a deployment pipeline to install builds automatically."
+   Nothing installs by itself; a person deploys or approves. Port as "... to install builds on
+   its environments."
+
+Everything else on the sheet is stored data. The warning cue and the two avatars in
+`Components.dc.html` need no new CSS: the cue's custom properties and the inline styles are
+tokens already in `components.css`.

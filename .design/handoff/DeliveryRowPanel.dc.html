@@ -14,10 +14,10 @@
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden">
       <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
         <div style="display: grid; grid-template-columns: 24px 18px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); min-height: 50px; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); border-right: 4px solid {{ r.bar }}">
-          <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="false" aria-label="Show details for release {{ r.n }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></svg></button>
+          <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="false" aria-label="Show details for deployment {{ r.n }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></svg></button>
           <span class="data-table__state data-table__state--icon {{ r.spinCls }}" role="img" aria-label="{{ r.word }}" title="{{ r.word }}" style="color: {{ r.color }}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ r.ringOp }}"></circle><path d="{{ r.glyph }}"></path></svg></span>
           <span style="display: grid; gap: 1px; min-width: 0">
-            <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">Release {{ r.n }}</span><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: {{ r.color }}">{{ r.word }}</span></span>
+            <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">Deployment {{ r.n }}</span><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: {{ r.color }}">{{ r.word }}</span></span>
             <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">{{ r.sentence }}<sc-if value="{{ r.code }}" hint-placeholder-val="{{ false }}"><span class="tag" title="Error code from Business Central">{{ r.code }}</span></sc-if></span>
           </span>
           <span style="display: grid; justify-items: end; gap: 1px; font-size: var(--text-sm)"><span style="color: var(--ink-2); white-space: nowrap">{{ r.when }}</span><span class="u-num" style="font-size: var(--text-xs); color: var(--ink-3)">{{ r.took }}</span></span>
@@ -30,10 +30,10 @@
     <p class="section-label" style="margin: 0">2 - Failed, expanded</p>
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; border-right: 4px solid var(--bar-failed)">
       <div style="display: grid; grid-template-columns: 24px 18px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); min-height: 50px; padding: var(--space-2) var(--space-3); background: var(--surface-sunken)">
-        <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="true" aria-label="Hide details for release 49"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg)"><path d="M6 4l4 4-4 4"></path></svg></button>
+        <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="true" aria-label="Hide details for deployment 49"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg)"><path d="M6 4l4 4-4 4"></path></svg></button>
         <span class="data-table__state data-table__state--icon" role="img" aria-label="Failed" style="color: var(--danger-text)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M6 6l4 4M10 6l-4 4"></path></svg></span>
         <span style="display: grid; gap: 1px; min-width: 0">
-          <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">Release 49</span><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--danger-text)">Failed</span></span>
+          <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2)"><span style="font-weight: var(--fw-medium); color: var(--ink)">Deployment 49</span><span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--danger-text)">Failed</span></span>
           <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--text-sm); color: var(--ink-2)">Business Central refused a schema change<span class="tag" title="Error code from Business Central">ExtensionChangeFailed</span></span>
         </span>
         <span style="display: grid; justify-items: end; gap: 1px; font-size: var(--text-sm)"><span style="color: var(--ink-2); white-space: nowrap">Today 02:03</span><span class="u-num" style="font-size: var(--text-xs); color: var(--ink-3)">3m 32s</span></span>
@@ -50,13 +50,13 @@
         <div style="display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
           <div style="display: grid; gap: 2px">
             <span style="font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2)">Suggested next step</span>
-            <span style="font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">If the new version removes tables or fields the customer no longer needs, release this build again with Force sync. That deletes those columns and their data in "Test". Otherwise keep them in the app, mark them obsolete, and build again.</span>
+            <span style="font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty">If the new version removes tables or fields the customer no longer needs, deploy this build again with Force sync. That deletes those columns and their data in "Test". Otherwise keep them in the app, mark them obsolete, and build again.</span>
           </div>
-          <span style="display: flex; flex-wrap: wrap; gap: var(--space-2)"><button class="btn" type="button" onClick="{{ openDialog }}"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8"></path><path d="M13.6 2.4v3.2h-3.2"></path></svg>Release again with Force sync</button><a class="btn btn--ghost" href="#">Open build #118</a></span>
+          <span style="display: flex; flex-wrap: wrap; gap: var(--space-2)"><button class="btn" type="button" onClick="{{ openDialog }}"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8"></path><path d="M13.6 2.4v3.2h-3.2"></path></svg>Deploy again with Force sync</button><a class="btn btn--ghost" href="#">Open build #118</a></span>
         </div>
 
         <div style="display: grid; gap: var(--space-2)">
-          <span style="font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2)">Apps in this release</span>
+          <span style="font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-2)">Apps in this deployment</span>
           <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
             <sc-for list="{{ failApps }}" as="a" hint-placeholder-count="3">
               <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 2px var(--space-3); align-items: start; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); border-right: 3px solid {{ a.bar }}">
@@ -72,7 +72,7 @@
           <summary style="display: flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: var(--space-1) var(--space-3); cursor: pointer; font-size: var(--text-sm); color: var(--ink-3)" onClick="{{ toggleRaw }}"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({{ rawRot }})"><path d="M6 4l4 4-4 4"></path></svg>Raw response from Business Central, for support</summary>
           <div style="display: grid; gap: var(--space-2); padding: var(--space-3); border-top: 1px solid var(--border)">
             <pre style="margin: 0; padding: var(--space-3); background: var(--surface-sunken); border-radius: var(--r-control); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; word-break: break-word">{{ raw }}</pre>
-            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--ink-3)"><button class="btn btn--sm" type="button">Copy for support</button>Includes release 49, the environment ID and the time, 23 Sep 2026 02:03:31.</span>
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--ink-3)"><button class="btn btn--sm" type="button">Copy for support</button>Includes deployment 49, the environment ID and the time, 23 Sep 2026 02:03:31.</span>
           </div>
         </details>
 
@@ -97,7 +97,7 @@
   </div>
 
   <div style="display: grid; gap: var(--space-2)">
-    <p class="section-label" style="margin: 0">4 - "Release again" dialog</p>
+    <p class="section-label" style="margin: 0">4 - "Deploy again" dialog</p>
     <div style="display: grid; gap: var(--space-4)">
       <sc-for list="{{ dialogs }}" as="d" hint-placeholder-count="3">
         <div style="display: grid; gap: var(--space-1)">
@@ -117,7 +117,7 @@
                   <span class="meta-item"><span class="meta-item__label">Apps</span><span class="meta-item__value">Contoso Core, Contoso Reports</span></span>
                   <span class="meta-item"><span class="meta-item__label">Installs</span><span class="meta-item__value">Right away</span></span>
                 </div>
-                <label class="check" style="align-items: flex-start"><input type="checkbox" checked="{{ d.force }}" onChange="{{ d.onForce }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="display: grid; gap: 1px"><span style="color: var(--ink); font-size: var(--text-sm); font-weight: var(--fw-medium)">Use Force sync for this release only</span><span style="font-size: var(--text-xs); color: var(--ink-3)">The pipeline stays on Add. The next release goes back to Add.</span></span></label>
+                <label class="check" style="align-items: flex-start"><input type="checkbox" checked="{{ d.force }}" onChange="{{ d.onForce }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="display: grid; gap: 1px"><span style="color: var(--ink); font-size: var(--text-sm); font-weight: var(--fw-medium)">Use Force sync for this deployment only</span><span style="font-size: var(--text-xs); color: var(--ink-3)">The pipeline stays on Add. The next deployment goes back to Add.</span></span></label>
                 <sc-if value="{{ d.force }}" hint-placeholder-val="{{ false }}">
                   <label class="check check--ack"><input type="checkbox" checked="{{ d.ackForce }}" onChange="{{ d.onAckForce }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="color: var(--ink)">I understand Force sync can drop columns and tables, and the data in them, when the new build no longer has them. This cannot be undone.</span></label>
                 </sc-if>
@@ -128,7 +128,7 @@
               </div>
               <div class="confirm-dialog__actions">
                 <button class="btn" type="button">Cancel</button>
-                <button class="btn btn--primary" type="button" disabled="{{ d.blocked }}">Release</button>
+                <button class="btn btn--primary" type="button" disabled="{{ d.blocked }}">Deploy</button>
               </div>
             </div>
           </div>
@@ -164,7 +164,7 @@ class Component extends DCLogic {
     const set = (id, k) => (e) => { const v = e.target.checked; this.setState(s => ({ d: { ...s.d, [id]: { ...s.d[id], [k]: v } } })); };
     const DLG = [
       { id: 'a', caption: 'Sandbox, schema sync left on Add', prod: false, env: 'Test', type: 'Sandbox' },
-      { id: 'b', caption: 'Sandbox, Force sync ticked but not acknowledged: Release is disabled', prod: false, env: 'Test', type: 'Sandbox' },
+      { id: 'b', caption: 'Sandbox, Force sync ticked but not acknowledged: Deploy is disabled', prod: false, env: 'Test', type: 'Sandbox' },
       { id: 'c', caption: 'Production, Force sync: both acknowledgements, both ticked', prod: true, env: 'Production', type: 'Production' }
     ];
     const dialogs = DLG.map(d => {
@@ -172,14 +172,14 @@ class Component extends DCLogic {
       const needF = s.force && !s.ackForce, needP = d.prod && !s.ackProd;
       return {
         ...d, ...s,
-        title: 'Release build #118 again?',
+        title: 'Deploy build #118 again?',
         lead: d.prod
           ? 'This installs build #118 from build pipeline "Test" into Contoso\'s Production environment "Production", right away. Contoso Base is already on this version and is left alone.'
           : 'This installs build #118 from build pipeline "Test" into the Sandbox environment "Test" for Contoso, right away. Contoso Base is already on this version and is left alone.',
         dlgCls: d.prod ? 'confirm-dialog--danger' : '',
         typeColor: d.prod ? 'var(--danger-text)' : 'var(--ink-3)', typeWeight: d.prod ? 'var(--fw-semibold)' : 'normal',
         blocked: needF || needP,
-        blockedText: needF && needP ? 'Tick both acknowledgements to release.' : 'Tick the acknowledgement to release.',
+        blockedText: needF && needP ? 'Tick both acknowledgements to deploy.' : 'Tick the acknowledgement to deploy.',
         onForce: set(d.id, 'force'), onAckForce: set(d.id, 'ackForce'), onAckProd: set(d.id, 'ackProd')
       };
     });
