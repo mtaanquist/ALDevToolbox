@@ -299,6 +299,18 @@ the Environments list (#961) is how existing rows are brought in line. An enviro
 another is a new row, so it takes the default rather than its source's window. The discovery worker
 reads the setting under the org it has already pinned, through the query filter.
 
+**Many environments at once** (#961). The Environments list lets rows be ticked (not a deleted
+environment's) and offers **Set delivery window...**: one start and end, or "any time", for every
+ticked row, still read in each customer's own `bc_time_zone` - applying 22:00-06:00 to ten
+customers gives ten local 22:00s. `ProjectConnectionService.PreviewUpdateWindowForManyAsync`
+groups the selection first (**Will change**, **Already set**, **No access** - the manage check is
+asked once per solution - and **Missing or being deleted**), and
+`SetUpdateWindowForManyAsync` writes each changing row through `SetUpdateWindowAsync`, so the
+both-or-neither rule, the access check and the log line are the single-environment ones, and
+returns a result per row that the dialog shows. A deployment already scheduled for an
+environment's current window (`scheduled_by_delivery_window`) keeps its time; the preview says
+so, and the next deployment uses the new window.
+
 This **supersedes `OeReleasePipeline.default_publish_time`** as the source of the schedule prefill: the
 window lives on the environment (where it's reused across every deployment pipeline targeting it and
 matches the BC mental model), rather than being re-entered per deployment pipeline. Keep

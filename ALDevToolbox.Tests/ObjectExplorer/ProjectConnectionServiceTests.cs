@@ -3339,4 +3339,187 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             _db.OrgContext.CurrentUserId = OwnerUserId;
         }
     }
+
+    // ── Delivery window on many environments at once (#961) ───────────────
+
+    private static readonly TimeOnly Ten = new(22, 0);
+    private static readonly TimeOnly Six = new(6, 0);
+
+    /// <summary>
+    /// A fleet with one of each: a row that changes, a row already at the target, a
+    /// deleted one, and - on a Read-only solution someone else owns - one the owner
+    /// cannot manage.
+    /// </summary>
+    private async Task<(int Changes, int AlreadySet, int Deleted, int Foreign, int ForeignProject)> SeedWindowFleetAsync()
+    {
+        var mine = await SeedProjectAsync();
+        await SeedUserAsync(9801, "someone-else@example.com", UserRole.Editor);
+        var theirs = await SeedProjectAsync("Fabrikam");
+        await using var ctx = _db.NewContext();
+        (await ctx.OeProjects.SingleAsync(p => p.Id == theirs)).CreatedByUserId = 9801;
+        await ctx.SaveChangesAsync();
+        await NarrowAsync(theirs);
+
+        OeProjectEnvironment Env(int projectId, string name, TimeOnly? start = null, TimeOnly? end = null) => new()
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = name, Type = "Production",
+            ApplicationFamily = "BusinessCentral", FetchedAt = DateTime.UtcNow,
+            UpdateWindowStart = start, UpdateWindowEnd = end,
+        };
+        var changes = Env(mine, "Production");
+        var already = Env(mine, "Sandbox", Ten, Six);
+        var deleted = Env(mine, "Old", new TimeOnly(1, 0), new TimeOnly(2, 0));
+        deleted.SoftDeletedOn = DateTime.UtcNow.AddDays(-1);
+        var foreign = Env(theirs, "Production");
+        ctx.OeProjectEnvironments.AddRange(changes, already, deleted, foreign);
+        await ctx.SaveChangesAsync();
+        return (changes.Id, already.Id, deleted.Id, foreign.Id, theirs);
+    }
+
+    [Fact]
+    public async Task The_bulk_window_preview_groups_each_selected_environment()
+    {
+        var fleet = await SeedWindowFleetAsync();
+        const int neverExisted = 987654;
+
+        await using var ctx = _db.NewContext();
+        var preview = await Svc(ctx, TokenOk()).PreviewUpdateWindowForManyAsync(
+            [fleet.Changes, fleet.AlreadySet, fleet.Deleted, fleet.Foreign, neverExisted], Ten, Six);
+
+        preview.Select(p => (p.EnvironmentId, p.Group)).Should().Equal(
+            (fleet.Changes, DeliveryWindowChangeGroup.WillChange),
+            (fleet.AlreadySet, DeliveryWindowChangeGroup.AlreadySet),
+            (fleet.Deleted, DeliveryWindowChangeGroup.Missing),
+            (fleet.Foreign, DeliveryWindowChangeGroup.NoAccess),
+            (neverExisted, DeliveryWindowChangeGroup.Missing));
+        var changing = preview[0];
+        changing.EnvironmentName.Should().Be("Production");
+        changing.ProjectName.Should().Be("CRONUS A/S");
+        changing.CurrentStart.Should().BeNull("it has no window yet, which the dialog words as Any time");
+        preview[4].EnvironmentName.Should().BeNull("an id nobody can read has no name to give");
+    }
+
+    [Fact]
+    public async Task The_bulk_window_preview_says_when_a_deployment_waits_for_the_current_window()
+    {
+        var fleet = await SeedWindowFleetAsync();
+        await using (var seed = _db.NewContext())
+        {
+            var env = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == fleet.Changes);
+            var pipeline = new OePipeline
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = env.ProjectId, Name = "Build",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            seed.OePipelines.Add(pipeline);
+            await seed.SaveChangesAsync();
+            var build = new OeProjectBuild
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = env.ProjectId, PipelineId = pipeline.Id,
+                Status = ProjectBuildStatus.Ready, StartedAt = DateTime.UtcNow,
+            };
+            seed.OeProjectBuilds.Add(build);
+            var release = new OeReleasePipeline
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = env.ProjectId, Name = "To production",
+                BuildPipelineId = pipeline.Id, ProjectEnvironmentId = env.Id,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            seed.OeReleasePipelines.Add(release);
+            await seed.SaveChangesAsync();
+            seed.OeProjectDeliveries.Add(new OeProjectDelivery
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = env.ProjectId,
+                ReleasePipelineId = release.Id, ProjectBuildId = build.Id, EnvironmentName = env.Name,
+                ScheduledFor = DateTime.UtcNow.AddHours(8), ScheduledByDeliveryWindow = true,
+                Status = ProjectDeliveryStatus.Scheduled, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var preview = await Svc(ctx, TokenOk()).PreviewUpdateWindowForManyAsync([fleet.Changes, fleet.AlreadySet], Ten, Six);
+
+        preview.Single(p => p.EnvironmentId == fleet.Changes).HasDeploymentWaitingForWindow.Should().BeTrue();
+        preview.Single(p => p.EnvironmentId == fleet.AlreadySet).HasDeploymentWaitingForWindow.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Setting_a_window_on_many_writes_only_the_rows_that_change_and_reports_each()
+    {
+        var fleet = await SeedWindowFleetAsync();
+        const int neverExisted = 987655;
+
+        List<DeliveryWindowChangeResult> results;
+        await using (var ctx = _db.NewContext())
+        {
+            results = await Svc(ctx, TokenOk()).SetUpdateWindowForManyAsync(
+                [fleet.Changes, fleet.AlreadySet, fleet.Deleted, fleet.Foreign, neverExisted], Ten, Six);
+        }
+
+        results.Select(r => (r.Row.EnvironmentId, r.Outcome)).Should().Equal(
+            (fleet.Changes, DeliveryWindowChangeOutcome.Changed),
+            (fleet.AlreadySet, DeliveryWindowChangeOutcome.Skipped),
+            (fleet.Deleted, DeliveryWindowChangeOutcome.Skipped),
+            (fleet.Foreign, DeliveryWindowChangeOutcome.Skipped),
+            (neverExisted, DeliveryWindowChangeOutcome.Skipped));
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.OeProjectEnvironments.AsNoTracking()
+            .Where(e => new[] { fleet.Changes, fleet.Deleted, fleet.Foreign }.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id);
+        (rows[fleet.Changes].UpdateWindowStart, rows[fleet.Changes].UpdateWindowEnd).Should().Be((Ten, Six));
+        (rows[fleet.Deleted].UpdateWindowStart, rows[fleet.Deleted].UpdateWindowEnd)
+            .Should().Be((new TimeOnly(1, 0), new TimeOnly(2, 0)), "a deleted environment is skipped");
+        rows[fleet.Foreign].UpdateWindowStart.Should().BeNull("the owner cannot manage somebody else's read-only solution");
+    }
+
+    [Fact]
+    public async Task Any_time_on_many_clears_the_window()
+    {
+        var fleet = await SeedWindowFleetAsync();
+
+        await using (var ctx = _db.NewContext())
+        {
+            var results = await Svc(ctx, TokenOk()).SetUpdateWindowForManyAsync([fleet.Changes, fleet.AlreadySet], null, null);
+            results.Select(r => r.Outcome).Should().Equal(DeliveryWindowChangeOutcome.Skipped, DeliveryWindowChangeOutcome.Changed);
+        }
+
+        await using var verify = _db.NewContext();
+        var env = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == fleet.AlreadySet);
+        env.UpdateWindowStart.Should().BeNull();
+        env.UpdateWindowEnd.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_bulk_window_with_only_one_end_is_refused_before_anything_is_written()
+    {
+        var fleet = await SeedWindowFleetAsync();
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk()).SetUpdateWindowForManyAsync([fleet.Changes], Ten, null);
+            (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("UpdateWindow");
+        }
+
+        await using var verify = _db.NewContext();
+        (await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == fleet.Changes))
+            .UpdateWindowStart.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_short_name_rides_on_the_fleet_row()
+    {
+        var (projectId, _) = await SeedEnvironmentAsync();
+        await using (var seed = _db.NewContext())
+        {
+            (await seed.OeProjects.SingleAsync(p => p.Id == projectId)).ShortName = "CRN";
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var fleet = new UpgradeFleetService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
+            new EnvironmentRefreshQueue(), NullLogger<UpgradeFleetService>.Instance);
+        (await fleet.ListFleetAsync()).Single().ProjectShortName.Should().Be("CRN");
+    }
 }

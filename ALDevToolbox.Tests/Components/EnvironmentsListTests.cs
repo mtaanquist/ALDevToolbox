@@ -515,4 +515,156 @@ public sealed class EnvironmentsListTests : IDisposable
             cell.QuerySelector("progress")!.ClassList.Should().NotContain(c => c.StartsWith("env-storage__bar--"));
         });
     }
+
+    // ── Selection and the bulk delivery window (#961) ─────────────────────
+
+    private async Task SetWindowAsync(string name, TimeOnly? start, TimeOnly? end)
+    {
+        await using var ctx = _db.NewContext();
+        var env = await ctx.OeProjectEnvironments.SingleAsync(e => e.Name == name);
+        env.UpdateWindowStart = start;
+        env.UpdateWindowEnd = end;
+        await ctx.SaveChangesAsync();
+    }
+
+    private static IEnumerable<AngleSharp.Dom.IElement> RowChecks(IRenderedComponent<EnvironmentsList> cut) =>
+        cut.FindAll(".data-table tbody td.data-table__col-check input[type=checkbox]");
+
+    /// <summary>
+    /// Ticking rows brings up the bar with the count and the one action; the header box
+    /// ticks every row on screen; and a tab that takes the ticked rows off the screen
+    /// takes their ticks with them, so the bar never counts rows nobody can see.
+    /// </summary>
+    [Fact]
+    public async Task Ticked_rows_bring_up_the_bulk_bar_and_a_tab_that_hides_them_clears_them()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(id, "Test", "Sandbox", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => RowChecks(cut).Should().HaveCount(2));
+        cut.FindAll(".bulk-bar").Should().BeEmpty("nothing is ticked yet");
+
+        cut.WaitForAssertion(() => RowChecks(cut).First().Change(true));
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".bulk-bar__summary").TextContent.Trim().Should().Be("1 selected");
+            cut.Find(".bulk-bar").TextContent.Should().Contain("Set delivery window...");
+        });
+
+        cut.WaitForAssertion(() => cut.Find("th.data-table__col-check input[type=checkbox]").Change(true));
+        cut.WaitForAssertion(() => cut.Find(".bulk-bar__summary").TextContent.Trim().Should().Be("2 selected"));
+
+        // Nothing needs attention here, so that view shows none of the ticked rows.
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Needs attention")).Click());
+        cut.WaitForAssertion(() => cut.FindAll(".bulk-bar").Should().BeEmpty());
+    }
+
+    [Fact]
+    public async Task A_deleted_environment_cannot_be_ticked()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "JLE-260911110359", "Sandbox", "Active", now, now);
+        await SoftDeleteAsync("JLE-260911110359", new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Deleted")).Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().HaveCount(1);
+            RowChecks(cut).Should().BeEmpty();
+            cut.FindAll("th.data-table__col-check input").Should().BeEmpty();
+        });
+    }
+
+    /// <summary>
+    /// The dialog previews before it writes: which rows change and from what, which
+    /// already have that window, whose clock the times are on - and the confirm counts
+    /// only the rows that will change. After the run it says what happened to each.
+    /// </summary>
+    [Fact]
+    public async Task The_window_dialog_groups_the_selection_and_reports_each_row_after_setting_it()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(id, "Test", "Sandbox", "Active", now, now);
+        await SetWindowAsync("Production", new TimeOnly(1, 0), new TimeOnly(5, 0));
+        await SetWindowAsync("Test", new TimeOnly(22, 0), new TimeOnly(6, 0));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => cut.Find("th.data-table__col-check input[type=checkbox]").Change(true));
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".bulk-bar button").Single(b => b.TextContent.Trim() == "Set delivery window...").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#bdw-title").TextContent.Trim().Should().Be("Set the delivery window on 2 environments");
+            cut.Find(".bdw-zone").TextContent.Should().Contain("each customer's own Business Central time zone");
+            cut.FindAll(".bdw-row").Should().BeEmpty("nothing is previewed until a window is chosen");
+            cut.FindAll(".confirm-dialog__actions button").Last().TextContent.Trim().Should().Be("Set window");
+        });
+
+        cut.WaitForAssertion(() => cut.Find("input[aria-label='Window start']").Change("22:00"));
+        cut.WaitForAssertion(() => cut.Find("input[aria-label='Window end']").Change("06:00"));
+
+        cut.WaitForAssertion(() =>
+        {
+            var heads = cut.FindAll(".bdw-group__head").Select(h => h.TextContent.Trim()).ToList();
+            heads.Should().Equal(new[] { "Will change (1)", "Already set (1)" }, cut.Find(".confirm-dialog").OuterHtml);
+            var rows = cut.FindAll(".bdw-row");
+            rows[0].TextContent.Should().Contain("CRONUS Denmark - Production").And.Contain("01:00-05:00 → 22:00-06:00");
+            rows[1].TextContent.Should().Contain("Already 22:00-06:00");
+            cut.FindAll(".confirm-dialog__actions button").Last().TextContent.Trim()
+                .Should().Be("Set window on 1 environment");
+        });
+
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions button").Last().Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#bdw-title").TextContent.Trim().Should().Be("Delivery window set");
+            cut.Find(".bdw-lead").TextContent.Should().Be("Set 22:00-06:00 on 1 environment. 1 skipped.");
+            cut.FindAll(".bulk-bar").Should().BeEmpty("the ticks have done their job");
+        });
+
+        await using var verify = _db.NewContext();
+        var production = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Name == "Production");
+        production.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
+        production.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
+    }
+
+    /// <summary>Many customers are only ever called by their short name (#966).</summary>
+    [Fact]
+    public async Task The_search_finds_a_solution_by_its_short_name_and_the_row_shows_it()
+    {
+        var cronus = await SeedSolutionAsync("CRONUS Denmark");
+        var other = await SeedSolutionAsync("Fabrikam");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(cronus, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(other, "Live", "Production", "Active", now, now);
+        await using (var ctx = _db.NewContext())
+        {
+            (await ctx.OeProjects.SingleAsync(p => p.Id == cronus)).ShortName = "CRN";
+            await ctx.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+        cut.Find(".sol-list__short").TextContent.Should().Be("CRN");
+        cut.FindAll("select[aria-label='Filter by solution'] option").Select(o => o.TextContent.Trim())
+            .Should().Contain("CRONUS Denmark (CRN)");
+
+        cut.WaitForAssertion(() => cut.Find("input[type=search]").Input("crn"));
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle();
+            rows[0].TextContent.Should().Contain("CRONUS Denmark");
+        });
+    }
 }

@@ -1,0 +1,61 @@
+/*
+    Scoped chrome for the bulk delivery-window dialog (issue #961). The dialog, the
+    inputs and the check are the design system's; what is left is the window row, the
+    grouped preview (the Upgrades page's preview, one line per environment) and the
+    result marks.
+*/
+
+.bdw-body { display: grid; gap: var(--space-3); }
+.bdw-lead { margin: 0; text-wrap: pretty; }
+
+.bdw-window { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.bdw-window__time { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--ink-2); }
+.bdw-zone { margin: 0; }
+
+/* Ninety environments still can't push the buttons off the screen: the groups
+   scroll, not the dialog's controls. */
+.bdw-groups { display: grid; gap: var(--space-3); max-height: 22rem; overflow-y: auto; }
+
+.bdw-group__head {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.bdw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+
+.bdw-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-1) 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-sm);
+}
+.bdw-row:last-child { border-bottom: none; }
+
+.bdw-row__who { font-weight: var(--fw-semibold); color: var(--ink); }
+.bdw-row__what { color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+.bdw-row--skip .bdw-row__who,
+.bdw-row--skip .bdw-row__what { color: var(--ink-4); font-weight: var(--fw-regular); }
+
+.bdw-row__what--done { color: var(--success-text); }
+.bdw-row__what--failed { color: var(--danger-text); }
+.bdw-row__what--done, .bdw-row__what--failed { display: inline-flex; align-items: center; gap: var(--space-1); }
+
+/* A sentence under the row, not a value beside it. */
+.bdw-row__note {
+    flex-basis: 100%;
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+/* ::deep: the pill is rendered by StatusPill, outside this file's scope. */
+.bdw-row__who ::deep .bdw-prod { margin-left: var(--space-2); font-weight: var(--fw-semibold); }
