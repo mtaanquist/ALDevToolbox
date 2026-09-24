@@ -106,11 +106,17 @@ internal static class SiteAdminEndpoints
                     "/site-admin/settings/smtp"))
             .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
-        app.MapPost("/site-admin/settings/backups/save", (
-            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
-                SaveSectionAsync(ctx, settings, antiforgery, ct,
-                    (current, form) => SettingsInputBuilder.WithBackups(current, form),
-                    "/site-admin/settings/backups"))
+        app.MapPost("/site-admin/settings/backups/save", async (
+            HttpContext ctx, SystemSettingsService settings, DisplayTimeZone zone, TimeProvider clock,
+            IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            // The schedule is typed in the organisation's display zone (#970).
+            await zone.EnsureLoadedAsync(ct);
+            var offset = zone.OffsetAt(clock.GetUtcNow().UtcDateTime);
+            await SaveSectionAsync(ctx, settings, antiforgery, ct,
+                (current, form) => SettingsInputBuilder.WithBackups(current, form, offset),
+                "/site-admin/settings/backups");
+        })
             .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
         app.MapPost("/site-admin/settings/quotas/save", (

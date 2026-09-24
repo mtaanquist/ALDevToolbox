@@ -146,6 +146,31 @@ public sealed class DisplayTimeZone
         return $"{zone.Id} (UTC{sign}{offset.Duration():hh\\:mm})";
     }
 
+    /// <summary>The display zone's offset from UTC at the instant <paramref name="utc"/>.</summary>
+    public TimeSpan OffsetAt(DateTime utc) => Zone.GetUtcOffset(AsUtc(utc));
+
+    /// <summary>
+    /// A time of day stored in UTC (issue #970: the backup schedule), shown in the
+    /// display zone with the offset <paramref name="offset"/>, normally
+    /// <see cref="OffsetAt"/> today. The stored value stays UTC and does not move
+    /// with daylight saving, so what this returns shifts by an hour when the
+    /// clocks change; the page says so beside it.
+    /// </summary>
+    public static TimeOnly TimeOfDayToDisplay(TimeOnly utcTimeOfDay, TimeSpan offset) =>
+        utcTimeOfDay.Add(offset);
+
+    /// <summary>
+    /// The inverse of <see cref="TimeOfDayToDisplay"/>: a time of day typed in the
+    /// display zone, back to the UTC time of day to store. Using the same offset
+    /// both ways makes an unchanged value round-trip exactly.
+    /// </summary>
+    public static TimeOnly TimeOfDayToUtc(TimeOnly displayTimeOfDay, TimeSpan offset) =>
+        displayTimeOfDay.Add(-offset);
+
+    /// <summary>"04:00": a time of day, formatted with the invariant culture.</summary>
+    public static string FormatTimeOfDay(TimeOnly timeOfDay) =>
+        timeOfDay.ToString("HH:mm", CultureInfo.InvariantCulture);
+
     private async Task<TimeZoneInfo> LoadAsync(CancellationToken ct)
     {
         var orgId = _orgContext.CurrentOrganizationId;
