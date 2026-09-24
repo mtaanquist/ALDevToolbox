@@ -286,5 +286,26 @@ public class OrganizationSettings
     /// </summary>
     public string? DisplayTimeZoneId { get; set; }
 
+    /// <summary>
+    /// The delivery window a Production environment starts with the first time
+    /// discovery meets it (issue #962), copied onto
+    /// <c>OeProjectEnvironment.UpdateWindowStart/End</c> as clock digits in the
+    /// customer's zone, never converted. Both null means new environments start at
+    /// "any time". Only ever applied at creation: an existing row is never touched,
+    /// and setting a default later does not backfill. Both-or-neither per pair,
+    /// like the environment's own editor. See <c>.design/saas-delivery.md</c>
+    /// ("Update window (per environment)").
+    /// </summary>
+    public TimeOnly? DefaultDeliveryWindowProductionStart { get; set; }
+
+    /// <summary>End of <see cref="DefaultDeliveryWindowProductionStart"/>'s window; may wrap past midnight.</summary>
+    public TimeOnly? DefaultDeliveryWindowProductionEnd { get; set; }
+
+    /// <summary>As <see cref="DefaultDeliveryWindowProductionStart"/>, for Sandbox environments.</summary>
+    public TimeOnly? DefaultDeliveryWindowSandboxStart { get; set; }
+
+    /// <summary>End of <see cref="DefaultDeliveryWindowSandboxStart"/>'s window; may wrap past midnight.</summary>
+    public TimeOnly? DefaultDeliveryWindowSandboxEnd { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

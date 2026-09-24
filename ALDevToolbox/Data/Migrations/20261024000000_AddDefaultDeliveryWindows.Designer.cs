@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261024000000_AddDefaultDeliveryWindows")]
+    partial class AddDefaultDeliveryWindows
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1229,11 +1232,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
-
-                    b.Property<string>("TargetVersion")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("target_version");
 
                     b.HasKey("Id");
 
@@ -3084,10 +3082,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("bc_next_update_version");
-
-                    b.PrimitiveCollection<List<string>>("BcOfferedVersions")
-                        .HasColumnType("text[]")
-                        .HasColumnName("bc_offered_versions");
 
                     b.Property<TimeOnly?>("BcUpdateWindowEnd")
                         .HasColumnType("time without time zone")

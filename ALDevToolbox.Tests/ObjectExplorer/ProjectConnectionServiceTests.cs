@@ -5,6 +5,7 @@ using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
+using ALDevToolbox.Services.Organizations;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.DataProtection;
@@ -590,6 +591,125 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         rows.Should().Contain(e => e.Name == "NewSandbox" && e.MissingSince == null);
         rows.Single(e => e.Name == "OldSandbox").MissingSince
             .Should().NotBeNull("an environment the customer removed is flagged, not deleted");
+    }
+
+    // ── Default delivery windows for new environments (issue #962) ─────────
+
+    private async Task SetDefaultWindowsAsync(DefaultDeliveryWindows windows)
+    {
+        await using var ctx = _db.NewContext();
+        await _db.NewOrganizationAdminService(ctx).SetDefaultDeliveryWindowsAsync(windows);
+    }
+
+    private static readonly DefaultDeliveryWindows NightProductionEveningSandbox = new(
+        new TimeOnly(22, 0), new TimeOnly(6, 0), new TimeOnly(18, 0), new TimeOnly(20, 0));
+
+    private async Task<List<OeProjectEnvironment>> EnvironmentsAsync(int projectId)
+    {
+        await using var verify = _db.NewContext();
+        return await verify.OeProjectEnvironments.AsNoTracking().Where(e => e.ProjectId == projectId).ToListAsync();
+    }
+
+    [Fact]
+    public async Task A_first_seen_environment_takes_the_organisations_default_window_for_its_type()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        await SetDefaultWindowsAsync(NightProductionEveningSandbox);
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Live", "Production"), new BcEnvironment("Test", "Sandbox") },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        var rows = await EnvironmentsAsync(id);
+        var live = rows.Single(e => e.Name == "Live");
+        live.UpdateWindowStart.Should().Be(new TimeOnly(22, 0), "a Production environment takes the Production default");
+        live.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
+        var test = rows.Single(e => e.Name == "Test");
+        test.UpdateWindowStart.Should().Be(new TimeOnly(18, 0), "a Sandbox takes the Sandbox default");
+        test.UpdateWindowEnd.Should().Be(new TimeOnly(20, 0));
+    }
+
+    [Fact]
+    public async Task A_second_refresh_leaves_a_window_changed_since_creation_alone()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        await SetDefaultWindowsAsync(NightProductionEveningSandbox);
+        var admin = new FakeAdminClient { OnList = () => new[] { new BcEnvironment("Live", "Production") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+        var envId = (await EnvironmentsAsync(id)).Single().Id;
+
+        // Somebody clears it on the environment page, then the default itself changes.
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SetUpdateWindowAsync(id, envId, null, null);
+        await SetDefaultWindowsAsync(new DefaultDeliveryWindows(new TimeOnly(1, 0), new TimeOnly(3, 0), null, null));
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        var row = (await EnvironmentsAsync(id)).Single();
+        row.UpdateWindowStart.Should().BeNull("the default applies when a row is born, never to one that exists");
+        row.UpdateWindowEnd.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Setting_a_default_does_not_backfill_environments_already_known()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var admin = new FakeAdminClient { OnList = () => new[] { new BcEnvironment("Live", "Production") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await SetDefaultWindowsAsync(NightProductionEveningSandbox);
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        var row = (await EnvironmentsAsync(id)).Single();
+        row.UpdateWindowStart.Should().BeNull("an environment met before the default was set stays at any time");
+        row.UpdateWindowEnd.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task With_no_default_a_new_environment_has_no_window()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        // Only Sandbox has a default: a Production environment must not borrow it.
+        await SetDefaultWindowsAsync(new DefaultDeliveryWindows(null, null, new TimeOnly(18, 0), new TimeOnly(20, 0)));
+
+        var admin = new FakeAdminClient { OnList = () => new[] { new BcEnvironment("Live", "Production") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        var row = (await EnvironmentsAsync(id)).Single();
+        row.UpdateWindowStart.Should().BeNull();
+        row.UpdateWindowEnd.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_rename_folded_onto_an_existing_row_does_not_take_the_default()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        await SeedLiveEnvironmentAsync(id, "JLE");
+        await SetDefaultWindowsAsync(NightProductionEveningSandbox);
+
+        var admin = new FakeAdminClient { OnList = () => new[] { SoftDeleted("JLE-260911110359") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        var row = (await EnvironmentsAsync(id)).Should().ContainSingle().Subject;
+        row.UpdateWindowStart.Should().BeNull("the fold keeps the existing row, and an existing row is never touched");
     }
 
     // ── The soft-delete rename (issue #808) ───────────────────────────────

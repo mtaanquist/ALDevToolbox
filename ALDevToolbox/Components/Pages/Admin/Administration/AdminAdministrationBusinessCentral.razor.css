@@ -8,4 +8,8 @@
 .bc-setup__lead { margin: 0; font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; }
 .bc-setup__note { margin: 0; padding-top: var(--space-2); border-top: 1px solid var(--border); font-size: var(--text-2xs); color: var(--ink-4); text-wrap: pretty; }
 
-.bc-lead { margin: 0 0 var(--space-4); color: var(--ink-3); font-size: var(--text-sm); max-width: 70ch; text-wrap: pretty; }
+
+/* The default delivery windows: the same From / To / clear line as the editor on
+   the environment page. */
+.bc-window { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.bc-window__time { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--ink-2); }

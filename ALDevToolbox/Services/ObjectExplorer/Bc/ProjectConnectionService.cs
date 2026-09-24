@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.Organizations;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
@@ -134,11 +135,25 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         await EnsureOrganizationAdminAsync(ct);
         var row = await _db.OrganizationSettings.AsNoTracking()
             .Where(o => o.OrganizationId == orgId)
-            .Select(o => new { o.BcClientId, HasSecret = o.BcClientSecretEncrypted != null, o.BcClientSecretExpiresAt })
+            .Select(o => new
+            {
+                o.BcClientId,
+                HasSecret = o.BcClientSecretEncrypted != null,
+                o.BcClientSecretExpiresAt,
+                o.DefaultDeliveryWindowProductionStart,
+                o.DefaultDeliveryWindowProductionEnd,
+                o.DefaultDeliveryWindowSandboxStart,
+                o.DefaultDeliveryWindowSandboxEnd,
+            })
             .FirstOrDefaultAsync(ct);
         var (usingIt, withTheirOwn) = await CountSolutionsByRegistrationAsync(ct);
+        var windows = row is null
+            ? DefaultDeliveryWindows.None
+            : new DefaultDeliveryWindows(
+                row.DefaultDeliveryWindowProductionStart, row.DefaultDeliveryWindowProductionEnd,
+                row.DefaultDeliveryWindowSandboxStart, row.DefaultDeliveryWindowSandboxEnd);
         return new OrganizationBcRegistration(
-            row?.BcClientId, row?.HasSecret ?? false, row?.BcClientSecretExpiresAt, usingIt, withTheirOwn);
+            row?.BcClientId, row?.HasSecret ?? false, row?.BcClientSecretExpiresAt, usingIt, withTheirOwn, windows);
     }
 
     /// <summary>
@@ -1819,6 +1834,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var now = DateTime.UtcNow;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var fetchedNames = fetched.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        DefaultDeliveryWindows? defaults = null; // read at most once, and only if a row is born
 
         foreach (var env in fetched)
         {
@@ -1868,6 +1884,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 Name = env.Name,
             };
             ApplyFetched(row2, env, now);
+            // The one place a row is born, so the one place the organisation's default
+            // window for its type applies (issue #962). Copied as clock digits: both the
+            // default and the row's window are read in the customer's zone.
+            defaults ??= await LoadDefaultDeliveryWindowsAsync(project.OrganizationId, ct);
+            (row2.UpdateWindowStart, row2.UpdateWindowEnd) = DefaultWindowFor(defaults, env.Type);
             _db.OeProjectEnvironments.Add(row2);
         }
 
@@ -2152,6 +2173,34 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         row.FetchedAt = now;
     }
 
+    /// <summary>
+    /// The organisation's default delivery windows (issue #962). Runs under the query
+    /// filter: a request has its org in scope, and the discovery worker pins the
+    /// project's org before it refreshes, so the predicate and the filter agree.
+    /// </summary>
+    private async Task<DefaultDeliveryWindows> LoadDefaultDeliveryWindowsAsync(int organizationId, CancellationToken ct) =>
+        await _db.OrganizationSettings.AsNoTracking()
+            .Where(s => s.OrganizationId == organizationId)
+            .Select(s => new DefaultDeliveryWindows(
+                s.DefaultDeliveryWindowProductionStart, s.DefaultDeliveryWindowProductionEnd,
+                s.DefaultDeliveryWindowSandboxStart, s.DefaultDeliveryWindowSandboxEnd))
+            .FirstOrDefaultAsync(ct)
+        ?? DefaultDeliveryWindows.None;
+
+    /// <summary>The default pair for an environment type; anything that is neither Production nor Sandbox gets no window.</summary>
+    private static (TimeOnly? Start, TimeOnly? End) DefaultWindowFor(DefaultDeliveryWindows defaults, string? type)
+    {
+        if (string.Equals(type, BcEnvironmentTypes.Production, StringComparison.OrdinalIgnoreCase))
+        {
+            return (defaults.ProductionStart, defaults.ProductionEnd);
+        }
+        if (string.Equals(type, BcEnvironmentTypes.Sandbox, StringComparison.OrdinalIgnoreCase))
+        {
+            return (defaults.SandboxStart, defaults.SandboxEnd);
+        }
+        return (null, null);
+    }
+
     /// <summary>Decrypts the stored credentials, or null when not fully configured / the key ring can't decrypt the secret.</summary>
     /// <summary>The credentials a solution connects with, and where they came from. Never leaves this service.</summary>
     private sealed record ResolvedCredentials(Guid TenantId, string ClientId, string Secret, DateTime? ExpiresAt, bool FromOrganization);
@@ -2227,7 +2276,8 @@ public sealed record OrganizationBcRegistration(
     bool HasSecret,
     DateTime? SecretExpiresAt,
     int SolutionsUsingIt,
-    int SolutionsWithTheirOwn)
+    int SolutionsWithTheirOwn,
+    DefaultDeliveryWindows DefaultWindows)
 {
     public bool IsConfigured => !string.IsNullOrEmpty(ClientId) && HasSecret;
 }
