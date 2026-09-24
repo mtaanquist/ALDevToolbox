@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Workbench - page sheet - Pipelines (issue #955)</p>
+    <h1 class="doc__title">Pipelines</h1>
+    <p class="doc__sub">The page behind the Pipelines parent in Deliver: what built, what shipped, what failed and what is waiting, before drilling into Builds or Deployments. Built on the dashboard archetype (<code>PageDashboard</code>): cue tiles, then "Needs attention" and "Recent activity". Desktop frames are 1440px shells scaled down; phone frames are 390px at 1:1.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Populated - desktop</span><h2 class="arch__t">A normal morning</h2></div><span class="arch__use">One build running, one failed, one deployment shipping to Production, two waiting for approval.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Dark - same markup</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Phone, 390px</span><h2 class="arch__t">Tiles in two columns, cards stacked</h2></div><span class="arch__use">Tiles read 1 to 7 left to right, top to bottom; the seventh sits alone on the last row. Needs attention comes before Recent activity.</span></div>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start">
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Populated - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Populated - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Half empty - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" body-kind="half" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" body-kind="empty" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Half empty, empty, loading - desktop</span><h2 class="arch__t">Before everything is set up</h2></div><span class="arch__use">Half empty: builds exist, no deployment pipeline. Empty: no pipelines of either kind, and the only primary button on the page. Loading: the loading block where the tiles go.</span></div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: var(--space-5)">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Half empty - light</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" body-kind="half" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Half empty - dark</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" body-kind="half" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - light</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" body-kind="empty" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Loading - dark</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="pipelines-dashboard" body-kind="loading" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Structure</h3>
+        <ul>
+          <li>Archetype 4 unchanged: <code>.page-head</code>, <code>.section-label</code>, <code>.cue-grid</code> of seven <code>.cue</code> links, <code>.dash-cols</code> with Needs attention (left) and Recent activity (right). No settings, no charts.</li>
+          <li>Head actions are two outline buttons, "New build pipeline" and "New deployment pipeline". The only <code>.btn--primary</code> is in the empty state, which replaces tiles and cards and hides the head actions so they are not offered twice.</li>
+          <li>The subtitle is computed from the same numbers as the tiles: builds and deployments started today, then how many wait for approval.</li>
+        </ul>
+        <h3>Tiles</h3>
+        <ul>
+          <li>Order: Build pipelines, Builds this week, Failed builds, Deployment pipelines, Shipping now, Failed deployments, Waiting for approval. Six to a row at desktop, so the seventh wraps; two to a row on a phone, same order.</li>
+          <li>Failed builds and Failed deployments take <code>.cue--attention</code> above zero. Waiting for approval takes the warning tone above zero, built from <code>--warning-bg</code> / <code>--warning-text</code> / <code>--warning</code> on the cue's own custom properties (see Components, "Warning cue"). At zero every tile is the quiet teal.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Lists</h3>
+        <ul>
+          <li>Needs attention: <code>.activity--edge</code>, newest first, <code>.is-failed</code> for failed builds and deployments, <code>.is-warning</code> for approvals, an environment being deleted and an expiring secret. Approval rows carry an outline "Review" to the deployment pipeline page. Empty: <code>.empty-state--quiet</code> "Nothing is waiting on you".</li>
+          <li>Recent activity: ten rows, builds and deployments merged, initials for a person, the agent glyph for an MCP agent, "Auto" for a build started by a push. Running rows use <code>.is-open</code>, failures <code>.is-failed</code> or <code>.is-warning</code> as the brief asks.</li>
+          <li>Every time is relative, with the exact date and time in the tooltip. No zone is written; issue #942 adds the organisation's time zone.</li>
+        </ul>
+        <h3>Facts</h3>
+        <ul>
+          <li>Only stored facts are shown: build status, branch, commit and starter; deployment status, "app 2 of 3", who scheduled or approved, the failed app; environment health; secret expiry. No build durations, upload bytes or Business Central update windows.</li>
+          <li><code>PipelinesBody.dc.html</code>, prop <code>kind</code> (populated | half | empty | loading). <code>ShellFrame</code> <code>body="pipelines-dashboard"</code> marks the Pipelines parent link as current; Builds and Deployments stay listed under it.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+</body>
+</html>

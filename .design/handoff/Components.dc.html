@@ -15,7 +15,7 @@
 </helmet>
 <div class="doc">
   <header class="doc__head">
-    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 2</p>
+    <p class="doc__eyebrow">AL Workbench - design system - step 2</p>
     <h1 class="doc__title">Core component library</h1>
     <p class="doc__sub">Every component in every state, built only from the step-1 tokens: buttons, form fields, cards, tabs, status pills, BC activity-indicator cues, data tables, overlays, the loading / empty / error triptych, page chrome and code affordances. Everything is BC-square - containers and controls share the same 2px shape language - and the teal focus ring is the same one everywhere. Light and dark render side by side; the two panels are the same markup under two theme scopes.</p>
   </header>
@@ -31,8 +31,44 @@
     </section>
   </div>
 
+  <section id="pipelines-dashboard-additions" style="display: grid; gap: var(--space-3)">
+    <div class="arch__head"><div><span class="arch__n">Component - Pipelines dashboard additions</span><h2 class="arch__t">Warning cue, and "Agent" and "Auto" avatars</h2></div><span class="arch__use">The only two pieces the Pipelines dashboard needs that the Admin dashboard does not have. Both are built from existing tokens and classes; no new colour.</span></div>
+    <div class="themes">
+      <section class="panel" data-theme="light">
+        <div class="panel__label"><span class="panel__dot"></span>Light</div>
+        <div style="display: grid; gap: var(--space-4)">
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3)">
+            <a class="cue" href="#"><span class="cue__label">Waiting for approval</span><span class="cue__value">0</span><span class="cue__rule"></span><span class="cue__foot"><span>None</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+            <a class="cue" href="#" style="--cue-bg: var(--warning-bg); --cue-bg-hover: var(--warning-bg); --cue-ink: var(--warning-text); --cue-ink-dim: var(--warning-text); --cue-rule: var(--warning); box-shadow: inset 0 0 0 1px var(--warning)"><span class="cue__label">Waiting for approval</span><span class="cue__value">2</span><span class="cue__rule"></span><span class="cue__foot"><span>Oldest 3 d</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+            <a class="cue cue--attention" href="#"><span class="cue__label">Failed deployments</span><span class="cue__value">1</span><span class="cue__rule"></span><span class="cue__foot"><span>Needs attention</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+          </div>
+          <div class="card"><div class="activity">
+            <div class="activity__row"><span class="activity__avatar">KJ</span><span class="activity__body"><span class="activity__text">K. Jensen started build #121 on CRONUS Base - main</span><span class="activity__sub">A person: initials</span></span><span class="activity__time">5 min ago</span></div>
+            <div class="activity__row"><span class="activity__avatar" title="An MCP agent" style="background: var(--surface-sunken); color: var(--ink-2)"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="10" height="8" rx="2"></rect><path d="M8 2.6V5M6 8.6v.4M10 8.6v.4M1.6 9v1.6M14.4 9v1.6"></path></svg><span class="u-sr">Agent</span></span><span class="activity__body"><span class="activity__text">An agent started build #33 on Contoso Base - main</span><span class="activity__sub">An MCP agent: the agent glyph</span></span><span class="activity__time">4 h ago</span></div>
+            <div class="activity__row"><span class="activity__avatar" title="Started by a push" style="background: var(--surface-sunken); color: var(--ink-2); font-size: 9px; letter-spacing: 0">Auto</span><span class="activity__body"><span class="activity__text">Build #120 failed on CRONUS Base - main</span><span class="activity__sub">Started by a push: "Auto"</span></span><span class="activity__time">2 h ago</span></div>
+          </div></div>
+        </div>
+      </section>
+      <section class="panel" data-theme="dark">
+        <div class="panel__label"><span class="panel__dot"></span>Dark</div>
+        <div style="display: grid; gap: var(--space-4)">
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3)">
+            <a class="cue" href="#"><span class="cue__label">Waiting for approval</span><span class="cue__value">0</span><span class="cue__rule"></span><span class="cue__foot"><span>None</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+            <a class="cue" href="#" style="--cue-bg: var(--warning-bg); --cue-bg-hover: var(--warning-bg); --cue-ink: var(--warning-text); --cue-ink-dim: var(--warning-text); --cue-rule: var(--warning); box-shadow: inset 0 0 0 1px var(--warning)"><span class="cue__label">Waiting for approval</span><span class="cue__value">2</span><span class="cue__rule"></span><span class="cue__foot"><span>Oldest 3 d</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+            <a class="cue cue--attention" href="#"><span class="cue__label">Failed deployments</span><span class="cue__value">1</span><span class="cue__rule"></span><span class="cue__foot"><span>Needs attention</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+          </div>
+          <div class="card"><div class="activity">
+            <div class="activity__row"><span class="activity__avatar">KJ</span><span class="activity__body"><span class="activity__text">K. Jensen started build #121 on CRONUS Base - main</span><span class="activity__sub">A person: initials</span></span><span class="activity__time">5 min ago</span></div>
+            <div class="activity__row"><span class="activity__avatar" title="An MCP agent" style="background: var(--surface-sunken); color: var(--ink-2)"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="10" height="8" rx="2"></rect><path d="M8 2.6V5M6 8.6v.4M10 8.6v.4M1.6 9v1.6M14.4 9v1.6"></path></svg><span class="u-sr">Agent</span></span><span class="activity__body"><span class="activity__text">An agent started build #33 on Contoso Base - main</span><span class="activity__sub">An MCP agent: the agent glyph</span></span><span class="activity__time">4 h ago</span></div>
+            <div class="activity__row"><span class="activity__avatar" title="Started by a push" style="background: var(--surface-sunken); color: var(--ink-2); font-size: 9px; letter-spacing: 0">Auto</span><span class="activity__body"><span class="activity__text">Build #120 failed on CRONUS Base - main</span><span class="activity__sub">Started by a push: "Auto"</span></span><span class="activity__time">2 h ago</span></div>
+          </div></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
   <section id="delivery-row" style="display: grid; gap: var(--space-3)">
-    <div class="arch__head"><div><span class="arch__n">Component - delivery row</span><h2 class="arch__t">Delivery row, per-app sub-row, failure text, "Release again" dialog</h2></div><span class="arch__use">Used on the release pipeline page and anywhere a single release is listed. A Business Central error is shown once, in the right place: a short sentence and code when collapsed, prose when expanded, raw text only on request.</span></div>
+    <div class="arch__head"><div><span class="arch__n">Component - delivery row</span><h2 class="arch__t">Delivery row, per-app sub-row, failure text, "Deploy again" dialog</h2></div><span class="arch__use">Used on the release pipeline page and anywhere a single release is listed. A Business Central error is shown once, in the right place: a short sentence and code when collapsed, prose when expanded, raw text only on request.</span></div>
     <div class="themes">
       <section class="panel" data-theme="light">
         <div class="panel__label"><span class="panel__dot"></span>Light</div>
