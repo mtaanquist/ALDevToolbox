@@ -71,16 +71,16 @@ public sealed class SelectVersionPreviewTests
     }
 
     [Theory]
-    [InlineData("29.2.1234.0")]
-    [InlineData("29.3.1.0")]
-    [InlineData("30.0.5.0")]
-    public void A_row_already_on_the_version_or_later_is_skipped(string current)
+    [InlineData("29.2.1234.0", "Already on 29.2")]
+    [InlineData("29.3.1.0", "Already on 29.3, past 29.2")]
+    [InlineData("30.0.5.0", "Already on 30.0, past 29.2")]
+    public void A_row_already_on_the_version_or_later_is_skipped(string current, string detail)
     {
         var preview = One(Row(next: "30.1", current: current));
 
         preview.Group.Should().Be(SelectVersionGroup.AlreadyOnIt, "a row above the target is already on it, not an error");
         preview.WillChange.Should().BeFalse();
-        preview.Detail.Should().Be("Already on 29.2");
+        preview.Detail.Should().Be(detail);
     }
 
     [Fact]

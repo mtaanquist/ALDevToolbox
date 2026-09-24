@@ -5,6 +5,7 @@ using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using ALDevToolbox.Services.Operations;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Tests.Endpoints;
 
@@ -95,5 +96,76 @@ public class SettingsInputBuilderTests
         input.DisabledTools.Should().NotContain(ToolKey.Mcp);
         input.DisabledTools.Should().Contain(
             ToolCatalog.All.Where(t => t.Key != ToolKey.Mcp).Select(t => t.Key));
+    }
+
+    // Issue #970: the backup schedule is typed in the organisation's zone and
+    // stored as a UTC time of day. Europe/Copenhagen is UTC+1 in winter and
+    // UTC+2 in summer; the stored value must not move either way.
+    private static readonly TimeSpan Winter = TimeSpan.FromHours(1);
+    private static readonly TimeSpan Summer = TimeSpan.FromHours(2);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void An_unchanged_schedule_round_trips_to_the_same_utc_time_in_winter_and_summer(int offsetHours)
+    {
+        var offset = TimeSpan.FromHours(offsetHours);
+        var shown = DisplayTimeZone.TimeOfDayToDisplay(new TimeOnly(2, 0), offset);
+        var form = Form(
+            ("BackupScheduleEnabled", ["false", "true"]),
+            ("BackupScheduleTime", [DisplayTimeZone.FormatTimeOfDay(shown)]),
+            ("BackupScheduleOffsetMinutes", [((int)offset.TotalMinutes).ToString(System.Globalization.CultureInfo.InvariantCulture)]));
+
+        var input = SettingsInputBuilder.WithBackups(Current(), form, offset);
+
+        shown.Should().Be(new TimeOnly(2 + offsetHours, 0));
+        input.BackupScheduleTimeUtc.Should().Be(new TimeOnly(2, 0));
+    }
+
+    [Fact]
+    public void A_page_shown_in_winter_and_saved_after_the_clocks_change_keeps_the_stored_time()
+    {
+        // Rendered at 03:00 (UTC+1); the save lands after the spring change,
+        // when the zone is UTC+2. The posted offset wins over today's.
+        var form = Form(
+            ("BackupScheduleTime", ["03:00"]),
+            ("BackupScheduleOffsetMinutes", ["60"]));
+
+        var input = SettingsInputBuilder.WithBackups(Current(), form, Summer);
+
+        input.BackupScheduleTimeUtc.Should().Be(new TimeOnly(2, 0));
+    }
+
+    [Fact]
+    public void A_typed_time_is_read_in_the_zone_and_stored_as_utc()
+    {
+        var form = Form(("BackupScheduleTime", ["01:30"]));
+
+        var input = SettingsInputBuilder.WithBackups(Current(), form, Summer);
+
+        input.BackupScheduleTimeUtc.Should().Be(new TimeOnly(23, 30), "01:30 at UTC+2 is 23:30 UTC the day before");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("soon")]
+    [InlineData("9999")]
+    public void A_missing_or_odd_offset_falls_back_to_the_zone_offset_today(string posted)
+    {
+        var form = Form(("BackupScheduleTime", ["03:00"]), ("BackupScheduleOffsetMinutes", [posted]));
+
+        var input = SettingsInputBuilder.WithBackups(Current(), form, Winter);
+
+        input.BackupScheduleTimeUtc.Should().Be(new TimeOnly(2, 0));
+    }
+
+    [Fact]
+    public void A_blank_time_leaves_the_stored_schedule_alone()
+    {
+        var form = Form(("BackupScheduleTime", [""]));
+
+        var input = SettingsInputBuilder.WithBackups(Current(), form, Summer);
+
+        input.BackupScheduleTimeUtc.Should().Be(new TimeOnly(2, 0));
     }
 }
