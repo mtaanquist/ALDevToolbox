@@ -55,7 +55,8 @@ public sealed record OrgIdentityView(
     bool AutoJoinVerifiedDomainUsers,
     bool AdminHasEntraLink,
     int MembersTotal,
-    int MembersWithoutEntraLink);
+    int MembersWithoutEntraLink,
+    string? DisplayTimeZoneId = null);
 
 /// <summary>The current org's tool switches, for Administration → Tools.</summary>
 public sealed record OrgToolsView(bool McpEnabled, HashSet<ToolKey> DisabledTools);
@@ -268,6 +269,46 @@ public sealed class OrganizationAdminService
     }
 
     /// <summary>
+    /// Sets the zone every time in the app is shown in for this organisation
+    /// (<see cref="OrganizationSettings.DisplayTimeZoneId"/>, issue #942). Null,
+    /// blank or <c>UTC</c> clears it back to the default, UTC. Anything else must
+    /// be a zone this host's time zone database knows, or it is refused with a
+    /// field error under <c>DisplayTimeZoneId</c>. Audited like every other
+    /// settings column, through the interceptor.
+    /// </summary>
+    public async Task SetDisplayTimeZoneAsync(string? zoneId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var trimmed = zoneId?.Trim();
+        string? normalised = null;
+        if (!string.IsNullOrEmpty(trimmed) && !string.Equals(trimmed, "UTC", StringComparison.OrdinalIgnoreCase))
+        {
+            if (trimmed.Length > 64 || !TimeZoneInfo.TryFindSystemTimeZoneById(trimmed, out _))
+            {
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    [nameof(OrganizationSettings.DisplayTimeZoneId)] =
+                        $"'{trimmed}' is not a time zone we recognise. Pick one from the list, e.g. Europe/Copenhagen.",
+                });
+            }
+            normalised = trimmed;
+        }
+
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        if (row.DisplayTimeZoneId == normalised) return;
+        row.DisplayTimeZoneId = normalised;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _config.InvalidateCache(orgId);
+        _logger.LogInformation("Org {OrgId} set display_time_zone_id = {ZoneId}.", orgId, normalised ?? "UTC");
+    }
+
+    /// <summary>
     /// The current org's per-tool state for Administration → Tools: whether MCP
     /// is on, and the stored disabled-tool set (kept whole, including tools that
     /// are hidden site-wide, so a later site re-enable keeps this org's choice).
@@ -294,7 +335,7 @@ public sealed class OrganizationAdminService
         var org = await _db.Organizations.AsNoTracking().FirstAsync(o => o.Id == orgId, ct);
         var settings = await _db.OrganizationSettings.AsNoTracking()
             .Where(s => s.OrganizationId == orgId)
-            .Select(s => new { s.RequireStrongAuth, s.AutoJoinVerifiedDomainUsers })
+            .Select(s => new { s.RequireStrongAuth, s.AutoJoinVerifiedDomainUsers, s.DisplayTimeZoneId })
             .FirstOrDefaultAsync(ct);
 
         // Query filters scope all three of these to this org. The provider
@@ -315,7 +356,8 @@ public sealed class OrganizationAdminService
             AutoJoinVerifiedDomainUsers: settings?.AutoJoinVerifiedDomainUsers ?? false,
             AdminHasEntraLink: adminHasEntraLink,
             MembersTotal: membersTotal,
-            MembersWithoutEntraLink: Math.Max(0, membersTotal - linkedMembers));
+            MembersWithoutEntraLink: Math.Max(0, membersTotal - linkedMembers),
+            DisplayTimeZoneId: settings?.DisplayTimeZoneId);
     }
 
     /// <summary>Loads the current org's Microsoft sign-in settings for the admin form.</summary>

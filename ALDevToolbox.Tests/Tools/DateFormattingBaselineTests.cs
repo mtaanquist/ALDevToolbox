@@ -1,0 +1,250 @@
+using System.Text.RegularExpressions;
+using AwesomeAssertions;
+
+namespace ALDevToolbox.Tests.Tools;
+
+/// <summary>
+/// Keeps every time on screen going through <c>&lt;Timestamp&gt;</c> (issue #942).
+///
+/// <para>Times are stored in UTC. The organisation picks a display zone, and
+/// <c>Components/Shared/Timestamp.razor</c> is the one place that converts into it
+/// and puts the UTC instant in the hover title. A page that formats a
+/// <see cref="DateTime"/> itself shows UTC with no label, which is the bug the
+/// issue is about.</para>
+///
+/// <para>When this test landed the tree still did that in dozens of places. The
+/// sweep that replaces them goes area by area, so this is a per-file baseline in
+/// the style of <see cref="IgnoreQueryFiltersBaselineTests"/>: no file may gain a
+/// hit, no new file may have one, and the numbers only go down. The target is an
+/// empty baseline.</para>
+///
+/// <para>Matching "a DateTime being formatted" exactly would need the compiler, so
+/// the scan matches the shapes the issue counted: a <c>ToString("...")</c> whose
+/// format starts like a date or time pattern, the same patterns after a colon
+/// inside an interpolation hole, <c>ToLocalTime()</c> (which converts to nothing:
+/// the container runs in UTC), and <c>RelativeTime.Ago(</c> used directly
+/// (<c>&lt;Timestamp Relative="true"&gt;</c> adds the UTC title it lacks).</para>
+/// </summary>
+public sealed class DateFormattingBaselineTests
+{
+    private const string ComponentPath = "ALDevToolbox/Components/Shared/Timestamp.razor";
+
+    private static readonly (string Name, Regex Pattern)[] Patterns =
+    {
+        ("date format in ToString", new Regex(@"\.ToString\(""(?:yyyy|yy|HH|hh|dd|d |d""|MMM|MM|O"")", RegexOptions.Compiled)),
+        ("date format in an interpolation", new Regex(@"\{[^{}""]*?:(?:yyyy|yy|HH|hh|dd|d |MMM)[^{}]*\}", RegexOptions.Compiled)),
+        ("ToLocalTime()", new Regex(@"\.ToLocalTime\(\)", RegexOptions.Compiled)),
+        ("RelativeTime.Ago(", new Regex(@"RelativeTime\.Ago\(", RegexOptions.Compiled)),
+    };
+
+    /// <summary>
+    /// Hits per file, relative to the repository root with forward slashes.
+    /// Generated from the tree when the fence landed. Lower an entry (and the
+    /// total below) when a sweep replaces a site; never raise one.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, int> Baseline = new Dictionary<string, int>(StringComparer.Ordinal)
+    {
+        ["ALDevToolbox/Components/Pages/AcceptInvite.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Account.razor"] = 25,
+        ["ALDevToolbox/Components/Pages/AccountSecurity/AccessTokenCreated.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Admin/AdminCookbook.razor"] = 4,
+        ["ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestionReview.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestions.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Admin/AdminDashboard.razor"] = 10,
+        ["ALDevToolbox/Components/Pages/Admin/AdminModuleList.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Admin/AdminObjectExplorerIndex.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Admin/AdminRecipeEdit.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Admin/AdminReleaseManage.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Admin/AdminReleasesImportArtifacts.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Admin/AdminTemplateList.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationBusinessCentral.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationOAuthClients.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationRepositories.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationUsers.razor"] = 4,
+        ["ALDevToolbox/Components/Pages/Admin/AuditDiffPage.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/Admin/AuditLogPage.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Environments/EnvironmentDetail.razor"] = 16,
+        ["ALDevToolbox/Components/Pages/Environments/EnvironmentsList.razor"] = 5,
+        ["ALDevToolbox/Components/Pages/Error.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/Pipelines/PipelinesBrowser.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor"] = 20,
+        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelinesBrowser.razor"] = 6,
+        ["ALDevToolbox/Components/Pages/Projects/Customer/CustomerModulesSection.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailBc.razor"] = 8,
+        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailCustomer.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailGeneral.razor"] = 4,
+        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailSymbols.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor"] = 5,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAccessTokens.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAudit.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAuditDiffPage.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor"] = 3,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminOAuthClients.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminStorage.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminTenantBackups.razor"] = 2,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminUsers.razor"] = 1,
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminWorkers.razor"] = 6,
+        ["ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor"] = 16,
+        ["ALDevToolbox/Components/Shared/AuditHistoryPanel.razor"] = 4,
+        ["ALDevToolbox/Components/Shared/EnvironmentActivityFeed.razor"] = 7,
+        ["ALDevToolbox/Components/Shared/EnvironmentOperationsList.razor"] = 1,
+        ["ALDevToolbox/Components/Shared/EnvironmentSessionsList.razor"] = 2,
+        ["ALDevToolbox/Components/Shared/PipelineEditorDialog.razor"] = 2,
+        ["ALDevToolbox/Components/Shared/ReleaseBuildDialog.razor"] = 8,
+        ["ALDevToolbox/Components/Shared/ReleasePipelineEditorDialog.razor"] = 2,
+        ["ALDevToolbox/Components/Shared/SettingsAside.razor"] = 1,
+    };
+
+    /// <summary>
+    /// The sum of <see cref="Baseline"/>, written out so that a sweep has to lower
+    /// both: the per-file numbers and the headline number the issue tracks.
+    /// </summary>
+    private const int BaselineTotal = 214;
+
+    [Fact]
+    public void No_razor_file_formats_a_time_more_often_than_its_baseline()
+    {
+        var actual = Scan();
+
+        var problems = new List<string>();
+        foreach (var (path, hits) in actual.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            Baseline.TryGetValue(path, out var allowed);
+            if (hits.Count <= allowed) continue;
+            var where = string.Join("; ", hits.Select(h => $"line {h.Line}: {h.What}"));
+            problems.Add(allowed == 0
+                ? $"{path} formats a time itself ({hits.Count}x: {where}). Render it with <Timestamp Value=\"...\" /> instead, so it shows in the organisation's zone with the UTC instant on hover."
+                : $"{path}: baseline {allowed}, found {hits.Count} ({where}). Render the new one with <Timestamp Value=\"...\" /> instead of formatting it in the page.");
+        }
+        foreach (var (path, allowed) in Baseline.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var found = actual.TryGetValue(path, out var hits) ? hits.Count : 0;
+            if (found < allowed)
+            {
+                problems.Add($"{path}: baseline {allowed}, found {found}. Good news - lower this file's baseline (and {nameof(BaselineTotal)}) so it stays honest.");
+            }
+        }
+
+        problems.Should().BeEmpty(
+            "every time on screen goes through <Timestamp> (issue #942); the baseline only goes down. Current counts:\n"
+            + string.Join("\n", actual.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => $"        [\"{kv.Key}\"] = {kv.Value.Count},")));
+    }
+
+    [Fact]
+    public void Baseline_total_is_the_sum_of_the_per_file_baseline()
+    {
+        Baseline.Values.Sum().Should().Be(BaselineTotal,
+            "a sweep lowers both the per-file entries and the total, so neither can drift from the other");
+    }
+
+    [Fact]
+    public void The_scan_finds_each_shape_it_is_meant_to_catch()
+    {
+        // The fence is only as good as its patterns; pin one example of each so a
+        // regex edit that stops matching fails here rather than going quiet.
+        string[] samples =
+        {
+            "@row.CreatedAt.ToString(\"yyyy-MM-dd HH:mm\")",
+            "@row.CreatedAt.ToString(\"d MMM yyyy\")",
+            "<time datetime=\"@row.CreatedAt.ToString(\"O\")\">",
+            "@($\"Last run {row.At:yyyy-MM-dd}\")",
+            "@row.CreatedAt.ToLocalTime()",
+            "@RelativeTime.Ago(row.CreatedAt)",
+        };
+        foreach (var sample in samples)
+        {
+            ScanLines(new[] { sample }).Should().NotBeEmpty($"'{sample}' formats a time");
+        }
+
+        string[] innocent =
+        {
+            "@count.ToString(\"N0\")",
+            "@tenantId.ToString(\"D\")",
+            "@* Updated.ToString(\"yyyy\") in a comment *@",
+            "<Timestamp Value=\"@row.CreatedAt\" />",
+        };
+        foreach (var sample in innocent)
+        {
+            ScanLines(new[] { sample }).Should().BeEmpty($"'{sample}' does not format a time");
+        }
+    }
+
+    private sealed record Hit(int Line, string What);
+
+    private static Dictionary<string, List<Hit>> Scan()
+    {
+        var root = ALDevToolbox.Tests.Infrastructure.RepoRoot.Directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate the repository root.");
+        var components = Path.Combine(root, "ALDevToolbox", "Components");
+        var result = new Dictionary<string, List<Hit>>(StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(components, "*.razor", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
+            if (relative == ComponentPath) continue;
+            var hits = ScanLines(File.ReadAllLines(file));
+            if (hits.Count > 0) result[relative] = hits;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Strips <c>//</c>, <c>/* */</c> and Razor's <c>@* *@</c> comments, then
+    /// reports every match of every pattern on what is left.
+    /// </summary>
+    private static List<Hit> ScanLines(IReadOnlyList<string> lines)
+    {
+        var hits = new List<Hit>();
+        var inBlock = false;
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var code = StripComments(lines[i], ref inBlock);
+            foreach (var (name, pattern) in Patterns)
+            {
+                foreach (Match _ in pattern.Matches(code))
+                {
+                    hits.Add(new Hit(i + 1, name));
+                }
+            }
+        }
+        return hits;
+    }
+
+    private static string StripComments(string line, ref bool inBlock)
+    {
+        var buffer = new System.Text.StringBuilder(line.Length);
+        var j = 0;
+        while (j < line.Length)
+        {
+            if (inBlock)
+            {
+                if (Starts(line, j, "*/") || Starts(line, j, "*@")) { inBlock = false; j += 2; }
+                else j++;
+            }
+            else if (Starts(line, j, "@*") || Starts(line, j, "/*"))
+            {
+                inBlock = true;
+                j += 2;
+            }
+            else if (Starts(line, j, "//") && (j == 0 || line[j - 1] != ':'))
+            {
+                // Not "https://": a URL in markup is not a comment.
+                break;
+            }
+            else
+            {
+                buffer.Append(line[j]);
+                j++;
+            }
+        }
+        return buffer.ToString();
+    }
+
+    private static bool Starts(string line, int index, string token) =>
+        index + token.Length <= line.Length && string.CompareOrdinal(line, index, token, 0, token.Length) == 0;
+}

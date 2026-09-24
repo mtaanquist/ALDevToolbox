@@ -277,5 +277,14 @@ public class OrganizationSettings
     /// </summary>
     public GitHubRepositoryRuleset? GitHubRepositoryRuleset { get; set; }
 
+    /// <summary>
+    /// The IANA time zone (e.g. <c>Europe/Copenhagen</c>) every time in the app is
+    /// shown in for this organisation, with the UTC instant on hover. Null means
+    /// UTC. Read through <c>DisplayTimeZone</c>; not the same thing as a
+    /// solution's <c>BcTimeZone</c>, which is the customer's zone for booking
+    /// Business Central update windows. See issue #942.
+    /// </summary>
+    public string? DisplayTimeZoneId { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

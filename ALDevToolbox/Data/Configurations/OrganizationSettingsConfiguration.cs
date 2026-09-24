@@ -123,6 +123,9 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .HasColumnName("github_repository_ruleset_json")
             .HasColumnType("jsonb")
             .HasConversion(rulesetConverter);
+        // IANA zone id (issue #942). 64 is well above the longest id in the tz
+        // database ("America/Argentina/ComodRivadavia", 32).
+        entity.Property(e => e.DisplayTimeZoneId).HasColumnName("display_time_zone_id").HasMaxLength(64);
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)
