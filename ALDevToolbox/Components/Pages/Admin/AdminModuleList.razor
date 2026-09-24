@@ -131,7 +131,7 @@
                     <th>Name</th>
                     <th class="data-table__num">Dependencies</th>
                     <th class="data-table__num">ID range size</th>
-                    <th>Last updated (UTC)</th>
+                    <th>Last updated</th>
                     <th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
@@ -155,7 +155,7 @@
                         <td>@m.Name</td>
                         <td class="data-table__num">@m.Dependencies.Count</td>
                         <td class="data-table__num">@(m.IdRangeSize?.ToString() ?? "—")</td>
-                        <td><time datetime="@m.UpdatedAt.ToString("O")">@m.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td><Timestamp Value="@m.UpdatedAt" Format="yyyy-MM-dd HH:mm:ss" /></td>
                         <td class="data-table__actions">
                             <RowActions Label="@($"Actions for {m.Name}")">
                             <a class="menu__item" href="@($"/admin/modules/{Uri.EscapeDataString(m.Key)}")" role="menuitem">

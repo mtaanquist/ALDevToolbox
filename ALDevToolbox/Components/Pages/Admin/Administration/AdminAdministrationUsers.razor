@@ -98,7 +98,7 @@
                             <td>@invite.Email</td>
                             <td>@invite.Role</td>
                             <td>@(invitedBy?.DisplayName ?? "—")</td>
-                            <td class="u-muted u-num">@invite.ExpiresAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                            <td class="u-muted u-num"><Timestamp Value="@invite.ExpiresAt" /></td>
                             <td class="data-table__actions">
                                 <form method="post" action="/admin/users/invites/@invite.Id/revoke">
                                     <AntiforgeryToken />
@@ -135,7 +135,7 @@
                         <tr>
                             <td>@request.Email</td>
                             <td>@(user?.DisplayName ?? "—")</td>
-                            <td class="u-muted u-num">@request.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                            <td class="u-muted u-num"><Timestamp Value="@request.RequestedAt" /></td>
                             <td class="data-table__actions">
                                 <span class="u-row">
                                     <form method="post" action="/admin/users/@request.Id/approve">
@@ -277,7 +277,7 @@
                                 </select>
                             </SelectBox>
                         </td>
-                        <td class="u-muted u-num">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                        <td class="u-muted u-num"><Timestamp Value="@u.LastLoginAt" Placeholder="—" /></td>
                         <td class="data-table__actions">
                             <span class="u-row">
                                 @if (u.Status == UserStatus.Active)
@@ -330,7 +330,7 @@
                                 @if (!string.IsNullOrEmpty(u.PendingEmail))
                                 {
                                     <p class="field__hint">
-                                        Pending change to <strong>@u.PendingEmail</strong> (requested @u.PendingEmailAt?.ToString("yyyy-MM-dd HH:mm 'UTC'")).
+                                        Pending change to <strong>@u.PendingEmail</strong> (requested <Timestamp Value="@u.PendingEmailAt" />).
                                     </p>
                                 }
                                 <form method="post" action="/admin/users/@u.Id/email" class="u-row">

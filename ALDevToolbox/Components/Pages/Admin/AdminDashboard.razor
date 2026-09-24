@@ -110,7 +110,16 @@
                     <span class="cue__value">@cue.Value.ToString("N0")</span>
                     <span class="cue__rule"></span>
                     <span class="cue__foot">
-                        <span>@cue.Foot</span>
+                        @* Razor drops the whitespace between an expression and a
+                           following @if, so the space before the time is explicit. *@
+                        <span>@if (cue.Foot.At is { } footAt)
+                            {
+                                <text>@cue.Foot.Text <Timestamp Value="@footAt" Relative="true" /></text>
+                            }
+                            else
+                            {
+                                @cue.Foot.Text
+                            }</span>
                         <Icon Name="chevron-right" Width="15" Height="15" Css="cue__drill" />
                     </span>
                 </a>
@@ -146,7 +155,7 @@
                                     <span class="activity__text">@item.Text</span>
                                     <span class="activity__sub">@item.Sub</span>
                                 </span>
-                                <span class="activity__time" title="@item.ExactWhen">@item.When</span>
+                                <span class="activity__time"><Timestamp Value="@item.At" Relative="true" /></span>
                             </a>
                         }
                     </div>
@@ -186,8 +195,8 @@
                                         <span class="activity__sub">@email</span>
                                     }
                                 </span>
-                                <span class="activity__time" title="@e.Timestamp.ToString("yyyy-MM-dd HH:mm 'UTC'")">
-                                    @RelativeTime.Ago(e.Timestamp)
+                                <span class="activity__time">
+                                    <Timestamp Value="@e.Timestamp" Relative="true" />
                                 </span>
                             </a>
                         }
@@ -200,7 +209,14 @@
 
 @code {
     /// <summary>One activity-indicator tile. Attention is the red fill, not a badge.</summary>
-    private sealed record Cue(string Label, int Value, string Foot, string Href, bool Attention);
+    private sealed record Cue(string Label, int Value, CueFoot Foot, string Href, bool Attention);
+
+    /// <summary>
+    /// A tile's foot line: <paramref name="Text"/> alone, or followed by a
+    /// relative time ("Last changed 4 minutes ago") when <paramref name="At"/> is
+    /// set, so the time renders through <c>Timestamp</c> with its UTC title.
+    /// </summary>
+    private sealed record CueFoot(string Text, DateTime? At = null);
 
     /// <summary>
     /// One row in the "Needs attention" column. <paramref name="State"/> is the
@@ -216,7 +232,7 @@
     /// </summary>
     private sealed record AttentionRow(
         string State, string Icon, string StateLabel,
-        string Text, string Sub, string When, string ExactWhen, string Href);
+        string Text, string Sub, DateTime At, string Href);
 
     private List<Cue> _cues = new();
     private List<AttentionRow> _attention = new();
@@ -298,7 +314,7 @@
         if (ShowPerOrgContent)
         {
             cues.Add(new Cue("Users", d.Users.Count,
-                d.Users.At is { } seen ? $"Last sign-in {RelativeTime.Ago(seen)}" : "No one has signed in yet",
+                d.Users.At is { } seen ? new CueFoot("Last sign-in", seen) : new CueFoot("No one has signed in yet"),
                 "/admin/administration/users", false));
         }
         cues.Add(new Cue("Templates", d.Templates.Count, Updated(d.Templates), "/admin/templates", false));
@@ -312,11 +328,11 @@
         return cues.Take(6).ToList();
     }
 
-    private static string Waiting(PendingQueue q) =>
-        q.At is { } oldest ? $"Oldest arrived {RelativeTime.Ago(oldest)}" : "Nothing waiting";
+    private static CueFoot Waiting(PendingQueue q) =>
+        q.At is { } oldest ? new CueFoot("Oldest arrived", oldest) : new CueFoot("Nothing waiting");
 
-    private static string Updated(CountWithStamp c) =>
-        c.At is { } at ? $"Last changed {RelativeTime.Ago(at)}" : "Nothing here yet";
+    private static CueFoot Updated(CountWithStamp c) =>
+        c.At is { } at ? new CueFoot("Last changed", at) : new CueFoot("Nothing here yet");
 
     /// <summary>
     /// The attention column, worst first. Every row is something only an admin
@@ -334,7 +350,7 @@
                     ? "A release import failed"
                     : $"{d.FailedImports.Count} release imports failed",
                 d.FailedImports.Label ?? string.Empty,
-                RelativeTime.Ago(failedAt), Exact(failedAt),
+                failedAt,
                 "/admin/object-explorer"));
         }
 
@@ -345,7 +361,7 @@
                     ? "Someone is waiting for an account"
                     : $"{d.Signups.Count} people are waiting for an account",
                 d.Signups.Label ?? string.Empty,
-                RelativeTime.Ago(signupAt), Exact(signupAt),
+                signupAt,
                 "/admin/administration/users"));
         }
 
@@ -356,7 +372,7 @@
                     ? "An invitation ran out before it was accepted"
                     : $"{d.ExpiredInvites.Count} invitations ran out before they were accepted",
                 d.ExpiredInvites.Label ?? string.Empty,
-                RelativeTime.Ago(inviteAt), Exact(inviteAt),
+                inviteAt,
                 "/admin/administration/users"));
         }
 
@@ -367,15 +383,12 @@
                     ? "A recipe suggestion is waiting for review"
                     : $"{d.RecipeSuggestions.Count} recipe suggestions are waiting for review",
                 d.RecipeSuggestions.Label ?? string.Empty,
-                RelativeTime.Ago(suggestionAt), Exact(suggestionAt),
+                suggestionAt,
                 "/admin/cookbook/suggestions"));
         }
 
         return rows;
     }
-
-    /// <summary>The exact instant behind a relative time, for the row's hover title.</summary>
-    private static string Exact(DateTime utc) => utc.ToString("yyyy-MM-dd HH:mm 'UTC'");
 
     /// <summary>
     /// Audit rows store the actor as <c>"display name &lt;email&gt;"</c>. The

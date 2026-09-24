@@ -6,6 +6,7 @@
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @using ALDevToolbox.Services.Account
 @inject SiteAdminService SiteAdmin
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 
 <PageTitle>Audit log · Site administration · AL Workbench</PageTitle>
 
@@ -66,12 +67,12 @@
                 <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
             </label>
             <label class="field">
-                <span class="field__label">From (UTC)</span>
-                <input class="input" type="datetime-local" name="from" value="@FromUtc" />
+                <span class="field__label">From</span>
+                <input class="input" type="datetime-local" name="from" value="@FromInput" />
             </label>
             <label class="field">
-                <span class="field__label">To (UTC)</span>
-                <input class="input" type="datetime-local" name="to" value="@ToUtc" />
+                <span class="field__label">To</span>
+                <input class="input" type="datetime-local" name="to" value="@ToInput" />
             </label>
         </form>
     </Notices>
@@ -96,7 +97,7 @@
                     <div class="audit__entry">
                         <a class="audit__sum" href="@($"/site-admin/audit/{e.Id}/diff")">
                             <span class="audit__time">
-                                <time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm")</time>
+                                <Timestamp Value="@e.Timestamp" Format="yyyy-MM-dd HH:mm" />
                             </span>
                             <span class="audit__avatar" aria-hidden="true">@Avatar.Initials(e.ChangedBy)</span>
                             <span class="audit__what">
@@ -164,8 +165,12 @@
     [SupplyParameterFromQuery(Name = "entityType")] public string? EntityType { get; set; }
     [SupplyParameterFromQuery(Name = "organizationId")] public int? OrganizationId { get; set; }
     [SupplyParameterFromQuery(Name = "actor")] public string? Actor { get; set; }
-    [SupplyParameterFromQuery(Name = "from")] public string? FromUtc { get; set; }
-    [SupplyParameterFromQuery(Name = "to")] public string? ToUtc { get; set; }
+    /// <summary>
+    /// As the date picker posts it: a wall-clock time in the display zone, the
+    /// same zone the rows below are shown in. Converted to UTC only for the query.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "from")] public string? FromInput { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToInput { get; set; }
     [SupplyParameterFromQuery(Name = "page")] public int? Page { get; set; }
 
     private List<SiteAdminAuditRow>? _rows;
@@ -180,8 +185,9 @@
         _orgs = await SiteAdmin.ListOrganizationsAsync();
         _page = Page is int p && p > 1 ? p : 1;
         AuditEntityType? entity = Enum.TryParse<AuditEntityType>(EntityType, out var et) ? et : null;
-        DateTime? from = DateTime.TryParse(FromUtc, out var f) ? DateTime.SpecifyKind(f, DateTimeKind.Utc) : null;
-        DateTime? to = DateTime.TryParse(ToUtc, out var t) ? DateTime.SpecifyKind(t, DateTimeKind.Utc) : null;
+        await Zone.EnsureLoadedAsync();
+        var from = Zone.ParseInput(FromInput);
+        var to = Zone.ParseInput(ToInput);
         var result = await SiteAdmin.SearchAuditAsync(
             entity, OrganizationId, Actor, from, to,
             skip: (_page - 1) * PageSize, take: PageSize);
@@ -200,8 +206,8 @@
         if (!string.IsNullOrEmpty(EntityType)) query.Add($"entityType={Uri.EscapeDataString(EntityType)}");
         if (OrganizationId is int oid) query.Add($"organizationId={oid}");
         if (!string.IsNullOrEmpty(Actor)) query.Add($"actor={Uri.EscapeDataString(Actor)}");
-        if (!string.IsNullOrEmpty(FromUtc)) query.Add($"from={Uri.EscapeDataString(FromUtc)}");
-        if (!string.IsNullOrEmpty(ToUtc)) query.Add($"to={Uri.EscapeDataString(ToUtc)}");
+        if (!string.IsNullOrEmpty(FromInput)) query.Add($"from={Uri.EscapeDataString(FromInput)}");
+        if (!string.IsNullOrEmpty(ToInput)) query.Add($"to={Uri.EscapeDataString(ToInput)}");
         query.Add($"page={page}");
         return "/site-admin/audit?" + string.Join("&", query);
     }

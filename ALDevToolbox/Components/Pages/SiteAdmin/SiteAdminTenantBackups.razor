@@ -132,7 +132,7 @@
                         <tr>
                             <th>Org</th>
                             <th>Snapshot</th>
-                            <th>Last modified (UTC)</th>
+                            <th>Last modified</th>
                             <th class="data-table__num">Size</th>
                             <th>Already local?</th>
                             <th>Actions</th>
@@ -146,7 +146,7 @@
                             <tr>
                                 <td>@obj.Slug @(orgKnown ? "" : " (unknown)")</td>
                                 <td><code>@obj.FileName</code></td>
-                                <td class="u-muted">@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td class="u-muted"><Timestamp Value="@obj.LastModified" Format="yyyy-MM-dd HH:mm:ss" /></td>
                                 <td class="data-table__num">@FormatBytes(obj.Size)</td>
                                 <td>@(alreadyLocal ? "Yes" : "No")</td>
                                 <td class="data-table__actions">
@@ -188,7 +188,7 @@
                 <tr>
                     <th>Organisation</th>
                     <th>Snapshot</th>
-                    <th>Created (UTC)</th>
+                    <th>Created</th>
                     <th class="data-table__num">Size</th>
                     <th>Kind</th>
                     <th>Schema</th>
@@ -203,7 +203,7 @@
                 <tr>
                     <td>@r.OrganizationName <div class="u-muted">@r.OrganizationSlug</div></td>
                     <td><code>@r.FileName</code></td>
-                    <td class="u-muted">@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td class="u-muted"><Timestamp Value="@r.CreatedAt" /></td>
                     <td class="data-table__num">@FormatBytes(r.FileSizeBytes)</td>
                     <td>@r.Kind</td>
                     <td>@(r.SchemaVersion == PerTenantBackupService.CurrentSchemaVersion ? "v" + r.SchemaVersion : $"v{r.SchemaVersion} (stale)")</td>

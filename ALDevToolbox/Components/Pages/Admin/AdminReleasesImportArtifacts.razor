@@ -107,7 +107,7 @@
                         <tr @key="row.Version">
                             <td>@row.Version</td>
                             <td>@row.MajorMinor</td>
-                            <td>@row.RefreshedAt.ToString("yyyy-MM-dd")</td>
+                            <td><Timestamp Value="@row.RefreshedAt" Format="yyyy-MM-dd" /></td>
                             <td>
                                 @if (importedId is int rid)
                                 {
@@ -198,7 +198,7 @@
                     <small class="field__hint">
                         @if (_autoLastRunAt is DateTime last)
                         {
-                            <span>Last checked @last.ToString("yyyy-MM-dd HH:mm") UTC.</span>
+                            <span>Last checked <Timestamp Value="@last" />.</span>
                         }
                         else if (_autoEnabled)
                         {

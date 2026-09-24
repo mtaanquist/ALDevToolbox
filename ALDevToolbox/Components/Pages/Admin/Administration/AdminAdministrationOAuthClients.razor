@@ -86,7 +86,7 @@
                             </td>
                             <td>@c.UserEmail</td>
                             <td class="u-muted">@HumanScopes(c.Scopes)</td>
-                            <td class="u-muted u-num">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
+                            <td class="u-muted u-num"><Timestamp Value="@c.GrantedAt" Format="yyyy-MM-dd" /></td>
                             <td class="data-table__actions">
                                 @if (c.RevokedAt is null)
                                 {
