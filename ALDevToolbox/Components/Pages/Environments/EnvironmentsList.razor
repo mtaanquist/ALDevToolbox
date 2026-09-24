@@ -134,11 +134,12 @@
         <table class="data-table data-table--edge">
             <thead>
                 <tr>
+                    <th class="data-table__col-check"><span class="u-sr">Select</span></th>
                     <th class="data-table__col-state"><span class="u-sr">State</span></th>
                     <th>Environment</th><th>Solution</th><th>Now on</th><th>Next update</th><th>Storage</th><th>Last checked</th><th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
-            <tbody><TableSkeletonRows Columns="7" StateColumn="true" /></tbody>
+            <tbody><TableSkeletonRows Columns="7" CheckColumn="true" StateColumn="true" /></tbody>
         </table>
         <LoadingBlock Text="Loading environments..." UnderTable="true" />
     </Loading>
@@ -183,16 +184,18 @@
     </Search>
     <Filters>
         <SelectBox style="width: 200px">
-            <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
+            <select class="select" aria-label="Filter by solution" @bind="_solutionFilter" @bind:after="PruneSelection">
                 <option value="">All solutions</option>
-                @foreach (var name in _rows!.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
+                @* "CRONUS (CRN)": many customers are only ever called by their short name. *@
+                @foreach (var solution in _rows!.GroupBy(r => r.ProjectName).OrderBy(g => g.Key))
                 {
-                    <option value="@name">@name</option>
+                    var shortName = solution.Select(r => r.ProjectShortName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                    <option value="@solution.Key">@(shortName is null ? solution.Key : $"{solution.Key} ({shortName})")</option>
                 }
             </select>
         </SelectBox>
         <SelectBox style="width: 170px">
-            <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
+            <select class="select" aria-label="Filter by environment type" @bind="_typeFilter" @bind:after="PruneSelection">
                 <option value="">All types</option>
                 <option value="Production">Production only</option>
                 <option value="Sandbox">Sandbox only</option>
@@ -204,7 +207,7 @@
             @foreach (var tab in Tabs())
             {
                 <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
-                        title="@TabHint(tab)" @onclick="() => _tab = tab">
+                        title="@TabHint(tab)" @onclick="() => SelectTab(tab)">
                     @TabLabel(tab)<span class="pill-tab__count">@CountFor(tab)</span>
                 </button>
             }
@@ -258,9 +261,39 @@
         </div>
     </NoMatches>
     <ChildContent>
+        @if (_selected.Count > 0)
+        {
+            <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
+                <span class="bulk-bar__summary">@_selected.Count selected</span>
+                <div class="bulk-bar__actions">
+                    <button type="button" class="btn btn--sm" @onclick="OpenBulkWindowAsync" disabled="@_busy">
+                        <Icon Name="clock" Width="14" Height="14" />
+                        <span>Set delivery window...</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => _selected.Clear()">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear selection</span>
+                    </button>
+                </div>
+            </div>
+        }
         <table class="data-table data-table--edge">
             <thead>
                 <tr>
+                    <th class="data-table__col-check">
+                        @if (Selectable(shown).Count > 0)
+                        {
+                            var rowState = SomePicked(shown) ? "check is-indeterminate" : "check";
+                            <label class="@rowState" aria-label="Select every environment shown">
+                                <input type="checkbox" checked="@AllPicked(shown)" @onchange="e => ToggleAll(shown, e)" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            </label>
+                        }
+                        else
+                        {
+                            <span class="u-sr">Select</span>
+                        }
+                    </th>
                     <th class="data-table__col-state" scope="col"><span class="u-sr">State</span></th>
                     <th scope="col">Environment</th>
                     <th scope="col">Solution</th>
@@ -277,7 +310,20 @@
             <tbody>
                 @foreach (var row in shown)
                 {
-                    <tr class="@RowState(row)">
+                    var picked = _selected.Contains(row.EnvironmentId);
+                    var rowState = RowState(row) + (picked ? " is-selected" : "");
+                    <tr class="@rowState">
+                        @* A deleted environment has nothing to set: Business Central is only
+                           keeping it so it can be brought back. *@
+                        <td class="data-table__col-check">
+                            @if (!row.IsSoftDeleted)
+                            {
+                                <label class="check" aria-label="@($"Select {row.ProjectName} {row.EnvironmentName}")">
+                                    <input type="checkbox" checked="@picked" @onchange="e => TogglePick(row.EnvironmentId, e)" />
+                                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                </label>
+                            }
+                        </td>
                         <td class="data-table__col-state">
                             @* Glyph only, as the design has it: the row says its state
                                with the edge bar and this icon, and no column is spent on
@@ -298,7 +344,13 @@
                                 <span class="cell-stack__sub">@row.EnvironmentType</span>
                             </span>
                         </td>
-                        <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
+                        <td>
+                            <a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a>
+                            @if (!string.IsNullOrWhiteSpace(row.ProjectShortName))
+                            {
+                                <span class="sol-list__short" title="Short name">@row.ProjectShortName</span>
+                            }
+                        </td>
                         <td class="u-num">@(row.Version ?? "—")</td>
                         <td>
                             @* For a deleted environment the deadline takes the bold line
@@ -433,6 +485,7 @@
 </ListPage>
 
 <UploadAppDialog @ref="_uploadDialog" />
+<BulkDeliveryWindowDialog @ref="_bulkWindowDialog" OnApplied="OnBulkWindowApplied" />
 <CopyEnvironmentDialog @ref="_copyDialog" />
 <ConfirmDialog @ref="_confirm" />
 
@@ -451,6 +504,10 @@
     /// <summary>A write from a row menu is in flight; the other rows' menu items wait for it.</summary>
     private bool _busy;
     private UploadAppDialog? _uploadDialog;
+    private BulkDeliveryWindowDialog? _bulkWindowDialog;
+
+    /// <summary>The ticked rows, by environment id. Only rows on screen stay ticked.</summary>
+    private readonly HashSet<int> _selected = new();
     private CopyEnvironmentDialog? _copyDialog;
     private ConfirmDialog? _confirm;
 
@@ -526,6 +583,7 @@
             _rows = await Fleet.ListFleetAsync(includeSoftDeleted: true);
             _error = null;
             _loadFailed = false;
+            PruneSelection();
         }
         catch (Exception ex)
         {
@@ -607,6 +665,9 @@
         // one AppDbContext at the same time.
         await InvokeAsync(async () =>
         {
+            // The dialog and the page share one database context; a re-read waits for
+            // the next tick rather than running beside the dialog's own query.
+            if (_bulkWindowDialog?.IsWorking == true) return;
             await LoadAsync();
             if (DateTime.UtcNow >= _pollUntilUtc)
             {
@@ -625,7 +686,17 @@
 
     // ── Filtering ────────────────────────────────────────────────────────
 
-    private void OnSearchInput(ChangeEventArgs e) => _search = e.Value?.ToString() ?? string.Empty;
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+        PruneSelection();
+    }
+
+    private void SelectTab(Tab tab)
+    {
+        _tab = tab;
+        PruneSelection();
+    }
 
     private void ClearFilters()
     {
@@ -634,6 +705,64 @@
         _typeFilter = string.Empty;
         _tab = Tab.All;
     }
+
+    // ── Selection ────────────────────────────────────────────────────────
+
+    /// <summary>The rows on screen that can be ticked: every one but a deleted environment.</summary>
+    private static List<UpgradeFleetRow> Selectable(IEnumerable<UpgradeFleetRow> shown) =>
+        shown.Where(r => !r.IsSoftDeleted).ToList();
+
+    private bool AllPicked(IEnumerable<UpgradeFleetRow> shown)
+    {
+        var selectable = Selectable(shown);
+        return selectable.Count > 0 && selectable.All(r => _selected.Contains(r.EnvironmentId));
+    }
+
+    /// <summary>Some but not all: the header box shows a dash rather than a tick.</summary>
+    private bool SomePicked(IEnumerable<UpgradeFleetRow> shown) => _selected.Count > 0 && !AllPicked(shown);
+
+    private void ToggleAll(IEnumerable<UpgradeFleetRow> shown, ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            foreach (var row in Selectable(shown)) _selected.Add(row.EnvironmentId);
+        }
+        else
+        {
+            _selected.Clear();
+        }
+    }
+
+    private void TogglePick(int environmentId, ChangeEventArgs e)
+    {
+        if (e.Value is true) _selected.Add(environmentId);
+        else _selected.Remove(environmentId);
+    }
+
+    /// <summary>
+    /// Drops the ticks on rows a tab, a filter, the search or a re-read has taken off
+    /// the screen: the count in the bar and the dialog act on what the person can see.
+    /// </summary>
+    private void PruneSelection()
+    {
+        if (_selected.Count == 0) return;
+        var onScreen = Selectable(Filtered()).Select(r => r.EnvironmentId).ToHashSet();
+        _selected.RemoveWhere(id => !onScreen.Contains(id));
+    }
+
+    private async Task OpenBulkWindowAsync()
+    {
+        if (_bulkWindowDialog is null || _rows is null) return;
+        var rows = _rows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
+        if (rows.Count == 0) return;
+        await _bulkWindowDialog.OpenAsync(rows);
+    }
+
+    /// <summary>
+    /// The dialog shows its own per-row result; the list shows no windows, so there is
+    /// nothing to re-read. The ticks have done their job.
+    /// </summary>
+    private void OnBulkWindowApplied(List<DeliveryWindowChangeResult> results) => _selected.Clear();
 
     /// <summary>True when only a tab is narrowing the list — the search and both dropdowns are clear.</summary>
     private bool NoOtherFilters() =>
@@ -651,6 +780,7 @@
             var term = _search.Trim();
             q = q.Where(r =>
                 r.ProjectName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (r.ProjectShortName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
                 || r.EnvironmentName.Contains(term, StringComparison.OrdinalIgnoreCase));
         }
         if (!string.IsNullOrEmpty(_solutionFilter))
