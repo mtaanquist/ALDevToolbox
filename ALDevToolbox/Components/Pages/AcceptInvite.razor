@@ -89,7 +89,7 @@ else
                     <input class="input input--ro" id="ai-email" type="email" value="@_invite.Email" readonly />
                     <span class="field__hint">
                         Fixed by the invite — ask for a new one to change it. Good until
-                        @_invite.ExpiresAt.ToString("d MMMM yyyy").
+                        <Timestamp Value="@_invite.ExpiresAt" Format="d MMMM yyyy" />.
                     </span>
                 </div>
                 <div class="field">

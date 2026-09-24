@@ -85,6 +85,30 @@ public sealed class DisplayTimeZone
     public string Format(DateTime utc, string format) =>
         ToDisplay(utc).ToString(format, CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Reads a time the user typed into a <c>datetime-local</c> input
+    /// ("2026-03-29T02:30") as a wall-clock time in the display zone and returns
+    /// the UTC instant, or null when the text is blank or not a time. The input
+    /// sits beside times shown in this zone, so reading it as UTC would make the
+    /// page contradict itself.
+    ///
+    /// <para>A wall-clock time the spring change skips (02:30 in Copenhagen on
+    /// the last Sunday of March) does not exist; it is read with the zone's
+    /// standard offset, which lands on the moment the clocks jumped past it.
+    /// A time the autumn change repeats is read as standard time.</para>
+    /// </summary>
+    public DateTime? ParseInput(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (!DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)) return null;
+        // Text carrying its own offset or "Z" names an instant already.
+        if (parsed.Kind != DateTimeKind.Unspecified) return AsUtc(parsed);
+        var zone = Zone;
+        return zone.IsInvalidTime(parsed)
+            ? DateTime.SpecifyKind(parsed - zone.BaseUtcOffset, DateTimeKind.Utc)
+            : TimeZoneInfo.ConvertTimeToUtc(parsed, zone);
+    }
+
     /// <summary>The hover title for a time: the exact instant in UTC, labelled so.</summary>
     public string UtcTooltip(DateTime utc) =>
         AsUtc(utc).ToString(UtcTooltipFormat, CultureInfo.InvariantCulture) + " UTC";

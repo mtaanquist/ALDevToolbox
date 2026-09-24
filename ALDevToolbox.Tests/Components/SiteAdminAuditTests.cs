@@ -40,6 +40,7 @@ public sealed class SiteAdminAuditTests : IDisposable
         _db.OrgContext.IsSiteAdmin = true;
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
                 .AddInterceptors(_db.CommandTracker));
@@ -150,6 +151,79 @@ public sealed class SiteAdminAuditTests : IDisposable
             cut.FindAll(".audit__entry").Should().HaveCount(1,
                 "EntityType filter narrows the SearchAuditAsync result; the page must "
                 + "respect the query string so bookmarked slices keep working");
+        });
+    }
+    [Theory]
+    // Clocks go forward at 01:00 UTC on 2026-03-29. The early change is at
+    // 01:45 local (+01:00), the late one at 03:15 local (+02:00).
+    [InlineData("from=2026-03-29T03:00", "bob@example.com")]
+    [InlineData("to=2026-03-29T02:00", "alice@example.com")]
+    public async Task Date_filters_are_read_in_the_display_zone_across_the_DST_change(string query, string expectedActor)
+    {
+        await _db.NewOrganizationAdminService(_db.NewContext()).SetDisplayTimeZoneAsync("Europe/Copenhagen");
+        await using (var seed = _db.NewContext())
+        {
+            seed.AuditLog.Add(new AuditLogEntry
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                EntityType = AuditEntityType.RuntimeTemplate,
+                EntityId = 1,
+                Action = AuditAction.Updated,
+                ChangedBy = "alice@example.com",
+                Timestamp = new DateTime(2026, 3, 29, 0, 45, 0, DateTimeKind.Utc),
+            });
+            seed.AuditLog.Add(new AuditLogEntry
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                EntityType = AuditEntityType.RuntimeTemplate,
+                EntityId = 1,
+                Action = AuditAction.Updated,
+                ChangedBy = "bob@example.com",
+                Timestamp = new DateTime(2026, 3, 29, 1, 15, 0, DateTimeKind.Utc),
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var nav = _ctx.Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo($"/site-admin/audit?{query}");
+
+        var cut = _ctx.Render<SiteAdminAudit>();
+
+        cut.WaitForAssertion(() =>
+        {
+            // Read as UTC, "from 03:00" would keep neither row and "to 02:00"
+            // would keep both; only the zone-aware reading splits them.
+            var rows = cut.FindAll(".audit__entry");
+            rows.Should().HaveCount(1, "the typed time is a wall-clock time in the zone the rows are shown in");
+            rows[0].TextContent.Should().Contain(expectedActor);
+        });
+    }
+
+    [Fact]
+    public async Task Rows_show_their_time_in_the_display_zone_with_UTC_on_hover()
+    {
+        await _db.NewOrganizationAdminService(_db.NewContext()).SetDisplayTimeZoneAsync("Europe/Copenhagen");
+        await using (var seed = _db.NewContext())
+        {
+            seed.AuditLog.Add(new AuditLogEntry
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                EntityType = AuditEntityType.RuntimeTemplate,
+                EntityId = 1,
+                Action = AuditAction.Updated,
+                ChangedBy = "alice@example.com",
+                Timestamp = new DateTime(2026, 7, 1, 10, 0, 0, DateTimeKind.Utc),
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.Render<SiteAdminAudit>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var time = cut.Find(".audit__entry time");
+            time.TextContent.Should().Be("2026-07-01 12:00");
+            time.GetAttribute("title").Should().Be("2026-07-01 10:00:00 UTC");
         });
     }
 }

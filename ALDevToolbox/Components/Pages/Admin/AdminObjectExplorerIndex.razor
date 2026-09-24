@@ -144,7 +144,7 @@
                         </td>
                         <td>@r.SourceFileCount.ToString("N0")</td>
                         <td>@FormatBytes(r.SourceContentLength)</td>
-                        <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
+                        <td><Timestamp Value="@r.ImportedAt" Format="yyyy-MM-dd" /></td>
                         <td class="data-table__actions">
                             <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{r.Id}/manage")"
                                title="Edit details, add modules, translations, delete">

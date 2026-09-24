@@ -35,7 +35,19 @@
                     The figures are close estimates, not exact measurements.
                 </p>
             </div>
-            <span class="form-actions__note">@RefreshedNote()</span>
+            @if (_rows is { Count: > 0 })
+            {
+                <span class="form-actions__note">
+                    @if (LatestMeasurement() is { } measured)
+                    {
+                        <text>Measured <Timestamp Value="@measured" />, and again every hour</text>
+                    }
+                    else
+                    {
+                        <text>Not measured yet - the first measurement runs shortly after start-up</text>
+                    }
+                </span>
+            }
         </div>
 
         @if (_rows is null)
@@ -154,18 +166,15 @@
     /// watching a number they just changed. Says so next to them rather than in
     /// a paragraph above the card.
     /// </summary>
-    private string RefreshedNote()
+    private DateTime? LatestMeasurement()
     {
-        if (_rows is null or { Count: 0 }) return string.Empty;
-
+        if (_rows is null) return null;
         DateTime? latest = null;
         foreach (var r in _rows)
         {
             if (r.ComputedAt is { } at && (latest is null || at > latest)) latest = at;
         }
-        return latest is { } when
-            ? $"Measured {when:yyyy-MM-dd HH:mm} UTC, and again every hour"
-            : "Not measured yet - the first measurement runs shortly after start-up";
+        return latest;
     }
 
     private static string FormatBytes(long bytes)

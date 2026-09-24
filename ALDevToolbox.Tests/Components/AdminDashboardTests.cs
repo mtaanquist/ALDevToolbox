@@ -54,6 +54,7 @@ public sealed class AdminDashboardTests : IDisposable
             .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)),
             ServiceLifetime.Scoped);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddScoped<DashboardService>();
         _ctx.Services.AddScoped<AuditService>();
         _ctx.Services.AddScoped(sp => _db.NewOrganizationConfigService(sp.GetRequiredService<AppDbContext>()));
@@ -128,6 +129,12 @@ public sealed class AdminDashboardTests : IDisposable
             rows[0].GetAttribute("aria-label").Should().BeNull(
                 "aria-label on the row would replace the link's own name");
             cut.Markup.Should().Contain("newcomer@cronus.example");
+
+            // The cue's foot is text followed by a <Timestamp>; the space
+            // between them is easy to lose to Razor's whitespace trimming.
+            var foot = cut.Find(".cue--attention .cue__foot span").TextContent;
+            foot.Should().Be("Oldest arrived 3 days ago");
+            rows[0].QuerySelector(".activity__time time")!.TextContent.Should().Be("3 days ago");
         });
     }
 

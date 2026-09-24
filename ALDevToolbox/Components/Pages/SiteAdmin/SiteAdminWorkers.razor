@@ -71,8 +71,8 @@
                             @Friendly(row.Name)
                             <div class="u-muted">@row.Name</div>
                         </td>
-                        <td class="u-muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "Not busy")</td>
-                        <td class="u-muted">@(row.LastTickUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "Never")</td>
+                        <td class="u-muted"><Timestamp Value="@row.ActiveSinceUtc" Format="yyyy-MM-dd HH:mm:ss" Placeholder="Not busy" /></td>
+                        <td class="u-muted"><Timestamp Value="@row.LastTickUtc" Format="yyyy-MM-dd HH:mm:ss" Placeholder="Never" /></td>
                         <td class="u-muted">
                             @FormatSpan(row.MaxActiveDuration) busy@(
                                 row.MaxIdleSilence is null ? "" : $", {FormatSpan(row.MaxIdleSilence.Value)} silent"
@@ -122,7 +122,7 @@
                         <div class="code-block__bar">
                             <span class="code-block__name">
                                 <a href="/object-explorer/release/@f.ReleaseId">@(f.ReleaseLabel ?? $"Release {f.ReleaseId}")</a>
-                                failed @(f.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "")
+                                failed <Timestamp Value="@f.CompletedAt" Format="yyyy-MM-dd HH:mm:ss" />
                             </span>
                         </div>
                         <pre>@f.ErrorMessage</pre>
@@ -154,9 +154,9 @@
                             <a href="/object-explorer/release/@j.ReleaseId">@(j.ReleaseLabel ?? j.ReleaseId.ToString())</a>
                         </td>
                         <td class="u-muted">@j.Kind</td>
-                        <td class="u-muted">@j.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
-                        <td class="u-muted">@(j.StartedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "-")</td>
-                        <td class="u-muted">@(j.CompletedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "-")</td>
+                        <td class="u-muted"><Timestamp Value="@j.CreatedAt" /></td>
+                        <td class="u-muted"><Timestamp Value="@j.StartedAt" Placeholder="-" /></td>
+                        <td class="u-muted"><Timestamp Value="@j.CompletedAt" Placeholder="-" /></td>
                     </tr>
                 }
                 </tbody>

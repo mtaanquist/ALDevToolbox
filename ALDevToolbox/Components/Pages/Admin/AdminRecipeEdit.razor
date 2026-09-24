@@ -225,7 +225,7 @@
                                         }
                                     </td>
                                     <td>@(d.DownloadedByUser?.Email ?? "—")</td>
-                                    <td>@d.DownloadedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td><Timestamp Value="@d.DownloadedAt" /></td>
                                 </tr>
                             }
                         </tbody>

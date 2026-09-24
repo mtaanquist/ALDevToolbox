@@ -19,7 +19,7 @@
         {
             <text>
                 Suggested by @(s.SuggestedByUser?.DisplayName ?? "an unknown user")
-                on @s.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")
+                on <Timestamp Value="@s.RequestedAt" />
             </text>
         }
         else if (_loaded)

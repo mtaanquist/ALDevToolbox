@@ -45,8 +45,15 @@
                 <div>
                     <h2 class="card__title">@_token.Name</h2>
                     <p class="card__sub">
-                        Created @_token.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'") ·
-                        @(_token.ExpiresAt is null ? "no expiry" : "expires " + _token.ExpiresAt.Value.ToString("yyyy-MM-dd"))
+                        Created <Timestamp Value="@_token.CreatedAt" />
+                        @if (_token.ExpiresAt is { } expires)
+                        {
+                            <text> · expires <Timestamp Value="@expires" Format="yyyy-MM-dd" /></text>
+                        }
+                        else
+                        {
+                            <text> · no expiry</text>
+                        }
                     </p>
                 </div>
             </div>

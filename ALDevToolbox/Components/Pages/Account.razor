@@ -115,7 +115,7 @@ else
                 <Alert Tone="AlertTone.Info" Icon="mail" Role="status">
                     <span>
                         Pending email change to <strong>@_user.PendingEmail</strong>
-                        (requested @_user.PendingEmailAt?.ToString("yyyy-MM-dd HH:mm 'UTC'")).
+                        (requested <Timestamp Value="@_user.PendingEmailAt" />).
                         The new address still needs to click the confirmation link.
                     </span>
                 </Alert>
@@ -165,7 +165,7 @@ else
                     </div>
                     <div class="meta-item">
                         <span class="meta-item__label">Member since</span>
-                        <span class="meta-item__value">@_user.CreatedAt.ToLocalTime().ToString("d MMMM yyyy")</span>
+                        <span class="meta-item__value"><Timestamp Value="@_user.CreatedAt" Format="d MMMM yyyy" /></span>
                     </div>
                 </div>
 
@@ -363,8 +363,8 @@ else
                                 {
                                     <tr>
                                         <td>@p.Nickname</td>
-                                        <td class="u-muted">@p.CreatedAt.ToLocalTime().ToString("d MMM yyyy")</td>
-                                        <td class="u-muted">@(p.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "Never")</td>
+                                        <td class="u-muted"><Timestamp Value="@p.CreatedAt" Format="d MMM yyyy" /></td>
+                                        <td class="u-muted"><Timestamp Value="@p.LastUsedAt" Format="d MMM yyyy" Placeholder="Never" /></td>
                                         <td class="data-table__actions">
                                             @* Static message: a nickname is free text and an
                                                apostrophe in it would end the JS literal. *@
@@ -436,8 +436,9 @@ else
                         <div class="setting-list">
                             @foreach (var link in _entraLinks)
                             {
-                                <SettingRow Name="@link.DisplayIdentity"
-                                            Hint="@($"Microsoft account, connected {link.CreatedAt.ToLocalTime():d MMM yyyy}.")">
+                                <SettingRow Name="@link.DisplayIdentity">
+                                    <HintContent>Microsoft account, connected <Timestamp Value="@link.CreatedAt" Format="d MMM yyyy" />.</HintContent>
+                                    <ChildContent>
                                     <span class="u-row">
                                         <StatusPill Tone="success">Connected</StatusPill>
                                         <button type="button" class="btn btn--sm btn--danger"
@@ -447,10 +448,16 @@ else
                                         </button>
                                     </span>
                                     <span class="form-actions__note">
-                                        @(link.LastLoginAt is { } ll
-                                            ? $"Last signed in {ll.ToLocalTime():d MMM yyyy}"
-                                            : "Not used to sign in yet")
+                                        @if (link.LastLoginAt is { } ll)
+                                        {
+                                            <text>Last signed in <Timestamp Value="@ll" Format="d MMM yyyy" /></text>
+                                        }
+                                        else
+                                        {
+                                            <text>Not used to sign in yet</text>
+                                        }
                                     </span>
+                                    </ChildContent>
                                 </SettingRow>
                             }
                         </div>
@@ -578,8 +585,8 @@ else
                                         <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                                         <td>@t.Name<div class="u-muted"><code class="code">@t.TokenPrefix...</code></div></td>
                                         <td>Acts as you</td>
-                                        <td class="u-muted">@(t.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "Never")</td>
-                                        <td class="u-muted">@(t.ExpiresAt is { } exp ? exp.ToLocalTime().ToString("d MMM yyyy") : "Never")</td>
+                                        <td class="u-muted"><Timestamp Value="@t.LastUsedAt" Format="d MMM yyyy" Placeholder="Never" /></td>
+                                        <td class="u-muted"><Timestamp Value="@t.ExpiresAt" Format="d MMM yyyy" Placeholder="Never" /></td>
                                         <td class="data-table__actions">
                                             <form method="post" action="/auth/account/access-tokens/@t.Id/revoke"
                                                   onsubmit="return confirm('Revoke this token? Whatever is using it stops working straight away, and this cannot be undone.');">
@@ -617,8 +624,8 @@ else
                                         <tr class="@RowStateIcon.RowClass(state)">
                                             <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                                             <td>@t.Name<div class="u-muted"><code class="code">@t.TokenPrefix...</code></div></td>
-                                            <td class="u-muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
-                                            <td class="u-muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                                            <td class="u-muted"><Timestamp Value="@t.CreatedAt" Format="yyyy-MM-dd" /></td>
+                                            <td class="u-muted"><Timestamp Value="@t.ExpiresAt" Format="yyyy-MM-dd" Placeholder="Never" /></td>
                                         </tr>
                                     }
                                     </tbody>
@@ -682,7 +689,7 @@ else
                                             }
                                         </td>
                                         <td>@HumanScopes(c.Scopes)</td>
-                                        <td class="u-muted">@c.GrantedAt.ToLocalTime().ToString("d MMM yyyy")</td>
+                                        <td class="u-muted"><Timestamp Value="@c.GrantedAt" Format="d MMM yyyy" /></td>
                                         <td class="data-table__actions">
                                             <button type="button" class="btn btn--sm btn--danger"
                                                     @onclick="() => DisconnectClientAsync(c)">Disconnect</button>
@@ -718,8 +725,8 @@ else
                                             <td class="data-table__col-state"><RowStateIcon State="revoked" /></td>
                                             <td>@c.DisplayName</td>
                                             <td class="u-muted">@HumanScopes(c.Scopes)</td>
-                                            <td class="u-muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
-                                            <td class="u-muted">@(c.RevokedAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                                            <td class="u-muted"><Timestamp Value="@c.GrantedAt" Format="yyyy-MM-dd" /></td>
+                                            <td class="u-muted"><Timestamp Value="@c.RevokedAt" Format="yyyy-MM-dd" Placeholder="Never" /></td>
                                         </tr>
                                     }
                                     </tbody>
@@ -836,7 +843,7 @@ else
                                         <div class="u-muted">@GitHubMembershipLine</div>
                                     </td>
                                     <td class="u-muted">
-                                        @(_github.LinkedAt is { } linkedAt ? linkedAt.ToLocalTime().ToString("d MMM yyyy") : "-")
+                                        <Timestamp Value="@_github.LinkedAt" Format="d MMM yyyy" Placeholder="-" />
                                     </td>
                                     <td class="data-table__actions">
                                         <button type="button" class="btn btn--sm btn--danger"
@@ -1047,7 +1054,7 @@ else
                                            the missing thing instead of the host. *@
                                         <div class="u-muted">@RepoRowText(p, f.HasToken)</div>
                                     </td>
-                                    <td class="u-muted">@(f.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "Never")</td>
+                                    <td class="u-muted"><Timestamp Value="@f.LastUsedAt" Format="d MMM yyyy" Placeholder="Never" /></td>
                                     <td class="data-table__actions">
                                         @if (f.HasToken)
                                         {

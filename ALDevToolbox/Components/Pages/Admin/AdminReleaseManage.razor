@@ -167,7 +167,7 @@
                                         }
                                         @if (r.CommitDate is { } d)
                                         {
-                                            <span> · @d.ToString("yyyy-MM-dd")</span>
+                                            <span> · <Timestamp Value="@d" Format="yyyy-MM-dd" /></span>
                                         }
                                     }
                                     else
