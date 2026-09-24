@@ -221,7 +221,7 @@ public sealed class UpgradesPageTests : IDisposable
             .Select(i => i.TextContent.Trim()).ToList();
         items.Should().Equal(
             "Update history", "Move this date to the latest", "Start this update...",
-            "Open environment", "Open in Business Central");
+            "Change the next version...", "Open environment", "Open in Business Central");
         // The tenant comes from the solution's own connection; the name is a path segment.
         cells.Last().QuerySelector("a.menu__item[target=_blank]")!.GetAttribute("href").Should().Be(
             "https://businesscentral.dynamics.com/11111111-2222-3333-4444-555555555555/Production");
@@ -239,15 +239,19 @@ public sealed class UpgradesPageTests : IDisposable
 
         var cut = RenderWithOneRow();
 
-        // One bar, not a filter row over a selection row: view, search, commands.
-        cut.Find(".cmdbar .cmdbar__row > .search.cmdbar__search input[type=search]").Should().NotBeNull();
+        // One bar, not a filter row over a selection row: search, view, commands - the
+        // order Solutions and Environments use (#966).
+        cut.Find(".cmdbar .cmdbar__row > .search.cmdbar__search:first-child input[type=search]").Should().NotBeNull();
+        cut.Find(".cmdbar .cmdbar__row > .search + .cmdbar__group select").Should().NotBeNull();
         cut.FindAll(".filter-bar").Should().BeEmpty();
 
         var commands = cut.FindAll(".cmdbar .cmdbar__group:last-child button");
-        commands.Select(c => c.TextContent.Trim()).Should().Equal("Move dates", "Start update...", "Refresh");
+        commands.Select(c => c.TextContent.Trim()).Should().Equal(
+            "Move dates", "Start update...", "Change the next version...", "Refresh");
         commands[0].HasAttribute("disabled").Should().BeTrue();
         commands[1].HasAttribute("disabled").Should().BeTrue();
-        commands[2].HasAttribute("disabled").Should().BeFalse();
+        commands[2].HasAttribute("disabled").Should().BeTrue();
+        commands[3].HasAttribute("disabled").Should().BeFalse();
         // The page's one primary.
         cut.FindAll(".btn--primary").Should().ContainSingle().Which.TextContent.Trim().Should().Be("Move dates");
 
@@ -314,6 +318,218 @@ public sealed class UpgradesPageTests : IDisposable
             cut.FindAll(".data-table tbody tr").Should().BeEmpty();
             cut.Find(".empty-state__title").TextContent.Should().Be("No environments match these filters");
         });
+    }
+
+    // ── The solution's short name (#966) ───────────────────────────────
+
+    [Fact]
+    public async Task The_short_name_shows_after_the_solution_and_the_search_finds_it()
+    {
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Production", shortName: "CRD");
+        await SeedFleetEnvironmentAsync("Fabrikam Norway", "Production");
+
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+
+        var shortName = cut.Find("td.upg-customer .sol-list__short");
+        shortName.TextContent.Should().Be("CRD");
+        shortName.GetAttribute("title").Should().Be("Short name");
+
+        // Colleagues say "CRD" aloud; a search for it in any case finds the customer.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".cmdbar__search input").Input("crd");
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle();
+            rows[0].QuerySelector("td.upg-customer a")!.TextContent.Should().Be("CRONUS Denmark");
+        });
+    }
+
+    // ── Change the next version (#960) ──────────────────────────────────
+
+    /// <summary>
+    /// One environment per preview group the page can reach from a selection of rows it
+    /// may act on: 27.5 moving forward, 30.0 moving back, one already on a later version,
+    /// one already set to 29.2, one not offered it, one with an update running.
+    /// </summary>
+    private async Task SeedVersionFleetAsync()
+    {
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Production",
+            nextVersion: "27.5", offered: ["29.2", "27.5"]);
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Sandbox", type: "Sandbox",
+            nextVersion: "30.0", offered: ["30.0", "29.2"]);
+        await SeedFleetEnvironmentAsync("Fabrikam Norway", "Production",
+            version: "29.3.1.0", nextVersion: "30.0", offered: ["30.0"]);
+        await SeedFleetEnvironmentAsync("Litware Sweden", "Production",
+            nextVersion: "29.2", offered: ["29.2"]);
+        await SeedFleetEnvironmentAsync("Northwind Finland", "Production",
+            nextVersion: "28.1", offered: ["28.1"]);
+        await SeedFleetEnvironmentAsync("Tailspin Iceland", "Production",
+            nextVersion: "29.2", offered: ["29.2"], nextStatus: "Running");
+    }
+
+    private IRenderedComponent<UpgradesPage> OpenVersionDialog(int rows)
+    {
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(rows));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("thead .data-table__col-check input").Change(true);
+            cut.FindAll(".cmdbar .cmdbar__group:last-child button")[2].HasAttribute("disabled").Should().BeFalse();
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".cmdbar .cmdbar__group:last-child button")[2].Click();
+            cut.Find(".confirm-dialog__title").TextContent.Should().Be("Change the next version?");
+        });
+        return cut;
+    }
+
+    private static void Pick(IRenderedComponent<UpgradesPage> cut, string version) =>
+        cut.FindAll(".upg-version__opts input[type=radio]")
+            .First(r => r.GetAttribute("value") == version)
+            .Change(version);
+
+    [Fact]
+    public async Task The_picker_lists_every_version_on_offer_newest_first_with_how_many_it_is_for()
+    {
+        await SeedVersionFleetAsync();
+
+        var cut = OpenVersionDialog(rows: 6);
+
+        cut.WaitForAssertion(() =>
+        {
+            var options = cut.FindAll(".upg-version__opts .upg-when__opt")
+                .Select(o => o.QuerySelector(".upg-version__name")!.TextContent + " "
+                             + o.QuerySelector(".upg-version__count")!.TextContent)
+                .ToList();
+            options.Should().Equal(
+                "30.0 for 2 of the selected",
+                "29.2 for 4 of the selected",
+                "28.1 for 1 of the selected",
+                "27.5 for 1 of the selected");
+            // Nothing is picked for the person, so there is nothing to preview or confirm yet.
+            cut.FindAll(".upg-preview").Should().BeEmpty();
+            cut.FindAll(".confirm-dialog__actions .btn").Last().HasAttribute("disabled").Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task Picking_a_version_sorts_every_selected_environment_into_its_group()
+    {
+        await SeedVersionFleetAsync();
+        var cut = OpenVersionDialog(rows: 6);
+
+        cut.WaitForAssertion(() =>
+        {
+            Pick(cut, "29.2");
+            var heads = cut.FindAll(".upg-preview__head").Select(h => h.TextContent.Trim()).ToList();
+            heads.Should().Equal(
+                "Will change (2)", "Already on it (1)", "Already chosen (1)", "Not offered (1)", "Update under way (1)");
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var lines = cut.FindAll(".upg-preview li")
+                .Select(li => li.QuerySelector(".upg-preview__what")!.TextContent.Trim())
+                .ToList();
+            lines.Should().Contain("27.5 to 29.2");
+            lines.Should().Contain("30.0 back to 29.2");
+            lines.Should().Contain("Already on 29.2");
+            lines.Should().Contain("Already set to 29.2");
+            lines.Should().Contain("Business Central does not offer 29.2 to this environment yet");
+            lines.Should().Contain("An update is already running, and Microsoft finishes it");
+
+            cut.Find(".upg-version__date").TextContent.Trim()
+                .Should().Be("Business Central sets the date; use Move dates afterwards to push it out.");
+            cut.Find(".confirm-dialog .upg-preview__count").TextContent
+                .Should().Be("2 environments, including 1 production.");
+        });
+    }
+
+    [Fact]
+    public async Task The_change_waits_for_the_typed_word_like_the_other_production_writes()
+    {
+        await SeedVersionFleetAsync();
+        var cut = OpenVersionDialog(rows: 6);
+
+        cut.WaitForAssertion(() =>
+        {
+            Pick(cut, "29.2");
+            cut.Find(".confirm-dialog__gate-label").TextContent.Should().Contain("update");
+            var confirm = cut.FindAll(".confirm-dialog__actions .btn").Last();
+            confirm.TextContent.Trim().Should().Be("Change to 29.2");
+            confirm.HasAttribute("disabled").Should().BeTrue();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".confirm-dialog__gate input").Input("update");
+            cut.FindAll(".confirm-dialog__actions .btn").Last().HasAttribute("disabled").Should().BeFalse();
+        });
+    }
+
+    [Fact]
+    public async Task A_version_nobody_in_the_selection_can_move_to_holds_the_confirm()
+    {
+        await SeedVersionFleetAsync();
+        var cut = OpenVersionDialog(rows: 6);
+
+        // 28.1 is offered only to the environment already set to it.
+        cut.WaitForAssertion(() =>
+        {
+            Pick(cut, "28.1");
+            cut.FindAll(".upg-preview__head").Select(h => h.TextContent.Trim())
+                .Should().NotContain(h => h.StartsWith("Will change"));
+            cut.Find(".confirm-dialog .upg-preview__count").TextContent.Should().Be("Nothing to change for this version.");
+        });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".confirm-dialog__gate input").Input("update");
+            cut.FindAll(".confirm-dialog__actions .btn").Last().HasAttribute("disabled").Should().BeTrue();
+        });
+    }
+
+    private async Task SeedFleetEnvironmentAsync(
+        string projectName, string environmentName, string type = "Production", string? shortName = null,
+        string version = "27.4.12345.0", string? nextVersion = null, List<string>? offered = null,
+        string? nextStatus = "Scheduled")
+    {
+        await using var ctx = _db.NewContext();
+        var project = await ctx.OeProjects.FirstOrDefaultAsync(p => p.Name == projectName);
+        if (project is null)
+        {
+            project = new OeProject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Name = projectName,
+                ShortName = shortName,
+                BcTenantId = TenantId,
+                CreatedByUserId = AdminUserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.OeProjects.Add(project);
+            await ctx.SaveChangesAsync();
+        }
+
+        ctx.OeProjectEnvironments.Add(new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = project.Id,
+            Name = environmentName,
+            Type = type,
+            ApplicationFamily = "BusinessCentral",
+            Status = "Active",
+            Version = version,
+            FetchedAt = DateTime.UtcNow,
+            BcNextUpdateVersion = nextVersion,
+            BcNextUpdateStatus = nextVersion is null ? null : nextStatus,
+            BcOfferedVersions = offered,
+            BcNextUpdateFetchedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
     }
 
     [Fact]

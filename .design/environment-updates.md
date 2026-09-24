@@ -294,10 +294,12 @@ yet.
 One table, one row per non-missing environment of every project the viewer can see: the
 customer, its state as a glyph, the environment over its type, the version it is on, the
 mirrored next update (version, when, and a marker when it ignores Microsoft's window), the
-latest date that update can still be pushed to, how old the mirror is, and a row menu. Above
-it sits one sticky command bar: a view select (all, update waiting, and each environment type
-with and without an update waiting), a search that filters as you type, and the commands. The
-filters live in the address (`q`, `type`, `waiting`); loading, empty and populated states as
+latest date that update can still be pushed to, how old the mirror is, and a row menu. The
+solution's short name follows its name, as on the Solutions list (#966). Above it sits one
+sticky command bar: a search that filters as you type and matches the solution, its short name
+and the environment, a view select (all, update waiting, and each environment type with and
+without an update waiting), and the commands - search first, then the filter, then the
+commands, the order Solutions and Environments use (#966). The filters live in the address (`q`, `type`, `waiting`); loading, empty and populated states as
 usual. The layout is the design's archetype 15 - see "The Upgrades page, against its designed
 sheet" below.
 
@@ -309,7 +311,7 @@ in the same query from `UpdateOpsProjectPredicate`, so a fleet of a hundred cost
 trip; a row the viewer may see but not act on shows a lock instead of a checkbox. The org
 fence sits underneath both.
 
-**Two actions, two voices.** Each runs over the checkbox selection - or, from a row's own
+**Three actions, each in its own voice.** Each runs over the checkbox selection - or, from a row's own
 menu, over that one row, leaving the ticked rows as they were - behind a confirm that
 lists every selected environment with what will happen to it and — grouped at the bottom
 under its own heading — the ones that will be passed over and why.
@@ -323,6 +325,16 @@ under its own heading — the ones that will be passed over and why.
   updates whatever the
   environment's update window says, counts the production environments in the selection just
   above the gate, and holds its confirm button disabled until the person types "update".
+- **Change the next version...** (#960) opens a picker of the versions Business Central last
+  offered the selected rows, newest first, each "for N of the selected"; nothing is picked
+  for the person unless only one version is on offer. Picking one previews every row under
+  the groups of "The three writes" - Will change (with "28.5 to 29.2" or "30.0 back to 29.2"),
+  Already on it, Already chosen, Not offered, Update under way, No access, Missing or being
+  deleted - says once that Business Central sets the date and Move dates is the way to push
+  it out afterwards, counts the production rows, and asks for the same typed "update". The
+  run is immediate (no booking in this version) and sends only the rows the preview put under
+  Will change; the others are reported on their rows with the preview's reason, so a row
+  with a booked update never has its version changed under the booking.
 
 That dialog re-voices itself on the choice inside it, because immediate and booked carry
 opposite promises. Immediately keeps the danger button, the typed word, and "once it starts
@@ -653,6 +665,9 @@ Where it still differs, and why:
 | Nothing under the next update's date | The out-of-window warning, a booking marker with its Cancel, and the live per-row result of a run | Behaviour the sheet does not draw. They sit under the date because a booked slot and Business Central's date are two answers to one question. |
 | Sortable Customer and Next update headers; Previous / Next | Fixed order; count only | As on the Environments list. |
 | The table directly in the page | The table in a box that scrolls sideways, with the checkbox, state and Solution columns pinned | The page container clips rather than scrolls (#574), and nine columns do not fit a narrow window. |
+| The view select first in the bar, then the search | The search first, then the view select, then the commands | The order Solutions and Environments use, with the same search width and F3. Maintainer's decision, 2026-09-24 (#966). |
+| Two fleet commands | A third, **Change the next version...**, beside them in the bar and in the row menu | #960. No sheet: it reuses the bar's disabled-until-ticked button and the other dialogs' preview (grouped rows under `upg-preview__head` headings, the count line, the typed word). **Needs a design pass upstream.** |
+| The solution name alone | The name, then the short name in the Solutions list's quieter tone | #966: customers are called by their abbreviation in daily speech; the search matches it too. |
 
 Row menus anywhere in the app now open upwards when there is no room under them
 (`row-actions-menu.js` sets the sheet's `.ra--up`), which this table needed for its last rows.

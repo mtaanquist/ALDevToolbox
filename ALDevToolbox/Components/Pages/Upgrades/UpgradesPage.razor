@@ -18,8 +18,8 @@
 
 @*
     Upgrades: every customer environment in one table, with the date Business
-    Central will next update it, and the two moves the upgrade team makes on
-    those dates in bulk.
+    Central will next update it, and the three moves the upgrade team makes in
+    bulk: push the dates out, start the update, and change the version it goes to.
 
     Named user: a member of the BC upgrade team who schedules platform updates
     for around a hundred customers. Twice a quarter they push every customer's
@@ -28,8 +28,9 @@
     Central; they know nothing about this codebase.
 
     Archetype 15 (actionable list, PageUpgrades.dc.html): one sticky command bar
-    over a table with a selection column. The bar holds the view, the search and
-    the commands; commands that need a selection are plainly disabled until rows
+    over a table with a selection column. The bar holds the search, the view and
+    the commands, in that order - the order Solutions and Environments use (#966;
+    the sheet draws the view first, and the maintainer chose alignment); commands that need a selection are plainly disabled until rows
     are ticked, the way Business Central's own lists behave. No counter and no
     instruction - the checkboxes and the disabled buttons already say it. Filters
     live in the address, so a filtered fleet is something you can send a colleague.
@@ -111,6 +112,16 @@
     <Toolbar>
         <div class="cmdbar">
             <div class="cmdbar__row">
+                @* Filters as you type - the fleet is already in hand - and puts the
+                   search in the address once you leave the box or press Enter. *@
+                <span class="search cmdbar__search upg-search">
+                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                    <input class="input" type="search" value="@_search"
+                           placeholder="Search solution or environment..."
+                           aria-label="Search solutions and environments"
+                           data-page-search aria-keyshortcuts="F3" title="Search solutions and environments (F3)"
+                           @oninput="OnSearchInput" @onchange="OnSearchCommitted" />
+                </span>
                 <div class="cmdbar__group">
                     <SelectBox Class="upg-view">
                         <select class="select" aria-label="Filter environments"
@@ -132,16 +143,6 @@
                         </select>
                     </SelectBox>
                 </div>
-                @* Filters as you type - the fleet is already in hand - and puts the
-                   search in the address once you leave the box or press Enter. *@
-                <span class="search cmdbar__search">
-                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-                    <input class="input" type="search" value="@_search"
-                           placeholder="Search solution or environment..."
-                           aria-label="Search solutions and environments"
-                           data-page-search aria-keyshortcuts="F3" title="Search solutions and environments (F3)"
-                           @oninput="OnSearchInput" @onchange="OnSearchCommitted" />
-                </span>
                 <div class="cmdbar__group">
                     <button type="button" class="btn btn--primary" disabled="@ActionsDisabled"
                             title="Move the selected environments to their latest possible update date"
@@ -154,6 +155,12 @@
                             @onclick="() => ConfirmUpdateNowAsync()">
                         <Icon Name="zap" Width="15" Height="15" />
                         <span>Start update...</span>
+                    </button>
+                    <button type="button" class="btn" disabled="@ActionsDisabled"
+                            title="Choose which Business Central version the selected environments update to next"
+                            @onclick="() => ConfirmSelectVersionAsync()">
+                        <Icon Name="tag" Width="15" Height="15" />
+                        <span>Change the next version...</span>
                     </button>
                     <button type="button" class="btn" disabled="@_running"
                             title="Read the environments again from Business Central"
@@ -238,7 +245,13 @@
                                 <span class="cell-stack__sub">@row.EnvironmentType</span>
                             </span>
                         </td>
-                        <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
+                        <td class="upg-customer">
+                            <a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a>
+                            @if (!string.IsNullOrEmpty(row.ProjectShortName))
+                            {
+                                <span class="sol-list__short" title="Short name">@row.ProjectShortName</span>
+                            }
+                        </td>
                         @* Major.minor in both version columns so "27.5" and "27.6" can be
                            compared at a glance; the full build is on hover. *@
                         <td class="u-num" title="@row.Version">@ShortVersion(row.Version)</td>
@@ -320,6 +333,8 @@
                                             @onclick="() => ConfirmPushAsync(row)">Move this date to the latest</button>
                                     <button type="button" class="menu__item" role="menuitem" disabled="@_running"
                                             @onclick="() => ConfirmUpdateNowAsync(row)">Start this update...</button>
+                                    <button type="button" class="menu__item" role="menuitem" disabled="@_running"
+                                            @onclick="() => ConfirmSelectVersionAsync(row)">Change the next version...</button>
                                 }
                                 @* The two ways out of this page, after the things done on it. *@
                                 <div class="menu__sep"></div>
@@ -478,6 +493,56 @@
     <p class="upg-preview__count">@PreviewCountLine()</p>
 </ConfirmDialog>
 
+@* The third move (#960): "everyone goes to 29.2". The versions come from what Business
+   Central last offered the selected rows, so the list can only hold something at least
+   one of them can take, and each says how many. Picking one sorts every selected row into
+   the group it lands in, from the same mirror - the run re-reads each environment before
+   it writes, so a stale mirror can make this preview hopeful but never the write wrong.
+   The typed word is the one the page already asks for before touching a customer's
+   production update. *@
+<ConfirmDialog @ref="_versionConfirm" Wide="true"
+               Title="@(_single is null ? "Change the next version?" : "Change this environment's next version?")"
+               Message="Pick the Business Central version to update to next. Environments set to a later version move back to it."
+               ConfirmLabel="@VersionConfirmLabel" ConfirmButtonClass="btn" ConfirmIcon="tag"
+               ConfirmDisabled="@(_targetVersion is null || !_versionPreview.Any(p => p.WillChange))"
+               RequireWord="update"
+               WorkingContent="@RunProgress()">
+    @if (_versionOptions.Count == 0)
+    {
+        <p class="upg-version__none">
+            Business Central hasn't offered these environments a version to change to. Refresh them, then try again.
+        </p>
+    }
+    else
+    {
+        <fieldset class="upg-when">
+            <legend class="upg-when__legend">Version</legend>
+            <div class="upg-version__opts">
+                @foreach (var option in _versionOptions)
+                {
+                    <label class="upg-when__opt">
+                        <input type="radio" name="upg-version" value="@option.Version"
+                               checked="@(option.Version == _targetVersion)"
+                               @onchange="() => PickVersion(option.Version)" />
+                        <span class="upg-version__name">@option.Version</span>
+                        <span class="upg-version__count">for @option.RowCount of the selected</span>
+                    </label>
+                }
+            </div>
+        </fieldset>
+
+        @if (_targetVersion is not null)
+        {
+            @VersionPreviewList()
+            <p class="upg-version__date">
+                <Icon Name="calendar" Width="13" Height="13" />
+                <span>Business Central sets the date; use Move dates afterwards to push it out.</span>
+            </p>
+            <p class="upg-preview__count">@VersionCountLine()</p>
+        }
+    }
+</ConfirmDialog>
+
 @code {
     [Parameter, SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
     [Parameter, SupplyParameterFromQuery(Name = "type")] public string? TypeFilter { get; set; }
@@ -534,6 +599,18 @@
 
     private ConfirmDialog? _pushConfirm;
     private ConfirmDialog? _nowConfirm;
+    private ConfirmDialog? _versionConfirm;
+
+    // ── Changing the next version (#960) ────────────────────────────────
+
+    /// <summary>What the picker offers for the rows the dialog was opened on, newest first.</summary>
+    private List<OfferedVersionOption> _versionOptions = new();
+
+    /// <summary>The version picked, or null until one is; the preview waits for it.</summary>
+    private string? _targetVersion;
+
+    /// <summary>Every selected row sorted into its group for <see cref="_targetVersion"/>.</summary>
+    private List<SelectVersionPreviewRow> _versionPreview = new();
 
     // ── Booking an update for a slot instead of running it now ──────────
     //
@@ -692,6 +769,7 @@
         {
             q = q.Where(r =>
                 r.ProjectName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || (r.ProjectShortName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
                 || r.EnvironmentName.Contains(_search, StringComparison.OrdinalIgnoreCase));
         }
         if (_type.Length > 0)
@@ -750,7 +828,7 @@
         ? new List<UpgradeFleetRow> { one }
         : _actionableRows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
 
-    // ── The two bulk actions ────────────────────────────────────────────
+    // ── The three bulk actions ──────────────────────────────────────────
 
     private async Task ConfirmPushAsync(UpgradeFleetRow? only = null)
     {
@@ -778,6 +856,19 @@
         }
     }
 
+    private async Task ConfirmSelectVersionAsync(UpgradeFleetRow? only = null)
+    {
+        _single = only;
+        try
+        {
+            await ConfirmSelectVersionCoreAsync();
+        }
+        finally
+        {
+            _single = null;
+        }
+    }
+
     private async Task ConfirmPushCoreAsync()
     {
         var rows = SelectedRows();
@@ -791,7 +882,7 @@
 
         if (await _pushConfirm.OpenAsync())
         {
-            await RunBatchAsync(push: true);
+            await RunBatchAsync(UpgradeActionKind.PushDateToLatest);
         }
     }
 
@@ -827,9 +918,38 @@
 
         if (await _nowConfirm.OpenAsync())
         {
-            await RunBatchAsync(push: false);
+            await RunBatchAsync(UpgradeActionKind.RunNow);
         }
     }
+
+    private async Task ConfirmSelectVersionCoreAsync()
+    {
+        var rows = SelectedRows();
+        if (rows.Count == 0 || _versionConfirm is null) return;
+
+        // Every open starts with nothing picked: a version is a deliberate choice, and
+        // the one picked last week is exactly the wrong thing to have ready this week.
+        // A selection offered only one version has nothing to choose between.
+        _versionOptions = UpgradeFleetService.OfferedVersions(rows);
+        _targetVersion = null;
+        _versionPreview = new();
+        if (_versionOptions.Count == 1) PickVersion(_versionOptions[0].Version);
+
+        if (await _versionConfirm.OpenAsync())
+        {
+            await RunBatchAsync(UpgradeActionKind.SelectVersion);
+        }
+    }
+
+    private void PickVersion(string version)
+    {
+        _targetVersion = version;
+        _versionPreview = UpgradeFleetService.PreviewSelectVersion(SelectedRows(), version, _pending);
+    }
+
+    private string VersionConfirmLabel => _targetVersion is { } version
+        ? $"Change to {version}"
+        : "Change the version";
 
     /// <summary>
     /// Runs the selection one environment at a time, in this page's own circuit.
@@ -843,10 +963,14 @@
     /// reports the same way whichever the person chose. Each row's slot is worked out
     /// from that customer's own time zone.</para>
     /// </summary>
-    private async Task RunBatchAsync(bool push)
+    private async Task RunBatchAsync(UpgradeActionKind kind)
     {
         var rows = SelectedRows();
         if (rows.Count == 0) return;
+
+        var push = kind == UpgradeActionKind.PushDateToLatest;
+        var version = kind == UpgradeActionKind.SelectVersion ? _targetVersion : null;
+        if (kind == UpgradeActionKind.SelectVersion && version is null) return;
 
         StopPolling();
         _running = true;
@@ -870,24 +994,40 @@
                 continue;
             }
 
-            var booking = !push && _scheduleLater;
+            // A version change leaves alone what its preview said it would: a row already
+            // on the version, one not offered it, one with something booked. Asking
+            // Business Central would at best do nothing, and a row with a booked update
+            // would have the version changed under the booking.
+            if (version is not null
+                && _versionPreview.FirstOrDefault(p => p.Row.EnvironmentId == row.EnvironmentId) is { WillChange: false } passed)
+            {
+                _results[row.EnvironmentId] = new RowResult("Skipped — " + passed.Detail, "muted");
+                skipped++;
+                _progressDone = i + 1;
+                continue;
+            }
+
+            var booking = kind == UpgradeActionKind.RunNow && _scheduleLater;
             _progressDone = i;
-            _progressText = (push ? "Moving the date on " : booking ? "Booking " : "Starting the update on ")
+            _progressText = (push ? "Moving the date on " : version is not null ? "Changing the version on "
+                    : booking ? "Booking " : "Starting the update on ")
                 + $"{row.ProjectName} {row.EnvironmentName}...";
             _results[row.EnvironmentId] = new RowResult(
-                push ? "Moving the date..." : booking ? "Booking..." : "Starting the update...", "busy");
+                push ? "Moving the date..." : version is not null ? "Changing the version..."
+                    : booking ? "Booking..." : "Starting the update...", "busy");
             StateHasChanged();
 
             try
             {
-                var kind = push ? UpgradeActionKind.PushDateToLatest : UpgradeActionKind.RunNow;
-                // Push-to-latest is always immediate: it is housekeeping ahead of a
-                // release, not something anyone agrees a time for.
+                // Push-to-latest and the version change are always immediate: the first
+                // is housekeeping ahead of a release, and the second leaves the date to
+                // Business Central. Only starting an update is agreed for a time.
                 var slot = booking ? SlotFor(row) : (DateTimeOffset?)null;
-                var action = await Actions.ScheduleUpgradeActionAsync(row.ProjectId, row.EnvironmentId, kind, slot);
+                var action = await Actions.ScheduleUpgradeActionAsync(
+                    row.ProjectId, row.EnvironmentId, kind, slot, targetVersion: version);
                 _results[row.EnvironmentId] = action.IsPending
                     ? new RowResult($"Booked for {SlotText(row, action.ExecuteAfter)}", "ok", ActionId: action.Id)
-                    : new RowResult(push ? "Date moved" : "Update started", "ok");
+                    : new RowResult(push ? "Date moved" : version is not null ? $"Now set to {version}" : "Update started", "ok");
                 done++;
             }
             catch (PlanValidationException ex)
@@ -934,8 +1074,9 @@
         // The dialog stayed open to show the run; the rows and the summary take over.
         _nowConfirm?.Close();
         _pushConfirm?.Close();
-        _notice = Summary(done, skipped, failed, needSetup, push,
-            !push && _scheduleLater ? BookedForText() : null);
+        _versionConfirm?.Close();
+        _notice = Summary(done, skipped, failed, needSetup, kind, version,
+            kind == UpgradeActionKind.RunNow && _scheduleLater ? BookedForText() : null);
 
         // Re-read the fleet so the table shows what Business Central now says rather
         // than what we asked it for.
@@ -959,18 +1100,22 @@
     /// own time"), or null when it acted immediately. A summary that says only how many
     /// were booked leaves the one fact somebody would double-check off the screen.
     /// </param>
+    /// <param name="version">The version a version change set; null for the other two moves.</param>
     private static Notice Summary(
-        int done, int skipped, int failed, int needSetup, bool push, string? bookedFor)
+        int done, int skipped, int failed, int needSetup, UpgradeActionKind kind, string? version, string? bookedFor)
     {
+        var push = kind == UpgradeActionKind.PushDateToLatest;
         var booking = bookedFor is not null;
         var parts = new List<string>();
         if (done == 0)
         {
-            parts.Add(push ? "No dates were moved" : booking ? "Nothing was booked" : "No updates were started");
+            parts.Add(push ? "No dates were moved" : version is not null ? "No versions were changed"
+                : booking ? "Nothing was booked" : "No updates were started");
         }
         else
         {
-            var verb = push ? "Moved the date on" : booking ? "Booked the update on" : "Started the update on";
+            var verb = push ? "Moved the date on" : version is not null ? $"Set the next version to {version} on"
+                : booking ? "Booked the update on" : "Started the update on";
             var where = $"{done} environment{(done == 1 ? "" : "s")}";
             parts.Add(booking ? $"{verb} {where} {bookedFor}" : $"{verb} {where}");
         }
@@ -1253,9 +1398,15 @@
         // The zone in brackets rather than as "... time", and dropped entirely once there
         // is more than one booking: this sits in a table cell beside the environment name,
         // and the long form wrapped onto three lines.
+        // A booked version change names its version: "Booked for 20:00" alone would read as
+        // the update itself starting then. Nothing on this page books one yet, but the
+        // worker runs them, so the marker has to be able to say so.
         var local = LocalTime(row, next.ExecuteAfter);
+        var what = next.Kind == UpgradeActionKind.SelectVersion && next.TargetVersion is { } version
+            ? $"Booked a change to {version}"
+            : "Booked";
         return waiting.Count == 1
-            ? $"Booked for {local:HH:mm} on {local:d MMM} ({ZoneLabel(row.TimeZone)}) by {next.RequestedByName}"
+            ? $"{what} for {local:HH:mm} on {local:d MMM} ({ZoneLabel(row.TimeZone)}) by {next.RequestedByName}"
             : $"{waiting.Count} bookings - next at {local:HH:mm} on {local:d MMM}";
     }
 
@@ -1396,6 +1547,80 @@
             </ul>
         }
     </div>;
+
+    /// <summary>
+    /// The version change's preview: the rows that will change, then each group that
+    /// will be passed over under its own heading, in the order a person asks "why not
+    /// this one?" - already done, not possible, busy, not theirs, gone. Same markup as
+    /// the other two dialogs, so the three read as one page.
+    /// </summary>
+    private RenderFragment VersionPreviewList() => @<div>
+        @if (_versionPreview.Any(p => p.WillChange))
+        {
+            <p class="upg-preview__head">Will change (@_versionPreview.Count(p => p.WillChange))</p>
+            <ul class="upg-preview">
+                @foreach (var item in _versionPreview.Where(p => p.WillChange))
+                {
+                    <li>
+                        <span class="upg-preview__who">
+                            @item.Row.ProjectName - @item.Row.EnvironmentName
+                            @if (item.Row.IsProduction)
+                            {
+                                <StatusPill Tone="muted" Class="upg-prod"><span>Production</span>
+                                </StatusPill>
+                            }
+                        </span>
+                        <span class="upg-preview__what">@ChangeText(item)</span>
+                    </li>
+                }
+            </ul>
+        }
+        @foreach (var (group, heading) in SkippedGroups)
+        {
+            var items = _versionPreview.Where(p => p.Group == group).ToList();
+            if (items.Count == 0) continue;
+            <p class="upg-preview__head">@heading (@items.Count)</p>
+            <ul class="upg-preview">
+                @foreach (var item in items)
+                {
+                    <li class="upg-preview__skip">
+                        <span class="upg-preview__who">@item.Row.ProjectName - @item.Row.EnvironmentName</span>
+                        <span class="upg-preview__what">@item.Detail</span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>;
+
+    /// <summary>The groups a version change passes over, in the order the preview lists them.</summary>
+    private static readonly (SelectVersionGroup Group, string Heading)[] SkippedGroups =
+    [
+        (SelectVersionGroup.AlreadyOnIt, "Already on it"),
+        (SelectVersionGroup.AlreadyChosen, "Already chosen"),
+        (SelectVersionGroup.NotOffered, "Not offered"),
+        (SelectVersionGroup.UpdateUnderWay, "Update under way"),
+        (SelectVersionGroup.NoAccess, "No access"),
+        (SelectVersionGroup.Missing, "Missing or being deleted"),
+    ];
+
+    /// <summary>
+    /// "28.5 to 29.2", or with a proviso when the environment's offer list has never been
+    /// read: the row is counted as a change, and the read before the write decides.
+    /// </summary>
+    private static string ChangeText(SelectVersionPreviewRow item) => item.OfferUnknown
+        ? $"{item.Detail}, if Business Central offers it"
+        : item.Detail;
+
+    private string VersionCountLine()
+    {
+        var acting = _versionPreview.Where(p => p.WillChange).ToList();
+        if (acting.Count == 0) return "Nothing to change for this version.";
+        var production = acting.Count(p => p.Row.IsProduction);
+        var envs = $"{acting.Count} environment{(acting.Count == 1 ? "" : "s")}";
+        return production == 0
+            ? $"{envs}, none of them production."
+            : $"{envs}, including {production} production.";
+    }
 
     /// <summary>How much of the fleet this is, and how much of it is production.</summary>
     private string PreviewCountLine()
