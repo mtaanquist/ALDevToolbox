@@ -45,14 +45,14 @@
                 <div>
                     <h2 class="card__title">@_token.Name</h2>
                     <p class="card__sub">
-                        Created <Timestamp Value="@_token.CreatedAt" /> ·
+                        Created <Timestamp Value="@_token.CreatedAt" />
                         @if (_token.ExpiresAt is { } expires)
                         {
-                            <text>expires <Timestamp Value="@expires" Format="yyyy-MM-dd" /></text>
+                            <text> · expires <Timestamp Value="@expires" Format="yyyy-MM-dd" /></text>
                         }
                         else
                         {
-                            <text>no expiry</text>
+                            <text> · no expiry</text>
                         }
                     </p>
                 </div>

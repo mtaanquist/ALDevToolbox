@@ -110,13 +110,16 @@
                     <span class="cue__value">@cue.Value.ToString("N0")</span>
                     <span class="cue__rule"></span>
                     <span class="cue__foot">
-                        <span>
-                            @cue.Foot.Text
-                            @if (cue.Foot.At is { } footAt)
+                        @* Razor drops the whitespace between an expression and a
+                           following @if, so the space before the time is explicit. *@
+                        <span>@if (cue.Foot.At is { } footAt)
                             {
-                                <Timestamp Value="@footAt" Relative="true" />
+                                <text>@cue.Foot.Text <Timestamp Value="@footAt" Relative="true" /></text>
                             }
-                        </span>
+                            else
+                            {
+                                @cue.Foot.Text
+                            }</span>
                         <Icon Name="chevron-right" Width="15" Height="15" Css="cue__drill" />
                     </span>
                 </a>
