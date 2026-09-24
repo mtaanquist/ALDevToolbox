@@ -280,7 +280,145 @@ public sealed class UpgradeFleetService
                 .Sum(x => x.BcDatabaseKb),
             e.SoftDeletedOn,
             e.HardDeletePendingOn,
-            _db.OeProjects.Where(manageable).Any(p => p.Id == e.ProjectId));
+            _db.OeProjects.Where(manageable).Any(p => p.Id == e.ProjectId),
+            e.BcOfferedVersions);
+
+    // ── Change the next version (issue #960) ────────────────────────────
+
+    /// <summary>
+    /// The versions the picker offers for <paramref name="rows"/>: every version any of
+    /// them was offered at the last read, as major.minor, newest first, each with how many
+    /// of the rows it is offered to. A row whose offer list has never been read counts
+    /// its mirrored next version instead, which is the one version it is known to be
+    /// offered. Read from the mirror only - no call to Business Central.
+    /// </summary>
+    public static List<OfferedVersionOption> OfferedVersions(IEnumerable<UpgradeFleetRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var offered = row.OfferedVersions
+                ?? (row.HasUpdate ? [row.NextUpdateVersion!] : []);
+            foreach (var version in offered
+                         .Where(v => !string.IsNullOrWhiteSpace(v))
+                         .Select(MajorMinor)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                counts[version] = counts.GetValueOrDefault(version) + 1;
+            }
+        }
+
+        return counts
+            .OrderByDescending(c => c.Key, VersionOrder)
+            .Select(c => new OfferedVersionOption(c.Key, c.Value))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Sorts every row of a "change the next version" selection into the group it will
+    /// land in (see <see cref="SelectVersionGroup"/>), from the mirrored columns alone -
+    /// the preview makes no call to Business Central. The run re-reads each environment
+    /// live before it writes, so a mirror a sweep old can make the preview optimistic but
+    /// never makes the write wrong.
+    ///
+    /// <para>The checks run in a fixed order, and the first that matches wins: an
+    /// environment that is gone, then one the viewer may not change, then one with an
+    /// update under way (Microsoft's, or one of our own actions waiting to fire), then one
+    /// already on the version or a later one, then one where it is already the next
+    /// update, then one it is not offered to. What is left changes, forward or back.
+    /// Versions compare numerically by segment, as the mirror's own selection rule does;
+    /// a string compare puts 10.1 before 9.2.</para>
+    /// </summary>
+    /// <param name="rows">The selected rows, as the fleet list returned them.</param>
+    /// <param name="targetVersion">The version picked, e.g. <c>29.2</c>.</param>
+    /// <param name="pendingActions">Our own actions still waiting to fire (<see cref="UpgradeActionService.ListPendingAsync"/>).</param>
+    public static List<SelectVersionPreviewRow> PreviewSelectVersion(
+        IEnumerable<UpgradeFleetRow> rows,
+        string targetVersion,
+        IEnumerable<UpgradeActionRow> pendingActions)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(pendingActions);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetVersion);
+
+        var target = targetVersion.Trim();
+        var waiting = pendingActions
+            .Where(a => a.IsPending)
+            .Select(a => a.EnvironmentId)
+            .ToHashSet();
+
+        return rows.Select(row => Classify(row, target, waiting.Contains(row.EnvironmentId))).ToList();
+    }
+
+    private static SelectVersionPreviewRow Classify(UpgradeFleetRow row, string target, bool hasPendingAction)
+    {
+        var from = row.HasUpdate ? row.NextUpdateVersion!.Trim() : null;
+
+        SelectVersionPreviewRow Skip(SelectVersionGroup group, string detail) =>
+            new(row, group, from, false, detail);
+
+        if (row.IsSoftDeleted || BcEnvironmentStatus.Classify(row.Status) == BcEnvironmentReadiness.Deleting)
+        {
+            return Skip(SelectVersionGroup.Missing, "Deleted in Business Central");
+        }
+
+        if (!row.CanAct)
+        {
+            return Skip(SelectVersionGroup.NoAccess, "You can't change updates for this solution");
+        }
+
+        if (ProjectConnectionService.IsUpdateUnderWay(row.NextUpdateStatus)
+            || string.Equals(row.Status?.Trim(), "Upgrading", StringComparison.OrdinalIgnoreCase))
+        {
+            return Skip(SelectVersionGroup.UpdateUnderWay, "An update is already running, and Microsoft finishes it");
+        }
+
+        if (hasPendingAction)
+        {
+            return Skip(SelectVersionGroup.UpdateUnderWay,
+                "Something is already booked for this environment. Cancel it first to change the version");
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.Version)
+            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) >= 0)
+        {
+            return Skip(SelectVersionGroup.AlreadyOnIt, $"Already on {target}");
+        }
+
+        if (from is not null && VersionOrder.Compare(from, target) == 0)
+        {
+            return Skip(SelectVersionGroup.AlreadyChosen, $"Already set to {target}");
+        }
+
+        var offerUnknown = row.OfferedVersions is null;
+        if (!offerUnknown && !row.OfferedVersions!.Any(v => VersionOrder.Compare(v, target) == 0))
+        {
+            return Skip(SelectVersionGroup.NotOffered,
+                $"Business Central does not offer {target} to this environment yet");
+        }
+
+        var back = from is not null && VersionOrder.Compare(from, target) > 0;
+        var detail = from is null
+            ? $"Nothing chosen yet, to {target}"
+            : back ? $"{from} back to {target}" : $"{from} to {target}";
+        return new SelectVersionPreviewRow(
+            row, back ? SelectVersionGroup.ChangeBack : SelectVersionGroup.ChangeForward, from, offerUnknown, detail);
+    }
+
+    /// <summary>The mirror's own numeric-per-segment rule, so the preview and the selection rule agree.</summary>
+    private static readonly IComparer<string> VersionOrder =
+        Comparer<string>.Create(ProjectConnectionService.CompareVersions);
+
+    /// <summary>
+    /// The first two segments of a version: "29.2.12345.0" is "29.2". The picker and the
+    /// "already on it" check are about the release a customer is on, not its build.
+    /// </summary>
+    internal static string MajorMinor(string version)
+    {
+        var parts = version.Trim().Split('.');
+        return parts.Length <= 2 ? version.Trim() : $"{parts[0]}.{parts[1]}";
+    }
 
     /// <summary>
     /// Asks Business Central for fresh answers about <paramref name="projectIds"/> by
@@ -408,7 +546,13 @@ public sealed record UpgradeFleetRow(
     /// action that only a manager may take; never a substitute for the service-side
     /// check, which <see cref="ProjectConnectionService"/> makes on every write.
     /// </summary>
-    bool CanManage = false)
+    bool CanManage = false,
+    /// <summary>
+    /// Every version Business Central offered this environment at the last read, newest
+    /// first. Null when that list has never been read - a row mirrored before it was kept -
+    /// which is a different fact from an empty list, where nothing is on offer.
+    /// </summary>
+    List<string>? OfferedVersions = null)
 {
     /// <summary>
     /// True for an environment the customer deleted and Business Central is still
@@ -475,6 +619,62 @@ public sealed record UpgradeFleetRow(
         HasUpdate && EffectiveLatestDate is { } latest
         && (NextUpdateDate is not { } scheduled || scheduled.Date < latest.Date);
 }
+
+/// <summary>
+/// Where one environment lands in the preview of "change the next version" (issue #960).
+/// Only <see cref="ChangeForward"/> and <see cref="ChangeBack"/> are acted on; every other
+/// group is passed over, with the reason in <see cref="SelectVersionPreviewRow.Detail"/>.
+/// </summary>
+public enum SelectVersionGroup
+{
+    /// <summary>The next update moves to a later version than the one chosen now (or to one where none was chosen).</summary>
+    ChangeForward,
+
+    /// <summary>The next update moves back from a later version to the target.</summary>
+    ChangeBack,
+
+    /// <summary>The environment already runs the target version or a later one.</summary>
+    AlreadyOnIt,
+
+    /// <summary>The target is already the environment's next update.</summary>
+    AlreadyChosen,
+
+    /// <summary>Business Central did not offer the target to this environment at the last read.</summary>
+    NotOffered,
+
+    /// <summary>An update has started (Microsoft owns it), or one of our own actions is waiting to fire for the environment.</summary>
+    UpdateUnderWay,
+
+    /// <summary>The viewer may not change this solution's updates.</summary>
+    NoAccess,
+
+    /// <summary>The environment is deleted, or on its way out, in Business Central.</summary>
+    Missing,
+}
+
+/// <summary>
+/// One environment in the preview of a version change: its group, the version it moves
+/// from, and what the preview says about it, in the words the page shows.
+/// </summary>
+/// <param name="FromVersion">The mirrored next version before the change; null when none was chosen.</param>
+/// <param name="OfferUnknown">
+/// True when the mirror holds no list of offered versions for this row yet, so it could
+/// not be checked here. The row is still grouped as a change; the live re-read before the
+/// write decides, and refuses a version Business Central does not offer.
+/// </param>
+public sealed record SelectVersionPreviewRow(
+    UpgradeFleetRow Row,
+    SelectVersionGroup Group,
+    string? FromVersion,
+    bool OfferUnknown,
+    string Detail)
+{
+    /// <summary>True for the two groups the run acts on.</summary>
+    public bool WillChange => Group is SelectVersionGroup.ChangeForward or SelectVersionGroup.ChangeBack;
+}
+
+/// <summary>One entry in the version picker: a version, and how many of the given rows it is offered to.</summary>
+public sealed record OfferedVersionOption(string Version, int RowCount);
 
 /// <summary>
 /// What a refresh request did: how many projects were newly queued, how many were

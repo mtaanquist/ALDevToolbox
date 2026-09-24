@@ -135,7 +135,7 @@
                         <thead>
                             <tr>
                                 <th>Object</th>
-                                <th>Last modified (UTC)</th>
+                                <th>Last modified</th>
                                 <th>Size</th>
                                 <th>Already local?</th>
                                 <th>Actions</th>
@@ -147,7 +147,7 @@
                                 var alreadyLocal = _localFileNames.Contains(obj.FileName);
                                 <tr>
                                     <td><code>@obj.FileName</code></td>
-                                    <td>@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td><Timestamp Value="@obj.LastModified" Format="yyyy-MM-dd HH:mm:ss" /></td>
                                     <td>@FormatSize(obj.Size)</td>
                                     <td>@(alreadyLocal ? "Yes" : "No")</td>
                                     <td class="data-table__actions">
@@ -217,7 +217,7 @@
                 <thead>
                     <tr>
                         <th>File</th>
-                        <th>Created (UTC)</th>
+                        <th>Created</th>
                         <th>Kind</th>
                         <th>Size</th>
                         <th>Triggered by</th>
@@ -230,7 +230,7 @@
                     {
                         <tr>
                             <td><code>@row.FileName</code></td>
-                            <td>@row.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td><Timestamp Value="@row.CreatedAt" Format="yyyy-MM-dd HH:mm:ss" /></td>
                             <td>@row.Kind</td>
                             <td>@FormatSize(row.FileSizeBytes)</td>
                             <td>@(row.CreatedByEmail ?? "scheduler")</td>

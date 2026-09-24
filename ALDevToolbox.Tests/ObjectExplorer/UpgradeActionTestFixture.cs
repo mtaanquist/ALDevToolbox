@@ -245,6 +245,8 @@ internal sealed class UpgradeActionTestFixture : IDisposable
         public int Writes;
         public DateTimeOffset? SelectedDateTime;
         public bool? SelectedIgnoreUpdateWindow;
+        /// <summary>The version the last write selected.</summary>
+        public string? SelectedTargetVersion;
 
         public Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
@@ -260,6 +262,7 @@ internal sealed class UpgradeActionTestFixture : IDisposable
             CancellationToken ct = default)
         {
             Writes++;
+            SelectedTargetVersion = targetVersion;
             SelectedDateTime = selectedDateTime;
             SelectedIgnoreUpdateWindow = ignoreUpdateWindow;
             return Task.CompletedTask;

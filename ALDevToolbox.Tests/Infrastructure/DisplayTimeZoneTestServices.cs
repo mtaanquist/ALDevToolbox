@@ -3,6 +3,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.Organizations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -22,8 +23,9 @@ internal static class DisplayTimeZoneTestServices
     /// </summary>
     public static IServiceCollection AddDisplayTimeZone(this IServiceCollection services, TestDb db)
     {
-        services.AddSingleton(db.NewContextFactory());
-        services.AddScoped<DisplayTimeZone>();
+        // TryAdd, so a class that already registers a factory keeps its own.
+        services.TryAddSingleton<IDbContextFactory<AppDbContext>>(_ => db.NewContextFactory());
+        services.TryAddScoped<DisplayTimeZone>();
         return services;
     }
 

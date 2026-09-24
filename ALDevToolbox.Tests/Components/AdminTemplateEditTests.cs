@@ -56,6 +56,7 @@ public sealed class AdminTemplateEditTests : IDisposable
             opts.UseNpgsql(_db.ConnectionString)
                 .AddInterceptors(_db.CommandTracker),
             ServiceLifetime.Scoped);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddScoped<FolderTreeHydrator>();
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();

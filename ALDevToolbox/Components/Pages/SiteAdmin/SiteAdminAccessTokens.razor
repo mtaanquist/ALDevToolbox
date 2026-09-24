@@ -69,9 +69,9 @@
                         <td><code class="code">@t.TokenPrefix...</code></td>
                         <td>@(t.User?.Email ?? "Unknown")</td>
                         <td>@(t.Organization?.Name ?? "Unknown")</td>
-                        <td class="u-muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
-                        <td class="u-muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Never")</td>
-                        <td class="u-muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                        <td class="u-muted"><Timestamp Value="@t.CreatedAt" Format="yyyy-MM-dd" /></td>
+                        <td class="u-muted"><Timestamp Value="@t.LastUsedAt" Placeholder="Never" /></td>
+                        <td class="u-muted"><Timestamp Value="@t.ExpiresAt" Format="yyyy-MM-dd" Placeholder="Never" /></td>
                         <td class="data-table__actions">
                             @if (t.RevokedAt is null)
                             {

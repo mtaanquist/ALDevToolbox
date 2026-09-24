@@ -177,7 +177,7 @@
                             <div class="meta-item">
                                 <span class="meta-item__label">Imported</span>
                                 <span class="meta-item__value">
-                                    @featured.ImportedAt.ToString("yyyy-MM-dd") · @RelAgo(featured.ImportedAt)
+                                    <Timestamp Value="@featured.ImportedAt" Format="yyyy-MM-dd" /> · @RelAgo(featured.ImportedAt)
                                 </span>
                             </div>
                             <div class="meta-item">

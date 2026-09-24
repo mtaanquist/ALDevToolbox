@@ -23,7 +23,7 @@
         <span class="meta-item">
             <span class="meta-item__label">Last saved</span>
             <span class="meta-item__value">
-                @(UpdatedAt is null ? "Not saved yet" : UpdatedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'"))
+                <Timestamp Value="@UpdatedAt" Placeholder="Not saved yet" />
             </span>
         </span>
         <a class="btn btn--sm" href="@HistoryHref">

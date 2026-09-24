@@ -31,6 +31,9 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.BcNextUpdateLatestDate).HasColumnName("bc_next_update_latest_date");
         entity.Property(e => e.BcNextUpdateIgnoresWindow).HasColumnName("bc_next_update_ignores_window");
         entity.Property(e => e.BcNextUpdateFetchedAt).HasColumnName("bc_next_update_fetched_at");
+        // Nullable text[]: null is "never read", which is a different fact from an empty
+        // list ("nothing on offer").
+        entity.Property(e => e.BcOfferedVersions).HasColumnName("bc_offered_versions").HasColumnType("text[]");
         entity.Property(e => e.BcDatabaseKb).HasColumnName("bc_database_kb");
 
         // Fetched detail from the Admin Center API — all nullable, all refreshed by a

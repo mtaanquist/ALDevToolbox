@@ -33,7 +33,7 @@
                     <th>Type</th>
                     <th>Submitted by</th>
                     <th>Files</th>
-                    <th>Submitted (UTC)</th>
+                    <th>Submitted</th>
                     <th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
@@ -45,7 +45,7 @@
                         <td>@s.Type</td>
                         <td class="u-muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
                         <td>@s.Files.Count</td>
-                        <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td><Timestamp Value="@s.RequestedAt" Format="yyyy-MM-dd HH:mm:ss" /></td>
                         <td class="data-table__actions">
                             <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions/{s.Id}")">
                                 <Icon Name="inbox" Width="14" Height="14" />

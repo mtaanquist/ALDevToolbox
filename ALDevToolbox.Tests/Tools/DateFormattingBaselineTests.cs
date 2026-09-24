@@ -44,41 +44,7 @@ public sealed class DateFormattingBaselineTests
     /// </summary>
     private static readonly IReadOnlyDictionary<string, int> Baseline = new Dictionary<string, int>(StringComparer.Ordinal)
     {
-        ["ALDevToolbox/Components/Pages/AcceptInvite.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Account.razor"] = 25,
-        ["ALDevToolbox/Components/Pages/AccountSecurity/AccessTokenCreated.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminCookbook.razor"] = 4,
-        ["ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestionReview.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestions.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/AdminDashboard.razor"] = 10,
-        ["ALDevToolbox/Components/Pages/Admin/AdminModuleList.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/AdminObjectExplorerIndex.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminRecipeEdit.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminReleaseManage.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminReleasesImportArtifacts.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/AdminTemplateList.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationBusinessCentral.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationOAuthClients.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationRepositories.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationUsers.razor"] = 4,
-        ["ALDevToolbox/Components/Pages/Admin/AuditDiffPage.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/Admin/AuditLogPage.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Error.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAccessTokens.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAudit.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAuditDiffPage.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminOAuthClients.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminStorage.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminTenantBackups.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminUsers.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminWorkers.razor"] = 6,
-        ["ALDevToolbox/Components/Shared/AuditHistoryPanel.razor"] = 4,
-        ["ALDevToolbox/Components/Shared/SettingsAside.razor"] = 1,
+        // Empty since both sweeps of issue #942 landed. A new hit fails the test.
     };
 
     /// <summary>
@@ -95,8 +61,11 @@ public sealed class DateFormattingBaselineTests
     /// </summary>
     private static readonly IReadOnlyDictionary<string, (int Count, string Reason)> Permitted = new Dictionary<string, (int, string)>(StringComparer.Ordinal)
     {
+        ["ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor"] = (1, "The date is part of the downloaded file's name, not a time shown on screen."),
+        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationBusinessCentral.razor"] = (2, "The client secret's expiry is a calendar date the admin typed from Entra, not an instant."),
         ["ALDevToolbox/Components/Pages/Environments/EnvironmentDetail.razor"] = (5,
             "The delivery window and Business Central's update window are times of day in the customer's zone, and the scheduled update is repeated as a labelled wall clock in that zone beside them so the three can be compared."),
+        ["ALDevToolbox/Components/Pages/Error.razor"] = (1, "The error time is copied for someone matching it against server logs, which are in UTC, and it is labelled UTC; the page also has to render when the database is down."),
         ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor"] = (3,
             "The delivery window is a time of day agreed in the customer's zone, and the client secret's expiry is a calendar date the consultant typed."),
         ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelinesBrowser.razor"] = (1,
@@ -105,6 +74,8 @@ public sealed class DateFormattingBaselineTests
             "The delivery and update windows are times of day in the customer's zone, and the client secret's expiry is a calendar date the consultant typed."),
         ["ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor"] = (1,
             "\"(2 days ago)\" sits inside the last-shipped hover title, where relative wording reads the same in every zone and a Timestamp cannot go."),
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = (1, "The backup schedule is a UTC time of day, labelled UTC, so it does not move with daylight saving."),
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = (1, "The backup schedule input is a UTC time of day the site admin types, labelled UTC, so it does not move with daylight saving."),
         ["ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor"] = (12,
             "A booked update slot is a wall clock the person types and Business Central runs in each customer's own zone, so it is said back in that zone and labelled with it."),
         ["ALDevToolbox/Components/Shared/EnvironmentActivityFeed.razor"] = (2,
@@ -119,7 +90,7 @@ public sealed class DateFormattingBaselineTests
     /// The sum of <see cref="Baseline"/>, written out so that a sweep has to lower
     /// both: the per-file numbers and the headline number the issue tracks.
     /// </summary>
-    private const int BaselineTotal = 102;
+    private const int BaselineTotal = 0;
 
     [Fact]
     public void No_razor_file_formats_a_time_more_often_than_its_baseline()
