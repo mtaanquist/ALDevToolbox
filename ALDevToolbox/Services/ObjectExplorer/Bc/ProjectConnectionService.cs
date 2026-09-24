@@ -1140,11 +1140,20 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// Selects the platform version the environment updates to next — a reschedule of the
     /// customer's Business Central upgrade. Refuses a version the environment doesn't
     /// report as available, so a stale page can't schedule something Microsoft hasn't
-    /// released. Touches no row of ours, so it is recorded in the log.
+    /// released, and refuses while an update is already running, which Microsoft owns.
     /// <para>
     /// Open to a project manager <em>or</em> someone holding the environment-updates flag
     /// on one of the project's teams: picking the version a customer moves to is the same
-    /// job as moving its date, which the upgrade team owns (issue #657).
+    /// job as moving its date, which the upgrade team owns (issue #657). The Upgrades
+    /// page's "change the next version" fleet action calls this once per environment
+    /// (issue #960).
+    /// </para>
+    /// <para>
+    /// No date is sent: Business Central keeps or assigns one inside the new version's
+    /// rollout. Like the two date writes, the row is re-mirrored from a fresh read
+    /// afterwards, and that read is also the proof - a read that still shows another
+    /// version selected fails the call rather than being recorded as done (the #804
+    /// lesson). The change is recorded in the audit log the same way.
     /// </para>
     /// </summary>
     public async Task SelectTargetVersionAsync(
@@ -1167,6 +1176,12 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             throw Validation("TargetVersion", "Couldn't read the versions available for this environment. " + ex.Message);
         }
 
+        if (updates.Any(u => IsUpdateUnderWay(u.UpdateStatus)))
+        {
+            throw Validation("TargetVersion",
+                $"An update is already running on {env.Name}, so its version can't be changed. Try again once it finishes.");
+        }
+
         var chosen = updates.FirstOrDefault(u =>
             string.Equals(u.TargetVersion, targetVersion.Trim(), StringComparison.OrdinalIgnoreCase));
         if (chosen is null || !chosen.Available)
@@ -1174,6 +1189,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             throw Validation("TargetVersion",
                 $"Business Central {targetVersion} isn't available for {env.Name} right now. Reopen the panel to see what is.");
         }
+
+        var before = PickNextUpdate(updates);
 
         try
         {
@@ -1189,9 +1206,62 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         // shown the answer we cached before this call.
         _panelCache.Invalidate(projectId, environmentId);
 
+        await RemirrorAfterVersionChangeAsync(env, chosen.TargetVersion, ct);
+        await RecordUpdateActionAsync(
+            projectId, env, before, $"Set the next version to {chosen.TargetVersion}", ct);
+
         _logger.LogInformation(
             "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}).",
             _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId);
+    }
+
+    /// <summary>
+    /// True when Business Central reports the update as started. Its <c>updateStatus</c>
+    /// is compared case-insensitively and never shown, per the mirror's rule that
+    /// Microsoft's spelling drives no logic beyond a token compare. Shared with the fleet
+    /// preview, which reads the same value from the mirror.
+    /// </summary>
+    internal static bool IsUpdateUnderWay(string? updateStatus) =>
+        string.Equals(updateStatus?.Trim(), "Running", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Re-reads the environment after a version change and writes the mirror, so the
+    /// Upgrades page shows the new version without waiting for the nightly sweep. A read
+    /// that fails only costs the freshness; a read that succeeds and shows a different
+    /// version still selected fails the call, because saying "done" for a change that did
+    /// not land is worse than saying nothing.
+    /// </summary>
+    private async Task RemirrorAfterVersionChangeAsync(
+        (string Token, string Family, string Name, int Id) env, string targetVersion, CancellationToken ct)
+    {
+        BcEnvironmentUpdate? stored;
+        try
+        {
+            var updates = await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+            stored = PickNextUpdate(updates);
+            var row = await _db.OeProjectEnvironments.FirstOrDefaultAsync(e => e.Id == env.Id, ct);
+            if (row is not null)
+            {
+                ApplyNextUpdate(row, updates);
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning(
+                "The next version on {Environment} was changed, but re-reading it failed: {Message}. The cached row stays stale until the next refresh.",
+                env.Name, ex.Message);
+            return;
+        }
+
+        if (stored is not null && CompareVersions(stored.TargetVersion, targetVersion) == 0) return;
+
+        _logger.LogWarning(
+            "Business Central kept {Environment} on {StoredVersion} after being asked for {TargetVersion}, so the change was not recorded as done.",
+            env.Name, stored?.TargetVersion, targetVersion);
+        throw Validation("TargetVersion", stored is not null
+            ? $"Business Central did not accept the new version. Its next update is still {stored.TargetVersion}."
+            : "Business Central did not accept the new version. It has no next update chosen.");
     }
 
     /// <summary>
@@ -1322,7 +1392,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             var row = await _db.OeProjectEnvironments.FirstOrDefaultAsync(e => e.Id == env.Id, ct);
             if (row is not null)
             {
-                ApplyNextUpdate(row, stored);
+                ApplyNextUpdate(row, updates);
                 await _db.SaveChangesAsync(ct);
             }
         }
@@ -1352,7 +1422,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
-    /// Records one fleet update action in the audit log. These two writes act on a
+    /// Records one fleet update action in the audit log. These three writes act on a
     /// <em>customer's production tenant</em> and touch no row of ours that the
     /// interceptor watches — the re-mirror afterwards is deliberately outside
     /// <c>AuditInterceptor.EnvironmentSettingColumns</c>, because the nightly sweep
@@ -1362,7 +1432,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     ///
     /// <para>The snapshot keeps the log's "state before the change" contract: it is what
     /// the update looked like when we read it, plus a plain-words <c>Action</c> naming
-    /// which of the two writes this was — the audit model records rows changing, and
+    /// which of the three writes this was — the audit model records rows changing, and
     /// these are events, so the event has to be spelled out in the row itself. Two of
     /// these rows on one environment diff against each other cleanly, which is what the
     /// audit diff page reads.</para>
@@ -1374,7 +1444,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private async Task RecordUpdateActionAsync(
         int projectId,
         (string Token, string Family, string Name, int Id) env,
-        BcEnvironmentUpdate update,
+        BcEnvironmentUpdate? update,
         string action,
         CancellationToken ct)
     {
@@ -1389,10 +1459,10 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             ["Action"] = action,
             ["Project"] = projectName,
             ["Name"] = env.Name,
-            ["UpdateVersion"] = update.TargetVersion,
-            ["UpdateDate"] = update.SelectedDateTime?.UtcDateTime,
-            ["LatestPossibleDate"] = update.LatestSelectableDateTime?.UtcDateTime,
-            ["IgnoresUpdateWindow"] = update.IgnoreUpdateWindow,
+            ["UpdateVersion"] = update?.TargetVersion,
+            ["UpdateDate"] = update?.SelectedDateTime?.UtcDateTime,
+            ["LatestPossibleDate"] = update?.LatestSelectableDateTime?.UtcDateTime,
+            ["IgnoresUpdateWindow"] = update?.IgnoreUpdateWindow,
         };
 
         _db.AuditLog.Add(new AuditLogEntry
@@ -1953,7 +2023,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             try
             {
                 var updates = await _adminClient.ListEnvironmentUpdatesAsync(token, row.ApplicationFamily, row.Name, ct);
-                ApplyNextUpdate(row, PickNextUpdate(updates));
+                ApplyNextUpdate(row, updates);
             }
             catch (BcApiException ex)
             {
@@ -2008,7 +2078,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// A segment that isn't a number sorts as 0 rather than throwing — Microsoft's
     /// version strings are theirs to change.
     /// </summary>
-    private static int CompareVersions(string left, string right)
+    internal static int CompareVersions(string left, string right)
     {
         var a = left.Split('.');
         var b = right.Split('.');
@@ -2023,20 +2093,35 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
     /// <summary>
     /// Writes the picked update onto the row, clearing all six value columns when there
-    /// is nothing to show. Either way <c>BcNextUpdateFetchedAt</c> is stamped: an empty
-    /// list is a successful read that says "nothing is scheduled", which is a different
-    /// fact from "we never asked".
+    /// is nothing to show, and the list of versions on offer beside it. Either way
+    /// <c>BcNextUpdateFetchedAt</c> is stamped: an empty list is a successful read that
+    /// says "nothing is scheduled", which is a different fact from "we never asked".
     /// </summary>
-    private static void ApplyNextUpdate(OeProjectEnvironment row, BcEnvironmentUpdate? update)
+    private static void ApplyNextUpdate(OeProjectEnvironment row, IReadOnlyList<BcEnvironmentUpdate> updates)
     {
+        var update = PickNextUpdate(updates);
         row.BcNextUpdateVersion = update?.TargetVersion;
         row.BcNextUpdateType = update?.TargetVersionType;
         row.BcNextUpdateStatus = update?.UpdateStatus;
         row.BcNextUpdateDate = update?.SelectedDateTime?.UtcDateTime;
         row.BcNextUpdateLatestDate = update?.LatestSelectableDateTime?.UtcDateTime;
         row.BcNextUpdateIgnoresWindow = update is null ? null : update.IgnoreUpdateWindow;
+        row.BcOfferedVersions = OfferedVersions(updates);
         row.BcNextUpdateFetchedAt = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// The versions an environment could be set to: every <c>available</c> one, distinct,
+    /// newest first by numeric segment. An unreleased version has no date and cannot be
+    /// picked, so it is left out for the same reason <see cref="PickNextUpdate"/> skips it.
+    /// </summary>
+    internal static List<string> OfferedVersions(IReadOnlyList<BcEnvironmentUpdate> updates) =>
+        updates
+            .Where(u => u.Available && !string.IsNullOrWhiteSpace(u.TargetVersion))
+            .Select(u => u.TargetVersion.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(v => v, Comparer<string>.Create(CompareVersions))
+            .ToList();
 
     /// <summary>
     /// Copies the fetched detail from one API record onto a row. Only fields the API

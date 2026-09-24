@@ -3,10 +3,11 @@
 > **Status: shipped** ([#657](https://github.com/mtaanquist/ALDevToolbox/issues/657), stages 1–4b).
 > The page is `Components/Pages/Upgrades/UpgradesPage.razor`; the services are
 > `UpgradeFleetService` (read), `UpgradeActionService` (request/cancel/history),
-> `UpgradeActionWorker` (booked slots) and the two write methods on
+> `UpgradeActionWorker` (booked slots) and the three write methods on
 > `ProjectConnectionService`, all under `Services/ObjectExplorer/Bc/`. The mirror lives in
-> `bc_next_update_*` columns on `OeProjectEnvironment`; the actions and the history are one
-> table, `oe_environment_upgrade_actions` (`EnvironmentUpgradeAction`). The grant is
+> `bc_next_update_*` columns and `bc_offered_versions` on `OeProjectEnvironment`; the
+> actions and the history are one table, `oe_environment_upgrade_actions`
+> (`EnvironmentUpgradeAction`). The grant is
 > `team_members.manages_updates` — see [`teams-and-visibility.md`](./teams-and-visibility.md).
 >
 > This doc is the record of intent for the tool; where a detail has drifted, the code is the
@@ -23,7 +24,9 @@ that environment is told to update then, whatever its own update window says.
 
 Both were a hundred admin-center visits per sweep. `/upgrades` is one table over every
 environment of every customer the viewer can see, with the same two moves as bulk actions
-over a checkbox selection.
+over a checkbox selection. A third came later (#960): the week a minor lands, the team wants
+every customer queued for it - "everyone goes to 29.2" - which was a visit to each
+environment's own page.
 
 The named user is **a member of the upgrade team scheduling platform updates for a hundred
 customers, who knows nothing about this codebase**. Everything the page says is written for
@@ -53,6 +56,13 @@ seven nullable `bc_next_update_*` columns holding the version, the type and stat
 as the API spells them, the scheduled date, the latest date the update can still be pushed
 to, whether it ignores Microsoft's update window, and when the mirror last succeeded.
 Opening `/upgrades` makes no call to Business Central at all.
+
+**What is on offer.** Beside the one update, the same read keeps every version Business
+Central offers the environment - its `available` updates, newest first - in
+`bc_offered_versions` (a text array). The version change below needs all of them: to list
+what can be picked, and to say which environments are not offered a version yet. Null means
+the list has never been read, which a row mirrored before the column existed shows until
+its next refresh; the preview then says the live re-read decides rather than guessing.
 
 **Selection rule.** The *selected* update when the customer has picked a slot — that is the
 answer even when a newer version is on offer. Otherwise the newest `Available` one,
@@ -132,13 +142,14 @@ the mirror: the mirror is one row for listing many environments, not a replaceme
 detail a consultant opens on purpose. That fetch is cached briefly once made — see "The
 environment panel" in `saas-delivery.md`.
 
-## The two writes
+## The three writes
 
-Both act on the update the selection rule picks, both re-read the environment's updates
-live first (so the page and the write can never disagree about which update is meant), both
-are gated on the environment-updates grant rather than on managing the project, and both
-re-mirror the row from a fresh read afterwards so the table shows the new date without
-waiting for the nightly sweep. A failed re-read costs the freshness, never the write.
+All three re-read the environment's updates live first (so the page and the write can never
+disagree about which update is meant), and all three re-mirror the row from a fresh read
+afterwards so the table shows the change without waiting for the nightly sweep. A failed
+re-read costs the freshness, never the write. The two date moves act on the update the
+selection rule picks and are gated on the environment-updates grant rather than on managing
+the project; the version change picks the update itself.
 
 - **Push the date to the latest** sets the date as late as Business Central will take it.
   The `latestSelectableDateTime` the updates read gives back is an *exclusive* bound — a
@@ -159,14 +170,35 @@ waiting for the nightly sweep. A failed re-read costs the freshness, never the w
   the upgrade regardless of their window, and nothing else has the right to take that
   protection away. Refuses only when there is nothing on offer.
 
+- **Change the next version** (#960) selects a different version as the environment's next
+  update: "everyone goes to 29.2", forward from an earlier version or back from a later one.
+  It is `SelectTargetVersionAsync`, the same write the environment page's "Next Business
+  Central update" setting has always used, now also run over a selection from the Upgrades
+  page. It refuses a version the live read does not offer (not rolled out to that region or
+  tenant yet, or one the environment can only reach through an earlier major), and it
+  refuses while an update is running, which Microsoft owns. It sends **no date**:
+  Business Central keeps or assigns one inside the new version's rollout, and the latest
+  possible date changes with the version, so moving the date is a second step afterwards.
+  Like the date push, the re-read is also the proof - a re-read that still shows another
+  version selected fails the action rather than recording it as done. Gated on managing the
+  project *or* the grant, because picking the version was open to a solution's managers
+  before the fleet action existed; the fleet action itself asks for the grant, like the
+  other two. The preview sorts each selected row from the mirror alone
+  (`UpgradeFleetService.PreviewSelectVersion`): will change (forward, or back), already on
+  it (the environment runs the version or a later one, by numeric segment), already chosen,
+  not offered, update under way (Microsoft's, or one of our own actions waiting to fire),
+  no access, and gone. The picker's list is every version the selected rows are offered, as
+  major.minor, newest first, with how many rows each applies to
+  (`UpgradeFleetService.OfferedVersions`).
+
 Each refusal is a `PlanValidationException` the fleet page shows against that one row, not
 a failure of the batch.
 
 ### The wire shape
 
-Both go through the same `PATCH .../environments/{family}/{name}/updates/{targetVersion}`
-the environment panel's version pick uses, with a `scheduleDetails` object added alongside
-the `selected` / `targetVersionType` it already sent. The two scheduling fields go **inside**
+All three go through the same `PATCH .../environments/{family}/{name}/updates/{targetVersion}`.
+The version change sends `selected` and `targetVersionType` alone; the two date moves add a
+`scheduleDetails` object alongside them. The two scheduling fields go **inside**
 that object, where the updates read also returns them. Sent at the top level they are
 ignored with a 200, which is how the first version of this failed to move any date:
 
@@ -193,7 +225,9 @@ naming a version in prose is how the last one rotted eight releases behind. Same
 
 Every move is one row in `oe_environment_upgrade_actions`, and those rows **are** the
 per-environment activity feed; there is no second log behind it. A row carries the customer,
-the environment, the kind (push-to-latest / run-now), a status, who asked and when (as a
+the environment, the kind (push-to-latest / run-now / select-version, and the one-off writes
+recorded beside them), the version a select-version asked for (`target_version`, null for
+every other kind), a status, who asked and when (as a
 denormalised `"name <email>"` string, so the history still names them after the account is
 gone), the fire time, when it was sent, the outcome in plain words, and who cancelled it.
 The table is deliberately **not** in `AuditInterceptor`'s audited map: it is itself a log,
@@ -213,7 +247,9 @@ with its fire time and calls nobody. Nothing is enqueued: `UpgradeActionWorker` 
 rows by polling the table every 30 seconds, so a slot booked for tonight survives this
 afternoon's deploy, which an in-memory channel would not. Only "update now" offers a slot;
 push-to-latest is housekeeping ahead of a release and is always immediate, though it records
-its rows the same way so one feed reads uniformly. The worker's per-org enumeration is the
+its rows the same way so one feed reads uniformly. The version change is immediate on the page
+too; the service and the worker would carry a booked one, version and all, but no page offers
+it yet. The worker's per-org enumeration is the
 one cross-org read, and it needs no bypass — the organisations table carries no tenant
 filter; per-org work stays inside the filter.
 
@@ -328,14 +364,14 @@ and never the only one. Confirming an update-now over an environment that alread
 under "Already booked" in the preview, with what it is booked for: the run still acts on it, and
 adding a second booking is a thing to notice before the click.
 
-**Audit.** Each of the two writes records an audit row, and this is the one place in the
+**Audit.** Each of the three writes records an audit row, and this is the one place in the
 application that writes to `audit_log` outside `AuditInterceptor`. It has to be: the writes land
 on the customer's tenant and touch no row of ours that the interceptor watches — and the
 re-mirror afterwards is deliberately outside `AuditInterceptor.EnvironmentSettingColumns`,
 because the nightly sweep writes those same columns and would otherwise fill the log with rows
 nobody made. The entry is an `OeProjectEnvironment` row keyed by the environment id, and its
 snapshot keeps the log's "state before the change" contract — the update as we read it, plus a
-plain-words `Action` naming which of the two writes it was, since the audit model records rows
+plain-words `Action` naming which of the three writes it was, since the audit model records rows
 changing and these are events. The actor is resolved from the database rather than from claims,
 because a Blazor circuit has no `HttpContext` for the interceptor's own lookup to read. A refused
 row writes nothing: nothing changed. For a booked action the audit row is written at send time,

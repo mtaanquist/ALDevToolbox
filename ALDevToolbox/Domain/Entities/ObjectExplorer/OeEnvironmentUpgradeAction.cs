@@ -33,8 +33,16 @@ public class OeEnvironmentUpgradeAction
     public int EnvironmentId { get; set; }
     public OeProjectEnvironment? Environment { get; set; }
 
-    /// <summary>Which of the two moves this is.</summary>
+    /// <summary>Which move this is.</summary>
     public UpgradeActionKind Kind { get; set; }
+
+    /// <summary>
+    /// The platform version a <see cref="UpgradeActionKind.SelectVersion"/> action set as
+    /// the environment's next update (e.g. <c>29.2</c>). Null for every other kind, which
+    /// act on whatever update is already chosen. Kept on the row because the history has
+    /// to say which version was asked for, and a booked row has to carry it to the worker.
+    /// </summary>
+    public string? TargetVersion { get; set; }
 
     /// <summary>Where the action has got to. See <see cref="UpgradeActionStatus"/>.</summary>
     public UpgradeActionStatus Status { get; set; } = UpgradeActionStatus.Pending;
@@ -89,7 +97,8 @@ public class OeEnvironmentUpgradeAction
 }
 
 /// <summary>
-/// The two moves the upgrade team makes on a platform update's date. Stored as text
+/// What was done to an environment: the moves the upgrade team makes on its platform
+/// update, and the one-off writes recorded beside them. Stored as text
 /// (<c>HasConversion&lt;string&gt;()</c>) like <see cref="ProjectVisibility"/>, so the
 /// column reads plainly and a third kind never renumbers the existing rows.
 /// </summary>
@@ -136,6 +145,14 @@ public enum UpgradeActionKind
     /// were running.
     /// </summary>
     CancelSession,
+
+    /// <summary>
+    /// The environment's next platform update was set to a chosen version
+    /// (<see cref="OeEnvironmentUpgradeAction.TargetVersion"/>), from the Upgrades page's
+    /// fleet action. Business Central keeps or assigns the date inside that version's
+    /// rollout; nothing about the date is sent. Issue #960.
+    /// </summary>
+    SelectVersion,
 }
 
 /// <summary>

@@ -7,7 +7,8 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 
 /// <summary>
 /// The request side of the upgrade actions in <c>oe_environment_upgrade_actions</c>: ask
-/// for one of the two platform-update moves now or at an agreed slot, cancel one that
+/// for one of the three platform-update moves (move the date, start the update, change
+/// the version) now or at an agreed slot, cancel one that
 /// has not fired yet, and read an environment's history. The table doubles as the
 /// per-environment activity feed — there is no second log. See
 /// <c>.design/saas-delivery.md</c> and issue #657.
@@ -77,14 +78,21 @@ public sealed class UpgradeActionService
     /// page still shows the same per-row message it always did while the feed keeps the
     /// whole story — including the attempts that came to nothing.</para>
     /// </summary>
+    /// <param name="targetVersion">
+    /// The version a <see cref="UpgradeActionKind.SelectVersion"/> sets as the next update
+    /// (e.g. <c>29.2</c>). Required for that kind and refused for every other, which act
+    /// on the update already chosen.
+    /// </param>
     public async Task<UpgradeActionRow> ScheduleUpgradeActionAsync(
         int projectId,
         int environmentId,
         UpgradeActionKind kind,
         DateTimeOffset? executeAt,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? targetVersion = null)
     {
         var orgId = RequireOrganizationId();
+        targetVersion = ValidateKind(kind, targetVersion);
         await _access.EnsureCanManageEnvironmentUpdatesAsync(projectId, ct).ConfigureAwait(false);
 
         // The environment has to belong to the project the gate was checked against —
@@ -109,6 +117,7 @@ public sealed class UpgradeActionService
             ProjectId = projectId,
             EnvironmentId = environmentId,
             Kind = kind,
+            TargetVersion = targetVersion,
             RequestedByUserId = _orgContext.CurrentUserId,
             RequestedBy = requestedBy,
             RequestedAt = now,
@@ -136,20 +145,22 @@ public sealed class UpgradeActionService
             return UpgradeActionRow.From(action);
         }
 
-        // Immediate: do the work here, then write down what happened.
+        // Immediate: do the work here, then write down what happened. The name is read
+        // first, so nothing after a write that landed can turn it into a failure.
+        var environmentName = await EnvironmentNameAsync(environmentId, ct).ConfigureAwait(false);
         action.ExecuteAfter = now;
         action.SentAt = now;
         try
         {
-            await RunAsync(projectId, environmentId, kind, ct).ConfigureAwait(false);
+            await RunAsync(projectId, environmentId, kind, targetVersion, ct).ConfigureAwait(false);
             action.Status = UpgradeActionStatus.Sent;
-            action.Outcome = SuccessOutcome(kind);
+            action.Outcome = SuccessOutcome(kind, targetVersion, environmentName);
         }
         catch (PlanValidationException ex)
         {
             action.Status = UpgradeActionStatus.Failed;
             action.Outcome = FailureOutcome(kind,
-                ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.");
+                ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.", targetVersion);
             _db.OeEnvironmentUpgradeActions.Add(action);
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
             throw;
@@ -238,7 +249,7 @@ public sealed class UpgradeActionService
             .Select(a => new UpgradeActionRow(
                 a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
                 a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
-                a.CancelledBy, a.CancelledAt))
+                a.CancelledBy, a.CancelledAt, a.TargetVersion))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
@@ -261,7 +272,7 @@ public sealed class UpgradeActionService
             .Select(a => new UpgradeActionRow(
                 a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
                 a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
-                a.CancelledBy, a.CancelledAt))
+                a.CancelledBy, a.CancelledAt, a.TargetVersion))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
@@ -274,16 +285,77 @@ public sealed class UpgradeActionService
     /// <see cref="UpgradeActionWorker"/>, so a slot fired tonight does exactly what
     /// pressing the button would have done.
     /// </summary>
-    internal Task RunAsync(int projectId, int environmentId, UpgradeActionKind kind, CancellationToken ct) =>
-        kind == UpgradeActionKind.PushDateToLatest
-            ? _connections.PushUpdateDateToLatestAsync(projectId, environmentId, ct)
-            : _connections.RunUpdateNowAsync(projectId, environmentId, ct);
+    internal Task RunAsync(
+        int projectId, int environmentId, UpgradeActionKind kind, string? targetVersion, CancellationToken ct) =>
+        kind switch
+        {
+            UpgradeActionKind.PushDateToLatest => _connections.PushUpdateDateToLatestAsync(projectId, environmentId, ct),
+            UpgradeActionKind.RunNow => _connections.RunUpdateNowAsync(projectId, environmentId, ct),
+            // SelectTargetVersionAsync re-reads the offer list live and refuses a version
+            // no longer offered, so a mirror a sweep old can't send a stale pick.
+            UpgradeActionKind.SelectVersion => _connections.SelectTargetVersionAsync(
+                projectId, environmentId,
+                targetVersion ?? throw new InvalidOperationException("A version change was run without a target version."),
+                ct),
+            _ => throw new InvalidOperationException($"{kind} is recorded, never run."),
+        };
 
-    /// <summary>What the feed says about an action that worked. Plain words, no version numbers we'd have to keep in step.</summary>
-    internal static string SuccessOutcome(UpgradeActionKind kind) =>
-        kind == UpgradeActionKind.PushDateToLatest
-            ? "The update date was moved out to the latest Business Central allows."
-            : "Business Central was told to start the update, ignoring the environment's update window.";
+    /// <summary>
+    /// The kinds this service runs, and the version rule between them: a version change
+    /// must say which version, and the date moves must not (they act on the update
+    /// already chosen, so a version on them would be a claim the history can't honour).
+    /// Returns the version trimmed, or null.
+    /// </summary>
+    private static string? ValidateKind(UpgradeActionKind kind, string? targetVersion)
+    {
+        var version = string.IsNullOrWhiteSpace(targetVersion) ? null : targetVersion.Trim();
+        switch (kind)
+        {
+            case UpgradeActionKind.SelectVersion when version is null:
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["TargetVersion"] = "Choose the version to update to.",
+                });
+            case UpgradeActionKind.SelectVersion when version.Length > 32:
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["TargetVersion"] = "That isn't a Business Central version.",
+                });
+            case UpgradeActionKind.SelectVersion:
+                return version;
+            case UpgradeActionKind.PushDateToLatest or UpgradeActionKind.RunNow when version is not null:
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["TargetVersion"] = "Only a version change takes a version; moving or starting an update acts on the one already chosen.",
+                });
+            case UpgradeActionKind.PushDateToLatest or UpgradeActionKind.RunNow:
+                return null;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind,
+                    "Only moving the date, starting the update and changing the version can be requested here.");
+        }
+    }
+
+    private async Task<string?> EnvironmentNameAsync(int environmentId, CancellationToken ct) =>
+        await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId)
+            .Select(e => e.Name)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// What the feed says about an action that worked. Plain words; the date moves name no
+    /// version because they act on whichever is chosen, while a version change says which
+    /// version it set, since that is the whole of what it did.
+    /// </summary>
+    internal static string SuccessOutcome(UpgradeActionKind kind, string? targetVersion = null, string? environmentName = null) =>
+        kind switch
+        {
+            UpgradeActionKind.PushDateToLatest => "The update date was moved out to the latest Business Central allows.",
+            UpgradeActionKind.SelectVersion => environmentName is { Length: > 0 }
+                ? $"Set the next version to {targetVersion} on {environmentName}."
+                : $"Set the next version to {targetVersion}.",
+            _ => "Business Central was told to start the update, ignoring the environment's update window.",
+        };
 
     /// <summary>
     /// What the feed says about an action that didn't work. The feed is read days later,
@@ -297,11 +369,14 @@ public sealed class UpgradeActionService
     /// "try again once it finishes" is an instruction, and a history entry is not the
     /// place to be given one.</para>
     /// </summary>
-    internal static string FailureOutcome(UpgradeActionKind kind, string reason)
+    internal static string FailureOutcome(UpgradeActionKind kind, string reason, string? targetVersion = null)
     {
-        var lead = kind == UpgradeActionKind.PushDateToLatest
-            ? "The update date wasn't moved."
-            : "The update didn't start.";
+        var lead = kind switch
+        {
+            UpgradeActionKind.PushDateToLatest => "The update date wasn't moved.",
+            UpgradeActionKind.SelectVersion => $"The next version wasn't changed to {targetVersion}.",
+            _ => "The update didn't start.",
+        };
         var trimmed = WithoutLiveAdvice(reason).Trim();
         return trimmed.Length == 0 ? lead : $"{lead} Reason given at the time: {trimmed}";
     }
@@ -351,7 +426,8 @@ public sealed record UpgradeActionRow(
     DateTime? SentAt,
     string? Outcome,
     string? CancelledBy,
-    DateTime? CancelledAt)
+    DateTime? CancelledAt,
+    string? TargetVersion = null)
 {
     /// <summary>True while the action is still waiting for its slot — the only state with a Cancel.</summary>
     public bool IsPending => Status == UpgradeActionStatus.Pending;
@@ -400,5 +476,5 @@ public sealed record UpgradeActionRow(
     internal static UpgradeActionRow From(OeEnvironmentUpgradeAction a) => new(
         a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
         a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
-        a.CancelledBy, a.CancelledAt);
+        a.CancelledBy, a.CancelledAt, a.TargetVersion);
 }
