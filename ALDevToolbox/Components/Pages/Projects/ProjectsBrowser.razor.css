@@ -27,6 +27,8 @@
 .sol-list__name,
 .sol-list__shipped { position: relative; z-index: 1; }
 
+/* .sol-list__short lives in app.css: the Upgrades page shows the short name the same way (#966). */
+
 .sol-list__shipped { display: inline-flex; align-items: center; gap: var(--space-1); }
 /* Handed off: Business Central has the apps but installs them in a later window, so it
    is shipped but not yet seen installed. The date stays a link like any other; the glyph

@@ -382,9 +382,13 @@ public sealed class UpgradeFleetService
         }
 
         if (!string.IsNullOrWhiteSpace(row.Version)
-            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) >= 0)
+            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) is var compared and >= 0)
         {
-            return Skip(SelectVersionGroup.AlreadyOnIt, $"Already on {target}");
+            // Past it, the row says where it is: "Already on 29.2" beside a "Now on 29.3"
+            // column reads as a mistake.
+            return Skip(SelectVersionGroup.AlreadyOnIt, compared == 0
+                ? $"Already on {target}"
+                : $"Already on {MajorMinor(row.Version)}, past {target}");
         }
 
         if (from is not null && VersionOrder.Compare(from, target) == 0)
@@ -555,8 +559,9 @@ public sealed record UpgradeFleetRow(
     /// </summary>
     List<string>? OfferedVersions = null,
     /// <summary>
-    /// The solution's short name, the abbreviation many customers are called by day to
-    /// day (issue #966). Null when the solution has none.
+    /// The solution's short name - how colleagues say the customer aloud ("KTM") - or
+    /// null when none is set. Shown after the solution name and matched by the search
+    /// box, the way the Solutions list does it (issue #966).
     /// </summary>
     string? ProjectShortName = null)
 {

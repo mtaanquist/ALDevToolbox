@@ -426,6 +426,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .rp-page .page-head__actions { flex-wrap: wrap; }
 
 /* A solution's short name after its name, quieter: it is how colleagues say the
-   customer aloud, and a second way to spot the row. Shared by the Solutions list,
-   the Environments list and the Upgrades page, so the three read alike (#966). */
+   customer aloud, and a second way to spot the row. Shared by every list that names a
+   solution - the Solutions list and Upgrades so far (#966) - so they read alike. */
 .sol-list__short { margin-left: var(--space-2); color: var(--ink-3); font-size: var(--text-sm); }

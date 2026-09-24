@@ -131,6 +131,16 @@ else
                 ? "Booked a move of the update date"
                 : "Moved the update date to the latest allowed";
         }
+        // A version change names its version in the headline, because that is the whole
+        // of what it did; the date is Business Central's, so there is nothing else to say.
+        if (entry.Kind == UpgradeActionKind.SelectVersion)
+        {
+            var version = entry.TargetVersion ?? "another version";
+            if (entry.IsBooking) return $"Booked a change of the next version to {version}";
+            return entry.Status == UpgradeActionStatus.Failed
+                ? $"Tried to set the next version to {version}"
+                : $"Set the next version to {version}";
+        }
         if (entry.IsBooking) return "Booked the update";
         return entry.Status == UpgradeActionStatus.Failed
             ? "Tried to start the update"
