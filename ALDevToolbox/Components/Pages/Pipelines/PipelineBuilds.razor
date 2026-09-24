@@ -5,6 +5,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Delivery.PipelineService Pipelines
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildImporter Builds
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.BuildFreshnessService Freshness
 @inject ALDevToolbox.Services.ObjectExplorer.Delivery.ReleasePipelineService Releases
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject NavigationManager Nav
@@ -33,6 +34,13 @@
     with this pipeline filled in when none does) and opens the same ReleaseBuildDialog
     the deployment pipeline's page opens, with this build selected. The canonical Deploy
     action stays on the deployment pipeline.
+
+    Above the latest build, the Branch card (#964): whether the branch this pipeline
+    watches has moved past its last successful build - the latest commit GitHub told
+    us about, the commit the build used, and the pull requests merged (or the commits
+    pushed) in between, each linking to GitHub. It only reads; Build in the head stays
+    the one primary action. The sheet has no card for this; it is composed from .card,
+    .kv-grid and .meta-item.
 
     Named user: a BC consultant cutting a customer build. Primary action: Build. Repo
     editing and solution deletion live in the Solutions tool (/solutions/{id}).
@@ -172,6 +180,128 @@
         {
             <div class="detail-body@(HasRail ? "" : " detail-body--wide")">
                 <div class="detail-body__main">
+                    @* ── Branch (#964) ─────────────────────────────────── *@
+                    @if (_freshSummary is { Headline: not PipelineFreshnessHeadline.None } && _freshness is { } fresh)
+                    {
+                        var shown = fresh.Repositories.Where(r => r.State != BuildFreshnessState.Unknown).ToList();
+                        <section class="card" aria-labelledby="pb-fresh-title">
+                            <div class="card__head">
+                                <h2 class="card__title" id="pb-fresh-title">Branch</h2>
+                            </div>
+                            <div class="card__body">
+                                <p class="pb-fresh__lead"><FreshnessLine Summary="@_freshSummary" /></p>
+                                @foreach (var repo in shown)
+                                {
+                                    <div class="pb-fresh__repo">
+                                        @if (shown.Count > 1)
+                                        {
+                                            <div class="pb-chg__name"><Icon Name="folder-git-2" Width="12" Height="12" />@repo.RepositoryName</div>
+                                        }
+                                        <div class="kv-grid">
+                                            <span class="meta-item">
+                                                <span class="meta-item__label">Branch</span>
+                                                <span class="meta-item__value meta-item__value--mono">@(repo.Branch ?? "default")</span>
+                                            </span>
+                                            <span class="meta-item">
+                                                <span class="meta-item__label">Latest commit</span>
+                                                <span class="meta-item__value">
+                                                    @if (repo.HeadSha is { } headSha)
+                                                    {
+                                                        <CommitLink WebUrl="@repo.WebUrl" Sha="@headSha" />
+                                                        @if (repo.PusherLogin is { } pusher)
+                                                        {
+                                                            <text> pushed by @pusher</text>
+                                                        }
+                                                        @if (repo.PushedAt is { } pushedAt)
+                                                        {
+                                                            <text>, <Timestamp Value="@pushedAt" Relative="true" /></text>
+                                                        }
+                                                    }
+                                                    else if (repo.State == BuildFreshnessState.BranchGone)
+                                                    {
+                                                        <text>Branch deleted</text>
+                                                    }
+                                                    else
+                                                    {
+                                                        <text>—</text>
+                                                    }
+                                                </span>
+                                            </span>
+                                            <span class="meta-item">
+                                                <span class="meta-item__label">Last build used</span>
+                                                <span class="meta-item__value">
+                                                    @if (repo.BuiltSha is { } builtSha)
+                                                    {
+                                                        <CommitLink WebUrl="@repo.WebUrl" Sha="@builtSha" />
+                                                        <text> in build #@fresh.LastBuildId</text>
+                                                    }
+                                                    else
+                                                    {
+                                                        <text>Not built yet</text>
+                                                    }
+                                                </span>
+                                            </span>
+                                        </div>
+
+                                        @if (repo.State == BuildFreshnessState.BranchGone && _canManage)
+                                        {
+                                            <p class="pb-note">Edit the pipeline to build from another branch.</p>
+                                        }
+
+                                        @if (repo.State == BuildFreshnessState.Ahead)
+                                        {
+                                            @if (repo.MergedPullRequests.Count > 0)
+                                            {
+                                                <div class="section-label">Merged pull requests</div>
+                                                <ul class="pb-chg__list">
+                                                    @foreach (var pr in repo.MergedPullRequests)
+                                                    {
+                                                        <li>
+                                                            @if (repo.WebUrl is { } prBase)
+                                                            {
+                                                                <a href="@($"{prBase}/pull/{pr.Number}")" target="_blank" rel="noopener noreferrer">#@pr.Number @pr.Title</a>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span>#@pr.Number @pr.Title</span>
+                                                            }
+                                                            <span class="pb-fresh__by">
+                                                                @(string.IsNullOrEmpty(pr.AuthorLogin) ? "" : $"by {pr.AuthorLogin}, ")<Timestamp Value="@pr.MergedAt" Relative="true" />
+                                                            </span>
+                                                        </li>
+                                                    }
+                                                </ul>
+                                            }
+                                            else if (repo.Commits.Count > 0)
+                                            {
+                                                <div class="section-label">@(repo.Forced || !repo.CommitsComplete ? "Latest commits" : "New commits")</div>
+                                                <ul class="pb-chg__list">
+                                                    @foreach (var c in repo.Commits)
+                                                    {
+                                                        <li>@FirstLine(c.Message) <CommitLink WebUrl="@repo.WebUrl" Sha="@c.Sha" Chip="true" /></li>
+                                                    }
+                                                </ul>
+                                            }
+
+                                            @if (repo.Forced || !repo.CommitsComplete)
+                                            {
+                                                <p class="pb-note">
+                                                    @(repo.Forced
+                                                        ? $"The branch was force-pushed, so its history since build #{fresh.LastBuildId} was rewritten."
+                                                        : "Only the newest commits are listed.")
+                                                    @if (repo.WebUrl is { } compareBase && repo.BuiltSha is { } fromSha && repo.HeadSha is { } toSha)
+                                                    {
+                                                        <text> </text><a href="@($"{compareBase}/compare/{fromSha}...{toSha}")" target="_blank" rel="noopener noreferrer">See every change on GitHub</a>
+                                                    }
+                                                </p>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
+
                     @* ── Latest build ──────────────────────────────────── *@
                     <section class="card">
                         <div class="card__head">
@@ -675,6 +805,10 @@
     private BuildDetail? _latestDetail;
     private List<ComparableBuildRow> _comparable = new();
 
+    /// <summary>Whether the watched branch moved past the last successful build (#964), per repository.</summary>
+    private PipelineFreshness? _freshness;
+    private PipelineFreshnessSummary? _freshSummary;
+
     /// <summary>
     /// Whether anything belongs in the detail rail. Both are per-record, not
     /// per-page: a pipeline whose only build failed before it recorded a commit
@@ -708,11 +842,12 @@
         List<BuildRow> Builds,
         BuildDetail? LatestDetail,
         List<ComparableBuildRow> Comparable,
-        bool InFlight);
+        bool InFlight,
+        PipelineFreshness? Freshness = null);
 
     /// <summary>The user-driven load: reads through the circuit's own services.</summary>
     private async Task LoadAsync()
-        => Apply(await FetchAsync(Artifacts, Pipelines, CancellationToken.None));
+        => Apply(await FetchAsync(Artifacts, Pipelines, Freshness, CancellationToken.None));
 
     /// <summary>
     /// Reads the page's data through whichever <paramref name="artifacts"/> /
@@ -721,7 +856,7 @@
     /// circuit's <c>DbContext</c> with a click the user makes mid-poll.
     /// </summary>
     private async Task<PageState> FetchAsync(
-        ArtifactService artifacts, PipelineService pipelines, CancellationToken ct)
+        ArtifactService artifacts, PipelineService pipelines, BuildFreshnessService freshness, CancellationToken ct)
     {
         try
         {
@@ -735,7 +870,8 @@
             var latestDetail = latest is null ? null : await artifacts.GetBuildDetailAsync(latest.Id, ct);
             var comparable = await artifacts.ListComparableBuildsAsync(PipelineId, ct);
             var inFlight = await artifacts.HasBuildInFlightAsync(PipelineId, ct);
-            return new PageState(header, false, canManage, builds, latestDetail, comparable, inFlight);
+            var fresh = await freshness.GetAsync(PipelineId, ct);
+            return new PageState(header, false, canManage, builds, latestDetail, comparable, inFlight, fresh);
         }
         catch (ProjectAccessDeniedException)
         {
@@ -760,6 +896,8 @@
             _compareRight = _comparable[1].ReleaseId;
         }
         _inFlight = s.InFlight;
+        _freshness = s.Freshness;
+        _freshSummary = s.Freshness is { } f ? PipelineFreshnessSummary.From(f) : null;
     }
 
     private void CompareAsync()
@@ -1038,6 +1176,7 @@
                     state = await FetchAsync(
                         scope.ServiceProvider.GetRequiredService<ArtifactService>(),
                         scope.ServiceProvider.GetRequiredService<PipelineService>(),
+                        scope.ServiceProvider.GetRequiredService<BuildFreshnessService>(),
                         token);
                 }
 
@@ -1116,6 +1255,9 @@
         $"{Zone.Format(c.StartedAt, "yyyy-MM-dd HH:mm")}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
 
     private static string Short(string hash) => hash.Length > 7 ? hash[..7] : hash;
+
+    /// <summary>A commit message's subject line: the body is one click away on GitHub.</summary>
+    private static string FirstLine(string message) => message.Split('\n', 2)[0].Trim();
 
     /// <summary>
     /// The captured log as colourised lines for the terminal view. Each line is

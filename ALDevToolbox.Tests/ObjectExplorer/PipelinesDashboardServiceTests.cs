@@ -4,6 +4,7 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Delivery;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Services.Organizations;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
@@ -274,6 +275,7 @@ public sealed class PipelinesDashboardServiceTests : IDisposable
             ctx, access,
             new ReleasePipelineService(ctx, _db.OrgContext, access, NullLogger<ReleasePipelineService>.Instance),
             new DeliveryFeedService(ctx, access),
+            new BuildFreshnessService(ctx, access),
             new DisplayTimeZone(_db.NewContextFactory(), _db.OrgContext, NullLogger<DisplayTimeZone>.Instance),
             TimeProvider.System);
         return await service.GetAsync();

@@ -215,6 +215,69 @@ public sealed class BuildFreshnessServiceTests : IDisposable
         await act.Should().ThrowAsync<ProjectAccessDeniedException>();
     }
 
+    [Fact]
+    public async Task The_list_answers_every_visible_pipeline_as_GetAsync_would()
+    {
+        var ahead = await SeedAsync(branch: "main");
+        await AddBuildAsync(ahead, Built);
+        await AddHeadAsync(ahead.RepositoryId, "main", Newest, commits: [Built, Newest]);
+        var current = await SeedAsync(branch: "main");
+        await AddBuildAsync(current, Built);
+        await AddHeadAsync(current.RepositoryId, "main", Built);
+
+        await using var ctx = _db.NewContext();
+        var list = await NewService(ctx).ListAsync();
+
+        list.Select(f => f.PipelineId).Should().BeEquivalentTo([ahead.PipelineId, current.PipelineId]);
+        list.Single(f => f.PipelineId == ahead.PipelineId).Should().BeEquivalentTo(await GetAsync(ahead.PipelineId));
+        list.Single(f => f.PipelineId == current.PipelineId).Repositories.Single().State.Should().Be(BuildFreshnessState.UpToDate);
+        list.Should().OnlyContain(f => f.CanBuild, "a SiteAdmin manages every solution");
+    }
+
+    [Fact]
+    public async Task The_list_leaves_out_what_the_caller_cannot_see_and_says_what_they_cannot_build()
+    {
+        var hidden = await SeedAsync(branch: "main", visibility: ProjectVisibility.Private);
+        var readOnly = await SeedAsync(branch: "main", visibility: ProjectVisibility.ReadOnly);
+        var open = await SeedAsync(branch: "main");
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.Add(new Domain.Entities.User
+            {
+                Id = 9630, OrganizationId = TestDb.DefaultOrgId, Email = "nils@example.com", PasswordHash = "x",
+                DisplayName = "Nils", Role = Domain.Entities.UserRole.User, Status = Domain.Entities.UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        _db.OrgContext.IsSiteAdmin = false;
+        _db.OrgContext.CurrentUserId = 9630;
+
+        await using var ctx = _db.NewContext();
+        var list = await NewService(ctx).ListAsync();
+
+        list.Select(f => f.PipelineId).Should().NotContain(hidden.PipelineId);
+        list.Single(f => f.PipelineId == readOnly.PipelineId).CanBuild.Should().BeFalse("Read-only narrows building to the assigned teams");
+        list.Single(f => f.PipelineId == open.PipelineId).CanBuild.Should().BeTrue("Public means everyone in the organisation manages it");
+    }
+
+    [Theory]
+    [InlineData("https://github.com/cronus-dk/customer-app.git", "https://github.com/cronus-dk/customer-app")]
+    [InlineData("git@github.com:cronus-dk/customer-app.git", "https://github.com/cronus-dk/customer-app")]
+    [InlineData("https://github.com/cronus-dk", null)]
+    public void A_repository_links_to_its_page_on_GitHub(string cloneUrl, string? expected) =>
+        BuildFreshnessService.GitHubWebUrl(cloneUrl).Should().Be(expected);
+
+    [Fact]
+    public async Task Each_repository_carries_its_GitHub_page_for_the_links()
+    {
+        var s = await SeedAsync(branch: "main");
+        await AddBuildAsync(s, Built);
+        await AddHeadAsync(s.RepositoryId, "main", Built);
+
+        Single(await GetAsync(s.PipelineId)).WebUrl.Should().Be("https://github.com/cronus-dk/customer-app");
+    }
+
     // --- Fixture -----------------------------------------------------------
 
     private sealed record Seeded(int ProjectId, int RepositoryId, int PipelineId);

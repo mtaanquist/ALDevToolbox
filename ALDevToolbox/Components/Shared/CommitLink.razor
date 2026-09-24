@@ -1,0 +1,28 @@
+@*
+    A commit's short hash, linking to the commit on GitHub when the repository's page
+    is known, and plain text when it is not. Chip="true" draws it as the .commit-chip
+    a changelog line ends with.
+*@
+
+@if (WebUrl is { Length: > 0 } web)
+{
+    <a class="@CssClass" href="@($"{web}/commit/{Sha}")" target="_blank" rel="noopener noreferrer"
+       title="@($"Open commit {Short} on GitHub")"><code>@Short</code></a>
+}
+else
+{
+    <span class="@CssClass"><code>@Short</code></span>
+}
+
+@code {
+    /// <summary>The repository's page on GitHub (https://github.com/owner/name), or null.</summary>
+    [Parameter] public string? WebUrl { get; set; }
+
+    [Parameter, EditorRequired] public string Sha { get; set; } = string.Empty;
+
+    [Parameter] public bool Chip { get; set; }
+
+    private string Short => Sha.Length > 7 ? Sha[..7] : Sha;
+
+    private string? CssClass => Chip ? "commit-chip" : null;
+}

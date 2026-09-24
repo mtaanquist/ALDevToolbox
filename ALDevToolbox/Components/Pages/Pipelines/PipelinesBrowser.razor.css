@@ -20,3 +20,16 @@
 .pl-branch svg {
     opacity: .7;
 }
+
+/* A pipeline whose branch has moved past its last build (#964): the warning
+   keyline, in place of the latest build's own. The design system's edge table
+   has no warning row state; the component library's warning token is the
+   nearest honest colour. */
+.data-table tr.pl-ahead td:last-child { border-right-color: var(--warning); }
+
+/* The pipeline cell: name and branch sentence, with Build beside the sentence
+   when the branch has moved on. The stack takes the slack; the button keeps its
+   size. */
+.pl-name { display: flex; align-items: center; gap: var(--space-3); }
+.pl-name .cell-stack { flex: 1 1 auto; }
+.pl-name .btn { flex: none; }

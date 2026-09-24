@@ -3,10 +3,14 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.BuildFreshnessService Freshness
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildImporter Builds
+@inject ILogger<PipelinesBrowser> Log
 @inject NavigationManager Nav
 @using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Projects
 @using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.ValueObjects
 
 @*
     The Pipelines landing: every pipeline across the org's solutions, with its latest
@@ -25,6 +29,12 @@
     workbench". Build status is the row's edge keyline plus a leading glyph, and the
     passive counts strip became .pill-tabs that actually filter.
     See .design/design-migration.md.
+
+    Under each pipeline's name, whether its watched branch has moved past its last
+    successful build (#964, the engine is BuildFreshnessService). A pipeline that has
+    gets the warning keyline, a Build button in its row and the "Ready to build" tab,
+    so the morning question "which customers need a build before today's deployments"
+    is one tab away. The sheet has no line for this; it is composed from .cell-stack.
 *@
 
 <PageTitle>Build pipelines · AL Workbench</PageTitle>
@@ -67,6 +77,13 @@
                 <button type="button" class="pill-tab @(_statusFilter == "building" ? "is-active" : "")"
                         @onclick="@(() => _statusFilter = "building")" aria-pressed="@(_statusFilter == "building")">
                     Building<span class="pill-tab__count">@_buildingCount</span>
+                </button>
+            }
+            @if (_readyCount > 0)
+            {
+                <button type="button" class="pill-tab @(_statusFilter == "ready" ? "is-active" : "")"
+                        @onclick="@(() => _statusFilter = "ready")" aria-pressed="@(_statusFilter == "ready")">
+                    Ready to build<span class="pill-tab__count">@_readyCount</span>
                 </button>
             }
             @if (_failedCount > 0)
@@ -146,6 +163,10 @@
         </div>
     </NoMatches>
     <ChildContent>
+        @if (_buildError is { } buildError)
+        {
+            <Alert Tone="AlertTone.Danger"><span>@buildError</span></Alert>
+        }
         <table class="data-table data-table--edge">
             <thead>
                 <tr>
@@ -163,14 +184,38 @@
                 {
                     var sb = p.LatestSuccessfulBuildId;
                     var failedLatest = p.Latest?.Status == "failed";
-                    <tr class="@(p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null)">
+                    var fresh = _summaries.GetValueOrDefault(p.Id);
+                    var ready = IsReady(p);
+                    var rowState = ready ? "pl-ahead" : p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null;
+                    <tr class="@rowState">
                         <td class="data-table__col-state">
                             @if (p.Latest is { } st)
                             {
                                 <RowStateIcon State="@st.Status" />
                             }
                         </td>
-                        <td><a href="@($"/pipelines/{p.Id}")"><strong>@p.Name</strong></a></td>
+                        <td>
+                            @* Build sits beside the answer rather than in the actions
+                               cell, which holds only the kebab (#574): the button is
+                               about the sentence next to it. *@
+                            <div class="pl-name">
+                                <div class="cell-stack">
+                                    <span class="cell-stack__main"><a href="@($"/pipelines/{p.Id}")"><strong>@p.Name</strong></a></span>
+                                    @if (fresh is { Headline: not PipelineFreshnessHeadline.None })
+                                    {
+                                        <span class="cell-stack__sub"><FreshnessLine Summary="@fresh" /></span>
+                                    }
+                                </div>
+                                @if (ready && _canBuild.Contains(p.Id))
+                                {
+                                    <button type="button" class="btn btn--sm" @onclick="() => BuildAsync(p)"
+                                            disabled="@(_starting == p.Id)" aria-label="@($"Build {p.Name}")">
+                                        <Icon Name="hammer" Width="13" Height="13" />
+                                        <span>@(_starting == p.Id ? "Starting..." : "Build")</span>
+                                    </button>
+                                }
+                            </div>
+                        </td>
                         <td><a href="@($"/solutions/{p.ProjectId}")">@p.ProjectName</a></td>
                         <td class="u-muted">@(p.OwnerName ?? "—")</td>
                         <td>
@@ -247,7 +292,12 @@
 
 @code {
     private string NoMatchesTitle => string.IsNullOrEmpty(_search)
-        ? $"No pipelines are {(_statusFilter == "failed" ? "failing" : "building")} right now"
+        ? _statusFilter switch
+        {
+            "failed" => "No pipelines are failing right now",
+            "ready" => "Every pipeline has a build of its latest changes",
+            _ => "No pipelines are building right now",
+        }
         : $"No pipelines match \"{_search}\"";
 
     private List<PipelineArtifactsRow>? _rows;
@@ -255,6 +305,17 @@
     private int _totalCount;
     private int _buildingCount;
     private int _failedCount;
+    private int _readyCount;
+
+    /// <summary>Each pipeline's freshness, folded to one sentence (#964). A pipeline missing here says nothing.</summary>
+    private Dictionary<int, PipelineFreshnessSummary> _summaries = new();
+
+    /// <summary>The pipelines this person may build, so Build is offered only where it would work.</summary>
+    private HashSet<int> _canBuild = new();
+
+    /// <summary>The pipeline whose Build was just pressed, while it is being queued.</summary>
+    private int? _starting;
+    private string? _buildError;
 
     /// <summary>
     /// The search term, taken from <c>?q=</c>.
@@ -270,8 +331,9 @@
     public string? Q { get; set; }
 
     /// <summary>
-    /// The status tab to open on, from <c>?show=</c> (<c>failed</c> or <c>building</c>):
-    /// how the Pipelines dashboard's "Failed builds" tile lands on the failing ones.
+    /// The status tab to open on, from <c>?show=</c> (<c>failed</c>, <c>building</c> or
+    /// <c>ready</c>): how the Pipelines dashboard's "Failed builds" and "Ready to build"
+    /// tiles land on the pipelines they count.
     /// Read once, so choosing another tab afterwards is not undone by a re-render.
     /// </summary>
     [Parameter, SupplyParameterFromQuery(Name = "show")]
@@ -297,11 +359,12 @@
         {
             "building" => _rows.Where(p => p.Latest?.Status is "building" or "queued").ToList(),
             "failed" => _rows.Where(p => p.Latest?.Status == "failed").ToList(),
+            "ready" => _rows.Where(IsReady).ToList(),
             _ => _rows,
         };
 
     protected override void OnInitialized() =>
-        _statusFilter = Show is "failed" or "building" ? Show : null;
+        _statusFilter = Show is "failed" or "building" or "ready" ? Show : null;
 
     // OnParametersSetAsync rather than OnInitializedAsync so submitting the
     // search form — which is a navigation, not a new component — reloads.
@@ -318,7 +381,56 @@
         _totalCount = all.Count;
         _buildingCount = all.Count(p => p.Latest?.Status is "building" or "queued");
         _failedCount = all.Count(p => p.Latest?.Status == "failed");
+
+        var freshness = await Freshness.ListAsync();
+        _summaries = freshness.ToDictionary(f => f.PipelineId, PipelineFreshnessSummary.From);
+        _canBuild = freshness.Where(f => f.CanBuild).Select(f => f.PipelineId).ToHashSet();
+        _readyCount = all.Count(IsReady);
+
         _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListPipelinesAsync(_search);
+    }
+
+    /// <summary>
+    /// The branch has moved past the last build and nothing is building it already: a
+    /// build that is queued or running is the answer, so the row stops asking for one.
+    /// </summary>
+    private bool IsReady(PipelineArtifactsRow p) =>
+        _summaries.GetValueOrDefault(p.Id) is { IsAhead: true }
+        && p.Latest?.Status is not ("queued" or "building");
+
+    /// <summary>
+    /// Build on a ready row: queues the pipeline's build and stays on the list, so the
+    /// next customer can be built straight after. The row turns to Queued; the pipeline's
+    /// own page follows the build live.
+    /// </summary>
+    private async Task BuildAsync(PipelineArtifactsRow p)
+    {
+        if (_starting is not null) return;
+        _starting = p.Id;
+        _buildError = null;
+        try
+        {
+            await Builds.StartBuildAsync(p.Id);
+            _loadedFor = null;
+            await OnParametersSetAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _buildError = $"{p.Name}: {ex.Errors.Values.FirstOrDefault() ?? "Could not start the build."}";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _buildError = $"Only the owner of {p.ProjectName} or an admin can build {p.Name}.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to start build for pipeline {PipelineId} from the list.", p.Id);
+            _buildError = $"Could not start the build of {p.Name}. Try again from its page.";
+        }
+        finally
+        {
+            _starting = null;
+        }
     }
 
     private async Task NewPipelineAsync()
