@@ -1,0 +1,649 @@
+@page "/pipelines"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.PipelinesDashboardService Dashboard
+@inject ALDevToolbox.Services.ObjectExplorer.Projects.ProjectService Projects
+@inject ALDevToolbox.Services.Tools.IToolAvailability ToolAvailability
+@inject NavigationManager Nav
+@using System.Security.Claims
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Delivery
+
+@*
+    The page behind the Pipelines parent in the sidebar (issue #955): what built, what
+    shipped, what failed and what is waiting, before drilling into Builds or Deployments.
+    Built to .design/handoff/PagePipelines.dc.html / PipelinesBody.dc.html, on the
+    dashboard archetype the Admin dashboard (AdminDashboard.razor) already ports: cue
+    tiles, then "Needs attention" and "Recent activity". The adaptations the sheet's port
+    notes name (.design/handoff/briefs/2026-09-pipelines-dashboard.md) are here: builds
+    run when a person presses Build or for a pull request, never "on every push", so the
+    automatic avatar reads "PR"; and nothing installs by itself.
+
+    Named user: an ops engineer opening the workbench in the morning who wants one page
+    that says what built, what shipped, what failed and what is waiting.
+
+    The page is behind either child's toggle (ToolAccessGate lets /pipelines through when
+    build or deployment pipelines are on), so each half of it follows its own tool: with
+    deployment pipelines switched off, their tiles, rows and buttons are not drawn.
+
+    DIVERGENCE from the sheet: its attention rows are inert <div>s with a link on the
+    text and, for an approval, a second link on "Review". Ours are whole-row links like
+    the Admin dashboard's, and "Review" is the look of the approval row's destination -
+    the deployment pipeline page, where approving happens - rather than a second target.
+
+    DIVERGENCE: the sheet draws an "Agent" avatar for a build or deployment an MCP agent
+    started. Nothing records that today - an agent acts as the person whose token it
+    holds - so the row shows that person, which is true.
+*@
+
+<PageTitle>Pipelines · AL Workbench</PageTitle>
+
+<div class="page pd-page">
+    <PageHead Title="Pipelines" ShowActions="@ShowHeadActions">
+        <SubtitleContent>
+            @if (_data is null)
+            {
+                <span class="skeleton pd-sub-skeleton"></span>
+            }
+            else
+            {
+                @HeadSub()
+            }
+        </SubtitleContent>
+        <Actions>
+            <span class="pd-actions">
+                @if (_buildsOn)
+                {
+                    <button type="button" class="btn" @onclick="NewBuildPipelineAsync">
+                        <Icon Name="plus" Width="16" Height="16" />
+                        <span>New build pipeline</span>
+                    </button>
+                }
+                @if (_deploysOn)
+                {
+                    <button type="button" class="btn" @onclick="NewDeploymentPipelineAsync">
+                        <Icon Name="plus" Width="16" Height="16" />
+                        <span>New deployment pipeline</span>
+                    </button>
+                }
+            </span>
+        </Actions>
+    </PageHead>
+
+    @if (_data is null)
+    {
+        <p class="section-label">Builds and deployments</p>
+        <div class="card">
+            <LoadingBlock Text="Loading builds and deployments..." />
+        </div>
+        <div class="dash-cols pd-cols">
+            @foreach (var title in SkeletonCards)
+            {
+                <section class="card">
+                    <div class="card__head"><h2 class="card__title">@title</h2></div>
+                    <div class="activity" aria-hidden="true">
+                        @foreach (var width in SkeletonWidths)
+                        {
+                            <div class="activity__row">
+                                <span class="skeleton pd-skel-avatar"></span>
+                                <span class="pd-skel-body">
+                                    <span class="skeleton pd-skel-line" style="width: @width"></span>
+                                    <span class="skeleton pd-skel-sub"></span>
+                                </span>
+                                <span class="skeleton pd-skel-time"></span>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
+    else if (_projects.Count == 0 && IsEmpty)
+    {
+        @* A pipeline always belongs to a solution, so with none there is only one
+           step, and it is not "New build pipeline". *@
+        <section class="card">
+            <EmptyState Icon="folder-plus" Title="No solutions yet">
+                <Text>
+                    Build and deployment pipelines belong to a solution. Create the solution for
+                    your customer first, then add its pipelines.
+                </Text>
+                <Action>
+                    <a class="btn btn--primary" href="/solutions/new">
+                        <Icon Name="plus" Width="15" Height="15" />
+                        <span>New solution</span>
+                    </a>
+                </Action>
+            </EmptyState>
+        </section>
+    }
+    else if (IsEmpty)
+    {
+        <section class="card">
+            <EmptyState Icon="workflow" Title="No pipelines yet">
+                <Text>
+                    A build pipeline compiles a solution's repositories when you press Build, or for
+                    each pull request. A deployment pipeline installs a build on a Business Central
+                    environment.
+                </Text>
+                <Action>
+                    <span class="pd-empty-actions">
+                        @* The one primary button on the page. With build pipelines switched
+                           off, the deployment pipeline takes its place. *@
+                        @if (_buildsOn)
+                        {
+                            <button type="button" class="btn btn--primary" @onclick="NewBuildPipelineAsync">
+                                <Icon Name="plus" Width="15" Height="15" />
+                                <span>New build pipeline</span>
+                            </button>
+                        }
+                        @if (_deploysOn)
+                        {
+                            var cssClass = _buildsOn ? "btn" : "btn btn--primary";
+                            <button type="button" class="@cssClass" @onclick="NewDeploymentPipelineAsync">
+                                @if (!_buildsOn)
+                                {
+                                    <Icon Name="plus" Width="15" Height="15" />
+                                }
+                                <span>New deployment pipeline</span>
+                            </button>
+                        }
+                    </span>
+                </Action>
+            </EmptyState>
+        </section>
+    }
+    else
+    {
+        <p class="section-label">Builds and deployments</p>
+        <div class="cue-grid">
+            @foreach (var cue in _cues)
+            {
+                <a class="@cue.Css" href="@cue.Href">
+                    <span class="cue__label">@cue.Label</span>
+                    <span class="cue__value">@cue.Value.ToString("N0")</span>
+                    <span class="cue__rule"></span>
+                    <span class="cue__foot">
+                        @* Razor drops the whitespace between an expression and a following
+                           @if, so the spaces around the time are explicit. *@
+                        <span>@if (cue.Foot.At is { } footAt)
+                            {
+                                <text>@cue.Foot.Text <Timestamp Value="@footAt" Relative="true" />@cue.Foot.After</text>
+                            }
+                            else
+                            {
+                                @cue.Foot.Text
+                            }</span>
+                        <Icon Name="chevron-right" Width="15" Height="15" Css="cue__drill" />
+                    </span>
+                </a>
+            }
+        </div>
+
+        <div class="dash-cols pd-cols">
+            <section class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Needs attention</h2>
+                        <p class="card__sub">Newest first</p>
+                    </div>
+                </div>
+                @if (_attention.Count == 0)
+                {
+                    <EmptyState Quiet="true" Title="Nothing is waiting on you">
+                        <Text>
+                            Failed builds and deployments, deployments waiting for approval, environments
+                            that can no longer take a deployment, and secrets about to expire appear here.
+                        </Text>
+                    </EmptyState>
+                }
+                else
+                {
+                    <div class="activity activity--edge">
+                        @foreach (var row in _attention)
+                        {
+                            <a class="activity__row @row.State" href="@row.Href">
+                                <span class="activity__icon" role="img"
+                                      aria-label="@row.StateLabel" title="@row.StateLabel"><Icon Name="@row.Icon" Width="14" Height="14" /></span>
+                                <span class="activity__body">
+                                    <span class="activity__text pd-attn-text">@row.Text</span>
+                                    @if (row.Sub is { Length: > 0 } sub)
+                                    {
+                                        <span class="activity__sub">@sub</span>
+                                    }
+                                    @if (row.Review)
+                                    {
+                                        <span class="pd-review"><span class="btn btn--sm">Review</span></span>
+                                    }
+                                </span>
+                                <span class="activity__time">
+                                    @if (row.At is { } at)
+                                    {
+                                        <Timestamp Value="@at" Relative="true" />
+                                    }
+                                    else if (row.TimeText is { } timeText)
+                                    {
+                                        @timeText
+                                    }
+                                </span>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="card">
+                <div class="card__head pd-card-head">
+                    <div>
+                        <h2 class="card__title">Recent activity</h2>
+                        <p class="card__sub">Builds and deployments, newest first</p>
+                    </div>
+                    <span class="pd-actions">
+                        @if (_buildsOn)
+                        {
+                            <a class="btn btn--sm" href="/pipelines/builds">View all builds</a>
+                        }
+                        @if (_deploysOn && _data.DeploymentPipelineCount > 0)
+                        {
+                            <a class="btn btn--sm" href="/pipelines/deployments">View all deployments</a>
+                        }
+                    </span>
+                </div>
+                @if (_activity.Count == 0)
+                {
+                    <EmptyState Quiet="true" Title="Nothing has run yet">
+                        <Text>Builds and deployments appear here as they start and finish.</Text>
+                    </EmptyState>
+                }
+                else
+                {
+                    <div class="activity activity--edge">
+                        @foreach (var row in _activity)
+                        {
+                            <a class="activity__row @row.State" href="@row.Href">
+                                @switch (row.Avatar)
+                                {
+                                    case AvatarKind.PullRequest:
+                                        <span class="activity__avatar pd-avatar-auto" title="Started by a pull request">PR</span>
+                                        break;
+                                    case AvatarKind.Pipeline:
+                                        <span class="activity__avatar pd-avatar-auto" title="Prepared by the deployment pipeline">Auto</span>
+                                        break;
+                                    default:
+                                        <span class="activity__avatar" aria-hidden="true">@row.Initials</span>
+                                        break;
+                                }
+                                <span class="activity__body">
+                                    <span class="activity__text">@row.Text</span>
+                                    @if (row.Sub is { Length: > 0 } sub)
+                                    {
+                                        <span class="activity__sub">@sub</span>
+                                    }
+                                </span>
+                                <span class="activity__time"><Timestamp Value="@row.At" Relative="true" /></span>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+<PipelineEditorDialog @ref="_buildEditor" OnSaved="OnBuildPipelineCreated" />
+<ReleasePipelineEditorDialog @ref="_deployEditor" OnSaved="OnDeploymentPipelineCreated" />
+
+@code {
+    [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+
+    private PipelinesDashboardData? _data;
+    private List<PipelineProjectOption> _projects = new();
+    private List<Cue> _cues = new();
+    private List<AttentionRow> _attention = new();
+    private List<ActivityRow> _activity = new();
+    private bool _buildsOn;
+    private bool _deploysOn;
+    private bool _isAdmin;
+    private PipelineEditorDialog? _buildEditor;
+    private ReleasePipelineEditorDialog? _deployEditor;
+
+    private static readonly string[] SkeletonCards = ["Needs attention", "Recent activity"];
+    private static readonly string[] SkeletonWidths = ["75%", "60%", "82%", "54%"];
+
+    /// <summary>The foot of every tile on a side that has no pipeline yet (the sheet's half-empty state).</summary>
+    private const string NoDeploymentPipeline = "No deployment pipeline yet";
+    private const string NoBuildPipeline = "No build pipeline yet";
+
+    /// <summary>One cue tile. <paramref name="Css"/> carries the tone: danger, warning or quiet.</summary>
+    private sealed record Cue(string Label, int Value, CueFoot Foot, string Href, string Css);
+
+    /// <summary>
+    /// A tile's foot: <paramref name="Text"/>, then a relative time when <paramref name="At"/>
+    /// is set, then <paramref name="After"/> ("Last one 2 hours ago on main").
+    /// </summary>
+    private sealed record CueFoot(string Text, DateTime? At = null, string? After = null);
+
+    /// <summary>
+    /// One "Needs attention" row. The state word sits on the glyph, not on the row, for the
+    /// reason AdminDashboard gives: the row is a link, and aria-label would replace its name.
+    /// A row with no moment behind it (an expiring secret) shows <paramref name="TimeText"/> instead.
+    /// </summary>
+    private sealed record AttentionRow(
+        string State, string Icon, string StateLabel, string Text, string? Sub,
+        DateTime? At, string Href, bool Review = false, string? TimeText = null);
+
+    private enum AvatarKind { Person, PullRequest, Pipeline }
+
+    private sealed record ActivityRow(
+        AvatarKind Avatar, string Initials, string Text, string? Sub, string State, DateTime At, string Href);
+
+    private bool IsEmpty =>
+        _data is not null
+        && (!_buildsOn || _data.BuildPipelineCount == 0)
+        && (!_deploysOn || _data.DeploymentPipelineCount == 0);
+
+    /// <summary>The empty states carry the one next step themselves; the head would say it twice.</summary>
+    private bool ShowHeadActions => _data is not null && !IsEmpty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = AuthState is null ? null : (await AuthState).User;
+        _buildsOn = ToolOn(ToolKey.Pipelines, user);
+        _deploysOn = ToolOn(ToolKey.Releases, user);
+        _isAdmin = user?.IsInRole("Admin") == true;
+
+        // One after the other: both read through the circuit's one DbContext.
+        var data = await Dashboard.GetAsync();
+        _projects = (await Projects.ListProjectsAsync()).Select(p => new PipelineProjectOption(p.Id, p.Name)).ToList();
+
+        _cues = BuildCues(data);
+        _attention = BuildAttention(data);
+        _activity = BuildActivity(data);
+        _data = data;
+    }
+
+    private bool ToolOn(ToolKey key, ClaimsPrincipal? user) =>
+        ToolAvailability.IsSiteEnabled(key) && !ALDevToolbox.Endpoints.EndpointHelpers.ReadDisabledTools(user).Contains(key);
+
+    // ── Head ─────────────────────────────────────────────────────────────────
+
+    /// <summary>One sentence that changes with the numbers: what ran today, and what waits on someone.</summary>
+    private string HeadSub()
+    {
+        var d = _data!;
+        if (IsEmpty) return "Nothing has been built or deployed yet.";
+
+        var parts = new List<string>();
+        if (_buildsOn && d.BuildsToday > 0) parts.Add(Count(d.BuildsToday, "build"));
+        if (_deploysOn && d.DeploymentsToday > 0) parts.Add(Count(d.DeploymentsToday, "deployment"));
+        var ran = parts.Count > 0 ? string.Join(" and ", parts) + " today" : "Nothing built or deployed today";
+
+        // What is wrong or waiting follows, so the sentence never reads calm above red tiles.
+        var failing = (_buildsOn ? d.FailedBuildPipelines : 0) + (_deploysOn ? d.FailedDeploymentPipelines : 0);
+        var after = new List<string>();
+        if (failing > 0) after.Add($"{failing} failing");
+        if (_deploysOn && d.WaitingForApproval > 0) after.Add($"{d.WaitingForApproval} waiting for approval");
+        if (after.Count > 0)
+        {
+            return $"{ran}, {string.Join(", ", after)}.";
+        }
+        if (_buildsOn && _deploysOn && d.BuildPipelineCount > 0 && d.DeploymentPipelineCount == 0)
+        {
+            return $"{ran}. No deployment pipeline yet.";
+        }
+        return ran + ".";
+    }
+
+    private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
+
+    // ── Tiles ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The seven tiles in the sheet's order, each a link into the list it names -
+    /// pre-filtered where the list has a tab for it. Seven do not fill the six-column
+    /// grid; the seventh wraps, and on a phone reads last, as the sheet has it.
+    /// </summary>
+    private List<Cue> BuildCues(PipelinesDashboardData d)
+    {
+        var cues = new List<Cue>();
+        if (_buildsOn)
+        {
+            var noBuilds = d.BuildPipelineCount == 0;
+            cues.Add(new("Build pipelines", d.BuildPipelineCount,
+                noBuilds ? new(NoBuildPipeline)
+                : d.LastBuild is { } last ? new("Last run", last.At)
+                : new("Nothing has run yet"),
+                "/pipelines/builds", "cue"));
+            cues.Add(new("Builds this week", d.BuildsThisWeek,
+                noBuilds ? new(NoBuildPipeline)
+                : d.BuildsThisWeek > 0 && d.LastBuild is { } recent ? new("Last one", recent.At, " on " + (recent.Branch ?? recent.PipelineName))
+                : new("None in the last 7 days"),
+                "/pipelines/builds", "cue"));
+            cues.Add(new("Failed builds", d.FailedBuildPipelines,
+                noBuilds ? new(NoBuildPipeline) : d.FailedBuildPipelines > 0 ? LatestFailure(d, PipelinesAttentionKind.FailedBuild) : new("None"),
+                d.FailedBuildPipelines > 0 ? "/pipelines/builds?show=failed" : "/pipelines/builds",
+                d.FailedBuildPipelines > 0 ? "cue cue--attention" : "cue"));
+        }
+        if (_deploysOn)
+        {
+            var noDeploys = d.DeploymentPipelineCount == 0;
+            cues.Add(new("Deployment pipelines", d.DeploymentPipelineCount,
+                noDeploys ? new(NoDeploymentPipeline)
+                : d.LastDeploymentAt is { } lastAt ? new("Last deployment", lastAt)
+                : new("Nothing deployed yet"),
+                "/pipelines/deployments", "cue"));
+            cues.Add(new("Shipping now", d.ShippingNow.Count,
+                noDeploys ? new(NoDeploymentPipeline)
+                : d.ShippingNow.Count > 0 ? new(ShippingFoot(d.ShippingNow[0]))
+                : new("Nothing shipping"),
+                d.ShippingNow.Count > 0 ? "/pipelines/deployments?show=shipping" : "/pipelines/deployments", "cue"));
+            cues.Add(new("Failed deployments", d.FailedDeploymentPipelines,
+                noDeploys ? new(NoDeploymentPipeline) : d.FailedDeploymentPipelines > 0 ? LatestFailure(d, PipelinesAttentionKind.FailedDeployment) : new("None"),
+                d.FailedDeploymentPipelines > 0 ? "/pipelines/deployments?show=attention" : "/pipelines/deployments",
+                d.FailedDeploymentPipelines > 0 ? "cue cue--attention" : "cue"));
+            cues.Add(new("Waiting for approval", d.WaitingForApproval,
+                noDeploys ? new(NoDeploymentPipeline)
+                : d.OldestWaitingAt is { } oldest ? new("Oldest prepared", oldest)
+                : new("None"),
+                d.WaitingForApproval > 0 ? "/pipelines/deployments?show=attention" : "/pipelines/deployments",
+                d.WaitingForApproval > 0 ? "cue pd-cue--warning" : "cue"));
+        }
+        return cues;
+    }
+
+    /// <summary>
+    /// A failure tile's foot: when the newest of the failures it counts happened. The
+    /// tile counts pipelines, so the time is the fact that tells a fresh failure from an old one.
+    /// </summary>
+    private static CueFoot LatestFailure(PipelinesDashboardData d, PipelinesAttentionKind kind) =>
+        d.Attention.Where(a => a.Kind == kind).Max(a => a.At) is { } at
+            ? new("Latest failed", at)
+            : new("Needs attention");
+
+    /// <summary>"App 2 of 3 to CRONUS - Production", or just where to, before the first app.</summary>
+    private static string ShippingFoot(PipelinesShipping s) =>
+        s.AppCount > 0
+            ? $"App {s.CurrentApp} of {s.AppCount} to {Target(s.ProjectName, s.EnvironmentName)}"
+            : $"Starting, to {Target(s.ProjectName, s.EnvironmentName)}";
+
+    // ── Needs attention ──────────────────────────────────────────────────────
+
+    private List<AttentionRow> BuildAttention(PipelinesDashboardData d)
+    {
+        var rows = new List<AttentionRow>();
+        foreach (var a in d.Attention)
+        {
+            var isBuild = a.Kind == PipelinesAttentionKind.FailedBuild;
+            if (isBuild ? !_buildsOn : !_deploysOn) continue;
+            rows.Add(ToRow(a));
+        }
+
+        // Half set up: builds exist, and nothing can deploy them yet.
+        if (_buildsOn && _deploysOn && d.BuildPipelineCount > 0 && d.DeploymentPipelineCount == 0)
+        {
+            rows.Add(new AttentionRow("pd-attn--quiet", "circle-plus", "Not set up",
+                "Deployments are not set up. Create a deployment pipeline to install a solution's builds on its environments.",
+                null, null, "/pipelines/deployments"));
+        }
+        return rows;
+    }
+
+    private AttentionRow ToRow(PipelinesAttentionItem a)
+    {
+        var deploymentPage = $"/pipelines/deployments/{a.PipelineId}";
+        var pipelineLine = a.PipelineName is { } name ? $"Deployment pipeline \"{name}\"" : null;
+        var target = Target(a.ProjectName, a.EnvironmentName);
+        const string refuses = "Its deployment pipeline refuses deployments until it points at another environment";
+
+        return a.Kind switch
+        {
+            PipelinesAttentionKind.FailedBuild => new("is-failed", "circle-x", "Failed",
+                $"Build #{a.BuildId} failed on {a.PipelineName}{BranchSuffix(a.Branch)}",
+                Shorten(a.Detail) ?? a.ProjectName, a.At, $"/pipelines/{a.PipelineId}"),
+            PipelinesAttentionKind.FailedDeployment => new("is-failed", "circle-x", "Failed",
+                $"Deployment to {target} failed{(a.Detail is { Length: > 0 } app ? $" while installing {app}" : "")}",
+                pipelineLine, a.At, deploymentPage),
+            PipelinesAttentionKind.WaitingForApproval => new("is-warning", "user-check", "Waiting for approval",
+                $"Build #{a.BuildId} is ready to deploy to {target}",
+                "Prepared by the deployment pipeline. Nothing installs until someone approves it", a.At, deploymentPage, Review: true),
+            PipelinesAttentionKind.EnvironmentDeleting => new("is-warning", "triangle-alert", "Warning",
+                $"{target} is being deleted. {refuses}", pipelineLine, a.At, deploymentPage),
+            PipelinesAttentionKind.EnvironmentMissing => new("is-warning", "triangle-alert", "Warning",
+                $"{target} is no longer in Business Central. {refuses}", pipelineLine, a.At, deploymentPage),
+            PipelinesAttentionKind.EnvironmentFailed => new("is-warning", "triangle-alert", "Warning",
+                $"{target} failed in Business Central. Its deployment pipeline refuses deployments until the environment is fixed or the pipeline points at another one",
+                pipelineLine, a.At, deploymentPage),
+            PipelinesAttentionKind.SharedSecretExpiring => SecretRow(a,
+                "The organisation's Business Central client secret",
+                a.SolutionCount == 1
+                    ? $"Used by {a.ProjectName}"
+                    : $"Used by {a.ProjectName} and {a.SolutionCount - 1} other solution{(a.SolutionCount == 2 ? "" : "s")} with a deployment pipeline",
+                _isAdmin ? "/admin/administration/business-central" : $"/solutions/{a.ProjectId}?tab=bc"),
+            _ => SecretRow(a, $"The Business Central client secret for {a.ProjectName}", "Solution connection",
+                $"/solutions/{a.ProjectId}?tab=bc"),
+        };
+    }
+
+    /// <summary>
+    /// A secret row. Its date is a calendar date someone typed from Entra, so the row says
+    /// how many days are left rather than a time of day that would move with the zone.
+    /// </summary>
+    private static AttentionRow SecretRow(PipelinesAttentionItem a, string subject, string sub, string href)
+    {
+        var days = (int)Math.Ceiling((a.ExpiresAt!.Value - DateTime.UtcNow).TotalDays);
+        return days <= 0
+            ? new("is-failed", "key-round", "Expired", $"{subject} has expired. Deployments fail until it is replaced",
+                sub, null, href, TimeText: "Expired")
+            : new("is-warning", "key-round", "Warning", $"{subject} expires in {Count(days, "day")}",
+                sub, null, href, TimeText: $"{Count(days, "day")} left");
+    }
+
+    // ── Recent activity ──────────────────────────────────────────────────────
+
+    private List<ActivityRow> BuildActivity(PipelinesDashboardData d)
+    {
+        var rows = new List<ActivityRow>();
+        foreach (var a in d.Activity)
+        {
+            var isBuild = a.Kind is PipelinesActivityKind.BuildRunning or PipelinesActivityKind.BuildSucceeded or PipelinesActivityKind.BuildFailed;
+            if (isBuild ? !_buildsOn : !_deploysOn) continue;
+            rows.Add(ToRow(a, isBuild));
+        }
+        return rows;
+    }
+
+    private static ActivityRow ToRow(PipelinesActivityItem a, bool isBuild)
+    {
+        var avatar = a.Actor switch
+        {
+            PipelinesActor.PullRequest => AvatarKind.PullRequest,
+            PipelinesActor.Pipeline => AvatarKind.Pipeline,
+            _ => AvatarKind.Person,
+        };
+        var initials = Avatar.Initials(a.ActorName);
+        var href = isBuild
+            ? $"/pipelines/{a.PipelineId}"
+            : $"/pipelines/deployments/{a.ReleasePipelineId}";
+        var on = $"{a.PipelineName}{BranchSuffix(a.Branch)}";
+        var target = Target(a.ProjectName, a.EnvironmentName);
+        var who = a.Actor switch
+        {
+            PipelinesActor.Person => a.ActorName,
+            PipelinesActor.PullRequest => a.PullRequestNumber is { } pr ? $"Pull request #{pr}" : "A pull request",
+            _ => null,
+        };
+        var startedBy = a.Actor switch
+        {
+            PipelinesActor.Person => $"Started by {a.ActorName}",
+            PipelinesActor.PullRequest => a.PullRequestNumber is { } pr ? $"For pull request #{pr}" : "For a pull request",
+            _ => null,
+        };
+
+        var (text, sub, state) = a.Kind switch
+        {
+            PipelinesActivityKind.BuildRunning => (
+                who is null ? $"Build #{a.BuildId} started on {on}" : $"{who} started build #{a.BuildId} on {on}",
+                (string?)null, "is-open"),
+            PipelinesActivityKind.BuildSucceeded => (
+                a.AppCount > 0 ? $"Build #{a.BuildId} finished on {on} - {Count(a.AppCount, "app")}" : $"Build #{a.BuildId} finished on {on}",
+                startedBy, ""),
+            PipelinesActivityKind.BuildFailed => (
+                $"Build #{a.BuildId} failed on {on}", Shorten(a.Detail) ?? startedBy, "is-failed"),
+            PipelinesActivityKind.DeploymentPrepared => (
+                $"A deployment of build #{a.BuildId} to {target} was prepared", "Waiting for approval", ""),
+            PipelinesActivityKind.DeploymentScheduled => (
+                who is null ? $"The deployment of build #{a.BuildId} to {target} was scheduled"
+                    : $"{who} scheduled the deployment of build #{a.BuildId} to {target}", null, ""),
+            PipelinesActivityKind.DeploymentRunning => (
+                who is null ? $"Build #{a.BuildId} is deploying to {target}"
+                    : $"{who} started deploying build #{a.BuildId} to {target}",
+                a.AppCount > 0 ? $"App {a.CurrentApp} of {a.AppCount}" : null, "is-open"),
+            PipelinesActivityKind.DeploymentDeployed => (
+                who is null ? $"Build #{a.BuildId} was deployed to {target}"
+                    : $"{who} deployed build #{a.BuildId} to {target}", null, ""),
+            PipelinesActivityKind.DeploymentHandedOff => (
+                $"Build #{a.BuildId} was handed to Business Central to install on {target}",
+                who is null ? null : $"Deployed by {who}", ""),
+            PipelinesActivityKind.DeploymentFailed => (
+                $"Deployment to {target} failed{(a.FailedAppName is { Length: > 0 } app ? $" while installing {app}" : "")}",
+                $"Build #{a.BuildId}", "is-warning"),
+            _ => ($"The deployment of build #{a.BuildId} to {target} was cancelled", null, ""),
+        };
+        return new ActivityRow(avatar, initials, text, sub, state, a.At, href);
+    }
+
+    // ── Words shared by both cards ───────────────────────────────────────────
+
+    /// <summary>"CRONUS - Production": the solution, then its environment.</summary>
+    private static string Target(string projectName, string? environmentName) =>
+        string.IsNullOrEmpty(environmentName) ? projectName : $"{projectName} - {environmentName}";
+
+    private static string BranchSuffix(string? branch) => string.IsNullOrEmpty(branch) ? "" : $" - {branch}";
+
+    /// <summary>A failure message trimmed to a line: the whole of it is one click away.</summary>
+    private static string? Shorten(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var line = text.Trim().Split('\n')[0].Trim();
+        return line.Length > 140 ? line[..137].TrimEnd() + "..." : line;
+    }
+
+    // ── Actions ──────────────────────────────────────────────────────────────
+
+    private async Task NewBuildPipelineAsync()
+    {
+        if (_buildEditor is null || _projects.Count == 0) return;
+        await _buildEditor.OpenForCreateAsync(_projects);
+    }
+
+    private async Task NewDeploymentPipelineAsync()
+    {
+        if (_deployEditor is null || _projects.Count == 0) return;
+        await _deployEditor.OpenForCreateAsync(_projects);
+    }
+
+    private void OnBuildPipelineCreated(int id) => Nav.NavigateTo($"/pipelines/{id}");
+
+    private void OnDeploymentPipelineCreated(int id) => Nav.NavigateTo($"/pipelines/deployments/{id}");
+}

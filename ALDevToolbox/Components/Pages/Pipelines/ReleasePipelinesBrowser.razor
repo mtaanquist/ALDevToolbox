@@ -454,7 +454,24 @@
     private PeriodicTimer? _poll;
     private CancellationTokenSource? _pollCts;
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    /// <summary>
+    /// The tab to open on, from <c>?show=</c> (<c>shipping</c>, <c>attention</c> or
+    /// <c>scheduled</c>): how the Pipelines dashboard's tiles land on the rows they count.
+    /// </summary>
+    [Parameter, SupplyParameterFromQuery(Name = "show")]
+    public string? Show { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tab = Show switch
+        {
+            "shipping" => ListTab.ShippingNow,
+            "attention" => ListTab.NeedsAttention,
+            "scheduled" => ListTab.Scheduled,
+            _ => ListTab.All,
+        };
+        await ReloadAsync();
+    }
 
     private async Task ReloadAsync()
     {

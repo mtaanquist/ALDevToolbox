@@ -110,6 +110,24 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
     }
 
     [Fact]
+    public async Task A_show_query_opens_the_list_on_that_tab()
+    {
+        // The Pipelines dashboard's tiles (#955) link here pre-filtered.
+        var s = await SeedFleetAsync();
+        _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>()
+            .NavigateTo("/pipelines/deployments?show=attention");
+
+        var cut = _ctx.Render<ReleasePipelinesBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".pill-tab.is-active").TextContent.Should().Contain("Needs attention");
+            cut.FindAll("table.rp-list__wide tbody tr").Select(r => r.GetAttribute("data-pipeline"))
+                .Should().Equal(s.Blocked.ToString(), s.Failed.ToString());
+        });
+    }
+
+    [Fact]
     public async Task Each_row_says_what_is_shipping_what_failed_and_what_is_blocked_most_urgent_first()
     {
         var s = await SeedFleetAsync();

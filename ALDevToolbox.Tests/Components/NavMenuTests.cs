@@ -228,19 +228,32 @@ public sealed class NavMenuTests : IDisposable
     }
 
     [Fact]
-    public void Builds_and_Deployments_sit_under_one_Pipelines_parent_that_is_not_a_link()
+    public void Builds_and_Deployments_sit_under_a_Pipelines_parent_that_links_to_the_dashboard()
     {
         _auth.SetAuthorized("user@example.com");
 
         var cut = _ctx.Render<NavMenu>();
 
         var parent = cut.FindAll(".nav-parent").Single(p => p.QuerySelector("a[href='/pipelines/builds']") is not null);
-        parent.QuerySelector(".nav-item--group")!.TextContent.Trim().Should().Be("Pipelines");
+        var head = parent.QuerySelector(":scope > a.nav-item")!;
+        head.GetAttribute("href").Should().Be("/pipelines", "the parent is the Pipelines dashboard (#955)");
+        head.TextContent.Trim().Should().Be("Pipelines");
         parent.QuerySelectorAll(".nav-sub a").Select(a => (a.GetAttribute("href"), a.TextContent.Trim()))
             .Should().Equal(("/pipelines/builds", "Builds"), ("/pipelines/deployments", "Deployments"));
-        cut.FindAll("a[href='/pipelines']").Should().BeEmpty(
-            "the parent has no page of its own yet, so it must not look like a link to one");
         cut.FindAll("a[href='/releases']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void On_the_dashboard_the_Pipelines_parent_is_the_current_page()
+    {
+        _auth.SetAuthorized("user@example.com");
+        _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("/pipelines");
+
+        var cut = _ctx.Render<NavMenu>();
+
+        cut.Find("a.nav-item[href='/pipelines']").ClassList.Should().Contain("is-active");
+        cut.FindAll(".nav-sub a.is-active").Should().BeEmpty("neither list is open");
+        cut.FindAll(".nav-parent.has-active-child").Should().BeEmpty();
     }
 
     [Theory]
@@ -255,8 +268,10 @@ public sealed class NavMenuTests : IDisposable
         var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll(".nav-sub a.is-active").Select(a => a.GetAttribute("href")).Should().Equal(activeHref);
-        cut.FindAll(".nav-parent.has-active-child .nav-item--group").Should().ContainSingle(
-            "the parent is not a link, so it carries the current page by weight instead");
+        cut.Find("a.nav-item[href='/pipelines']").ClassList.Should().NotContain("is-active",
+            "the dashboard is not the page being shown");
+        cut.FindAll(".nav-parent.has-active-child a.nav-item[href='/pipelines']").Should().ContainSingle(
+            "the parent carries the current page by weight while one of its children is open");
     }
 
     [Fact]
@@ -266,13 +281,13 @@ public sealed class NavMenuTests : IDisposable
         _tools.Disabled.Add(ToolKey.Pipelines);
 
         var withDeployments = _ctx.Render<NavMenu>();
-        withDeployments.FindAll(".nav-item--group").Should().ContainSingle();
+        withDeployments.FindAll("a[href='/pipelines']").Should().ContainSingle();
         withDeployments.FindAll("a[href='/pipelines/builds']").Should().BeEmpty();
         withDeployments.FindAll("a[href='/pipelines/deployments']").Should().ContainSingle();
 
         _tools.Disabled.Add(ToolKey.Releases);
         var withNeither = _ctx.Render<NavMenu>();
-        withNeither.FindAll(".nav-item--group").Should().BeEmpty(
+        withNeither.FindAll("a[href='/pipelines']").Should().BeEmpty(
             "a parent over no children reads as a bug");
     }
 

@@ -113,6 +113,29 @@ public sealed class ToolAccessGateTests : IDisposable
     }
 
     [Fact]
+    public async Task The_Pipelines_dashboard_answers_while_either_pipeline_tool_is_on()
+    {
+        // /pipelines sits above both lists (#955), so switching one tool off must not
+        // take the dashboard with it; switching both off must.
+        await DisableToolsAsync(ToolKey.Pipelines);
+        using (var factory = new EndpointFactory(_db))
+        using (var client = factory.CreateClient())
+        {
+            (await client.GetAsync("/pipelines")).StatusCode.Should().Be(HttpStatusCode.Redirect,
+                "deployment pipelines are still on: signed out, it sends you to sign in");
+            (await client.GetAsync("/pipelines/builds")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        await DisableToolsAsync(ToolKey.Pipelines, ToolKey.Releases);
+        using (var factory = new EndpointFactory(_db))
+        using (var client = factory.CreateClient())
+        {
+            (await client.GetAsync("/pipelines")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await client.GetAsync("/pipelines/")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [Fact]
     public async Task Enabled_tool_routes_are_not_404d()
     {
         await DisableToolsAsync(ToolKey.Piper);

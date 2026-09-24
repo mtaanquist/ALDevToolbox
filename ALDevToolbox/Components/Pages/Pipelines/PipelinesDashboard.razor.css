@@ -1,0 +1,47 @@
+/* The Pipelines dashboard (#955), from .design/handoff/PipelinesBody.dc.html. The cue
+   tiles, activity rows and cards are components.css / pages.css; these are the sheet's
+   inline styles given names, and nothing else. */
+
+/* The head wraps as the sheet draws it (flex-wrap on the head, the title block 280px
+   before it wraps), so on a phone the two buttons drop under the title instead of
+   running off the screen. PageHead renders the head, hence ::deep from the page. */
+.pd-page ::deep .page-head { flex-wrap: wrap; }
+.pd-page ::deep .page-head > div:first-child { min-width: 0; flex: 1 1 280px; }
+.pd-page ::deep .page-head__actions { flex: 0 1 auto; }
+
+/* The head's subtitle while the numbers load. */
+.pd-sub-skeleton { display: block; width: 260px; max-width: 100%; margin-top: var(--space-2); }
+
+.pd-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pd-card-head { flex-wrap: wrap; gap: var(--space-2); }
+.pd-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+
+/* The sheet's two columns: side by side while each can be 420px, stacked below that. */
+.pd-cols { grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
+
+/* "Waiting for approval" above zero: the warning cue from Components.dc.html, "Pipelines
+   dashboard additions". The cue's own custom properties, set to the warning tokens. */
+.pd-cue--warning {
+    --cue-bg: var(--warning-bg);
+    --cue-bg-hover: var(--warning-bg);
+    --cue-ink: var(--warning-text);
+    --cue-ink-dim: var(--warning-text);
+    --cue-rule: var(--warning);
+    box-shadow: inset 0 0 0 1px var(--warning);
+}
+
+.pd-attn-text { color: var(--ink); }
+.pd-review { margin-top: var(--space-1); }
+/* The half-set-up row: a next step, not a problem, so no keyline and a quiet glyph. */
+.activity__row.pd-attn--quiet .activity__icon { color: var(--ink-3); }
+
+/* A row nobody in particular started: a pull request's build, or a deployment the
+   pipeline prepared. The sunken avatar from Components.dc.html. */
+.pd-avatar-auto { background: var(--surface-sunken); color: var(--ink-2); font-size: 9px; letter-spacing: 0; }
+
+/* The loading state's placeholder rows. */
+.pd-skel-avatar { width: 26px; height: 26px; border-radius: var(--r-pill); }
+.pd-skel-body { display: grid; gap: 6px; }
+.pd-skel-sub { width: 40%; height: 9px; }
+.pd-skel-time { width: 44px; height: 9px; }
+.pd-skel-line { height: 12px; }

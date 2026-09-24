@@ -76,6 +76,8 @@ public static class ObjectExplorerRegistration
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryService>();
         // The cross-solution delivery feed behind list_recent_deployments; read-only.
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryFeedService>();
+        // The Pipelines dashboard at /pipelines (#955): the two lists' numbers on one page; read-only.
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PipelinesDashboardService>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryQueue>();
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryWorker>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ArtifactService>();
