@@ -316,8 +316,8 @@ round trips, and it rides the same per-environment loop (and the same failure is
 the update window above. The **full** updates list is still fetched for the environment
 panel rather than read from the mirror.
 
-Everything else about that feature — the selection rule, the nightly sweep, the two writes
-that move an update's date, the `oe_environment_upgrade_actions` table that is both the
+Everything else about that feature — the selection rule, the nightly sweep, the three writes
+(two move an update's date, one changes its version), the `oe_environment_upgrade_actions` table that is both the
 action queue and the activity feed, and the `/upgrades` page itself — is its own tool and
 lives in **[`environment-updates.md`](./environment-updates.md)**. It shares this document's
 `OeProjectEnvironment` row and its Admin Center client, and nothing else: the delivery slot and

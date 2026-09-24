@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261026000000_AddSelectVersionAction")]
+    partial class AddSelectVersionAction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3978,22 +3981,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("default_core_description");
-
-                    b.Property<TimeOnly?>("DefaultDeliveryWindowProductionEnd")
-                        .HasColumnType("time without time zone")
-                        .HasColumnName("default_delivery_window_production_end");
-
-                    b.Property<TimeOnly?>("DefaultDeliveryWindowProductionStart")
-                        .HasColumnType("time without time zone")
-                        .HasColumnName("default_delivery_window_production_start");
-
-                    b.Property<TimeOnly?>("DefaultDeliveryWindowSandboxEnd")
-                        .HasColumnType("time without time zone")
-                        .HasColumnName("default_delivery_window_sandbox_end");
-
-                    b.Property<TimeOnly?>("DefaultDeliveryWindowSandboxStart")
-                        .HasColumnType("time without time zone")
-                        .HasColumnName("default_delivery_window_sandbox_start");
 
                     b.Property<int>("DefaultIdRangeFrom")
                         .HasColumnType("integer")
