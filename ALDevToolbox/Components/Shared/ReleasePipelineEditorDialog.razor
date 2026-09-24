@@ -176,7 +176,7 @@
                     </div>
 
                     <div class="field">
-                        <label class="field__label" for="rpe-schedule">When installs run</label>
+                        <label class="field__label" for="rpe-schedule">When a deployment installs</label>
                         <SelectBox>
                             <select id="rpe-schedule" class="select" @bind="_deploymentSchedule" disabled="@_saving">
                                 @if (!BcDeploymentSchedule.Pickable.Contains(_deploymentSchedule))
@@ -190,6 +190,7 @@
                                 }
                             </select>
                         </SelectBox>
+                        <small class="field__hint">A deployment starts when you press Deploy or approve a prepared one. This is when it installs.</small>
                         @if (ChosenEnvironment is { } chosenEnv && !ChosenEnvironmentHasWindow)
                         {
                             @if (BcDeploymentSchedule.IsOurDeliveryWindow(_deploymentSchedule))
