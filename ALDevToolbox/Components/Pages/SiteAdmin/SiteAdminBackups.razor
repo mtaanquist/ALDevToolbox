@@ -5,7 +5,10 @@
 @using ALDevToolbox.Services.Backups
 @using ALDevToolbox.Services.Operations
 @inject BackupService Backups
+@using ALDevToolbox.Services.Organizations
 @inject SystemSettingsService Settings
+@inject DisplayTimeZone Zone
+@inject TimeProvider Clock
 @inject OffsiteBackupService Offsite
 @inject OffsiteRestoreJobs RestoreJobs
 @inject ILogger<SiteAdminBackups> Log
@@ -180,7 +183,7 @@
                             Keeping the @_view.BackupRetentionCount most recent, not counting pinned ones.
                             @if (_view.BackupScheduleEnabled)
                             {
-                                <text>A new one is taken daily at @_view.BackupScheduleTimeUtc.ToString("HH:mm") UTC.</text>
+                                <text>A new one is taken daily at <span title="@($"{DisplayTimeZone.FormatTimeOfDay(_view.BackupScheduleTimeUtc)} UTC")">@ScheduleText()</span>@(Zone.Zone == TimeZoneInfo.Utc ? " UTC" : $" ({Zone.Zone.Id})").</text>
                             }
                             else
                             {
@@ -386,6 +389,7 @@
     protected override async Task OnInitializedAsync()
     {
         _view = await Settings.GetViewAsync();
+        await Zone.EnsureLoadedAsync();
         _rows = await Backups.ListAsync();
         _localFileNames = _rows.Select(r => r.FileName).ToHashSet(StringComparer.Ordinal);
 
@@ -413,6 +417,15 @@
             .Where(j => j.Kind == OffsiteRestoreJobKind.WholeDb)
             .ToList();
     }
+
+    /// <summary>
+    /// The schedule in the organisation's zone with today's offset, like the
+    /// settings page that edits it (issue #970), so it agrees with the backup
+    /// times listed below it.
+    /// </summary>
+    private string ScheduleText() =>
+        DisplayTimeZone.FormatTimeOfDay(DisplayTimeZone.TimeOfDayToDisplay(
+            _view!.BackupScheduleTimeUtc, Zone.OffsetAt(Clock.GetUtcNow().UtcDateTime)));
 
     private static string FormatSize(long bytes)
     {

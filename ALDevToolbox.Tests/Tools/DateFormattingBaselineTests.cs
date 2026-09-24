@@ -74,8 +74,6 @@ public sealed class DateFormattingBaselineTests
             "The delivery and update windows are times of day in the customer's zone, and the client secret's expiry is a calendar date the consultant typed."),
         ["ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor"] = (1,
             "\"(2 days ago)\" sits inside the last-shipped hover title, where relative wording reads the same in every zone and a Timestamp cannot go."),
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = (1, "The backup schedule is a UTC time of day, labelled UTC, so it does not move with daylight saving."),
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = (1, "The backup schedule input is a UTC time of day the site admin types, labelled UTC, so it does not move with daylight saving."),
         ["ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor"] = (12,
             "A booked update slot is a wall clock the person types and Business Central runs in each customer's own zone, so it is said back in that zone and labelled with it."),
         ["ALDevToolbox/Components/Shared/EnvironmentActivityFeed.razor"] = (2,
