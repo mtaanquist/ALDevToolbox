@@ -28,21 +28,21 @@ internal static class ToolAccessGate
     {
         app.Use(async (ctx, next) =>
         {
-            var tool = MatchTool(ctx.Request.Path);
-            if (tool is null)
+            var tools = MatchTools(ctx.Request.Path);
+            if (tools.Count == 0)
             {
                 await next();
                 return;
             }
 
             var availability = ctx.RequestServices.GetRequiredService<IToolAvailability>();
-            var siteEnabled = availability.IsSiteEnabled(tool.Value);
+            var orgDisabled = EndpointHelpers.ReadDisabledTools(ctx.User);
             // Org opt-out only narrows a site-enabled tool; a site-disabled tool
-            // is gone for everyone regardless of the claim.
-            var orgDisabled = siteEnabled
-                && EndpointHelpers.ReadDisabledTools(ctx.User).Contains(tool.Value);
+            // is gone for everyone regardless of the claim. A route shared by two
+            // tools (the Pipelines dashboard) answers while either is on.
+            var enabled = tools.Any(t => availability.IsSiteEnabled(t) && !orgDisabled.Contains(t));
 
-            if (!siteEnabled || orgDisabled)
+            if (!enabled)
             {
                 // A plain 404 — UseStatusCodePagesWithReExecute("/not-found")
                 // turns it into the NotFound page. Same idiom as the SiteAdmin
@@ -54,6 +54,28 @@ internal static class ToolAccessGate
             await next();
         });
         return app;
+    }
+
+    /// <summary>
+    /// The page that belongs to two tools: the Pipelines dashboard sits above both
+    /// build and deployment pipelines (#955), so it goes only when both do. Exact
+    /// path only - everything under it still belongs to one tool by longest prefix.
+    /// </summary>
+    private const string SharedPipelinesRoute = "/pipelines";
+
+    /// <summary>
+    /// The tools a request needs at least one of: the two pipeline tools for the
+    /// Pipelines dashboard, otherwise the one <see cref="MatchTool"/> finds, or none
+    /// for a path that is not a gated tool route.
+    /// </summary>
+    internal static IReadOnlyList<ToolKey> MatchTools(PathString path)
+    {
+        if (path.StartsWithSegments(SharedPipelinesRoute, StringComparison.OrdinalIgnoreCase, out var rest)
+            && (!rest.HasValue || rest.Value == "/"))
+        {
+            return [ToolKey.Pipelines, ToolKey.Releases];
+        }
+        return MatchTool(path) is { } tool ? [tool] : [];
     }
 
     /// <summary>

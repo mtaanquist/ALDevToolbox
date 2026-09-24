@@ -71,6 +71,13 @@ public enum NavGate
 
     /// <summary>A SiteAdmin - the cross-org console.</summary>
     SiteAdmin,
+
+    /// <summary>
+    /// Either pipeline tool on: the Pipelines dashboard, which covers build and
+    /// deployment pipelines and so stays while either toggle does (#955). A gate
+    /// rather than a <see cref="NavDestination.Tool"/>, which names one tool.
+    /// </summary>
+    AnyPipelineTool,
 }
 
 /// <summary>
@@ -154,8 +161,9 @@ public static class NavDestinations
         // so the net rule is the grant alone.
         new("Upgrades", "/upgrades", "calendar", "Deliver", Gate: NavGate.EnvironmentOps),
         new("Teams", "/teams", "users", "Deliver", Gate: NavGate.SignedIn),
-        // The sidebar's Pipelines parent is not a page yet, so only its two children
-        // are destinations; the parent's name rides along as their second line.
+        // The sidebar's Pipelines parent is the dashboard over its two children (#955);
+        // the parent's name rides along as their second line.
+        new("Pipelines", "/pipelines", "workflow", "Deliver", Gate: NavGate.AnyPipelineTool),
         new("Builds", "/pipelines/builds", "rocket", "Deliver", Tool: ToolKey.Pipelines, Parent: "Pipelines"),
         new("Deployments", "/pipelines/deployments", "send", "Deliver", Tool: ToolKey.Releases, Parent: "Pipelines"),
 
@@ -249,6 +257,8 @@ public static class NavDestinations
             NavGate.PerOrgAdmin => viewer.IsAdmin && viewer.ShowsPerOrgContent,
             NavGate.OrgAdminOnly => viewer.IsAdmin && !viewer.IsSiteAdmin,
             NavGate.SiteAdmin => contentAuthor && viewer.IsSiteAdmin,
+            NavGate.AnyPipelineTool => viewer.VisibleTools.Contains(ToolKey.Pipelines)
+                || viewer.VisibleTools.Contains(ToolKey.Releases),
             _ => false,
         };
     }

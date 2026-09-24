@@ -78,8 +78,6 @@ public sealed class LegacyRedirectTests : IDisposable
     [InlineData("/api/snippets/12/download", "/api/cookbook/12/download")]
     [InlineData("/releases", "/pipelines/deployments")]
     [InlineData("/releases/12", "/pipelines/deployments/12")]
-    [InlineData("/pipelines", "/pipelines/builds")]
-    [InlineData("/pipelines?q=cronus", "/pipelines/builds?q=cronus")]
     public async Task A_legacy_route_still_redirects_to_its_current_route(string oldRoute, string newRoute)
     {
         await SeedAdminAsync();

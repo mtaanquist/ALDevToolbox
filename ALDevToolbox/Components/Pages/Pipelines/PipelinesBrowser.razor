@@ -269,6 +269,14 @@
     [Parameter, SupplyParameterFromQuery(Name = "q")]
     public string? Q { get; set; }
 
+    /// <summary>
+    /// The status tab to open on, from <c>?show=</c> (<c>failed</c> or <c>building</c>):
+    /// how the Pipelines dashboard's "Failed builds" tile lands on the failing ones.
+    /// Read once, so choosing another tab afterwards is not undone by a re-render.
+    /// </summary>
+    [Parameter, SupplyParameterFromQuery(Name = "show")]
+    public string? Show { get; set; }
+
     private string _search = string.Empty;
 
     /// <summary>What <see cref="_rows"/> was last loaded for, so a re-render doesn't re-query.</summary>
@@ -291,6 +299,9 @@
             "failed" => _rows.Where(p => p.Latest?.Status == "failed").ToList(),
             _ => _rows,
         };
+
+    protected override void OnInitialized() =>
+        _statusFilter = Show is "failed" or "building" ? Show : null;
 
     // OnParametersSetAsync rather than OnInitializedAsync so submitting the
     // search form — which is a navigation, not a new component — reloads.

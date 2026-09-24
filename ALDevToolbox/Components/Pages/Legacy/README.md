@@ -46,5 +46,5 @@ redirects to the route in the second column. Keep the table and that test in ste
 
 `Endpoints/LegacyRedirectEndpoints.cs` holds the same idea for routes that were never
 Blazor pages (the `/snippets` -> `/cookbook` rename, `/projects/extension`, and the
-`/releases` -> `/pipelines/deployments` and `/pipelines` -> `/pipelines/builds` moves); it is
+`/releases` -> `/pipelines/deployments` move); it is
 covered by the same test and the same window.

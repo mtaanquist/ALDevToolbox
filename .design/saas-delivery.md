@@ -23,11 +23,12 @@
 | --- | --- |
 | **Deployment pipeline** - the configured target: a build pipeline's builds (or a repository's GitHub releases) into one environment | `OeReleasePipeline`, `oe_release_pipelines`, `ReleasePipelineService`, `release_pipeline_id` |
 | **Deployment** - one run of it, numbered in the pipeline's history ("Deployment 3"); the verb is **Deploy** ("Deploy", "Deploy again", "Deploy now", "Schedule deployment") | `OeProjectDelivery`, `oe_project_deliveries`, `DeliveryService`, and "delivery" throughout the code |
-| Routes `/pipelines/deployments` and `/pipelines/deployments/{id}`; the build pipelines list at `/pipelines/builds` | `/releases`, `/releases/{id}` and `/pipelines` redirect (`LegacyRedirectEndpoints`) |
+| Routes `/pipelines/deployments` and `/pipelines/deployments/{id}`; the build pipelines list at `/pipelines/builds`; the Pipelines dashboard at `/pipelines` | `/releases` and `/releases/{id}` redirect (`LegacyRedirectEndpoints`) |
 | MCP `list_deployment_pipelines`, `list_deployments`, `deploy_build`, `list_recent_deployments`, and `deploymentPipelineId` / `deploymentId` on the wire | The C# tool methods and the frozen tool keys `ToolKey.Pipelines` / `ToolKey.Releases` (persisted by name in the disabled-tools settings) |
 
 The sidebar groups the two under one **Pipelines** parent with the children **Builds** and
-**Deployments**; the parent is not a link until a Pipelines dashboard gives `/pipelines` a page.
+**Deployments**; the parent links to the Pipelines dashboard at `/pipelines` (see "Pipelines
+dashboard" below).
 
 Two meanings of "release" stay, because they are other people's words: an **Object Explorer
 release** (a Business Central version ingested for browsing) and a **GitHub release** (a tagged
@@ -797,6 +798,40 @@ whole. The page reads the log line back through the same parser, so a deployment
   this one stay on the pipeline's mode. The row reads "Force sync, this deployment only" and the
   run's log says the same. No new column: the snapshot was already there.
 - **Prepared deployments (#934):** see the section of that name below.
+- **Pipelines dashboard (#955):** see the section of that name below.
+
+## Pipelines dashboard (#955)
+
+`/pipelines` is the page behind the sidebar's Pipelines parent: what built, what shipped, what
+failed and what is waiting, across every solution the reader can see, before they drill into
+Builds or Deployments. It is the dashboard archetype (the Admin dashboard's shape), built to
+`.design/handoff/PagePipelines.dc.html` with the port notes in
+`briefs/2026-09-pipelines-dashboard.md`. `PipelinesDashboardService` assembles it in one call,
+reusing `ListReleasePipelineOverviewAsync` for the deployment side and `DeliveryFeedService` for
+the deployment half of the timeline, under the lists' own gate (`VisibleProjectPredicate`).
+
+- **Seven tiles**, each a link into its list, pre-filtered through the list's tabs (`?show=` on
+  both lists): build pipelines (last run), builds in the last seven days (the newest, and its
+  branch), build pipelines whose newest build failed, deployment pipelines (last deployment),
+  deployments shipping now (app n of m, and where to), deployment pipelines whose last deployment
+  failed, and prepared deployments waiting for approval (the oldest). "Today" in the head's
+  sentence is the organisation's day, in the zone it shows times in.
+- **Needs attention**, newest first: a failed newest build, a failed last deployment, a prepared
+  deployment (its row opens the deployment pipeline page, where approving happens), a deployment
+  pipeline aimed at an environment that is missing, being deleted or failed (it refuses
+  deployments until re-pointed), and a Business Central client secret lapsing within 14 days on a
+  solution with a deployment pipeline - one row per solution with its own app registration, one
+  row for the organisation's shared registration. Nothing else: this is not where update windows
+  or environment health in general live.
+- **Recent activity**: the ten newest builds and deployments merged, each at its latest moment.
+  The avatar is the person who started it; a pull-request build reads "PR" and a deployment the
+  pipeline prepared reads "Auto". An agent acting over MCP acts as the person whose token it
+  holds, so it shows as that person - nothing records it separately, and the sheet's "Agent"
+  avatar is not drawn.
+- **Facts only.** No build durations (not recorded), no upload progress, no forecasts.
+- **Tool toggles.** The page answers while either `ToolKey.Pipelines` or `ToolKey.Releases` is on
+  (`ToolAccessGate` treats the exact path as belonging to both), and draws only the half whose
+  tool is on.
 
 ## Prepared deployments (#934)
 

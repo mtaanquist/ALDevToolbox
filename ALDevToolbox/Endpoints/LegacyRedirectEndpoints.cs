@@ -38,12 +38,9 @@ public static class LegacyRedirectEndpoints
         // (.design/saas-delivery.md, "Vocabulary"). "Release" also names an Object
         // Explorer release and a GitHub release, and the two had to stop sharing a word
         // with the thing that installs into a customer's environment. /pipelines itself
-        // forwards to the build pipelines until the Pipelines dashboard takes the route;
-        // the query string rides along so an old /pipelines?q= search still lands.
+        // is the Pipelines dashboard now (#955), no longer a forward to the build list.
         app.MapGet("/releases", () => Results.LocalRedirect("/pipelines/deployments", permanent: true));
         app.MapGet("/releases/{id:int}", (int id) => Results.LocalRedirect($"/pipelines/deployments/{id}", permanent: true));
-        app.MapGet("/pipelines", (HttpContext ctx) =>
-            Results.LocalRedirect("/pipelines/builds" + (ctx.Request.QueryString.Value ?? string.Empty), permanent: false));
 
         app.MapGet("/snippets", () => Results.LocalRedirect("/cookbook", permanent: true));
         app.MapGet("/snippets/suggest", () => Results.LocalRedirect("/cookbook/suggest", permanent: true));
