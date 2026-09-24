@@ -1557,9 +1557,10 @@
     /// this one?" - already done, not possible, busy, not theirs, gone. Same markup as
     /// the other two dialogs, so the three read as one page.
     /// </summary>
-    private RenderFragment VersionPreviewList() => @<div>
+    private RenderFragment VersionPreviewList() => @<div class="upg-version__groups">
         @if (_versionPreview.Any(p => p.WillChange))
         {
+            <section class="upg-version__group">
             <p class="upg-preview__head">Will change (@_versionPreview.Count(p => p.WillChange))</p>
             <ul class="upg-preview">
                 @foreach (var item in _versionPreview.Where(p => p.WillChange))
@@ -1577,11 +1578,13 @@
                     </li>
                 }
             </ul>
+            </section>
         }
         @foreach (var (group, heading) in SkippedGroups)
         {
             var items = _versionPreview.Where(p => p.Group == group).ToList();
             if (items.Count == 0) continue;
+            <section class="upg-version__group">
             <p class="upg-preview__head">@heading (@items.Count)</p>
             <ul class="upg-preview">
                 @foreach (var item in items)
@@ -1592,6 +1595,7 @@
                     </li>
                 }
             </ul>
+            </section>
         }
     </div>;
 

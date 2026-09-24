@@ -549,3 +549,22 @@ a.cell-stack__main {
     margin: 0;
     color: var(--ink-2);
 }
+
+/* Up to seven groups, so the version preview is one scroller - the dialog's own - not
+   a scroller per group inside it: each list cut at 12rem left the last group's
+   heading at the foot of the dialog with its rows in a second box nobody scrolled.
+   Each heading sticks to the top of its own group while that group scrolls past, so
+   a heading scrolled up never leaves its rows behind. */
+.upg-version__groups .upg-preview {
+    max-height: none;
+    overflow: visible;
+}
+
+.upg-version__group .upg-preview__head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0;
+    padding: var(--space-3) 0 var(--space-1);
+    background: var(--surface);
+}

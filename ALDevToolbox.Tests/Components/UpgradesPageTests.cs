@@ -429,6 +429,24 @@ public sealed class UpgradesPageTests : IDisposable
                 "Will change (2)", "Already on it (1)", "Already chosen (1)", "Not offered (1)", "Update under way (1)");
         });
 
+        // Every ticked row lands in exactly one group, and every group heading has its
+        // rows under it in the same group - none dropped, none counted twice.
+        cut.WaitForAssertion(() =>
+        {
+            var groups = cut.FindAll(".upg-version__group");
+            groups.Should().HaveCount(5);
+            foreach (var group in groups)
+            {
+                var count = int.Parse(System.Text.RegularExpressions.Regex.Match(
+                    group.QuerySelector(".upg-preview__head")!.TextContent, @"\((\d+)\)").Groups[1].Value);
+                group.QuerySelectorAll(".upg-preview li").Length.Should().Be(count);
+            }
+            var who = cut.FindAll(".upg-version__group .upg-preview__who")
+                .Select(w => System.Text.RegularExpressions.Regex.Replace(w.TextContent, @"\s+", " ").Trim())
+                .ToList();
+            who.Should().HaveCount(6).And.OnlyHaveUniqueItems();
+        });
+
         cut.WaitForAssertion(() =>
         {
             var lines = cut.FindAll(".upg-preview li")
