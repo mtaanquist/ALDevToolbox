@@ -16,6 +16,7 @@ public static class OrganizationRegistration
         services.AddScoped<OrganizationConfigTomlImporter>();
         services.AddScoped<RepositoryProviderPolicyService>();
         services.AddScoped<OrganizationAdminService>();
+        services.AddScoped<DisplayTimeZone>();
         services.AddScoped<TeamService>();
         return services;
     }

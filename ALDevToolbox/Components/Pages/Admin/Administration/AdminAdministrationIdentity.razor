@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject OrganizationBrandingService Branding
 @inject OrganizationAdminService OrgAdmin
+@inject DisplayTimeZone DisplayTimeZone
 @inject NavigationManager Nav
 @inject ILogger<AdminAdministrationIdentity> Log
 @using ALDevToolbox.Data
@@ -53,6 +54,22 @@
                             Hint="Appears in every link to this organisation and in every signed-in session, so it cannot be changed.">
                     <input class="input" id="org-slug" type="text" value="@_slug" readonly disabled
                            aria-label="Short name used in links" />
+                </SettingRow>
+
+                <SettingRow Name="Time zone"
+                            Hint="Times in AL Workbench are shown in this zone. Hover a time for the UTC instant.">
+                    <SelectBox>
+                        <select class="select" id="org-time-zone" aria-label="Time zone"
+                                value="@(_timeZoneId ?? string.Empty)" @onchange="OnTimeZoneChangedAsync"
+                                disabled="@_savingTimeZone">
+                            <option value="">UTC (default)</option>
+                            @foreach (var zone in _timeZoneOptions)
+                            {
+                                <option value="@zone.Id">@zone.Label</option>
+                            }
+                        </select>
+                    </SelectBox>
+                    <FeedbackLine Ok="@_timeZoneOkMessage" Error="@_timeZoneErrMessage" />
                 </SettingRow>
 
                 <SettingRow Name="Require a second step to sign in">
@@ -367,6 +384,11 @@
     private bool _savingDomain;
     private bool _savingStrongAuth;
     private bool _savingAutoJoin;
+    private bool _savingTimeZone;
+    private string? _timeZoneOkMessage;
+    private string? _timeZoneErrMessage;
+    private string? _timeZoneId;
+    private List<(string Id, string Label)> _timeZoneOptions = new();
     private string? _nameOkMessage;
     private string? _nameErrMessage;
     private string? _domainOkMessage;
@@ -442,6 +464,8 @@
         _slug = identity.Slug;
         _requireStrongAuth = identity.RequireStrongAuth;
         _autoJoinVerifiedDomainUsers = identity.AutoJoinVerifiedDomainUsers;
+        _timeZoneId = identity.DisplayTimeZoneId;
+        _timeZoneOptions = BuildTimeZoneOptions(_timeZoneId);
         _domains = await OrgAdmin.ListEmailDomainsAsync();
         ApplyEntraView(await OrgAdmin.GetEntraViewAsync());
         // Blast-radius numbers for the Microsoft-only policy: who would lose
@@ -566,6 +590,64 @@
         finally
         {
             _savingStrongAuth = false;
+        }
+    }
+
+    /// <summary>
+    /// The zones on offer, labelled with their offset today. A saved id that is
+    /// not among them (an alias typed in before this list existed) is kept at
+    /// the top so the select still shows what is stored.
+    /// </summary>
+    private static List<(string Id, string Label)> BuildTimeZoneOptions(string? savedId)
+    {
+        var now = DateTime.UtcNow;
+        var options = DisplayTimeZone.SelectableZones()
+            .Select(z => (z.Id, DisplayTimeZone.Label(z, now)))
+            .ToList();
+        if (!string.IsNullOrEmpty(savedId) && options.All(o => o.Id != savedId)
+            && TimeZoneInfo.TryFindSystemTimeZoneById(savedId, out var saved))
+        {
+            options.Insert(0, (savedId, DisplayTimeZone.Label(saved, now)));
+        }
+        return options;
+    }
+
+    /// <summary>
+    /// Saves as soon as a zone is picked, like the switches around it. A refused
+    /// value puts the select back on the zone that is still stored.
+    /// </summary>
+    private async Task OnTimeZoneChangedAsync(ChangeEventArgs e)
+    {
+        if (_savingTimeZone) return;
+        var previous = _timeZoneId;
+        var next = e.Value as string;
+        _timeZoneId = string.IsNullOrEmpty(next) ? null : next;
+        _savingTimeZone = true;
+        _timeZoneOkMessage = null;
+        _timeZoneErrMessage = null;
+        try
+        {
+            await OrgAdmin.SetDisplayTimeZoneAsync(_timeZoneId);
+            // This circuit read the old zone already; the next page load picks up the new one anyway.
+            DisplayTimeZone.Invalidate();
+            _timeZoneOkMessage = _timeZoneId is null
+                ? "Times are shown in UTC from the next page you open."
+                : $"Times are shown in {_timeZoneId} from the next page you open.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _timeZoneId = previous;
+            _timeZoneErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Pick a zone from the list.";
+        }
+        catch (Exception ex)
+        {
+            _timeZoneId = previous;
+            Log.LogError(ex, "Failed to save the display time zone.");
+            _timeZoneErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingTimeZone = false;
         }
     }
 

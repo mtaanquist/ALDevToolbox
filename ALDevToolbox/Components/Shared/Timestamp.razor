@@ -1,0 +1,56 @@
+@using System.Globalization
+@using ALDevToolbox.Services.Organizations
+@inject DisplayTimeZone Zone
+
+@*
+    Every time the app shows goes through here (issue #942): the text is in the
+    organisation's display time zone, the hover title is the exact instant in
+    UTC, and the datetime attribute carries the machine-readable UTC instant.
+    Pages should not format a DateTime themselves; DateFormattingBaselineTests
+    counts the ones that still do.
+*@
+
+@if (Value is { } value)
+{
+    @if (_ready)
+    {
+        <time datetime="@Iso(value)" title="@Zone.UtcTooltip(value)">@Text(value)</time>
+    }
+}
+else if (Placeholder is not null)
+{
+    @Placeholder
+}
+
+@code {
+    /// <summary>The instant to show, as stored (UTC; an unspecified kind is read as UTC).</summary>
+    [Parameter] public DateTime? Value { get; set; }
+
+    /// <summary>A .NET date format for the text, applied in the display zone.</summary>
+    [Parameter] public string Format { get; set; } = "yyyy-MM-dd HH:mm";
+
+    /// <summary>
+    /// Shows "4 minutes ago" instead of a date. The hover title still gives the
+    /// exact instant, so the relative wording loses nothing.
+    /// </summary>
+    [Parameter] public bool Relative { get; set; }
+
+    /// <summary>What to show when <see cref="Value"/> is null, e.g. "never". Nothing when unset.</summary>
+    [Parameter] public string? Placeholder { get; set; }
+
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // One read per circuit, shared by every timestamp on it; once loaded,
+        // this completes synchronously and costs no extra render.
+        await Zone.EnsureLoadedAsync();
+        _ready = true;
+    }
+
+    private string Text(DateTime value) =>
+        Relative ? RelativeTime.Ago(DisplayTimeZone.AsUtc(value)) : Zone.Format(value, Format);
+
+    private static string Iso(DateTime value) =>
+        DisplayTimeZone.AsUtc(value).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+}
