@@ -3,7 +3,12 @@
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Operations
+@using ALDevToolbox.Services.Organizations
+@using ALDevToolbox.Services.SingleTenant
 @inject SystemSettingsService Settings
+@inject DisplayTimeZone Zone
+@inject TimeProvider Clock
+@inject ISingleTenantMode SingleTenant
 
 <PageTitle>Backup schedule · Site administration · AL Workbench</PageTitle>
 
@@ -28,13 +33,13 @@
                                 Label="@(_view.BackupScheduleEnabled ? "On" : "Off")" />
                     </SettingRow>
 
-                    <SettingRow Name="Time of day"
-                                Hint="In UTC, so it does not move with daylight saving. Pick a quiet hour.">
-                        <span class="u-row">
-                            <input class="input" type="time" name="BackupScheduleTimeUtc" style="width: 128px"
-                                   value="@_view.BackupScheduleTimeUtc.ToString("HH\\:mm")" aria-label="Time of day, UTC" />
-                            <span class="form-actions__note">UTC</span>
-                        </span>
+                    <SettingRow Name="Time of day" Hint="@TimeHint()">
+                        <input class="input" type="time" name="BackupScheduleTime" style="width: 128px"
+                               value="@DisplayTimeZone.FormatTimeOfDay(DisplayTimeZone.TimeOfDayToDisplay(_view.BackupScheduleTimeUtc, _offset))"
+                               aria-label="Time of day" />
+                        @* The offset the time above was shown with, so saving an unchanged
+                           value stores exactly what was there (issue #970). *@
+                        <input type="hidden" name="BackupScheduleOffsetMinutes" value="@((int)_offset.TotalMinutes)" />
                     </SettingRow>
 
                     <SettingRow Name="How many site backups to keep"
@@ -93,9 +98,35 @@
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private SystemSettingsView? _view;
+    private TimeSpan _offset;
+    private bool _severalOrganizations;
 
     protected override async Task OnInitializedAsync()
     {
         _view = await Settings.GetViewAsync();
+        _severalOrganizations = !SingleTenant.IsEnabled && await Settings.HasSeveralOrganizationsAsync();
+        // The schedule is stored as a UTC time of day and shown in the
+        // organisation's zone with today's offset (issue #970).
+        await Zone.EnsureLoadedAsync();
+        _offset = Zone.OffsetAt(Clock.GetUtcNow().UtcDateTime);
+    }
+
+    private string TimeHint()
+    {
+        var zone = Zone.Zone;
+        if (zone == TimeZoneInfo.Utc)
+        {
+            return _severalOrganizations
+                ? "In UTC, which is your organisation's time zone; site admins in other organisations see it in theirs. Pick a quiet hour."
+                : "In UTC. Pick a quiet hour.";
+        }
+        var shownIn = _severalOrganizations
+            ? $"In your organisation's time zone, {zone.Id}; site admins in other organisations see it in theirs."
+            : $"In {zone.Id}.";
+        var stored = DisplayTimeZone.FormatTimeOfDay(_view!.BackupScheduleTimeUtc);
+        var runs = zone.SupportsDaylightSavingTime
+            ? $"Stored as {stored} UTC; the backup runs at the same UTC time all year, so it shifts by an hour in your zone when the clocks change."
+            : $"Stored as {stored} UTC.";
+        return $"{shownIn} {runs} Pick a quiet hour.";
     }
 }

@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Operations;
+using ALDevToolbox.Services.Organizations;
 
 namespace ALDevToolbox.Endpoints;
 
@@ -31,11 +32,18 @@ internal static class SettingsInputBuilder
         SmtpUseStartTls = form.ContainsKey("SmtpUseStartTls") ? IsChecked(form, "SmtpUseStartTls") : null,
     };
 
-    public static SystemSettingsInput WithBackups(SystemSettingsView current, IFormCollection form) => Base(current) with
+    /// <summary>
+    /// The backups tab. The time of day is typed in the organisation's display zone
+    /// (issue #970) and stored as UTC. The page posts the offset it showed the time
+    /// with, so an unchanged value converts back with exactly that offset even if the
+    /// clocks changed between rendering and saving; <paramref name="displayOffset"/>
+    /// (the zone's offset now) is the fallback when that field is missing or odd.
+    /// </summary>
+    public static SystemSettingsInput WithBackups(SystemSettingsView current, IFormCollection form, TimeSpan displayOffset) => Base(current) with
     {
         BackupScheduleEnabled = IsChecked(form, "BackupScheduleEnabled"),
-        BackupScheduleTimeUtc = TimeOnly.TryParse(form["BackupScheduleTimeUtc"], out var bst)
-            ? bst
+        BackupScheduleTimeUtc = TimeOnly.TryParse(form["BackupScheduleTime"], System.Globalization.CultureInfo.InvariantCulture, out var bst)
+            ? DisplayTimeZone.TimeOfDayToUtc(bst, PostedOffset(form) ?? displayOffset)
             : current.BackupScheduleTimeUtc,
         BackupRetentionCount = int.TryParse(form["BackupRetentionCount"], out var brc)
             ? brc
@@ -108,6 +116,17 @@ internal static class SettingsInputBuilder
         SignupEmailDomainAllowlist: current.SignupEmailDomainAllowlist,
         ReleaseDownloadDomainAllowlist: current.ReleaseDownloadDomainAllowlist,
         DisabledTools: ToolCatalog.ParseDisabled(current.DisabledTools).ToList());
+
+    /// <summary>
+    /// The offset the backups page showed its time with, in minutes; null when
+    /// absent or outside the range any real zone uses (UTC-14 to UTC+14).
+    /// </summary>
+    private static TimeSpan? PostedOffset(IFormCollection form) =>
+        int.TryParse(form["BackupScheduleOffsetMinutes"], System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture, out var minutes)
+            && Math.Abs(minutes) <= 14 * 60
+            ? TimeSpan.FromMinutes(minutes)
+            : null;
 
     private static bool IsChecked(IFormCollection form, string name) =>
         EndpointHelpers.IsChecked(form, name);

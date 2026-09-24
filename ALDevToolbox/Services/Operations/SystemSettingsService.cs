@@ -313,6 +313,16 @@ public sealed class SystemSettingsService
         _cache = cache;
     }
 
+    /// <summary>
+    /// True when the deployment has more than one organisation. The settings on this
+    /// row are site-wide but times are shown in each organisation's own zone, so the
+    /// backup schedule page says whose zone it is showing only when there is a choice
+    /// (issue #970). <c>organizations</c> is the tenant root and carries no query
+    /// filter, so this count needs no fence crossing.
+    /// </summary>
+    public async Task<bool> HasSeveralOrganizationsAsync(CancellationToken ct = default) =>
+        await _db.Organizations.AsNoTracking().Take(2).CountAsync(ct) > 1;
+
     /// <summary>Loads the singleton row, populating the audit-friendly view.</summary>
     public async Task<SystemSettingsView> GetViewAsync(CancellationToken ct = default)
     {
