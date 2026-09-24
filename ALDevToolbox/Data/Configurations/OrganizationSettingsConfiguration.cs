@@ -126,6 +126,11 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         // IANA zone id (issue #942). 64 is well above the longest id in the tz
         // database ("America/Argentina/ComodRivadavia", 32).
         entity.Property(e => e.DisplayTimeZoneId).HasColumnName("display_time_zone_id").HasMaxLength(64);
+        // Default delivery windows for newly discovered environments (issue #962).
+        entity.Property(e => e.DefaultDeliveryWindowProductionStart).HasColumnName("default_delivery_window_production_start");
+        entity.Property(e => e.DefaultDeliveryWindowProductionEnd).HasColumnName("default_delivery_window_production_end");
+        entity.Property(e => e.DefaultDeliveryWindowSandboxStart).HasColumnName("default_delivery_window_sandbox_start");
+        entity.Property(e => e.DefaultDeliveryWindowSandboxEnd).HasColumnName("default_delivery_window_sandbox_end");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

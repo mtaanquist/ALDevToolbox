@@ -15,6 +15,13 @@ public static class UpdateWindow
     public static bool IsConfigured(TimeOnly? start, TimeOnly? end) => start is not null && end is not null;
 
     /// <summary>
+    /// A window bound as the 24-hour clock reading people agree it in ("22:00"). A time of
+    /// day in the customer's zone, not an instant, so it never goes through the
+    /// organisation's display zone the way a stored timestamp does.
+    /// </summary>
+    public static string Clock(TimeOnly time) => time.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
     /// Resolves an IANA time-zone id to a <see cref="TimeZoneInfo"/>, falling back to
     /// UTC when the id is null/blank/unknown — so a missing or stale tz never throws in
     /// a scheduling path; the window just runs in UTC.

@@ -2,9 +2,12 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
+@inject ALDevToolbox.Services.Organizations.OrganizationAdminService OrgAdmin
 @inject ILogger<AdminAdministrationBusinessCentral> Log
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Bc
+@using ALDevToolbox.Services.Organizations
 
 @*
     The organisation's own app registration for reaching customers' Business Central.
@@ -51,7 +54,33 @@
         }
         else
         {
-            <p class="bc-lead">One app registration for every customer, set up once here. Each customer authorises it in their own Business Central admin center, and a solution then needs only that customer's tenant ID.</p>
+            @* Two blocks behind two headings because they save differently: the delivery
+               windows write as soon as a pair is complete, and the app registration waits
+               for the button in the foot. The instant block comes first so that button sits
+               directly under the rows it saves - the same split, in the same order, as
+               Identity's Microsoft sign-in block. The frame has one card, so the heading is
+               the boundary. Issue #962. *@
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Delivery windows for new environments</h2>
+                    <p class="card__sub">@WindowCaption Times are in each solution's own time zone, set on its Business Central tab.</p>
+                </div>
+            </div>
+            <div class="setting-list">
+                <SettingRow Name="Default delivery window for Production" Hint="Production environments start with this window.">
+                    @WindowControls(_production)
+                </SettingRow>
+                <SettingRow Name="Default delivery window for Sandbox" Hint="Sandbox environments start with this window.">
+                    @WindowControls(_sandbox)
+                </SettingRow>
+            </div>
+
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">App registration</h2>
+                    <p class="card__sub">One app registration for every customer, set up once here. Each customer authorises it in their own Business Central admin center, and a solution then needs only that customer's tenant ID.</p>
+                </div>
+            </div>
             <div class="setting-list">
                 <SettingRow Name="Client ID">
                     <HintContent>
@@ -172,6 +201,11 @@
     private string _secret = string.Empty;
     private DateTime? _expires;
     private ConfirmDialog? _confirm;
+    private readonly WindowEditor _production = new("Production", "default-window-production");
+    private readonly WindowEditor _sandbox = new("Sandbox", "default-window-sandbox");
+
+    private const string WindowCaption =
+        "Applied to environments the first time they appear. Change an existing environment on its own page, or several at once on the Environments list.";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -184,6 +218,8 @@
             _clientId = _view.ClientId ?? string.Empty;
             _secret = string.Empty;
             _expires = _view.SecretExpiresAt?.Date;
+            _production.Load(_view.DefaultWindows.ProductionStart, _view.DefaultWindows.ProductionEnd);
+            _sandbox.Load(_view.DefaultWindows.SandboxStart, _view.DefaultWindows.SandboxEnd);
         }
         catch (ProjectAccessDeniedException ex)
         {
@@ -284,6 +320,105 @@
         finally
         {
             _saving = false;
+        }
+    }
+
+    // ── Default delivery windows (issue #962) ───────────────────────────
+
+    /// <summary>One row's worth of state: what is typed, what is stored, and how the last save went.</summary>
+    private sealed class WindowEditor
+    {
+        public WindowEditor(string type, string idPrefix)
+        {
+            Type = type;
+            IdPrefix = idPrefix;
+        }
+
+        public string Type { get; }
+        public string IdPrefix { get; }
+        public TimeOnly? Start { get; set; }
+        public TimeOnly? End { get; set; }
+        public TimeOnly? SavedStart { get; set; }
+        public TimeOnly? SavedEnd { get; set; }
+        public bool Saving { get; set; }
+        public string? Ok { get; set; }
+        public string? Error { get; set; }
+        public bool IsHalfFilled => Start is null != (End is null);
+
+        public void Load(TimeOnly? start, TimeOnly? end)
+        {
+            Start = SavedStart = start;
+            End = SavedEnd = end;
+        }
+    }
+
+    private RenderFragment WindowControls(WindowEditor w) =>
+        @<text>
+            <span class="bc-window">
+                <label class="bc-window__time">From <input id="@(w.IdPrefix + "-start")" type="time" class="input input--sm"
+                       @bind="w.Start" @bind:after="() => OnWindowChangedAsync(w)" disabled="@w.Saving"
+                       aria-label="@($"{w.Type} window start")" /></label>
+                <label class="bc-window__time">To <input id="@(w.IdPrefix + "-end")" type="time" class="input input--sm"
+                       @bind="w.End" @bind:after="() => OnWindowChangedAsync(w)" disabled="@w.Saving"
+                       aria-label="@($"{w.Type} window end")" /></label>
+                <button type="button" class="btn btn--sm" @onclick="() => ClearWindowAsync(w)"
+                        disabled="@(w.Saving || (w.Start is null && w.End is null))">Any time</button>
+            </span>
+            @if (w.IsHalfFilled && w.Error is null)
+            {
+                <small class="field__hint">Not saved yet. Enter the @(w.Start is null ? "start" : "end") time too, or press Any time to clear the row.</small>
+            }
+            else if (w.Start is null && w.End is null && w.Ok is null && w.Error is null)
+            {
+                <small class="field__hint">No window yet — new @w.Type environments accept deliveries at any time.</small>
+            }
+            <FeedbackLine Ok="@w.Ok" Error="@w.Error" />
+        </text>;
+
+    private async Task ClearWindowAsync(WindowEditor w)
+    {
+        w.Start = null;
+        w.End = null;
+        await OnWindowChangedAsync(w);
+    }
+
+    /// <summary>
+    /// Saves a row once its pair is complete (both times, or neither). Half a pair waits
+    /// for the other half rather than failing, because typing the start is how every
+    /// window begins. The other row goes along as it is stored, never as it is typed.
+    /// </summary>
+    private async Task OnWindowChangedAsync(WindowEditor w)
+    {
+        w.Ok = w.Error = null;
+        if (w.IsHalfFilled || (w.Start == w.SavedStart && w.End == w.SavedEnd)) return;
+
+        var windows = new DefaultDeliveryWindows(
+            _production == w ? w.Start : _production.SavedStart,
+            _production == w ? w.End : _production.SavedEnd,
+            _sandbox == w ? w.Start : _sandbox.SavedStart,
+            _sandbox == w ? w.End : _sandbox.SavedEnd);
+        w.Saving = true;
+        try
+        {
+            await OrgAdmin.SetDefaultDeliveryWindowsAsync(windows);
+            w.SavedStart = w.Start;
+            w.SavedEnd = w.End;
+            w.Ok = w.Start is { } s && w.End is { } e
+                ? $"Saved. New {w.Type} environments start with a {UpdateWindow.Clock(s)} to {UpdateWindow.Clock(e)} window{(e < s ? " (overnight)" : "")}."
+                : $"Saved. New {w.Type} environments start with no window, so deliveries can go at any time.";
+        }
+        catch (PlanValidationException ex)
+        {
+            w.Error = ex.Errors.Values.FirstOrDefault() ?? "That did not save. Enter both times, or press Any time.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving the default {EnvironmentType} delivery window failed.", w.Type);
+            w.Error = "Couldn't save the window. Try again in a moment.";
+        }
+        finally
+        {
+            w.Saving = false;
         }
     }
 }

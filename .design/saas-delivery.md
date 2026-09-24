@@ -285,6 +285,20 @@ delivering to an environment that has one set, outside it) is **audited** — re
 deliberate, traceable act. Production targets, which already get an extra confirm, are the case this
 most matters for.
 
+**The organisation can set the window a new environment starts with** (#962). Administration →
+Business Central holds one default for Production and one for Sandbox, each start-and-end or "any
+time", in four nullable `time` columns on `organization_settings`
+(`default_delivery_window_{production,sandbox}_{start,end}`), both-or-neither per pair like the
+environment's own editor, and audited like every other settings column. They are read in exactly one
+place: the discovery upsert, when it creates an `OeProjectEnvironment` row, copies the default for the
+fetched environment's type onto `update_window_start` / `_end`. Copied as clock digits, not converted,
+because both the default and the row's window are read in the customer's `bc_time_zone`. A row that
+exists already is never touched — not when its type changes, not when it is recovered, not when a
+soft-delete rename folds onto it — and setting a default later does not backfill; the bulk action on
+the Environments list (#961) is how existing rows are brought in line. An environment copied from
+another is a new row, so it takes the default rather than its source's window. The discovery worker
+reads the setting under the org it has already pinned, through the query filter.
+
 This **supersedes `OeReleasePipeline.default_publish_time`** as the source of the schedule prefill: the
 window lives on the environment (where it's reused across every deployment pipeline targeting it and
 matches the BC mental model), rather than being re-entered per deployment pipeline. Keep
