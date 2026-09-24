@@ -1,0 +1,70 @@
+@using ALDevToolbox.Services.ObjectExplorer.Projects
+
+@*
+    One sentence on whether a build pipeline's watched branch has moved past its last
+    successful build (#964), from BuildFreshnessService folded by PipelineFreshnessSummary:
+    "Up to date with main", "3 commits ahead on main, 2 hours ago", "2 pull requests merged
+    since build #118", "main was force-pushed since build #118", "No successful build yet"
+    (the issue's "Never built", which read as a contradiction beside a failed build),
+    "Branch main no longer exists". Nothing at all when the answer is unknown - the person reading a
+    pipeline cannot do anything about the GitHub App's subscription, so the site-admin
+    GitHub page is where that is said.
+
+    Copy rules from the issue: relative times through Timestamp, never a count after a
+    force push, and "pull requests" spelled out.
+*@
+
+@if (Summary is { } s && s.Headline != PipelineFreshnessHeadline.None)
+{
+    var rowState = s.IsAhead ? "branch-state branch-state--ahead" : "branch-state";
+    <span class="@rowState" data-freshness="@s.Headline.ToString()">
+        <Icon Name="@Glyph(s)" Width="12" Height="12" />
+        <span>@switch (s.Headline)
+            {
+                case PipelineFreshnessHeadline.Ahead when s.Forced:
+                    <text>@BranchName(s) was force-pushed since @BuildRef(s)</text>
+                    break;
+                case PipelineFreshnessHeadline.Ahead when s.MergedPullRequests > 0:
+                    <text>@Plural(s.MergedPullRequests, "pull request") merged since @BuildRef(s)</text>
+                    break;
+                case PipelineFreshnessHeadline.Ahead when s.CommitCount is > 0:
+                    <text>@Plural(s.CommitCount.Value, "commit") ahead on @BranchName(s)@if (s.PushedAt is { } at) {<text>, <Timestamp Value="@at" Relative="true" /></text>}</text>
+                    break;
+                case PipelineFreshnessHeadline.Ahead:
+                    <text>New commits on @BranchName(s) since @BuildRef(s)</text>
+                    break;
+                case PipelineFreshnessHeadline.UpToDate:
+                    <text>Up to date with @BranchName(s)</text>
+                    break;
+                case PipelineFreshnessHeadline.BranchGone:
+                    <text>Branch @BranchName(s) no longer exists</text>
+                    break;
+                case PipelineFreshnessHeadline.NeverBuilt:
+                    <text>No successful build yet</text>
+                    break;
+                case PipelineFreshnessHeadline.NotInLastBuild:
+                    <text>@s.RepositoryName was not part of @BuildRef(s)</text>
+                    break;
+            }</span>
+    </span>
+}
+
+@code {
+    /// <summary>The pipeline's freshness; null or <see cref="PipelineFreshnessHeadline.None"/> draws nothing.</summary>
+    [Parameter] public PipelineFreshnessSummary? Summary { get; set; }
+
+    private static string BranchName(PipelineFreshnessSummary s) => s.Branch ?? "the branch";
+
+    private static string BuildRef(PipelineFreshnessSummary s) =>
+        s.LastBuildId is { } id ? $"build #{id}" : "the last build";
+
+    private static string Plural(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
+
+    private static string Glyph(PipelineFreshnessSummary s) => s.Headline switch
+    {
+        PipelineFreshnessHeadline.Ahead when s.MergedPullRequests > 0 && !s.Forced => "git-merge",
+        PipelineFreshnessHeadline.Ahead => "git-commit-vertical",
+        PipelineFreshnessHeadline.UpToDate => "circle-check",
+        _ => "git-branch",
+    };
+}

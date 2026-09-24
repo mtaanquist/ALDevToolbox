@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using ALDevToolbox.Services.ObjectExplorer.Delivery;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Services.Organizations;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,6 +34,7 @@ public sealed class PipelinesDashboardService
     private readonly ProjectAccess _access;
     private readonly ReleasePipelineService _releases;
     private readonly DeliveryFeedService _feed;
+    private readonly BuildFreshnessService _freshness;
     private readonly DisplayTimeZone _zone;
     private readonly TimeProvider _clock;
 
@@ -41,6 +43,7 @@ public sealed class PipelinesDashboardService
         ProjectAccess access,
         ReleasePipelineService releases,
         DeliveryFeedService feed,
+        BuildFreshnessService freshness,
         DisplayTimeZone zone,
         TimeProvider clock)
     {
@@ -48,6 +51,7 @@ public sealed class PipelinesDashboardService
         _access = access;
         _releases = releases;
         _feed = feed;
+        _freshness = freshness;
         _zone = zone;
         _clock = clock;
     }
@@ -166,6 +170,24 @@ public sealed class PipelinesDashboardService
                 Detail: b.FailureMessage));
         }
 
+        // Build pipelines whose branch has moved past their last successful build (#964),
+        // unless a build of theirs is already queued or running - that build is the answer.
+        var inFlight = latest
+            .Where(b => b.Status is ProjectBuildStatus.Queued or ProjectBuildStatus.Building)
+            .Select(b => b.PipelineId)
+            .ToHashSet();
+        var readyToBuild = 0;
+        foreach (var f in pipelineIds.Count == 0 ? [] : await _freshness.ListAsync(ct))
+        {
+            var summary = PipelineFreshnessSummary.From(f);
+            if (!summary.IsAhead || inFlight.Contains(f.PipelineId) || !pipelineById.TryGetValue(f.PipelineId, out var p)) continue;
+            readyToBuild++;
+            attention.Add(new PipelinesAttentionItem(
+                PipelinesAttentionKind.BranchAhead, summary.PushedAt, p.ProjectId, p.ProjectName,
+                PipelineId: p.Id, PipelineName: p.Name, BuildId: summary.LastBuildId, Branch: summary.Branch,
+                Freshness: summary));
+        }
+
         foreach (var t in targets.Where(t => t.LiveDelivery is null && t.LastDelivery?.Status == ProjectDeliveryStatus.Failed))
         {
             attention.Add(new PipelinesAttentionItem(
@@ -262,6 +284,7 @@ public sealed class PipelinesDashboardService
             BuildsThisWeek: counts?.Week ?? 0,
             BuildsToday: counts?.Today ?? 0,
             FailedBuildPipelines: latest.Count(b => b.Status == ProjectBuildStatus.Failed),
+            ReadyToBuild: readyToBuild,
             DeploymentPipelineCount: targets.Count,
             LastDeploymentAt: targets.Where(t => t.LastDelivery is not null).Select(t => (DateTime?)t.LastDelivery!.At).Max(),
             ShippingNow: shipping,
@@ -376,6 +399,7 @@ public sealed record PipelinesDashboardData(
     int BuildsThisWeek,
     int BuildsToday,
     int FailedBuildPipelines,
+    int ReadyToBuild,
     int DeploymentPipelineCount,
     DateTime? LastDeploymentAt,
     List<PipelinesShipping> ShippingNow,
@@ -396,6 +420,8 @@ public sealed record PipelinesShipping(int ReleasePipelineId, string ProjectName
 public enum PipelinesAttentionKind
 {
     FailedBuild,
+    /// <summary>A build pipeline's branch has moved past its last successful build (#964).</summary>
+    BranchAhead,
     FailedDeployment,
     WaitingForApproval,
     EnvironmentMissing,
@@ -414,6 +440,7 @@ public enum PipelinesAttentionKind
 /// <param name="Detail">The failure message of a build, or the name of the app a deployment failed on.</param>
 /// <param name="ExpiresAt">When the secret lapses, for the two secret kinds.</param>
 /// <param name="SolutionCount">How many solutions share the organisation's secret, for <see cref="PipelinesAttentionKind.SharedSecretExpiring"/>.</param>
+/// <param name="Freshness">What moved on the branch, for <see cref="PipelinesAttentionKind.BranchAhead"/>.</param>
 public sealed record PipelinesAttentionItem(
     PipelinesAttentionKind Kind,
     DateTime? At,
@@ -426,7 +453,8 @@ public sealed record PipelinesAttentionItem(
     string? EnvironmentName = null,
     string? Detail = null,
     DateTime? ExpiresAt = null,
-    int SolutionCount = 0);
+    int SolutionCount = 0,
+    PipelineFreshnessSummary? Freshness = null);
 
 /// <summary>What one row of the activity timeline records.</summary>
 public enum PipelinesActivityKind

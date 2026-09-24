@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.GitHub;
+using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Projects;
@@ -46,35 +47,69 @@ public sealed class BuildFreshnessService
     {
         var pipeline = await _db.OePipelines.AsNoTracking()
             .Where(p => p.Id == pipelineId && p.DeletedAt == null)
-            .Select(p => new { p.Id, p.ProjectId, p.Branch })
+            .Select(p => new PipelineKey(p.Id, p.ProjectId, p.Branch, false))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (pipeline is null) return null;
         await _access.EnsureCanViewAsync(pipeline.ProjectId, ct).ConfigureAwait(false);
+        var ownerId = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.Id == pipeline.ProjectId)
+            .Select(p => p.CreatedByUserId)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        var canBuild = await _access.CanManageAsync(pipeline.ProjectId, ownerId, ct).ConfigureAwait(false);
+
+        return (await ComputeAsync([pipeline with { CanBuild = canBuild }], ct).ConfigureAwait(false))[0];
+    }
+
+    /// <summary>
+    /// <see cref="GetAsync"/> for every pipeline the caller can see, in a fixed number of
+    /// queries rather than one round per pipeline: what the Builds list and the Pipelines
+    /// dashboard read (#964). A pipeline of a solution the caller may not see is simply
+    /// not in the answer, as it is not on those pages.
+    /// </summary>
+    public async Task<List<PipelineFreshness>> ListAsync(CancellationToken ct = default)
+    {
+        var snapshot = await _access.GetSnapshotAsync(ct).ConfigureAwait(false);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var manageable = ProjectAccess.ManageProjectPredicate(snapshot);
+        var pipelines = await _db.OePipelines.AsNoTracking()
+            .Where(p => p.DeletedAt == null)
+            .Where(p => _db.OeProjects.Where(visible).Any(v => v.Id == p.ProjectId))
+            .Select(p => new PipelineKey(p.Id, p.ProjectId, p.Branch,
+                _db.OeProjects.Where(manageable).Any(m => m.Id == p.ProjectId)))
+            .ToListAsync(ct).ConfigureAwait(false);
+        return pipelines.Count == 0 ? [] : await ComputeAsync(pipelines, ct).ConfigureAwait(false);
+    }
+
+    private sealed record PipelineKey(int Id, int ProjectId, string? Branch, bool CanBuild);
+
+    /// <summary>The comparison itself, for any number of pipelines, in a fixed number of queries.</summary>
+    private async Task<List<PipelineFreshness>> ComputeAsync(List<PipelineKey> pipelines, CancellationToken ct)
+    {
+        var projectIds = pipelines.Select(p => p.ProjectId).Distinct().ToList();
+        var pipelineIds = pipelines.Select(p => p.Id).ToList();
 
         var repositories = await _db.OeProjectRepositories.AsNoTracking()
-            .Where(r => r.ProjectId == pipeline.ProjectId)
+            .Where(r => projectIds.Contains(r.ProjectId))
             .OrderBy(r => r.Id)
-            .Select(r => new { r.Id, r.DisplayName })
+            .Select(r => new { r.Id, r.ProjectId, r.DisplayName, r.Provider, r.Url })
             .ToListAsync(ct).ConfigureAwait(false);
         var repositoryIds = repositories.Select(r => r.Id).ToList();
 
-        // The last successful build of this pipeline, and the commit it pinned in
+        // The last successful build of each pipeline, and the commit it pinned in
         // each repository. A repository added after that build, or whose clone
         // failed in it, has no commit there and reads as never built.
-        var lastBuild = await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => b.PipelineId == pipelineId && b.Status == ProjectBuildStatus.Ready)
-            .OrderByDescending(b => b.StartedAt).ThenByDescending(b => b.Id)
-            .Select(b => new { b.Id, b.StartedAt, b.FinishedAt })
-            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
-        var builtByRepository = new Dictionary<int, (string Sha, DateTime? CommittedAt)>();
-        if (lastBuild is not null)
-        {
-            var commits = await _db.OeProjectBuildRepoCommits.AsNoTracking()
-                .Where(c => c.ProjectBuildId == lastBuild.Id && c.ProjectRepositoryId != null && c.CommitHash != "")
-                .Select(c => new { RepositoryId = c.ProjectRepositoryId!.Value, c.CommitHash, c.CommittedAt })
-                .ToListAsync(ct).ConfigureAwait(false);
-            foreach (var c in commits) builtByRepository[c.RepositoryId] = (c.CommitHash, c.CommittedAt);
-        }
+        var readyBuilds = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.PipelineId != null && pipelineIds.Contains(b.PipelineId.Value) && b.Status == ProjectBuildStatus.Ready)
+            .Select(b => new { b.Id, PipelineId = b.PipelineId!.Value, b.StartedAt, b.FinishedAt })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var lastBuilds = readyBuilds
+            .GroupBy(b => b.PipelineId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.StartedAt).ThenByDescending(b => b.Id).First());
+        var lastBuildIds = lastBuilds.Values.Select(b => b.Id).ToList();
+        var pinned = await _db.OeProjectBuildRepoCommits.AsNoTracking()
+            .Where(c => lastBuildIds.Contains(c.ProjectBuildId) && c.ProjectRepositoryId != null && c.CommitHash != "")
+            .Select(c => new { c.ProjectBuildId, RepositoryId = c.ProjectRepositoryId!.Value, c.CommitHash, c.CommittedAt })
+            .ToListAsync(ct).ConfigureAwait(false);
 
         var heads = await _db.OeRepositoryBranchHeads.AsNoTracking()
             .Where(h => repositoryIds.Contains(h.ProjectRepositoryId))
@@ -83,75 +118,107 @@ public sealed class BuildFreshnessService
             .Where(m => repositoryIds.Contains(m.ProjectRepositoryId))
             .ToListAsync(ct).ConfigureAwait(false);
 
-        var result = new List<RepositoryFreshness>(repositories.Count);
-        foreach (var repository in repositories)
+        var answers = new List<PipelineFreshness>(pipelines.Count);
+        foreach (var pipeline in pipelines)
         {
-            // The branch this repository is watched on: the pipeline's own, or the
-            // repository's default as the last push reported it.
-            var head = pipeline.Branch is { } named
-                ? heads.FirstOrDefault(h => h.ProjectRepositoryId == repository.Id
-                                            && string.Equals(h.Branch, named, StringComparison.Ordinal))
-                : heads.FirstOrDefault(h => h.ProjectRepositoryId == repository.Id
-                                            && h.IsDefaultBranch && h.DeletedAt is null);
-            var watchedBranch = pipeline.Branch ?? head?.Branch;
-            (string Sha, DateTime? CommittedAt)? built = builtByRepository.TryGetValue(repository.Id, out var b) ? b : null;
-
-            var state = head is { DeletedAt: not null } ? BuildFreshnessState.BranchGone
-                : built is null ? BuildFreshnessState.NeverBuilt
-                : head is null ? BuildFreshnessState.Unknown
-                : string.Equals(head.HeadSha, built.Value.Sha, StringComparison.OrdinalIgnoreCase) ? BuildFreshnessState.UpToDate
-                : BuildFreshnessState.Ahead;
-
-            IReadOnlyList<MergedPullRequestSummary> mergedSince = [];
-            IReadOnlyList<CommitSummary> commitsSince = [];
-            var commitsComplete = true;
-            if (state == BuildFreshnessState.Ahead && head is not null && built is { } pinned)
+            var lastBuild = lastBuilds.GetValueOrDefault(pipeline.Id);
+            var builtByRepository = new Dictionary<int, (string Sha, DateTime? CommittedAt)>();
+            if (lastBuild is not null)
             {
-                // Pull requests that merged into the watched branch after the built
-                // commit was made. Best effort: time is what the record carries, and
-                // the built commit's own merge is left out by SHA.
-                var since = pinned.CommittedAt ?? lastBuild!.StartedAt;
-                mergedSince = merged
-                    .Where(m => m.ProjectRepositoryId == repository.Id
-                                && string.Equals(m.BaseBranch, watchedBranch, StringComparison.Ordinal)
-                                && m.MergedAt > since
-                                && !string.Equals(m.MergeSha, pinned.Sha, StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(m => m.MergedAt)
-                    .Select(m => new MergedPullRequestSummary(m.Number, m.Title, m.AuthorLogin, m.MergedAt, m.MergeSha))
-                    .ToList();
-
-                // The stored commits after the built one. When the built commit is
-                // not in the list the list is only the newest part of what changed.
-                var stored = GitHubBranchActivityService.ReadCommits(head.CommitsJson);
-                var at = stored.FindIndex(c => string.Equals(c.Sha, pinned.Sha, StringComparison.OrdinalIgnoreCase));
-                commitsComplete = at >= 0;
-                commitsSince = stored.Skip(at + 1)
-                    .Reverse()
-                    .Select(c => new CommitSummary(c.Sha, c.Message))
-                    .ToList();
+                foreach (var c in pinned.Where(c => c.ProjectBuildId == lastBuild.Id))
+                    builtByRepository[c.RepositoryId] = (c.CommitHash, c.CommittedAt);
             }
 
-            result.Add(new RepositoryFreshness(
-                RepositoryId: repository.Id,
-                RepositoryName: repository.DisplayName,
-                Branch: watchedBranch,
-                State: state,
-                HeadSha: head?.HeadSha,
-                PushedAt: head?.PushedAt,
-                PusherLogin: head is { PusherLogin.Length: > 0 } ? head.PusherLogin : null,
-                Forced: head?.Forced ?? false,
-                BuiltSha: built?.Sha,
-                MergedPullRequests: mergedSince,
-                Commits: commitsSince,
-                CommitsComplete: commitsComplete));
-        }
+            var result = new List<RepositoryFreshness>();
+            foreach (var repository in repositories.Where(r => r.ProjectId == pipeline.ProjectId))
+            {
+                // The branch this repository is watched on: the pipeline's own, or the
+                // repository's default as the last push reported it.
+                var head = pipeline.Branch is { } named
+                    ? heads.FirstOrDefault(h => h.ProjectRepositoryId == repository.Id
+                                                && string.Equals(h.Branch, named, StringComparison.Ordinal))
+                    : heads.FirstOrDefault(h => h.ProjectRepositoryId == repository.Id
+                                                && h.IsDefaultBranch && h.DeletedAt is null);
+                var watchedBranch = pipeline.Branch ?? head?.Branch;
+                (string Sha, DateTime? CommittedAt)? built = builtByRepository.TryGetValue(repository.Id, out var b) ? b : null;
 
-        return new PipelineFreshness(
-            PipelineId: pipeline.Id,
-            Branch: pipeline.Branch,
-            LastBuildId: lastBuild?.Id,
-            LastBuiltAt: lastBuild is null ? null : lastBuild.FinishedAt ?? lastBuild.StartedAt,
-            Repositories: result);
+                var state = head is { DeletedAt: not null } ? BuildFreshnessState.BranchGone
+                    : built is null ? BuildFreshnessState.NeverBuilt
+                    : head is null ? BuildFreshnessState.Unknown
+                    : string.Equals(head.HeadSha, built.Value.Sha, StringComparison.OrdinalIgnoreCase) ? BuildFreshnessState.UpToDate
+                    : BuildFreshnessState.Ahead;
+
+                IReadOnlyList<MergedPullRequestSummary> mergedSince = [];
+                IReadOnlyList<CommitSummary> commitsSince = [];
+                var commitsComplete = true;
+                if (state == BuildFreshnessState.Ahead && head is not null && built is { } pin)
+                {
+                    // Pull requests that merged into the watched branch after the built
+                    // commit was made. Best effort: time is what the record carries, and
+                    // the built commit's own merge is left out by SHA.
+                    var since = pin.CommittedAt ?? lastBuild!.StartedAt;
+                    mergedSince = merged
+                        .Where(m => m.ProjectRepositoryId == repository.Id
+                                    && string.Equals(m.BaseBranch, watchedBranch, StringComparison.Ordinal)
+                                    && m.MergedAt > since
+                                    && !string.Equals(m.MergeSha, pin.Sha, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(m => m.MergedAt)
+                        .Select(m => new MergedPullRequestSummary(m.Number, m.Title, m.AuthorLogin, m.MergedAt, m.MergeSha))
+                        .ToList();
+
+                    // The stored commits after the built one. When the built commit is
+                    // not in the list the list is only the newest part of what changed.
+                    var stored = GitHubBranchActivityService.ReadCommits(head.CommitsJson);
+                    var at = stored.FindIndex(c => string.Equals(c.Sha, pin.Sha, StringComparison.OrdinalIgnoreCase));
+                    commitsComplete = at >= 0;
+                    commitsSince = stored.Skip(at + 1)
+                        .Reverse()
+                        .Select(c => new CommitSummary(c.Sha, c.Message))
+                        .ToList();
+                }
+
+                result.Add(new RepositoryFreshness(
+                    RepositoryId: repository.Id,
+                    RepositoryName: repository.DisplayName,
+                    Branch: watchedBranch,
+                    State: state,
+                    HeadSha: head?.HeadSha,
+                    PushedAt: head?.PushedAt,
+                    PusherLogin: head is { PusherLogin.Length: > 0 } ? head.PusherLogin : null,
+                    Forced: head?.Forced ?? false,
+                    BuiltSha: built?.Sha,
+                    MergedPullRequests: mergedSince,
+                    Commits: commitsSince,
+                    CommitsComplete: commitsComplete)
+                {
+                    WebUrl = repository.Provider == RepositoryProvider.GitHub ? GitHubWebUrl(repository.Url) : null,
+                });
+            }
+
+            answers.Add(new PipelineFreshness(
+                PipelineId: pipeline.Id,
+                Branch: pipeline.Branch,
+                LastBuildId: lastBuild?.Id,
+                LastBuiltAt: lastBuild is null ? null : lastBuild.FinishedAt ?? lastBuild.StartedAt,
+                Repositories: result)
+            {
+                CanBuild = pipeline.CanBuild,
+            });
+        }
+        return answers;
+    }
+
+    /// <summary>
+    /// The repository's page on GitHub, from its clone URL (https or scp-style), for
+    /// the links to a commit or a pull request. Null when the URL does not read as
+    /// host/owner/name.
+    /// </summary>
+    internal static string? GitHubWebUrl(string? cloneUrl)
+    {
+        var normalised = GitHubPullRequestBuildWorker.NormaliseRepositoryUrl(cloneUrl);
+        return normalised.Split('/', StringSplitOptions.RemoveEmptyEntries).Length == 3
+            ? "https://" + normalised
+            : null;
     }
 }
 
@@ -184,7 +251,11 @@ public sealed record PipelineFreshness(
     string? Branch,
     int? LastBuildId,
     DateTime? LastBuiltAt,
-    IReadOnlyList<RepositoryFreshness> Repositories);
+    IReadOnlyList<RepositoryFreshness> Repositories)
+{
+    /// <summary>Whether the caller may press Build on this pipeline (manages its solution). Decides what is offered; the build re-checks.</summary>
+    public bool CanBuild { get; init; }
+}
 
 /// <summary>
 /// One repository's freshness.
@@ -208,7 +279,11 @@ public sealed record RepositoryFreshness(
     string? BuiltSha,
     IReadOnlyList<MergedPullRequestSummary> MergedPullRequests,
     IReadOnlyList<CommitSummary> Commits,
-    bool CommitsComplete);
+    bool CommitsComplete)
+{
+    /// <summary>The repository's page on GitHub (https://github.com/owner/name), for links to commits and pull requests; null for any other host.</summary>
+    public string? WebUrl { get; init; }
+}
 
 /// <summary>A pull request that merged into a watched branch.</summary>
 public sealed record MergedPullRequestSummary(int Number, string Title, string AuthorLogin, DateTime MergedAt, string MergeSha);

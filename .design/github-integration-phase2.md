@@ -776,6 +776,36 @@ immediate, and a deployment whose App is not subscribed simply has no heads.
   Webhook URL, and the walkthrough's subscription step now names Push and Pull request.
   Without Push every repository reads `Unknown`, and nothing else changes.
 
+**The surfaces (#964).** Named user: the same consultant, opening the Builds list in the
+morning to see which customers need a build before today's deployments. The per-repository
+answer folds into one sentence per pipeline (`PipelineFreshnessSummary`, strongest first:
+any repository ahead, a deleted branch, no successful build, a repository missing from the
+last build, up to date; a repository whose head is unknown says nothing either way), drawn
+by the shared `FreshnessLine`: "Up to date with main", "3 commits ahead on main, 2 hours
+ago", "2 pull requests merged since build #118" (preferred when merged pull requests are
+stored), "main was force-pushed since build #118" (never a count after a force push, nor
+when the stored commits do not reach back to the build: then "New commits on main since
+build #118"), "No successful build yet" (the issue said "Never built", which read as a contradiction beside a failed build), "Branch main no longer exists", or nothing.
+
+- **Builds list**: the sentence under the pipeline's name. An ahead pipeline with no build
+  already queued or running takes the warning keyline, a **Build** button beside the sentence (outline, not in the kebab-only actions cell, and
+  only for someone who manages the solution) and the **Ready to build** tab
+  (`?show=ready`). Build queues the build and stays on the list.
+- **Pipeline page**: a **Branch** card above the latest build, per repository: the branch,
+  the latest commit (short SHA linking to GitHub, pusher, time), the commit the last
+  successful build used, then the merged pull requests (or the pushed commits) in between,
+  each linking to GitHub; after a force push or a partial list, a link to GitHub's
+  comparison of the two commits. No card when nothing is known. Build in the head stays
+  the only primary action.
+- **Pipelines dashboard**: a **Ready to build** tile after Failed builds (warning tone when
+  above zero, landing on the list's tab) and one "Needs attention" row per ready pipeline
+  ("CRONUS Base is 3 commits ahead of its last build"), linking to the pipeline's page.
+- `BuildFreshnessService.ListAsync` answers every visible pipeline in a fixed number of
+  queries for the list and the dashboard, with whether the caller may build each.
+- The handoff sheets have no line, card or tile for this yet; all three are composed from
+  `.cell-stack`, `.card` + `.kv-grid` + `.meta-item`, and the dashboard's `.cue`, for the
+  design project's next round.
+
 ## #631 Translation memory from every .xlf in the organisation's repositories
 
 Named user: a translator who wants the organisation's past translations to surface as

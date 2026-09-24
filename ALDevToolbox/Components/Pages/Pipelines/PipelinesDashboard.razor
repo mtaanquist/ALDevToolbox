@@ -32,6 +32,12 @@
     the Admin dashboard's, and "Review" is the look of the approval row's destination -
     the deployment pipeline page, where approving happens - rather than a second target.
 
+    ADDITION (#964, not in the sheet yet): a "Ready to build" tile after "Failed builds",
+    counting build pipelines whose branch has moved past their last successful build,
+    and one attention row per such pipeline ("CRONUS Base is 3 commits ahead of its last
+    build"). Both land where Build is: the tile on the Builds list's "Ready to build" tab,
+    the row on the pipeline's page.
+
     DIVERGENCE: the sheet draws an "Agent" avatar for a build or deployment an MCP agent
     started. Nothing records that today - an agent acts as the person whose token it
     holds - so the row shows that person, which is true.
@@ -193,8 +199,9 @@
                 {
                     <EmptyState Quiet="true" Title="Nothing is waiting on you">
                         <Text>
-                            Failed builds and deployments, deployments waiting for approval, environments
-                            that can no longer take a deployment, and secrets about to expire appear here.
+                            Failed builds and deployments, pipelines with changes that have not been built,
+                            deployments waiting for approval, environments that can no longer take a
+                            deployment, and secrets about to expire appear here.
                         </Text>
                     </EmptyState>
                 }
@@ -400,9 +407,9 @@
     // ── Tiles ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The seven tiles in the sheet's order, each a link into the list it names -
-    /// pre-filtered where the list has a tab for it. Seven do not fill the six-column
-    /// grid; the seventh wraps, and on a phone reads last, as the sheet has it.
+    /// The sheet's seven tiles in its order, plus "Ready to build" (#964) after the build
+    /// tiles, each a link into the list it names - pre-filtered where the list has a tab
+    /// for it. Eight do not fill the six-column grid; the last two wrap.
     /// </summary>
     private List<Cue> BuildCues(PipelinesDashboardData d)
     {
@@ -424,6 +431,14 @@
                 noBuilds ? new(NoBuildPipeline) : d.FailedBuildPipelines > 0 ? LatestFailure(d, PipelinesAttentionKind.FailedBuild) : new("None"),
                 d.FailedBuildPipelines > 0 ? "/pipelines/builds?show=failed" : "/pipelines/builds",
                 d.FailedBuildPipelines > 0 ? "cue cue--attention" : "cue"));
+            cues.Add(new("Ready to build", d.ReadyToBuild,
+                noBuilds ? new(NoBuildPipeline)
+                : d.ReadyToBuild > 0 && d.Attention.Where(a => a.Kind == PipelinesAttentionKind.BranchAhead).Max(a => a.At) is { } pushed
+                    ? new("Latest push", pushed)
+                : d.ReadyToBuild > 0 ? new("New changes to build")
+                : new("None"),
+                d.ReadyToBuild > 0 ? "/pipelines/builds?show=ready" : "/pipelines/builds",
+                d.ReadyToBuild > 0 ? "cue pd-cue--warning" : "cue"));
         }
         if (_deploysOn)
         {
@@ -474,7 +489,7 @@
         var rows = new List<AttentionRow>();
         foreach (var a in d.Attention)
         {
-            var isBuild = a.Kind == PipelinesAttentionKind.FailedBuild;
+            var isBuild = a.Kind is PipelinesAttentionKind.FailedBuild or PipelinesAttentionKind.BranchAhead;
             if (isBuild ? !_buildsOn : !_deploysOn) continue;
             rows.Add(ToRow(a));
         }
@@ -501,6 +516,8 @@
             PipelinesAttentionKind.FailedBuild => new("is-failed", "circle-x", "Failed",
                 $"Build #{a.BuildId} failed on {a.PipelineName}{BranchSuffix(a.Branch)}",
                 Shorten(a.Detail) ?? a.ProjectName, a.At, $"/pipelines/{a.PipelineId}"),
+            PipelinesAttentionKind.BranchAhead => new("is-warning", "git-branch", "Ready to build",
+                AheadText(a), $"{a.ProjectName}{BranchSuffix(a.Branch)}", a.At, $"/pipelines/{a.PipelineId}"),
             PipelinesAttentionKind.FailedDeployment => new("is-failed", "circle-x", "Failed",
                 $"Deployment to {target} failed{(a.Detail is { Length: > 0 } app ? $" while installing {app}" : "")}",
                 pipelineLine, a.At, deploymentPage),
@@ -523,6 +540,23 @@
             _ => SecretRow(a, $"The Business Central client secret for {a.ProjectName}", "Solution connection",
                 $"/solutions/{a.ProjectId}?tab=bc"),
         };
+    }
+
+    /// <summary>
+    /// "CRONUS Base is 3 commits ahead of its last build". The count only when it is a
+    /// fact: after a force push the row says so instead, and when the stored commits do
+    /// not reach back to the build it says "new commits". Pull requests are preferred to
+    /// commits when any merged, as they say what changed.
+    /// </summary>
+    private static string AheadText(PipelinesAttentionItem a)
+    {
+        var name = a.PipelineName ?? "A build pipeline";
+        var f = a.Freshness;
+        if (f is null) return $"{name} has changes since its last build";
+        if (f.Forced) return $"{f.Branch ?? "The branch"} was force-pushed since {name}'s last build";
+        if (f.MergedPullRequests > 0) return $"{name} has {Count(f.MergedPullRequests, "pull request")} merged since its last build";
+        if (f.CommitCount is > 0 and var n) return $"{name} is {Count(n, "commit")} ahead of its last build";
+        return $"{name} has new commits since its last build";
     }
 
     /// <summary>
