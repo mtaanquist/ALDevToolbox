@@ -153,6 +153,48 @@ public sealed class DisplayTimeZoneTests : IDisposable
         (await tz.EnsureLoadedAsync()).Id.Should().Be("Europe/Copenhagen");
     }
 
+    [Theory]
+    // Clocks go forward at 01:00 UTC on 2026-03-29 (02:00 local becomes 03:00).
+    [InlineData("2026-03-29T01:30", "2026-03-29T00:30:00Z")]
+    [InlineData("2026-03-29T03:30", "2026-03-29T01:30:00Z")]
+    // 02:30 local never happens that night; it lands just past the jump.
+    [InlineData("2026-03-29T02:30", "2026-03-29T01:30:00Z")]
+    // Summer and winter, with seconds as some browsers post them.
+    [InlineData("2026-07-01T12:00:00", "2026-07-01T10:00:00Z")]
+    [InlineData("2026-01-15T12:00", "2026-01-15T11:00:00Z")]
+    // Text that names its own instant is taken as that instant.
+    [InlineData("2026-07-01T12:00:00Z", "2026-07-01T12:00:00Z")]
+    public async Task A_typed_time_is_read_in_the_display_zone(string typed, string expectedUtc)
+    {
+        await _db.NewOrganizationAdminService(_db.NewContext()).SetDisplayTimeZoneAsync("Europe/Copenhagen");
+        var tz = NewDisplayTimeZone();
+        await tz.EnsureLoadedAsync();
+
+        var utc = tz.ParseInput(typed);
+
+        utc.Should().NotBeNull();
+        utc!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        utc.Value.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)
+            .Should().Be(expectedUtc);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("not a time")]
+    public void A_blank_or_unreadable_input_is_no_filter(string? typed)
+    {
+        NewDisplayTimeZone().ParseInput(typed).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_typed_time_is_UTC_when_no_zone_is_set()
+    {
+        NewDisplayTimeZone().ParseInput("2026-07-01T12:00")
+            .Should().Be(new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc));
+    }
+
     [Fact]
     public void Selectable_zones_are_IANA_ids_with_their_offset_in_the_label()
     {

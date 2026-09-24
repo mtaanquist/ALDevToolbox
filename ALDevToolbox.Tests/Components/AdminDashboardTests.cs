@@ -54,6 +54,7 @@ public sealed class AdminDashboardTests : IDisposable
             .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)),
             ServiceLifetime.Scoped);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddScoped<DashboardService>();
         _ctx.Services.AddScoped<AuditService>();
         _ctx.Services.AddScoped(sp => _db.NewOrganizationConfigService(sp.GetRequiredService<AppDbContext>()));

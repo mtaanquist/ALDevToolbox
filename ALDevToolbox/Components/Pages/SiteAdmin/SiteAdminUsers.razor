@@ -111,7 +111,7 @@
                                 <span class="tag">Yes</span>
                             }
                         </td>
-                        <td class="u-muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Never")</td>
+                        <td class="u-muted"><Timestamp Value="@u.LastLoginAt" Placeholder="Never" /></td>
                         <td class="data-table__actions">
                             @* Neither is the page's primary action - there is no one
                                thing you come here to do, and a primary button on

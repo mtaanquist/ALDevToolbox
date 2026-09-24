@@ -1,6 +1,7 @@
 @page "/site-admin/audit/{id:int}/diff"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @inject AppDbContext Db
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Components.Shared
@@ -47,8 +48,8 @@
     </SubtitleContent>
     <Meta>
         <div class="meta-item">
-            <span class="meta-item__label">When (UTC)</span>
-            <span class="meta-item__value">@_entry!.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</span>
+            <span class="meta-item__label">When</span>
+            <span class="meta-item__value"><Timestamp Value="@_entry!.Timestamp" Format="yyyy-MM-dd HH:mm:ss" /></span>
         </div>
         <div class="meta-item">
             <span class="meta-item__label">Changed by</span>
@@ -105,9 +106,12 @@
         _entry = entry;
         _organizationName = entry.Organization?.Name;
         _beforeJson = entry.SnapshotJson;
+        // The diff's labels are plain text, so they are formatted here, in the
+        // organisation's display zone like every other time on the page.
+        await Zone.EnsureLoadedAsync();
         _beforeLabel = entry.Action == AuditAction.Created
             ? "no prior state (created)"
-            : entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+            : Zone.Format(entry.Timestamp, "yyyy-MM-dd HH:mm:ss");
 
         // Fence category 2 (SiteAdmin cross-org console): same category as the
         // lookup above — the "after" snapshot lives in the same org as the
@@ -127,7 +131,7 @@
         if (next is not null)
         {
             _afterJson = next.SnapshotJson;
-            _afterLabel = next.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+            _afterLabel = Zone.Format(next.Timestamp, "yyyy-MM-dd HH:mm:ss");
         }
         else if (entry.Action == AuditAction.Deleted)
         {

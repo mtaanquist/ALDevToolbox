@@ -179,7 +179,7 @@
                             </span>
                             @if (_github.ConnectedAt is DateTime connectedAt)
                             {
-                                <span class="u-muted">Connected @connectedAt.ToLocalTime().ToString("d MMMM yyyy")</span>
+                                <span class="u-muted">Connected <Timestamp Value="@connectedAt" Format="d MMMM yyyy" /></span>
                             }
                         </div>
                     </SettingRow>

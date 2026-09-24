@@ -167,7 +167,7 @@
                             </td>
                             <td>@Describe(row.Purpose)</td>
                             <td class="u-muted">@row.AttemptCount time@(row.AttemptCount == 1 ? "" : "s")</td>
-                            <td class="u-muted">@row.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                            <td class="u-muted"><Timestamp Value="@row.CreatedAt" /></td>
                         </tr>
                         @if (Reason(row.LastError) is { } reason)
                         {
@@ -239,7 +239,7 @@
                             <td class="u-muted">
                                 @(row.AttemptCount == 0 ? "Not yet" : $"{row.AttemptCount} time{(row.AttemptCount == 1 ? "" : "s")}")
                             </td>
-                            <td class="u-muted">@row.NextAttemptAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                            <td class="u-muted"><Timestamp Value="@row.NextAttemptAt" /></td>
                         </tr>
                     }
                     </tbody>
@@ -247,7 +247,7 @@
             }
         </section>
 
-        <p class="u-muted">As of @_loadedAt.ToString("yyyy-MM-dd HH:mm 'UTC'").</p>
+        <p class="u-muted">As of <Timestamp Value="@_loadedAt" />.</p>
     }
 </div>
 

@@ -237,7 +237,7 @@
                     <th>Runtime</th>
                     <th>Name</th>
                     <th class="data-table__num">Extensions</th>
-                    <th>Last updated (UTC)</th>
+                    <th>Last updated</th>
                     <th class="data-table__actions">Actions</th>
                 </tr>
             </thead>
@@ -275,7 +275,7 @@
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
                         <td class="data-table__num">@t.WorkspaceExtensions.Count</td>
-                        <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td><Timestamp Value="@t.UpdatedAt" Format="yyyy-MM-dd HH:mm:ss" /></td>
                         <td class="data-table__actions">
                             <RowActions Label="@($"Actions for {t.Name}")">
                                 <a class="menu__item" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")" role="menuitem">

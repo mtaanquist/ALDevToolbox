@@ -44,30 +44,8 @@ public sealed class DateFormattingBaselineTests
     /// </summary>
     private static readonly IReadOnlyDictionary<string, int> Baseline = new Dictionary<string, int>(StringComparer.Ordinal)
     {
-        ["ALDevToolbox/Components/Pages/AcceptInvite.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Account.razor"] = 25,
-        ["ALDevToolbox/Components/Pages/AccountSecurity/AccessTokenCreated.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminCookbook.razor"] = 4,
-        ["ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestionReview.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminCookbookSuggestions.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/AdminDashboard.razor"] = 10,
-        ["ALDevToolbox/Components/Pages/Admin/AdminModuleList.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/AdminObjectExplorerIndex.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminRecipeEdit.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminReleaseManage.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/AdminReleasesImportArtifacts.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/AdminTemplateList.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationBusinessCentral.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationOAuthClients.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationRepositories.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationUsers.razor"] = 4,
-        ["ALDevToolbox/Components/Pages/Admin/AuditDiffPage.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/Admin/AuditLogPage.razor"] = 2,
         ["ALDevToolbox/Components/Pages/Environments/EnvironmentDetail.razor"] = 16,
         ["ALDevToolbox/Components/Pages/Environments/EnvironmentsList.razor"] = 5,
-        ["ALDevToolbox/Components/Pages/Error.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/ObjectExplorer/ReleasesBrowserView.razor"] = 1,
         ["ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"] = 3,
         ["ALDevToolbox/Components/Pages/Pipelines/PipelinesBrowser.razor"] = 2,
         ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor"] = 20,
@@ -78,33 +56,36 @@ public sealed class DateFormattingBaselineTests
         ["ALDevToolbox/Components/Pages/Projects/ProjectDetailGeneral.razor"] = 4,
         ["ALDevToolbox/Components/Pages/Projects/ProjectDetailSymbols.razor"] = 3,
         ["ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor"] = 5,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAccessTokens.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAudit.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminAuditDiffPage.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminEmail.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminOAuthClients.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminStorage.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminTenantBackups.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminUsers.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminWorkers.razor"] = 6,
         ["ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor"] = 16,
-        ["ALDevToolbox/Components/Shared/AuditHistoryPanel.razor"] = 4,
         ["ALDevToolbox/Components/Shared/EnvironmentActivityFeed.razor"] = 7,
         ["ALDevToolbox/Components/Shared/EnvironmentOperationsList.razor"] = 1,
         ["ALDevToolbox/Components/Shared/EnvironmentSessionsList.razor"] = 2,
         ["ALDevToolbox/Components/Shared/PipelineEditorDialog.razor"] = 2,
         ["ALDevToolbox/Components/Shared/ReleaseBuildDialog.razor"] = 8,
         ["ALDevToolbox/Components/Shared/ReleasePipelineEditorDialog.razor"] = 2,
-        ["ALDevToolbox/Components/Shared/SettingsAside.razor"] = 1,
+    };
+
+    /// <summary>
+    /// Hits that are not an instant on screen, so the component is the wrong
+    /// tool for them and they stay as they are. The scan subtracts these before
+    /// comparing with <see cref="Baseline"/>, and they are not part of the
+    /// target of an empty baseline. Each entry says why in one sentence; add one
+    /// only for a time that must not be converted into the display zone.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, (int Count, string Reason)> Permitted = new Dictionary<string, (int, string)>(StringComparer.Ordinal)
+    {
+        ["ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor"] = (1, "The date is part of the downloaded file's name, not a time shown on screen."),
+        ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationBusinessCentral.razor"] = (2, "The client secret's expiry is a calendar date the admin typed from Entra, not an instant."),
+        ["ALDevToolbox/Components/Pages/Error.razor"] = (1, "The error time is copied for someone matching it against server logs, which are in UTC, and it is labelled UTC; the page also has to render when the database is down."),
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = (1, "The backup schedule is a UTC time of day, labelled UTC, so it does not move with daylight saving."),
+        ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = (1, "The backup schedule input is a UTC time of day the site admin types, labelled UTC, so it does not move with daylight saving."),
     };
 
     /// <summary>
     /// The sum of <see cref="Baseline"/>, written out so that a sweep has to lower
     /// both: the per-file numbers and the headline number the issue tracks.
     /// </summary>
-    private const int BaselineTotal = 214;
+    private const int BaselineTotal = 112;
 
     [Fact]
     public void No_razor_file_formats_a_time_more_often_than_its_baseline()
@@ -115,18 +96,27 @@ public sealed class DateFormattingBaselineTests
         foreach (var (path, hits) in actual.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             Baseline.TryGetValue(path, out var allowed);
-            if (hits.Count <= allowed) continue;
+            var counted = hits.Count - PermittedCount(path);
+            if (counted <= allowed) continue;
             var where = string.Join("; ", hits.Select(h => $"line {h.Line}: {h.What}"));
             problems.Add(allowed == 0
-                ? $"{path} formats a time itself ({hits.Count}x: {where}). Render it with <Timestamp Value=\"...\" /> instead, so it shows in the organisation's zone with the UTC instant on hover."
-                : $"{path}: baseline {allowed}, found {hits.Count} ({where}). Render the new one with <Timestamp Value=\"...\" /> instead of formatting it in the page.");
+                ? $"{path} formats a time itself ({counted}x: {where}). Render it with <Timestamp Value=\"...\" /> instead, so it shows in the organisation's zone with the UTC instant on hover."
+                : $"{path}: baseline {allowed}, found {counted} ({where}). Render the new one with <Timestamp Value=\"...\" /> instead of formatting it in the page.");
         }
         foreach (var (path, allowed) in Baseline.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
-            var found = actual.TryGetValue(path, out var hits) ? hits.Count : 0;
+            var found = (actual.TryGetValue(path, out var hits) ? hits.Count : 0) - PermittedCount(path);
             if (found < allowed)
             {
                 problems.Add($"{path}: baseline {allowed}, found {found}. Good news - lower this file's baseline (and {nameof(BaselineTotal)}) so it stays honest.");
+            }
+        }
+        foreach (var (path, (count, _)) in Permitted.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var found = actual.TryGetValue(path, out var hits) ? hits.Count : 0;
+            if (found < count)
+            {
+                problems.Add($"{path}: {count} permitted, found {found}. Lower its {nameof(Permitted)} entry so it names only what is still there.");
             }
         }
 
@@ -135,6 +125,19 @@ public sealed class DateFormattingBaselineTests
             + string.Join("\n", actual.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                 .Select(kv => $"        [\"{kv.Key}\"] = {kv.Value.Count},")));
     }
+
+    [Fact]
+    public void Every_permitted_time_says_why_it_is_not_an_instant()
+    {
+        Permitted.Should().AllSatisfy(kv =>
+        {
+            kv.Value.Count.Should().BePositive();
+            kv.Value.Reason.Should().NotBeNullOrWhiteSpace();
+        });
+    }
+
+    private static int PermittedCount(string path) =>
+        Permitted.TryGetValue(path, out var permitted) ? permitted.Count : 0;
 
     [Fact]
     public void Baseline_total_is_the_sum_of_the_per_file_baseline()
