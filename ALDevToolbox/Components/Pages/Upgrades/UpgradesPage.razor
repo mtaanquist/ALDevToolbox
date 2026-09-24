@@ -531,14 +531,17 @@
             </div>
         </fieldset>
 
+        @* The sum and the date note lead, under the picker: the groups below can run
+           long enough to scroll, and the line that says how much of the fleet this
+           touches must not be the part scrolled out of view. *@
         @if (_targetVersion is not null)
         {
-            @VersionPreviewList()
+            <p class="upg-preview__count">@VersionCountLine()</p>
             <p class="upg-version__date">
                 <Icon Name="calendar" Width="13" Height="13" />
                 <span>Business Central sets the date; use Move dates afterwards to push it out.</span>
             </p>
-            <p class="upg-preview__count">@VersionCountLine()</p>
+            @VersionPreviewList()
         }
     }
 </ConfirmDialog>

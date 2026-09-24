@@ -382,9 +382,13 @@ public sealed class UpgradeFleetService
         }
 
         if (!string.IsNullOrWhiteSpace(row.Version)
-            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) >= 0)
+            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) is var compared and >= 0)
         {
-            return Skip(SelectVersionGroup.AlreadyOnIt, $"Already on {target}");
+            // Past it, the row says where it is: "Already on 29.2" beside a "Now on 29.3"
+            // column reads as a mistake.
+            return Skip(SelectVersionGroup.AlreadyOnIt, compared == 0
+                ? $"Already on {target}"
+                : $"Already on {MajorMinor(row.Version)}, past {target}");
         }
 
         if (from is not null && VersionOrder.Compare(from, target) == 0)

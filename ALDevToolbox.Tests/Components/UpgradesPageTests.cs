@@ -436,7 +436,7 @@ public sealed class UpgradesPageTests : IDisposable
                 .ToList();
             lines.Should().Contain("27.5 to 29.2");
             lines.Should().Contain("30.0 back to 29.2");
-            lines.Should().Contain("Already on 29.2");
+            lines.Should().Contain("Already on 29.3, past 29.2");
             lines.Should().Contain("Already set to 29.2");
             lines.Should().Contain("Business Central does not offer 29.2 to this environment yet");
             lines.Should().Contain("An update is already running, and Microsoft finishes it");
