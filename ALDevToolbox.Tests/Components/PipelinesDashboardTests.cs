@@ -53,6 +53,7 @@ public sealed class PipelinesDashboardTests : IDisposable
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
         _ctx.Services.AddScoped<PipelineService>();
+        _ctx.Services.AddScoped<BuildFreshnessService>();
         _ctx.Services.AddScoped<ReleasePipelineService>();
         _ctx.Services.AddScoped<DeliveryFeedService>();
         _ctx.Services.AddScoped<PipelinesDashboardService>();
@@ -89,7 +90,7 @@ public sealed class PipelinesDashboardTests : IDisposable
     }
 
     [Fact]
-    public async Task Populated_the_seven_tiles_link_into_the_lists_and_the_cards_say_what_happened()
+    public async Task Populated_the_eight_tiles_link_into_the_lists_and_the_cards_say_what_happened()
     {
         var s = await SeedFleetAsync();
 
@@ -99,18 +100,19 @@ public sealed class PipelinesDashboardTests : IDisposable
         {
             var tiles = cut.FindAll(".cue-grid a.cue");
             tiles.Select(t => t.QuerySelector(".cue__label")!.TextContent.Trim()).Should().Equal(
-                "Build pipelines", "Builds this week", "Failed builds",
+                "Build pipelines", "Builds this week", "Failed builds", "Ready to build",
                 "Deployment pipelines", "Shipping now", "Failed deployments", "Waiting for approval");
             tiles.Select(t => t.QuerySelector(".cue__value")!.TextContent.Trim()).Should().Equal(
-                "1", "3", "1", "3", "1", "1", "1");
+                "1", "3", "1", "0", "3", "1", "1", "1");
 
             tiles[2].ClassList.Should().Contain("cue--attention");
             tiles[2].GetAttribute("href").Should().Be("/pipelines/builds?show=failed");
-            tiles[4].GetAttribute("href").Should().Be("/pipelines/deployments?show=shipping");
-            tiles[4].QuerySelector(".cue__foot")!.TextContent.Should().Contain("App 2 of 3 to CRONUS - UAT");
-            tiles[5].ClassList.Should().Contain("cue--attention");
-            tiles[6].ClassList.Should().Contain("pd-cue--warning");
-            tiles[6].GetAttribute("href").Should().Be("/pipelines/deployments?show=attention");
+            tiles[3].ClassList.Should().NotContain("pd-cue--warning", "no branch has moved past its build");
+            tiles[5].GetAttribute("href").Should().Be("/pipelines/deployments?show=shipping");
+            tiles[5].QuerySelector(".cue__foot")!.TextContent.Should().Contain("App 2 of 3 to CRONUS - UAT");
+            tiles[6].ClassList.Should().Contain("cue--attention");
+            tiles[7].ClassList.Should().Contain("pd-cue--warning");
+            tiles[7].GetAttribute("href").Should().Be("/pipelines/deployments?show=attention");
 
             var attention = cut.FindAll(".dash-cols .card")[0].QuerySelectorAll(".activity__row");
             var texts = attention.Select(r => r.QuerySelector(".activity__text")!.TextContent.Trim()).ToList();
@@ -152,8 +154,8 @@ public sealed class PipelinesDashboardTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             var tiles = cut.FindAll(".cue-grid a.cue");
-            tiles.Should().HaveCount(7);
-            tiles.Skip(3).Select(t => t.QuerySelector(".cue__foot")!.TextContent.Trim())
+            tiles.Should().HaveCount(8);
+            tiles.Skip(4).Select(t => t.QuerySelector(".cue__foot")!.TextContent.Trim())
                 .Should().AllBe("No deployment pipeline yet");
             var quiet = cut.Find(".activity__row.pd-attn--quiet");
             quiet.TextContent.Should().Contain("Deployments are not set up. Create a deployment pipeline");
@@ -225,9 +227,68 @@ public sealed class PipelinesDashboardTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".cue-grid a.cue").Select(t => t.QuerySelector(".cue__label")!.TextContent.Trim())
-                .Should().Equal("Build pipelines", "Builds this week", "Failed builds");
+                .Should().Equal("Build pipelines", "Builds this week", "Failed builds", "Ready to build");
             cut.FindAll("a[href^='/pipelines/deployments']").Should().BeEmpty();
             cut.FindAll(".page-head__actions button").Select(b => b.TextContent.Trim()).Should().Equal("New build pipeline");
+        });
+    }
+
+    [Fact]
+    public async Task A_branch_ahead_of_its_last_build_is_a_ready_to_build_tile_and_an_attention_row()
+    {
+        var projectId = await SeedSolutionAsync();
+        var pipeline = await SeedBuildPipelineAsync(projectId);
+        var repo = await FreshnessSeed.AddRepositoryAsync(_db, projectId);
+        await FreshnessSeed.AddBuildAsync(_db, projectId, pipeline, repo);
+        await FreshnessSeed.AddHeadAsync(_db, repo, "main", FreshnessSeed.Newest,
+            commits: [FreshnessSeed.Built, FreshnessSeed.Newer, FreshnessSeed.Newest]);
+
+        var cut = _ctx.Render<PipelinesDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var tile = cut.FindAll(".cue-grid a.cue").Single(t => t.QuerySelector(".cue__label")!.TextContent.Trim() == "Ready to build");
+            tile.QuerySelector(".cue__value")!.TextContent.Trim().Should().Be("1");
+            tile.GetAttribute("href").Should().Be("/pipelines/builds?show=ready", "the tile lands on the list's Ready to build tab");
+            tile.ClassList.Should().Contain("pd-cue--warning");
+            tile.QuerySelector(".cue__foot")!.TextContent.Should().Contain("Latest push");
+
+            var row = cut.FindAll(".dash-cols .card")[0].QuerySelectorAll("a.activity__row")
+                .Single(r => r.TextContent.Contains("ahead of its last build"));
+            row.QuerySelector(".activity__text")!.TextContent.Trim().Should().Be("CRONUS Base is 2 commits ahead of its last build");
+            row.QuerySelector(".activity__sub")!.TextContent.Trim().Should().Be("CRONUS - main");
+            row.GetAttribute("href").Should().Be($"/pipelines/{pipeline}", "Build is on the pipeline's page");
+            row.ClassList.Should().Contain("is-warning");
+            cut.Find(".page-head__sub").TextContent.Should().NotContain("failing");
+        });
+    }
+
+    [Fact]
+    public async Task Merged_pull_requests_are_named_and_a_pipeline_already_building_is_not_ready()
+    {
+        var projectId = await SeedSolutionAsync();
+        var pipeline = await SeedBuildPipelineAsync(projectId);
+        var repo = await FreshnessSeed.AddRepositoryAsync(_db, projectId);
+        await FreshnessSeed.AddBuildAsync(_db, projectId, pipeline, repo);
+        await FreshnessSeed.AddHeadAsync(_db, repo, "main", FreshnessSeed.Newest,
+            commits: [FreshnessSeed.Built, FreshnessSeed.Newer, FreshnessSeed.Newest]);
+        await FreshnessSeed.AddMergedAsync(_db, repo, 12, "Post VAT on prepayments", FreshnessSeed.Newer);
+        await FreshnessSeed.AddMergedAsync(_db, repo, 13, "Round VAT per line", FreshnessSeed.Newest);
+
+        var cut = _ctx.Render<PipelinesDashboard>();
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".activity__text").Select(t => t.TextContent.Trim())
+                .Should().Contain("CRONUS Base has 2 pull requests merged since its last build"));
+
+        // A build of it is now queued: that build is the answer, so it stops asking for one.
+        await SeedBuildAsync(projectId, pipeline, ProjectBuildStatus.Queued, _now);
+        var again = _ctx.Render<PipelinesDashboard>();
+        again.WaitForAssertion(() =>
+        {
+            again.FindAll(".cue-grid a.cue").Single(t => t.QuerySelector(".cue__label")!.TextContent.Trim() == "Ready to build")
+                .QuerySelector(".cue__value")!.TextContent.Trim().Should().Be("0");
+            again.FindAll(".activity__text").Select(t => t.TextContent.Trim())
+                .Should().NotContain(t => t.Contains("merged since its last build"));
         });
     }
 

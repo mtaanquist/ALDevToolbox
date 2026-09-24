@@ -49,6 +49,7 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddScoped<PipelineService>();
+        _ctx.Services.AddScoped<BuildFreshnessService>();
         _ctx.Services.AddScoped<ReleasePipelineService>();
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());

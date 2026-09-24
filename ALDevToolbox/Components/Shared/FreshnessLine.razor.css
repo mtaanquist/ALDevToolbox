@@ -1,0 +1,16 @@
+/* The freshness sentence (#964): a quiet caption-sized line under a pipeline's name,
+   or at the top of the pipeline page's card. Ahead takes the warning ink, which is
+   the only thing on it that asks for a look; the rest stays in the muted ink of a
+   .cell-stack__sub. */
+.branch-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+}
+
+.branch-state svg { flex: none; opacity: .8; }
+
+.branch-state--ahead { color: var(--warning-text); }
