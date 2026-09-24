@@ -179,6 +179,16 @@ public class OeProjectEnvironment
     public DateTime? BcNextUpdateFetchedAt { get; set; }
 
     /// <summary>
+    /// Every version Business Central offers this environment (its <c>available</c>
+    /// updates), newest first, from the same read as the columns above. The next-update
+    /// columns keep one version; the Upgrades page's "change the next version" action
+    /// needs all of them, to list what can be picked and to say which environments are
+    /// not offered a version yet (issue #960). Null means the list has never been read
+    /// (a row mirrored before this column existed); empty means nothing is on offer.
+    /// </summary>
+    public List<string>? BcOfferedVersions { get; set; }
+
+    /// <summary>
     /// The environment's database size in kilobytes, as Business Central last reported it.
     /// Null until read, or when Business Central could not work it out. The allowance it
     /// counts against is the tenant's - <see cref="OeProject.BcStorageQuotaKb"/>.

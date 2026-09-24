@@ -149,7 +149,7 @@ public sealed class UpgradeActionWorker : BackgroundService
                             && a.SentAt == null
                             && a.ExecuteAfter <= now)
                 .OrderBy(a => a.ExecuteAfter)
-                .Select(a => new DueAction(a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.RequestedByUserId))
+                .Select(a => new DueAction(a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.RequestedByUserId, a.TargetVersion))
                 .ToListAsync(ct).ConfigureAwait(false);
         }
 
@@ -200,12 +200,17 @@ public sealed class UpgradeActionWorker : BackgroundService
 
         UpgradeActionStatus status;
         string outcome;
+        // Read before the send, so nothing after a write that landed can turn it into a failure.
+        var environmentName = await db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == action.EnvironmentId)
+            .Select(e => e.Name)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         try
         {
             var actions = scope.ServiceProvider.GetRequiredService<UpgradeActionService>();
-            await actions.RunAsync(action.ProjectId, action.EnvironmentId, action.Kind, ct).ConfigureAwait(false);
+            await actions.RunAsync(action.ProjectId, action.EnvironmentId, action.Kind, action.TargetVersion, ct).ConfigureAwait(false);
             status = UpgradeActionStatus.Sent;
-            outcome = UpgradeActionService.SuccessOutcome(action.Kind);
+            outcome = UpgradeActionService.SuccessOutcome(action.Kind, action.TargetVersion, environmentName);
         }
         catch (PlanValidationException ex)
         {
@@ -214,7 +219,7 @@ public sealed class UpgradeActionWorker : BackgroundService
             // were rotated. All already in plain words.
             status = UpgradeActionStatus.Failed;
             outcome = UpgradeActionService.FailureOutcome(action.Kind,
-                ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.");
+                ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.", action.TargetVersion);
         }
         catch (ProjectAccessDeniedException)
         {
@@ -228,7 +233,7 @@ public sealed class UpgradeActionWorker : BackgroundService
                 "Upgrade action {ActionId} on environment {EnvironmentId} (project {ProjectId}) threw.",
                 action.Id, action.EnvironmentId, action.ProjectId);
             status = UpgradeActionStatus.Failed;
-            outcome = UpgradeActionService.FailureOutcome(action.Kind, "Business Central didn't accept the change.");
+            outcome = UpgradeActionService.FailureOutcome(action.Kind, "Business Central didn't accept the change.", action.TargetVersion);
         }
 
         var finishedAt = _clock.GetUtcNow().UtcDateTime;
@@ -271,5 +276,6 @@ public sealed class UpgradeActionWorker : BackgroundService
     }
 
     /// <summary>One due row, read outside the per-action scope so the sweep holds no context open while it works.</summary>
-    private sealed record DueAction(int Id, int ProjectId, int EnvironmentId, UpgradeActionKind Kind, int? RequestedByUserId);
+    private sealed record DueAction(
+        int Id, int ProjectId, int EnvironmentId, UpgradeActionKind Kind, int? RequestedByUserId, string? TargetVersion);
 }

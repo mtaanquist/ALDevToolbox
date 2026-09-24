@@ -21,6 +21,9 @@ internal sealed class EnvironmentUpgradeActionConfiguration : IEntityTypeConfigu
             .HasConversion<string>().HasMaxLength(40).IsRequired();
         entity.Property(e => e.Status).HasColumnName("status")
             .HasConversion<string>().HasMaxLength(20).IsRequired();
+        // Only SelectVersion carries one; a Business Central version is "29.2" or at most
+        // four numeric segments, so 32 is generous.
+        entity.Property(e => e.TargetVersion).HasColumnName("target_version").HasMaxLength(32);
 
         entity.Property(e => e.RequestedByUserId).HasColumnName("requested_by_user_id");
         entity.Property(e => e.RequestedBy).HasColumnName("requested_by").HasMaxLength(320).IsRequired();
