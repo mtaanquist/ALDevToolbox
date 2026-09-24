@@ -158,7 +158,7 @@
                 <th class="rp-list__col-delivery">Last deployment</th>
                 <th class="rp-list__col-next">Next deployment</th>
                 <th class="rp-list__col-source">Apps from</th>
-                <th class="rp-list__col-installs">Installs</th>
+                <th class="rp-list__col-installs">When deployed</th>
                 <th class="data-table__actions rp-list__col-actions"><span class="u-sr">Actions</span></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="7" Rows="5" /></tbody>
@@ -225,7 +225,7 @@
                     <th scope="col" class="rp-list__col-delivery">Last deployment</th>
                     <th scope="col" class="rp-list__col-next">Next deployment</th>
                     <th scope="col" class="rp-list__col-source">Apps from</th>
-                    <th scope="col" class="rp-list__col-installs">Installs</th>
+                    <th scope="col" class="rp-list__col-installs">When deployed</th>
                     <th scope="col" class="data-table__actions rp-list__col-actions"><span class="u-sr">Actions</span></th>
                 </tr>
             </thead>
@@ -329,7 +329,7 @@
                         </td>
                         <td>
                             <span class="cell-stack">
-                                <span class="cell-stack__main">@DeliveryModeDisplay.Schedule(r.DeploymentSchedule)</span>
+                                <span class="cell-stack__main">@DeliveryModeDisplay.ScheduleSentence(r.DeploymentSchedule)</span>
                                 @if (r.SchemaSyncMode == BcSyncMode.ForceSync)
                                 {
                                     <span class="cell-stack__sub rp-list__force"

@@ -151,6 +151,27 @@ public static class DeliveryModeDisplay
     }
 
     /// <summary>
+    /// The schedule as a sentence that names its trigger: "Installs right away",
+    /// "Installs in the delivery window", "Installs with the next minor Business Central
+    /// update". Used where the value sits alone on a pipeline's card or list row, because
+    /// "Installs run: Right away" beside a build read as "installs run as soon as a build
+    /// lands" (maintainer, 2026-09-24); nothing deploys until a person presses Deploy or
+    /// approves a prepared deployment, and this is when that deployment installs.
+    /// </summary>
+    public static string ScheduleSentence(string? value)
+    {
+        if (BcDeploymentSchedule.IsOurDeliveryWindow(value)) return "Installs in the delivery window";
+        return BcDeploymentSchedule.Normalize(value) switch
+        {
+            BcDeploymentSchedule.Immediate => "Installs right away",
+            BcDeploymentSchedule.UpdateWindow => "Installs in the Business Central update window",
+            BcDeploymentSchedule.NextMinorUpdate => "Installs with the next minor Business Central update",
+            BcDeploymentSchedule.NextMajorUpdate => "Installs with the next major Business Central update",
+            _ => value ?? string.Empty,
+        };
+    }
+
+    /// <summary>
     /// How a schedule reads as a choice in the release-pipeline editor, where the
     /// delivery window is named for the environment it belongs to
     /// ("In Production's delivery window") so it can't be read as Business Central's
