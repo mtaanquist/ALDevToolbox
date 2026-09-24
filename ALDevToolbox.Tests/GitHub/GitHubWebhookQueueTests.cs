@@ -186,8 +186,8 @@ public sealed class GitHubWebhookQueueTests
 
         queue.Reader.TryRead(out var first).Should().BeTrue();
         queue.Reader.TryRead(out var second).Should().BeTrue();
-        first!.HeadSha.Should().Be("aaa");
-        second!.HeadSha.Should().Be("bbb");
+        ((GitHubPullRequestJob)first!).HeadSha.Should().Be("aaa");
+        ((GitHubPullRequestJob)second!).HeadSha.Should().Be("bbb");
     }
 
     [Theory]

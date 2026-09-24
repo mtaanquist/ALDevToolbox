@@ -222,6 +222,10 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectBuildArtifact> OeProjectBuildArtifacts => Set<OeProjectBuildArtifact>();
     public DbSet<OeProjectBuildLog> OeProjectBuildLogs => Set<OeProjectBuildLog>();
     public DbSet<OeProjectBuildDiagnostic> OeProjectBuildDiagnostics => Set<OeProjectBuildDiagnostic>();
+    // Branch watching (#963): where each solution repository's branches point, and
+    // what merged into them, as GitHub's push and pull_request webhooks said.
+    public DbSet<OeRepositoryBranchHead> OeRepositoryBranchHeads => Set<OeRepositoryBranchHead>();
+    public DbSet<OeRepositoryMergedPullRequest> OeRepositoryMergedPullRequests => Set<OeRepositoryMergedPullRequest>();
     // What the upgrade team did (or scheduled) to a customer's environment — the rows
     // behind the per-environment activity feed. See .design/saas-delivery.md.
     public DbSet<OeEnvironmentUpgradeAction> OeEnvironmentUpgradeActions => Set<OeEnvironmentUpgradeAction>();
@@ -350,6 +354,8 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectBuildArtifact>(modelBuilder);
         ScopeToOrganization<OeProjectBuildLog>(modelBuilder);
         ScopeToOrganization<OeProjectBuildDiagnostic>(modelBuilder);
+        ScopeToOrganization<OeRepositoryBranchHead>(modelBuilder);
+        ScopeToOrganization<OeRepositoryMergedPullRequest>(modelBuilder);
         ScopeToOrganization<OeEnvironmentUpgradeAction>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;

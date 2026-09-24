@@ -24,7 +24,7 @@ The workbench talks to GitHub as a GitHub App that you register once. Every orga
    | Repository: Checks | Read and write | Posting build results on pull requests |
    | Organization: Members | Read | Knowing who is in the organisation |
 
-5. Under "Subscribe to events", tick **Pull request**. Without it the workbench never hears about pull requests and nothing else changes.
+5. Under "Subscribe to events", tick **Push** and **Pull request**. Pull requests let the workbench build a branch when one is opened; pushes let a pipeline show when its branch has changes it has not built yet. Leave either unticked and nothing else changes.
 6. Create the App, then on its page: note the **App ID** and **Client ID**, generate a **client secret**, and generate a **private key** (GitHub downloads a `.pem` file once).
 7. Back on `/site-admin/settings/github`, fill in the App ID, the App's name from its URL (`github.com/apps/<name>`), the client ID, the client secret, the webhook secret, and paste the private key. Save.
 
@@ -47,6 +47,7 @@ Everyone who wants to create repositories, open pull requests, or pick repositor
 
 - **Repository discovery**: once a day the workbench lists the organisation's repositories and offers the AL ones no solution tracks yet on the Solutions page.
 - **Pull-request builds**: opening or updating a pull request on a tracked repository compiles it and posts a check run with the compiler's findings inline. Pull requests from forks are built only when the author is a member of the organisation and the fork is their own.
+- **Branch watching**: every push to a tracked repository, and every pull request merged into it, is recorded so a pipeline can tell whether its branch has moved past its last build. Nothing is built on a push; that stays a person's decision.
 - **Translation memory**: once a day the `.xlf` files in tracked repositories feed the Translator's suggestions.
 - **Dependency drift**: after a new Business Central release is imported, the Solutions page shows which repositories still target an older version and can open update pull requests.
 

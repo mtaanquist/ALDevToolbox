@@ -69,6 +69,7 @@ public sealed class ProjectBuildImporter
             {
                 p.ProjectId,
                 p.RequestedAppIdsJson,
+                p.Branch,
                 ProjectName = p.Project!.Name,
                 OwnerId = p.Project.CreatedByUserId,
                 RepoCount = p.Project.Repositories.Count,
@@ -122,6 +123,9 @@ public sealed class ProjectBuildImporter
             ReleaseId = releaseId,
             Status = ProjectBuildStatus.Queued,
             RequestedAppIdsJson = pipeline.RequestedAppIdsJson,
+            // The branch is snapshotted the same way: a restart-resumed job, or a
+            // pipeline edited while this build waits, still checks out what was asked.
+            Branch = pipeline.Branch,
             StartedAt = now,
         });
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);

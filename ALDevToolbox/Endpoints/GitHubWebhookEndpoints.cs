@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.GitHub;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using ALDevToolbox.Services.Operations;
 
 namespace ALDevToolbox.Endpoints;
@@ -21,6 +22,11 @@ namespace ALDevToolbox.Endpoints;
 /// A delivery that verifies is parsed and enqueued; nothing here reads or writes
 /// the database, and nothing here decides which organisation a delivery belongs
 /// to. See <c>.design/github-integration-phase2.md</c> (#627).</para>
+///
+/// <para>The same route also takes <c>push</c> deliveries and merged pull
+/// requests (#963), so a build pipeline can tell when the branch it watches has
+/// moved past what it last built. Those are recorded by the worker and nothing is
+/// built on them; they pass the same secret, size and signature checks first.</para>
 /// </summary>
 public static class GitHubWebhookEndpoints
 {
@@ -102,9 +108,46 @@ public static class GitHubWebhookEndpoints
                 return Results.Text("pong", "text/plain");
             }
 
+            // A branch moved. Recorded, never built: see "Branch watching" in the
+            // design doc (#963). A tag push, or a payload we cannot read, is 204.
+            if (string.Equals(eventName, "push", StringComparison.OrdinalIgnoreCase))
+            {
+                var push = TryReadPush(body, deliveryId, log);
+                if (push is null) return Results.NoContent();
+                if (!queue.TryEnqueue(push))
+                {
+                    log.LogWarning(
+                        "Refused a push delivery for {Repository} ({Branch}): the webhook queue is full.",
+                        push.RepositoryFullName, push.Branch);
+                    return Results.Text("Busy; GitHub will retry.", "text/plain", statusCode: 503);
+                }
+                log.LogInformation(
+                    "Queued a push to {Repository} ({Branch} at {HeadSha}, installation {InstallationId}, delivery {DeliveryId}).",
+                    push.RepositoryFullName, push.Branch, push.HeadSha, push.InstallationId, deliveryId);
+                return Results.Text("Queued.", "text/plain", statusCode: 202);
+            }
+
             if (!string.Equals(eventName, "pull_request", StringComparison.OrdinalIgnoreCase))
             {
                 return Results.NoContent();
+            }
+
+            // A merged pull request is recorded for the branch it landed on (#963).
+            // It is a closed pull request, so it never reaches the build path below.
+            var merged = TryReadMergedPullRequest(body, deliveryId, log);
+            if (merged is not null)
+            {
+                if (!queue.TryEnqueue(merged))
+                {
+                    log.LogWarning(
+                        "Refused a merged pull-request delivery for {Repository}#{Number}: the webhook queue is full.",
+                        merged.RepositoryFullName, merged.Number);
+                    return Results.Text("Busy; GitHub will retry.", "text/plain", statusCode: 503);
+                }
+                log.LogInformation(
+                    "Queued a merged pull request {Repository}#{Number} into {Branch} (delivery {DeliveryId}).",
+                    merged.RepositoryFullName, merged.Number, merged.BaseBranch, deliveryId);
+                return Results.Text("Queued.", "text/plain", statusCode: 202);
             }
 
             var job = TryReadPullRequest(body, deliveryId, log);
@@ -330,6 +373,201 @@ public static class GitHubWebhookEndpoints
             return null;
         }
     }
+
+    /// <summary>The prefix of a branch ref in a push payload. Anything else (tags, notes) is ignored.</summary>
+    private const string BranchRefPrefix = "refs/heads/";
+
+    /// <summary>How many of a push's commits are kept; GitHub itself lists at most twenty.</summary>
+    internal const int KeptPushCommits = 10;
+
+    /// <summary>A commit message or title is stored for a one-line summary, not as an archive.</summary>
+    private const int MaxMessageLength = 500;
+
+    /// <summary>
+    /// Reads a <c>push</c> payload into a job, or <see langword="null"/> when it is
+    /// not a branch push or is missing something. A tag push is not an error: it is
+    /// simply not a branch moving, so it is answered 204 like any event we do not
+    /// act on.
+    /// </summary>
+    internal static GitHubPushJob? TryReadPush(byte[] body, string deliveryId, ILogger log)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            var reference = Text(root, "ref");
+            if (reference is null || !reference.StartsWith(BranchRefPrefix, StringComparison.Ordinal))
+            {
+                // refs/tags/..., or no ref at all.
+                return null;
+            }
+            var branch = reference[BranchRefPrefix.Length..];
+
+            if (!TryInstallationId(root, out var installationId))
+            {
+                log.LogWarning("A push delivery ({DeliveryId}) named no installation; nothing to act for.", deliveryId);
+                return null;
+            }
+
+            if (!root.TryGetProperty("repository", out var repository)) return null;
+            var fullName = Text(repository, "full_name");
+            var cloneUrl = Text(repository, "clone_url");
+            var defaultBranch = Text(repository, "default_branch") ?? Text(repository, "master_branch") ?? string.Empty;
+
+            var deleted = Bool(root, "deleted");
+            var forced = Bool(root, "forced");
+            var before = Text(root, "before") ?? string.Empty;
+            // A delete names the all-zero object as "after"; the commit the branch
+            // last pointed at is "before", and that is the one worth keeping.
+            var headSha = deleted ? before : Text(root, "after");
+
+            if (fullName is null || cloneUrl is null || headSha is null)
+            {
+                log.LogWarning("A push delivery ({DeliveryId}) was missing fields a branch head needs.", deliveryId);
+                return null;
+            }
+
+            // Stored and compared rather than handed to git, but held to the same
+            // shape as everything else from a webhook: a full object id, and a
+            // branch name the pipeline editor would also accept.
+            if (!FullShaRegex.IsMatch(headSha) || !GitBranchName.IsValid(branch))
+            {
+                log.LogWarning(
+                    "A push delivery ({DeliveryId}) named a commit or branch the workbench does not store.", deliveryId);
+                return null;
+            }
+
+            var pusher = root.TryGetProperty("pusher", out var pusherElement) ? Text(pusherElement, "name") : null;
+            if (pusher is null && root.TryGetProperty("sender", out var sender)) pusher = Text(sender, "login");
+
+            var commits = new List<GitHubPushCommit>();
+            if (root.TryGetProperty("commits", out var commitArray) && commitArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var commit in commitArray.EnumerateArray())
+                {
+                    var id = Text(commit, "id");
+                    if (id is null || !FullShaRegex.IsMatch(id)) continue;
+                    commits.Add(new GitHubPushCommit(id.ToLowerInvariant(), Clip(Text(commit, "message") ?? string.Empty)));
+                }
+            }
+
+            // repository.pushed_at is a Unix timestamp on push deliveries (and an
+            // ISO string on every other event); a payload without it keeps the
+            // arrival time, which is seconds away.
+            var pushedAt = repository.TryGetProperty("pushed_at", out var pushedElement)
+                           && pushedElement.ValueKind == JsonValueKind.Number
+                           && pushedElement.TryGetInt64(out var unix)
+                ? DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime
+                : DateTime.UtcNow;
+
+            return new GitHubPushJob(
+                InstallationId: installationId,
+                RepositoryFullName: fullName,
+                CloneUrl: cloneUrl,
+                DeliveryId: deliveryId,
+                Branch: branch,
+                HeadSha: headSha.ToLowerInvariant(),
+                BeforeSha: before.ToLowerInvariant(),
+                DefaultBranch: defaultBranch,
+                PusherLogin: pusher ?? string.Empty,
+                Forced: forced,
+                Deleted: deleted,
+                PushedAt: pushedAt,
+                CommitCount: commits.Count,
+                Commits: commits.TakeLast(KeptPushCommits).ToList());
+        }
+        catch (JsonException ex)
+        {
+            log.LogWarning(ex, "A GitHub webhook delivery ({DeliveryId}) carried a body that is not JSON.", deliveryId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a <c>pull_request</c> payload whose action is <c>closed</c> with
+    /// <c>merged: true</c>, or <see langword="null"/> for anything else. A pull
+    /// request closed without merging is not recorded: nothing landed.
+    ///
+    /// <para>There is no fork check here, unlike the build path: nothing about a
+    /// merged pull request is cloned or run, and whatever merged is in the
+    /// repository now regardless of where it was written.</para>
+    /// </summary>
+    internal static GitHubMergedPullRequestJob? TryReadMergedPullRequest(byte[] body, string deliveryId, ILogger log)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            if (!string.Equals(Text(root, "action"), "closed", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!root.TryGetProperty("pull_request", out var pullRequest) || !Bool(pullRequest, "merged")) return null;
+
+            if (!TryInstallationId(root, out var installationId))
+            {
+                log.LogWarning("A merged pull_request delivery ({DeliveryId}) named no installation; nothing to act for.", deliveryId);
+                return null;
+            }
+            if (!root.TryGetProperty("repository", out var repository)) return null;
+
+            var fullName = Text(repository, "full_name");
+            var cloneUrl = Text(repository, "clone_url");
+            var number = pullRequest.TryGetProperty("number", out var n) && n.TryGetInt32(out var numberValue)
+                ? numberValue : 0;
+            var baseRef = pullRequest.TryGetProperty("base", out var b) ? Text(b, "ref") : null;
+            var mergeSha = Text(pullRequest, "merge_commit_sha") ?? string.Empty;
+            var author = pullRequest.TryGetProperty("user", out var user) ? Text(user, "login") : null;
+            var mergedAt = Text(pullRequest, "merged_at") is { } stamp
+                           && DateTimeOffset.TryParse(stamp, System.Globalization.CultureInfo.InvariantCulture,
+                               System.Globalization.DateTimeStyles.None, out var parsed)
+                ? parsed.UtcDateTime
+                : DateTime.UtcNow;
+
+            if (fullName is null || cloneUrl is null || baseRef is null || number <= 0 || !GitBranchName.IsValid(baseRef))
+            {
+                log.LogWarning("A merged pull_request delivery ({DeliveryId}) was missing fields the record needs.", deliveryId);
+                return null;
+            }
+            if (!FullShaRegex.IsMatch(mergeSha)) mergeSha = string.Empty;
+
+            return new GitHubMergedPullRequestJob(
+                InstallationId: installationId,
+                RepositoryFullName: fullName,
+                CloneUrl: cloneUrl,
+                DeliveryId: deliveryId,
+                Number: number,
+                Title: Clip(Text(pullRequest, "title") ?? string.Empty),
+                BaseBranch: baseRef,
+                MergeSha: mergeSha.ToLowerInvariant(),
+                MergedAt: mergedAt,
+                AuthorLogin: author ?? string.Empty);
+        }
+        catch (JsonException)
+        {
+            // Not logged here: the build path reads the same body next and says so once.
+            return null;
+        }
+    }
+
+    private static string Clip(string text) => text.Length > MaxMessageLength ? text[..MaxMessageLength] : text;
+
+    private static bool TryInstallationId(JsonElement root, out long installationId)
+    {
+        installationId = 0;
+        return root.TryGetProperty("installation", out var installation)
+               && installation.ValueKind == JsonValueKind.Object
+               && installation.TryGetProperty("id", out var id)
+               && id.TryGetInt64(out installationId);
+    }
+
+    private static bool Bool(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.True;
+
+    /// <summary>A full SHA-1 object id. A push names whole commits, never abbreviations.</summary>
+    private static readonly System.Text.RegularExpressions.Regex FullShaRegex =
+        new("^[0-9a-fA-F]{40}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>A git object name: hex, and between an abbreviated and a full SHA-1.</summary>
     private static readonly System.Text.RegularExpressions.Regex HeadShaRegex =

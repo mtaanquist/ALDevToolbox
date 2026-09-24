@@ -490,7 +490,10 @@ on every pull request, inline in the Files tab.
   401 into a 400. It is on the maintenance-mode allow-list: accepting a delivery is
   enqueueing, and GitHub disables hooks that keep failing. `ping` answers 200.
   `pull_request` with action `opened`, `synchronize` or `reopened` enqueues; everything
-  else is 204.
+  else is 204. Since #963 it also takes `push`, and a `pull_request` `closed` with
+  `merged: true`: both are parsed, enqueued and answered 202 behind exactly the same
+  secret, size and signature checks, and neither builds anything (see **Branch
+  watching** below). A tag push, or a pull request closed without merging, is 204.
 - **The org is resolved from `installation.id` inside the worker**, by the per-org
   ambient loop (no `IgnoreQueryFilters()`). The repository is matched to
   `oe_project_repositories` rows by normalised clone URL under that org's filter; every
@@ -702,6 +705,76 @@ and it accepted work it should not have. What changed:
   conclusion is that repository's, and the others are counted in the summary as "N errors
   in other repositories of this solution" without failing the run. Annotations are capped
   at 200 (four of GitHub's batches) and the summary says how many were left out.
+
+### Branch watching (#963)
+
+Named user: a consultant who merged two pull requests this morning and wants to know,
+without opening GitHub, whether the customer's pipeline has a build of them yet.
+
+A build pipeline watches one branch, and the workbench knows when that branch has moved
+past what the pipeline last built. **Nothing builds on push.** This is the engine for an
+indicator (the surfaces are #964): a person reads it and decides whether to press Build.
+Building or preparing a build on push, if it is ever wanted, is the #934 shape (a person
+approves) and a separate decision. Nothing polls GitHub either: pushes are free and
+immediate, and a deployment whose App is not subscribed simply has no heads.
+
+- **A branch on the pipeline.** `oe_pipelines.branch` (nullable; null is each
+  repository's default branch, which is what a build took before). Edited in the pipeline
+  editor; `PipelineService` holds it to git's ref-name rules over the alphabet
+  `A-Z a-z 0-9 . _ / -` (`GitBranchName`), and the field's `pattern=` mirrors the rule, with
+  a test running both against the same names. A manual build snapshots the branch onto
+  `oe_project_builds.branch` when it is queued, as it already snapshots the extension
+  selection, and the clone passes `--branch <name>` - re-checked against the same rule at
+  the boundary that runs git. A repository without that branch fails its clone with git's
+  own message, like any clone failure. A pull-request build ignores the pipeline's branch
+  and keeps its own head. The extension picker's discovery clone still reads the default
+  branch.
+- **The `push` event.** The endpoint reads `refs/heads/*` pushes into a `GitHubPushJob`
+  (tags and other refs are 204), holding the SHA to a full 40-hex object id and the branch
+  to the same rule. It carries `forced`, `deleted`, the pusher, `repository.pushed_at`,
+  `repository.default_branch`, and the last ten of `commits[]` (GitHub lists at most
+  twenty), messages clipped to 500 characters. It rides the same `GitHubWebhookQueue`
+  (the queue's element type is now a small `GitHubWebhookJob` hierarchy; supersession is
+  still only about pull-request builds), and `GitHubPullRequestBuildWorker` resolves the
+  organisation by installation id exactly as for a pull request - the same per-org ambient
+  walk, **no `IgnoreQueryFilters()`** - then hands it to `GitHubBranchActivityService`.
+  Repository matching is the same normalised clone URL, now shared by both paths
+  (`GitHubRepositoryMatch`). A push to a repository no solution tracks, or for an
+  installation nobody connected, is dropped with a Debug log.
+- **`oe_repository_branch_heads`**: one row per solution repository and branch
+  (`project_repository_id`, `branch`, unique together), upserted per push: `head_sha`,
+  `pushed_at`, `pusher_login`, `forced`, `commit_count` (what the last push listed),
+  `commits_json` (up to ten `{sha, message}`, oldest first), `is_default_branch` and
+  `deleted_at`. A push that fast-forwards from the stored head appends to the commit
+  list; a forced push, a recreated branch, or a push whose `before` is not the stored head
+  replaces it. A deleted branch keeps its row with `deleted_at` set (and the commit it last
+  pointed at), and a later push to it clears the mark. `is_default_branch` is not in the
+  issue's column list: it is how a pipeline with no branch knows which row to read, and
+  every push re-marks it, so a default-branch rename follows on the next push. Two
+  solutions tracking one repository each get their own rows.
+- **`oe_repository_merged_pull_requests`**: `project_repository_id`, `number` (unique
+  together, so a redelivery updates rather than duplicates), `title`, `base_branch`,
+  `merge_sha`, `merged_at`, `author_login`. No fork check on this path: nothing is cloned or
+  run, and whatever merged is in the repository regardless of where it was written.
+  `opened` / `synchronize` / `reopened` keep queueing builds exactly as before.
+- **`BuildFreshnessService.GetAsync(pipelineId)`**, gated on the solution's visibility like
+  the pipeline pages, returns one entry per repository of the solution: the watched branch
+  (the pipeline's, or the head marked default), the stored head, the commit the pipeline's
+  last `ready` build pinned in that repository (`oe_project_build_repo_commits`), and a
+  state, decided in this order: `BranchGone` (the head row is marked deleted),
+  `NeverBuilt` (no successful build of this pipeline pinned a commit there - including a
+  repository added since), `Unknown` (no head stored for the branch), `UpToDate` (same
+  SHA), otherwise `Ahead`. Comparison is by SHA only. For `Ahead` it adds, best effort, the
+  merged pull requests into that branch since the built commit's committer date (the
+  built commit's own merge excluded by SHA), and the stored commits after the built one,
+  both newest first, with `CommitsComplete` false when the built commit is not in the
+  stored list - after a force push, or more than ten commits later. The head's `forced`
+  flag is passed through so a surface can say why a count would be meaningless.
+- **Both tables are restorable tenant content** (`TenantTableCatalog.ContentTables`, right
+  after `oe_project_repositories`): nothing can recompute them, since nothing polls.
+- **The App must subscribe to Push.** The site-admin GitHub page says so beside the
+  Webhook URL, and the walkthrough's subscription step now names Push and Pull request.
+  Without Push every repository reads `Unknown`, and nothing else changes.
 
 ## #631 Translation memory from every .xlf in the organisation's repositories
 

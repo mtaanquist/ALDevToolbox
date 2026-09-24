@@ -4,13 +4,26 @@ using ALDevToolbox.Services.Workers;
 namespace ALDevToolbox.Services.GitHub;
 
 /// <summary>
-/// One pull-request head the workbench has been asked to compile, as
-/// <c>POST /github/webhook</c> read it off GitHub's <c>pull_request</c> delivery.
+/// One verified delivery the worker has to act on, as <c>POST /github/webhook</c>
+/// read it off GitHub's payload. Three kinds: a pull-request head to compile
+/// (<see cref="GitHubPullRequestJob"/>), a branch that moved
+/// (<see cref="GitHubPushJob"/>), and a pull request that merged
+/// (<see cref="GitHubMergedPullRequestJob"/>).
 ///
 /// <para>Everything here is what GitHub said, not what the workbench believes: the
 /// endpoint never touches the database, so a delivery whose signature checked out
 /// costs one channel write and nothing else. The worker is where the installation
 /// is resolved back to an organisation and where anything is trusted.</para>
+/// </summary>
+public abstract record GitHubWebhookJob(
+    long InstallationId,
+    string RepositoryFullName,
+    string CloneUrl,
+    string DeliveryId);
+
+/// <summary>
+/// One pull-request head the workbench has been asked to compile, as
+/// <c>POST /github/webhook</c> read it off GitHub's <c>pull_request</c> delivery.
 ///
 /// <para><see cref="IsMemberFork"/> marks the one kind of pull request whose head
 /// lives somewhere else and is still built: one opened by a member or owner of the
@@ -32,6 +45,7 @@ public sealed record GitHubPullRequestJob(
     string DeliveryId,
     string AuthorLogin = "",
     bool IsMemberFork = false)
+    : GitHubWebhookJob(InstallationId, RepositoryFullName, CloneUrl, DeliveryId)
 {
     /// <summary>
     /// The pull request this job is about, as a key: one build at a time per
@@ -43,9 +57,65 @@ public sealed record GitHubPullRequestJob(
 }
 
 /// <summary>
+/// One commit a push carried: its id and its message, as GitHub listed it in the
+/// payload's <c>commits[]</c>.
+/// </summary>
+public sealed record GitHubPushCommit(
+    [property: System.Text.Json.Serialization.JsonPropertyName("sha")] string Sha,
+    [property: System.Text.Json.Serialization.JsonPropertyName("message")] string Message);
+
+/// <summary>
+/// A branch moved: GitHub's <c>push</c> delivery for a <c>refs/heads/</c> ref. Tag
+/// pushes never become one of these. Nothing is built on it - the worker records
+/// the new head so a pipeline watching the branch can say it is behind. See
+/// <c>.design/github-integration-phase2.md</c>, "Branch watching" (#963).
+/// </summary>
+/// <param name="Branch">The branch name, with <c>refs/heads/</c> taken off.</param>
+/// <param name="HeadSha">The commit the branch now points at, or the one it pointed at before a delete.</param>
+/// <param name="DefaultBranch">The repository's default branch as GitHub reported it on this delivery; empty when absent.</param>
+/// <param name="Commits">The last ten of the push's <c>commits[]</c>, oldest first.</param>
+/// <param name="CommitCount">How many commits the payload listed (GitHub caps the list at twenty).</param>
+public sealed record GitHubPushJob(
+    long InstallationId,
+    string RepositoryFullName,
+    string CloneUrl,
+    string DeliveryId,
+    string Branch,
+    string HeadSha,
+    string BeforeSha,
+    string DefaultBranch,
+    string PusherLogin,
+    bool Forced,
+    bool Deleted,
+    DateTime PushedAt,
+    int CommitCount,
+    IReadOnlyList<GitHubPushCommit> Commits)
+    : GitHubWebhookJob(InstallationId, RepositoryFullName, CloneUrl, DeliveryId);
+
+/// <summary>
+/// A pull request that merged: <c>pull_request</c> with action <c>closed</c> and
+/// <c>merged: true</c>. Recorded so a pipeline can say which pull requests landed
+/// on its branch since it last built (#963); nothing is built on it.
+/// </summary>
+public sealed record GitHubMergedPullRequestJob(
+    long InstallationId,
+    string RepositoryFullName,
+    string CloneUrl,
+    string DeliveryId,
+    int Number,
+    string Title,
+    string BaseBranch,
+    string MergeSha,
+    DateTime MergedAt,
+    string AuthorLogin)
+    : GitHubWebhookJob(InstallationId, RepositoryFullName, CloneUrl, DeliveryId);
+
+/// <summary>
 /// The hand-off from the webhook endpoint to
 /// <see cref="GitHubPullRequestBuildWorker"/>, plus the supersession bookkeeping
-/// that keeps a pull request to one build at a time.
+/// that keeps a pull request to one build at a time. Push and merged-pull-request
+/// deliveries ride the same channel; the supersession half is only about
+/// <see cref="GitHubPullRequestJob"/>.
 ///
 /// <para>A push to an open pull request produces a <c>synchronize</c> delivery per
 /// push, and a person who pushes three fixes in a minute would otherwise get three
@@ -62,7 +132,7 @@ public sealed record GitHubPullRequestJob(
 /// <c>in_progress</c> is visible as such. See
 /// <c>.design/github-integration-phase2.md</c> (#627).</para>
 /// </summary>
-public sealed class GitHubWebhookQueue : JobQueue<GitHubPullRequestJob>
+public sealed class GitHubWebhookQueue : JobQueue<GitHubWebhookJob>
 {
     private readonly ConcurrentDictionary<string, string> _latestSha = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
@@ -82,7 +152,7 @@ public sealed class GitHubWebhookQueue : JobQueue<GitHubPullRequestJob>
     /// builds and eventually have GitHub give up on us anyway; refusing is both
     /// honest and cheaper, because GitHub redelivers a failed webhook.</para>
     /// </summary>
-    public bool TryEnqueue(GitHubPullRequestJob job) => Writer.TryWrite(job);
+    public bool TryEnqueue(GitHubWebhookJob job) => Writer.TryWrite(job);
 
     /// <summary>
     /// Records <paramref name="headSha"/> as the newest head for

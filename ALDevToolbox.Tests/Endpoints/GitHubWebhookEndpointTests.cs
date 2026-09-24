@@ -4,6 +4,7 @@ using System.Text;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.GitHub;
+using ALDevToolbox.Tests.GitHub;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -162,8 +163,9 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
             "every response writes a body so the status-pages middleware does not rewrite it");
 
         var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
-        queue.Reader.TryRead(out var job).Should().BeTrue();
-        job!.InstallationId.Should().Be(42);
+        queue.Reader.TryRead(out var read).Should().BeTrue();
+        var job = read.Should().BeOfType<GitHubPullRequestJob>().Subject;
+        job.InstallationId.Should().Be(42);
         job.RepositoryFullName.Should().Be("cronus-dk/customer-app");
         job.PullRequestNumber.Should().Be(7);
         job.HeadSha.Should().Be("abc1234");
@@ -262,9 +264,91 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
         await StoreSecretAsync();
         using var client = _factory.CreateClient();
 
-        using var response = await client.SendAsync(Delivery("{}", Secret, eventName: "push"));
+        using var response = await client.SendAsync(Delivery("{}", Secret, eventName: "issues"));
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    // --- Push and merged pull requests (#963) -------------------------------
+
+    [Fact]
+    public async Task A_branch_push_is_accepted_and_queued_as_a_push()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            GitHubWebhookPayloads.Push(branch: "main", commitCount: 2), Secret, eventName: "push"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
+        queue.Reader.TryRead(out var read).Should().BeTrue();
+        var push = read.Should().BeOfType<GitHubPushJob>().Subject;
+        push.InstallationId.Should().Be(42);
+        push.Branch.Should().Be("main");
+        push.HeadSha.Should().Be(GitHubWebhookPayloads.After);
+        push.DefaultBranch.Should().Be("main");
+        push.PusherLogin.Should().Be("erik");
+        push.CommitCount.Should().Be(2);
+        push.Forced.Should().BeFalse();
+        push.Deleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_tag_push_is_answered_and_dropped()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(
+            GitHubWebhookPayloads.Push(reference: "refs/tags/v25.0.1"), Secret, eventName: "push"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>().Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_push_signed_with_the_wrong_secret_is_refused_like_any_other_delivery()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(GitHubWebhookPayloads.Push(), "not-the-secret", eventName: "push"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>().Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_merged_pull_request_is_queued_as_a_merge_and_never_as_a_build()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(GitHubWebhookPayloads.MergedPullRequest(number: 12), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
+        queue.Reader.TryRead(out var read).Should().BeTrue();
+        var merged = read.Should().BeOfType<GitHubMergedPullRequestJob>().Subject;
+        merged.Number.Should().Be(12);
+        merged.BaseBranch.Should().Be("main");
+        merged.Title.Should().Be("Post VAT to the right account");
+        merged.MergeSha.Should().Be(GitHubWebhookPayloads.MergeSha);
+        merged.AuthorLogin.Should().Be("erik");
+        queue.Reader.TryRead(out _).Should().BeFalse("a merged pull request is not built");
+    }
+
+    [Fact]
+    public async Task A_pull_request_closed_without_merging_is_not_recorded()
+    {
+        await StoreSecretAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await client.SendAsync(Delivery(GitHubWebhookPayloads.MergedPullRequest(merged: false), Secret));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Services.GetRequiredService<GitHubWebhookQueue>().Reader.TryRead(out _).Should().BeFalse();
     }
 
     [Fact]
@@ -371,8 +455,9 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
-        queue.Reader.TryRead(out var job).Should().BeTrue();
-        job!.IsMemberFork.Should().BeTrue();
+        queue.Reader.TryRead(out var read).Should().BeTrue();
+        var job = read.Should().BeOfType<GitHubPullRequestJob>().Subject;
+        job.IsMemberFork.Should().BeTrue();
         job.AuthorLogin.Should().Be("erik");
     }
 
@@ -425,8 +510,9 @@ public sealed class GitHubWebhookEndpointTests : IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var queue = _factory.Services.GetRequiredService<GitHubWebhookQueue>();
-        queue.Reader.TryRead(out var job).Should().BeTrue();
-        job!.IsMemberFork.Should().BeFalse();
+        queue.Reader.TryRead(out var read).Should().BeTrue();
+        var job = read.Should().BeOfType<GitHubPullRequestJob>().Subject;
+        job.IsMemberFork.Should().BeFalse();
     }
 
     [Theory]

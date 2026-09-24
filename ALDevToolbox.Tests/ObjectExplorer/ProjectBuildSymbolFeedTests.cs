@@ -122,6 +122,67 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
             "an app a stored upload supplies is never fetched");
     }
 
+    // ── The pipeline's watched branch (#963) ───────────────────────────
+
+    [Fact]
+    public async Task A_manual_build_clones_the_branch_its_pipeline_watches()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await SetBuildAsync(buildId, branch: "release/29", trigger: ProjectBuildTrigger.Manual);
+
+        await BuildAsync(projectId, releaseId);
+
+        var clone = _tools.Clones.Should().ContainSingle().Subject;
+        var at = clone.ToList().IndexOf("--branch");
+        at.Should().BeGreaterThan(0, "the watched branch is checked out, not the default");
+        clone[at + 1].Should().Be("release/29");
+        clone[^2].Should().Be("https://github.com/cronus/extensions", "the branch goes before the repository, as an option");
+    }
+
+    [Fact]
+    public async Task A_manual_build_with_no_branch_clones_the_default_branch()
+    {
+        var (projectId, releaseId, _) = await SeedAsync();
+
+        await BuildAsync(projectId, releaseId);
+
+        _tools.Clones.Should().ContainSingle().Which.Should().NotContain("--branch");
+    }
+
+    [Fact]
+    public async Task A_pull_request_build_ignores_the_branch_and_keeps_its_own_head()
+    {
+        // Its Branch is the head ref, a provenance label; the other repositories
+        // of the solution may not have that branch at all.
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await SetBuildAsync(buildId, branch: "feature/vat", trigger: ProjectBuildTrigger.PullRequest);
+
+        await BuildAsync(projectId, releaseId);
+
+        _tools.Clones.Should().ContainSingle().Which.Should().NotContain("--branch");
+    }
+
+    [Fact]
+    public async Task A_stored_branch_git_would_refuse_never_reaches_the_command_line()
+    {
+        var (projectId, releaseId, buildId) = await SeedAsync();
+        await SetBuildAsync(buildId, branch: "--upload-pack=touch /tmp/x", trigger: ProjectBuildTrigger.Manual);
+
+        var act = () => BuildAsync(projectId, releaseId);
+
+        await act.Should().ThrowAsync<InvalidOperationException>("nothing was cloned, so nothing was found to build");
+        _tools.Clones.Should().BeEmpty();
+    }
+
+    private async Task SetBuildAsync(int buildId, string branch, string trigger)
+    {
+        await using var seed = _db.NewContext();
+        var build = await seed.OeProjectBuilds.SingleAsync(b => b.Id == buildId);
+        build.Branch = branch;
+        build.Trigger = trigger;
+        await seed.SaveChangesAsync();
+    }
+
     // ── Part 3: our own PTEs from the builds we already hold ───────────
 
     [Fact]
@@ -609,6 +670,9 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
         public string AlcPath { get; }
         public IReadOnlyList<FakeExtension> Extensions { get; set; } = [];
 
+        /// <summary>The argument list of every <c>git clone</c> run.</summary>
+        public List<IReadOnlyList<string>> Clones { get; } = new();
+
         /// <summary>Per compiled extension: the version of each dependency the compiler found in the cache.</summary>
         public Dictionary<string, Dictionary<string, string>> SeenVersions { get; } = new();
 
@@ -617,6 +681,7 @@ public sealed class ProjectBuildSymbolFeedTests : IDisposable
             if (request.FileName == AlcPath) return Task.FromResult(Compile(request.Arguments));
             if (request.Arguments.Count > 0 && request.Arguments[0] == "clone")
             {
+                Clones.Add(request.Arguments.ToList());
                 var dest = request.Arguments[^1];
                 foreach (var ext in Extensions)
                 {

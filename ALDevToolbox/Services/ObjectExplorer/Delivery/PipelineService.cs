@@ -2,6 +2,7 @@ using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.ObjectExplorer.Projects;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer.Delivery;
@@ -85,7 +86,7 @@ public sealed class PipelineService
     public async Task<int> CreatePipelineAsync(PipelineInput input, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
-        var (name, selectionJson, releaseRepositoryId) = await ValidateAsync(input, existingId: null, ct);
+        var (name, selectionJson, releaseRepositoryId, branch) = await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
         var pipeline = new OePipeline
@@ -96,6 +97,7 @@ public sealed class PipelineService
             Name = name,
             RequestedAppIdsJson = selectionJson,
             GithubReleaseRepositoryId = releaseRepositoryId,
+            Branch = branch,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -107,7 +109,7 @@ public sealed class PipelineService
         return pipeline.Id;
     }
 
-    /// <summary>Updates a pipeline's name and extension selection.</summary>
+    /// <summary>Updates a pipeline's name, extension selection, publishing target and branch.</summary>
     public async Task UpdatePipelineAsync(int id, PipelineInput input, CancellationToken ct = default)
     {
         RequireOrganizationId();
@@ -117,11 +119,12 @@ public sealed class PipelineService
 
         // Validate against the pipeline's own project (input.ProjectId is ignored on
         // update — a pipeline can't move between projects).
-        var (name, selectionJson, releaseRepositoryId) = await ValidateAsync(input with { ProjectId = pipeline.ProjectId }, existingId: id, ct);
+        var (name, selectionJson, releaseRepositoryId, branch) = await ValidateAsync(input with { ProjectId = pipeline.ProjectId }, existingId: id, ct);
 
         pipeline.Name = name;
         pipeline.RequestedAppIdsJson = selectionJson;
         pipeline.GithubReleaseRepositoryId = releaseRepositoryId;
+        pipeline.Branch = branch;
         pipeline.UpdatedAt = DateTime.UtcNow;
         await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated pipeline {PipelineId} ({Name}).", pipeline.Id, name);
@@ -153,7 +156,7 @@ public sealed class PipelineService
     /// selection serialised to JSON (null = build everything). Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
-    private async Task<(string Name, string? SelectionJson, int? GithubReleaseRepositoryId)> ValidateAsync(
+    private async Task<(string Name, string? SelectionJson, int? GithubReleaseRepositoryId, string? Branch)> ValidateAsync(
         PipelineInput input, int? existingId, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
@@ -212,13 +215,23 @@ public sealed class PipelineService
             }
         }
 
+        // The branch every repository is checked out at. Blank means each
+        // repository's default branch. The rule is git's own, over the alphabet a
+        // webhook's branch is held to, so a name typed here and one GitHub reports
+        // on a push are judged the same way (#963).
+        var branch = string.IsNullOrWhiteSpace(input.Branch) ? null : input.Branch.Trim();
+        if (branch is not null && !GitBranchName.IsValid(branch))
+        {
+            errors["Branch"] = "That isn't a valid branch name. Type it exactly as GitHub shows it, e.g. main or release/25.0 - no spaces or '..'.";
+        }
+
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         // null/empty selection = build everything (the default), stored as a null column.
         var selectionJson = input.SelectedAppIds is { Count: > 0 }
             ? JsonSerializer.Serialize(input.SelectedAppIds)
             : null;
-        return (name, selectionJson, releaseRepositoryId);
+        return (name, selectionJson, releaseRepositoryId, branch);
     }
 
     /// <summary>
@@ -267,7 +280,13 @@ public sealed record PipelineInput(
     /// Release. Null (the default) means builds are not published anywhere. See
     /// <c>.design/github-integration-phase2.md</c> (#632).
     /// </summary>
-    int? GithubReleaseRepositoryId = null);
+    int? GithubReleaseRepositoryId = null,
+    /// <summary>
+    /// The branch the pipeline builds and watches. Null or blank means each
+    /// repository's default branch. See <c>.design/github-integration-phase2.md</c>,
+    /// "Branch watching" (#963).
+    /// </summary>
+    string? Branch = null);
 
 /// <summary>A project choice for the "New pipeline" dialog's project picker.</summary>
 public sealed record PipelineProjectOption(int Id, string Name);

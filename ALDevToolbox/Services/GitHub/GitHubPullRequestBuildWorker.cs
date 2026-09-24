@@ -28,8 +28,13 @@ namespace ALDevToolbox.Services.GitHub;
 /// entered through <see cref="ProjectBuildImporter.StartPullRequestBuildAsync"/>
 /// and run by <see cref="ReleaseImportWorker"/>. This worker's whole job is the
 /// routing. See <c>.design/github-integration-phase2.md</c> (#627).</para>
+///
+/// <para>The same drain also records <c>push</c> deliveries and merged pull
+/// requests (#963) through <see cref="GitHubBranchActivityService"/>, under the
+/// same per-organisation resolution. Those build nothing: they are what a
+/// pipeline's freshness is compared against.</para>
 /// </summary>
-public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRequestJob>
+public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubWebhookJob>
 {
     private readonly GitHubWebhookQueue _queue;
     private readonly IServiceProvider _services;
@@ -60,12 +65,17 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
     }
 
     /// <summary>Runs one job as the drain loop would. Test seam.</summary>
-    internal Task RunOneAsync(GitHubPullRequestJob job, CancellationToken ct) => RunJobAsync(job, ct);
+    internal Task RunOneAsync(GitHubWebhookJob job, CancellationToken ct) => RunJobAsync(job, ct);
 
-    protected override string Describe(GitHubPullRequestJob job) =>
-        $"{job.RepositoryFullName}#{job.PullRequestNumber}@{job.HeadSha}";
+    protected override string Describe(GitHubWebhookJob job) => job switch
+    {
+        GitHubPullRequestJob pr => $"{pr.RepositoryFullName}#{pr.PullRequestNumber}@{pr.HeadSha}",
+        GitHubPushJob push => $"{push.RepositoryFullName}:{push.Branch}@{push.HeadSha}",
+        GitHubMergedPullRequestJob merged => $"{merged.RepositoryFullName}#{merged.Number} merged",
+        _ => job.RepositoryFullName,
+    };
 
-    protected override async Task RunJobAsync(GitHubPullRequestJob job, CancellationToken ct)
+    protected override async Task RunJobAsync(GitHubWebhookJob job, CancellationToken ct)
     {
         // A restore is rewriting the database underneath us. The delivery was
         // accepted (the webhook route stays open through maintenance on purpose,
@@ -75,18 +85,65 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
         if (_maintenance.IsActive)
         {
             _logger.LogInformation(
-                "Holding a pull-request build for {Job}: maintenance mode is active ({Reason}).",
+                "Holding a webhook delivery for {Job}: maintenance mode is active ({Reason}).",
                 Describe(job), _maintenance.Reason);
             await Task.Delay(MaintenanceRetryDelay, ct).ConfigureAwait(false);
             if (!_queue.TryEnqueue(job))
             {
                 _logger.LogWarning(
-                    "Dropped a pull-request build for {Job}: the queue was full while maintenance mode was active.",
+                    "Dropped a webhook delivery for {Job}: the queue was full while maintenance mode was active.",
                     Describe(job));
             }
             return;
         }
 
+        if (job is not GitHubPullRequestJob pullRequest)
+        {
+            await RecordBranchActivityAsync(job, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await BuildPullRequestAsync(pullRequest, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records a push or a merged pull request for the organisation that connected
+    /// the installation (#963). Nothing is built. A repository no solution in that
+    /// organisation tracks is dropped at Debug - pushes are frequent, and most
+    /// repositories in a GitHub organisation are not a solution's.
+    /// </summary>
+    private async Task RecordBranchActivityAsync(GitHubWebhookJob job, CancellationToken ct)
+    {
+        var resolved = await ResolveOrganizationAsync(job.InstallationId, ct).ConfigureAwait(false);
+        if (resolved is null)
+        {
+            _logger.LogDebug(
+                "Dropped a delivery for {Repository}: no organisation on this deployment has connected installation {InstallationId}.",
+                job.RepositoryFullName, job.InstallationId);
+            return;
+        }
+
+        var identity = resolved.Value.Identity;
+        using var orgScope = AmbientOrganizationScope.Enter(identity);
+        await using var scope = _services.CreateAsyncScope();
+        var activity = scope.ServiceProvider.GetRequiredService<GitHubBranchActivityService>();
+
+        var matched = job switch
+        {
+            GitHubPushJob push => await activity.RecordPushAsync(push, ct).ConfigureAwait(false),
+            GitHubMergedPullRequestJob merged => await activity.RecordMergedPullRequestAsync(merged, ct).ConfigureAwait(false),
+            _ => 0,
+        };
+        if (matched == 0)
+        {
+            _logger.LogDebug(
+                "Dropped a delivery for {Repository}: no solution in organisation {OrganizationId} tracks it.",
+                job.RepositoryFullName, identity.OrganizationId);
+        }
+    }
+
+    private async Task BuildPullRequestAsync(GitHubPullRequestJob job, CancellationToken ct)
+    {
         // Superseded before we even reached it: a newer push to the same pull
         // request arrived while this one waited. Building it would spend a
         // compile on a commit no reviewer is looking at, and would then complete
@@ -135,14 +192,7 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
         // query filter. Matching is on the normalised clone URL, because the same
         // repository is entered by hand with and without the .git suffix and with
         // either case.
-        var candidates = await db.OeProjectRepositories.AsNoTracking()
-            .Where(r => r.Provider == RepositoryProvider.GitHub && r.Project!.DeletedAt == null)
-            .Select(r => new { r.Id, r.Url, r.ProjectId, ProjectName = r.Project!.Name })
-            .ToListAsync(ct).ConfigureAwait(false);
-
-        var wanted = NormaliseRepositoryUrl(job.CloneUrl);
-        var matches = candidates
-            .Where(r => NormaliseRepositoryUrl(r.Url) == wanted)
+        var matches = (await GitHubRepositoryMatch.TrackingRepositoriesAsync(db, job.CloneUrl, ct).ConfigureAwait(false))
             // One solution, one build, even when it lists the repository twice.
             .GroupBy(r => r.ProjectId)
             .Select(g => g.First())
@@ -170,7 +220,7 @@ public sealed class GitHubPullRequestBuildWorker : QueueDrainWorker<GitHubPullRe
 
                 await importer.StartPullRequestBuildAsync(
                     projectId: match.ProjectId,
-                    repositoryId: match.Id,
+                    repositoryId: match.RepositoryId,
                     repositoryFullName: job.RepositoryFullName,
                     installationId: job.InstallationId,
                     headSha: job.HeadSha,

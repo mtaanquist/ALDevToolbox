@@ -138,6 +138,102 @@ public sealed class PipelineServiceTests : IDisposable
         (await read.OePipelines.IgnoreQueryFilters().SingleAsync(p => p.Id == id)).DeletedAt.Should().NotBeNull();
     }
 
+    // --- The watched branch (#963) ------------------------------------------
+
+    [Fact]
+    public async Task A_pipeline_keeps_the_branch_it_was_given_and_a_blank_one_means_the_default()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var svc = NewService(ctx);
+
+        var named = await svc.CreatePipelineAsync(new PipelineInput(projectId, "Release", null, Branch: " release/25.0 "));
+        var blank = await svc.CreatePipelineAsync(new PipelineInput(projectId, "Main", null, Branch: "   "));
+
+        await using var read = _db.NewContext();
+        (await read.OePipelines.SingleAsync(p => p.Id == named)).Branch.Should().Be("release/25.0");
+        (await read.OePipelines.SingleAsync(p => p.Id == blank)).Branch.Should().BeNull(
+            "blank means each repository's default branch, stored as no branch at all");
+    }
+
+    [Fact]
+    public async Task Editing_a_pipeline_changes_and_clears_its_branch()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var svc = NewService(ctx);
+        var id = await svc.CreatePipelineAsync(new PipelineInput(projectId, "Production", null, Branch: "main"));
+
+        await svc.UpdatePipelineAsync(id, new PipelineInput(projectId, "Production", null, Branch: "develop"));
+        await using (var read = _db.NewContext())
+        {
+            (await read.OePipelines.SingleAsync(p => p.Id == id)).Branch.Should().Be("develop");
+        }
+
+        await svc.UpdatePipelineAsync(id, new PipelineInput(projectId, "Production", null, Branch: null));
+        await using (var read = _db.NewContext())
+        {
+            (await read.OePipelines.SingleAsync(p => p.Id == id)).Branch.Should().BeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("-main")]
+    [InlineData("feature..vat")]
+    [InlineData("feature/vat/")]
+    [InlineData("/feature")]
+    [InlineData("feature//vat")]
+    [InlineData("feature/.hidden")]
+    [InlineData("main.lock")]
+    [InlineData("main.")]
+    [InlineData("feature vat")]
+    [InlineData("feature~1")]
+    [InlineData("feature:vat")]
+    [InlineData("feat^")]
+    [InlineData("feat*")]
+    [InlineData("feat?")]
+    [InlineData("feat[1]")]
+    [InlineData("feat\\vat")]
+    [InlineData("feat@{1}")]
+    public async Task A_branch_name_git_would_refuse_is_rejected_against_the_branch_field(string branch)
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+
+        var act = () => NewService(ctx).CreatePipelineAsync(new PipelineInput(projectId, "Production", null, Branch: branch));
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Branch");
+    }
+
+    [Theory]
+    [InlineData("main", true)]
+    [InlineData("release/25.0", true)]
+    [InlineData("feature/CRONUS-123_vat-fix", true)]
+    [InlineData("v1.2.3", true)]
+    [InlineData("-main", false)]
+    [InlineData(".main", false)]
+    [InlineData("feature..vat", false)]
+    [InlineData("feature/vat/", false)]
+    [InlineData("/feature", false)]
+    [InlineData("feature//vat", false)]
+    [InlineData("feature/.hidden", false)]
+    [InlineData("main.lock", false)]
+    [InlineData("main.lock/x", false)]
+    [InlineData("main.", false)]
+    [InlineData("feature vat", false)]
+    [InlineData("feature~1", false)]
+    [InlineData("feat\\vat", false)]
+    [InlineData("æøå", false)]
+    public void The_browser_pattern_and_the_server_rule_agree(string branch, bool valid)
+    {
+        // The pattern= on the editor field mirrors the server rule; a browser
+        // anchors the pattern at both ends, so the test does too.
+        ALDevToolbox.Services.ObjectExplorer.Projects.GitBranchName.IsValid(branch).Should().Be(valid);
+        System.Text.RegularExpressions.Regex
+            .IsMatch(branch, "^(?:" + ALDevToolbox.Services.ObjectExplorer.Projects.GitBranchName.HtmlPattern + ")$")
+            .Should().Be(valid);
+    }
+
     private PipelineService NewService(AppDbContext ctx) =>
         new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), NullLogger<PipelineService>.Instance);
 
