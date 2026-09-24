@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <div class="page">
-  <div class="page-head__crumbs"><a href="#">Releases</a><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>{{ p.name }}</span></div>
+  <div class="page-head__crumbs"><a href="#">Deployments</a><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>{{ p.name }}</span></div>
 
   <div class="detail-head" style="flex-wrap: wrap">
     <div style="min-width: 0; flex: 1 1 300px">
@@ -19,10 +19,10 @@
       <p class="page-head__sub" style="text-wrap: pretty">In <a href="#">{{ p.solution }}</a>. Installs from build pipeline "{{ p.source }}" into the {{ p.type }} environment "{{ p.env }}".</p>
     </div>
     <div class="page-head__actions" style="flex-wrap: wrap">
-      <a class="btn" href="#">All releases</a>
+      <a class="btn" href="#">All deployments</a>
       <button class="btn" type="button">Edit</button>
-      <sc-if value="{{ primaryInHead }}" hint-placeholder-val="{{ true }}"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path></svg>Release</button></sc-if>
-      <sc-if value="{{ primaryInEmpty }}" hint-placeholder-val="{{ false }}"><button class="btn" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path></svg>Release</button></sc-if>
+      <sc-if value="{{ primaryInHead }}" hint-placeholder-val="{{ true }}"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path></svg>Deploy</button></sc-if>
+      <sc-if value="{{ primaryInEmpty }}" hint-placeholder-val="{{ false }}"><button class="btn" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path></svg>Deploy</button></sc-if>
     </div>
   </div>
 
@@ -34,11 +34,11 @@
       </div>
     </div>
     <div class="card">
-      <div class="card__head"><h3 class="card__title">Releases</h3></div>
+      <div class="card__head"><h3 class="card__title">Deployments</h3></div>
       <sc-for list="{{ skel }}" as="s" hint-placeholder-count="6">
         <div style="display: flex; align-items: center; gap: var(--space-3); height: 50px; padding: 0 var(--space-4); border-bottom: 1px solid var(--border)"><span class="skeleton" style="width: 15px; height: 15px; flex: none"></span><span class="skeleton" style="width: {{ s.w }}; max-width: 260px"></span><span style="flex: 1"></span><span class="skeleton" style="width: 60px"></span></div>
       </sc-for>
-      <div class="loading-block" style="padding: var(--space-3) var(--space-4)"><span class="spinner"></span><span>Loading releases and the environment's details from Business Central...</span></div>
+      <div class="loading-block" style="padding: var(--space-3) var(--space-4)"><span class="spinner"></span><span>Loading deployments and the environment's details from Business Central...</span></div>
     </div>
   </sc-if>
 
@@ -59,8 +59,8 @@
               <sc-if value="{{ p.force }}" hint-placeholder-val="{{ false }}"><span class="meta-item__value" style="display: flex; align-items: center; gap: var(--space-1); color: var(--warning-text); font-weight: var(--fw-semibold)"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex: none"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.4"></path></svg>Force sync</span></sc-if>
               <sc-if value="{{ p.add }}" hint-placeholder-val="{{ true }}"><span class="meta-item__value">Add</span></sc-if>
             </span>
-            <span class="meta-item" style="min-width: 0; overflow-wrap: anywhere"><span class="meta-item__label">Last release</span><span class="meta-item__value"><span style="color: {{ last.color }}; font-weight: var(--fw-medium)">{{ last.text }}</span> <span class="u-muted">{{ last.when }}</span></span></span>
-            <span class="meta-item" style="min-width: 0; overflow-wrap: anywhere"><span class="meta-item__label">Next release</span><span class="meta-item__value" style="font-weight: {{ next.weight }}">{{ next.text }}</span></span>
+            <span class="meta-item" style="min-width: 0; overflow-wrap: anywhere"><span class="meta-item__label">Last deployment</span><span class="meta-item__value"><span style="color: {{ last.color }}; font-weight: var(--fw-medium)">{{ last.text }}</span> <span class="u-muted">{{ last.when }}</span></span></span>
+            <span class="meta-item" style="min-width: 0; overflow-wrap: anywhere"><span class="meta-item__label">Next deployment</span><span class="meta-item__value" style="font-weight: {{ next.weight }}">{{ next.text }}</span></span>
           </div>
           <sc-if value="{{ p.force }}" hint-placeholder-val="{{ false }}">
             <div class="alert alert--warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg><span>Force sync is on for a Production environment. If a new build removes a table or field, its data in Production is deleted during the install.</span></div>
@@ -80,19 +80,19 @@
 
     <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}">
       <div class="card">
-        <div class="card__head"><h3 class="card__title">Releases</h3></div>
+        <div class="card__head"><h3 class="card__title">Deployments</h3></div>
         <div class="empty-state">
           <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path><path d="M3 13.5h10"></path></svg></span>
-          <span class="empty-state__title">No releases yet</span>
-          <span class="empty-state__text">Nothing has been installed by this pipeline yet. Release the latest build to install it now.</span>
-          <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path></svg>Release</button></span>
+          <span class="empty-state__title">No deployments yet</span>
+          <span class="empty-state__text">Nothing has been installed by this pipeline yet. Deploy the latest build to install it now.</span>
+          <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V3.5M4.5 7L8 3.5 11.5 7"></path></svg>Deploy</button></span>
         </div>
       </div>
     </sc-if>
 
     <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
       <div class="card" style="overflow: hidden">
-        <div class="card__head"><div><h3 class="card__title">Releases</h3><p class="card__sub">Newest first. Open a release for its apps, timings and log.</p></div></div>
+        <div class="card__head"><div><h3 class="card__title">Deployments</h3><p class="card__sub">Newest first. Open a deployment for its apps, timings and log.</p></div></div>
 
         <sc-for list="{{ approvals }}" as="a" hint-placeholder-count="0">
           <div style="display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-3); padding: var(--space-3) var(--space-4); background: var(--warning-bg); border-bottom: 1px solid var(--border); border-right: 4px solid var(--bar-draft)">
@@ -107,7 +107,7 @@
 
         <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
           <div style="display: grid; grid-template-columns: 28px 24px minmax(0, 1.5fr) minmax(0, 1.3fr) minmax(0, 1fr) 72px minmax(0, 1fr) 190px; align-items: center; gap: var(--space-3); height: 34px; padding: 0 var(--space-4); background: var(--surface-sunken); border-bottom: 1px solid var(--border); border-right: 4px solid transparent; font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-3)">
-            <span></span><span><span class="u-sr">State</span></span><span>Release</span><span>Outcome</span><span>Started</span><span style="text-align: right">Took</span><span>Apps</span><span><span class="u-sr">Actions</span></span>
+            <span></span><span><span class="u-sr">State</span></span><span>Deployment</span><span>Outcome</span><span>Started</span><span style="text-align: right">Took</span><span>Apps</span><span><span class="u-sr">Actions</span></span>
           </div>
         </sc-if>
 
@@ -117,13 +117,13 @@
               <div style="display: grid; grid-template-columns: 28px 24px minmax(0, 1.5fr) minmax(0, 1.3fr) minmax(0, 1fr) 72px minmax(0, 1fr) 190px; align-items: center; gap: var(--space-3); min-height: 50px; padding: 0 var(--space-4); background: {{ r.rowBg }}; cursor: pointer" onClick="{{ r.toggle }}">
                 <button class="btn btn--icon btn--sm btn--ghost" type="button" aria-expanded="{{ r.openStr }}" aria-label="{{ r.toggleLabel }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({{ r.rot }}); transition: transform 120ms"><path d="M6 4l4 4-4 4"></path></svg></button>
                 <span class="data-table__state data-table__state--icon {{ r.spinCls }}" role="img" aria-label="{{ r.state }}" title="{{ r.state }}" style="color: {{ r.color }}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ r.ringOp }}"></circle><path d="{{ r.glyph }}"></path></svg></span>
-                <span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-medium); color: var(--ink)">Release {{ r.n }}</span><span class="cell-stack__sub">{{ r.what }}</span></span>
+                <span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-medium); color: var(--ink)">Deployment {{ r.n }}</span><span class="cell-stack__sub">{{ r.what }}</span></span>
                 <span class="cell-stack"><span class="cell-stack__main" style="color: {{ r.color }}; font-weight: var(--fw-medium)">{{ r.state }}</span><span class="cell-stack__sub">{{ r.rel }}</span></span>
                 <span style="font-size: var(--text-sm); color: var(--ink-2)">{{ r.started }}</span>
                 <span class="u-num" style="text-align: right; font-size: var(--text-sm); color: var(--ink-2)">{{ r.took }}</span>
                 <span style="font-size: var(--text-sm); color: var(--ink-2)">{{ r.apps }}</span>
                 <span style="display: flex; justify-content: flex-end; gap: var(--space-2)">
-                  <sc-if value="{{ r.canRetry }}" hint-placeholder-val="{{ false }}"><button class="btn btn--sm" type="button" onClick="{{ stop }}">Release again</button></sc-if>
+                  <sc-if value="{{ r.canRetry }}" hint-placeholder-val="{{ false }}"><button class="btn btn--sm" type="button" onClick="{{ stop }}">Deploy again</button></sc-if>
                   <sc-if value="{{ r.canSchedule }}" hint-placeholder-val="{{ false }}"><button class="btn btn--sm" type="button" onClick="{{ stop }}">Reschedule</button><button class="btn btn--sm btn--ghost" type="button" onClick="{{ stop }}">Cancel</button></sc-if>
                 </span>
               </div>
@@ -131,7 +131,7 @@
             <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
               <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 2px var(--space-3); align-items: start; padding: var(--space-3); min-height: 44px; background: {{ r.rowBg }}; cursor: pointer" onClick="{{ r.toggle }}" role="button" aria-expanded="{{ r.openStr }}">
                 <span class="data-table__state data-table__state--icon {{ r.spinCls }}" role="img" aria-label="{{ r.state }}" style="color: {{ r.color }}; padding-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" stroke-opacity="{{ r.ringOp }}"></circle><path d="{{ r.glyph }}"></path></svg></span>
-                <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-semibold); color: var(--ink)">Release {{ r.n }} <span style="color: {{ r.color }}; font-weight: var(--fw-medium)">- {{ r.state }}</span></span><span class="cell-stack__sub">{{ r.rel }} - {{ r.took }} - {{ r.apps }}</span></span>
+                <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-semibold); color: var(--ink)">Deployment {{ r.n }} <span style="color: {{ r.color }}; font-weight: var(--fw-medium)">- {{ r.state }}</span></span><span class="cell-stack__sub">{{ r.rel }} - {{ r.took }} - {{ r.apps }}</span></span>
                 <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color: var(--ink-3); margin-top: 2px; transform: rotate({{ r.rotC }})"><path d="M4 6l4 4 4-4"></path></svg>
               </div>
             </sc-if>
@@ -156,7 +156,7 @@
                 </div>
 
                 <div style="display: grid; gap: var(--space-2)">
-                  <p class="section-label" style="margin: 0">Apps in this release</p>
+                  <p class="section-label" style="margin: 0">Apps in this deployment</p>
                   <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
                     <sc-for list="{{ r.appRows }}" as="ap" hint-placeholder-count="3">
                       <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 2px var(--space-3); align-items: start; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); border-right: 3px solid {{ ap.bar }}">
@@ -183,14 +183,14 @@
                 </details>
 
                 <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
-                  <sc-if value="{{ r.canRetry }}" hint-placeholder-val="{{ false }}"><button class="btn" type="button" style="height: 44px">Release again</button></sc-if>
+                  <sc-if value="{{ r.canRetry }}" hint-placeholder-val="{{ false }}"><button class="btn" type="button" style="height: 44px">Deploy again</button></sc-if>
                   <sc-if value="{{ r.canSchedule }}" hint-placeholder-val="{{ false }}"><span style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2)"><button class="btn" type="button" style="height: 44px">Reschedule</button><button class="btn btn--ghost" type="button" style="height: 44px">Cancel</button></span></sc-if>
                 </sc-if>
               </div>
             </sc-if>
           </div>
         </sc-for>
-        <div class="card__foot" style="justify-content: center"><button class="btn btn--sm btn--ghost" type="button">Show older releases</button></div>
+        <div class="card__foot" style="justify-content: center"><button class="btn btn--sm btn--ghost" type="button">Show older deployments</button></div>
       </div>
     </sc-if>
   </sc-if>
@@ -242,7 +242,7 @@ const FAILED = {
     { name: 'Contoso Reports', version: '2.2.0.104, not changed', st: 'skipped', took: '-', message: 'Skipped because it depends on Contoso Warehouse 2.3.0.118.' }
   ],
   log: [
-    ['02:00:00', 'Release 49 started: build #118, 3 apps, schema sync Add'],
+    ['02:00:00', 'Deployment 49 started: build #118, 3 apps, schema sync Add'],
     ['02:00:04', 'Claimed. Connecting to environment "Test" (Sandbox) in Contoso'],
     ['02:00:05', 'Uploading 3 apps (4.1 MB)'],
     ['02:01:10', 'Upload finished'],
@@ -252,10 +252,10 @@ const FAILED = {
     ['02:03:31', 'Business Central: The schema synchronization of table 50110 "Pick Zone" failed. Field 12 "Zone Priority" has been removed.', 'err'],
     ['02:03:31', 'Contoso Warehouse 2.3.0.118 failed. Business Central kept version 2.2.0.104', 'err'],
     ['02:03:32', 'Skipping Contoso Reports 2.3.0.118: depends on Contoso Warehouse 2.3.0.118'],
-    ['02:03:32', 'Release 49 failed after 3m 32s', 'err']
+    ['02:03:32', 'Deployment 49 failed after 3m 32s', 'err']
   ]
 };
-const okLog = (n, t) => [[t, 'Release ' + n + ' started: build, 3 apps, schema sync Add'], [t, 'Uploading 3 apps'], [t, 'Installing 3 apps'], [t, 'Release ' + n + ' deployed']];
+const okLog = (n, t) => [[t, 'Deployment ' + n + ' started: build, 3 apps, schema sync Add'], [t, 'Uploading 3 apps'], [t, 'Installing 3 apps'], [t, 'Deployment ' + n + ' deployed']];
 const okRow = (n, what, rel, started, took, t, v) => ({ n, st: 'deployed', what, rel, started, took, apps: '3 of 3 installed',
   steps: okSteps(started.split(' ')[0], t, t, t, t, took),
   appRows: APPS3(v).map(([name, v]) => ({ name, version: v, st: 'completed', took: '0m 40s' })), log: okLog(n, t) });
@@ -282,7 +282,7 @@ const ROWS = {
         { name: 'Contoso Warehouse', version: '1.8.2.30 to 1.9.0.38', st: 'pending', took: '' },
         { name: 'Contoso Reports', version: '1.8.2.30 to 1.9.0.38', st: 'pending', took: '' }
       ],
-      log: [['08:14:02', 'Release 12 scheduled for 22:00 by K. Jensen']] },
+      log: [['08:14:02', 'Deployment 12 scheduled for 22:00 by K. Jensen']] },
     { n: 11, st: 'handed', what: 'Build #30 from release', rel: '12 Sep', started: '12 Sep 18:10', took: '1m 20s', apps: '3 handed over', steps: [], appRows: [], log: [], infoSentence: 'Business Central installed these apps with its own update on 13 Sep.' },
     okRow(10, 'Build #22 from release', '2 Sep', '2 Sep 22:00', '4m 12s', '22:00', '1.8.1.22'),
     okRow(9, 'Build #17 from release', '19 Aug', '19 Aug 22:00', '4m 40s', '22:00', '1.8.0.17')
@@ -297,10 +297,10 @@ ROWS.failed = [
 ];
 
 const HEALTH = {
-  healthy: { title: 'Healthy', sentence: 'The last release deployed 40 minutes ago. Nothing is scheduled.', k: 'deployed' },
-  failed: { title: 'Last release failed', sentence: 'Release 49 failed last night at 02:03 on Contoso Warehouse. The environment reports Contoso Warehouse 2.2.0.104 installed, from release 48.', k: 'failed' },
-  prod: { title: 'Scheduled for tonight', sentence: 'Release 12 installs into Production tonight at 22:00. Force sync is on for this Production environment.', k: 'scheduled' },
-  empty: { title: 'Nothing released yet', sentence: 'This pipeline has not installed anything into "Test" yet.', k: 'pending' }
+  healthy: { title: 'Healthy', sentence: 'The last deployment deployed 40 minutes ago. Nothing is scheduled.', k: 'deployed' },
+  failed: { title: 'Last deployment failed', sentence: 'Deployment 49 failed last night at 02:03 on Contoso Warehouse. The environment reports Contoso Warehouse 2.2.0.104 installed, from release 48.', k: 'failed' },
+  prod: { title: 'Scheduled for tonight', sentence: 'Deployment 12 installs into Production tonight at 22:00. Force sync is on for this Production environment.', k: 'scheduled' },
+  empty: { title: 'Nothing deployed yet', sentence: 'This pipeline has not installed anything into "Test" yet.', k: 'pending' }
 };
 
 class Component extends DCLogic {
@@ -319,7 +319,7 @@ class Component extends DCLogic {
       return {
         ...r, state: WORD[r.st], color: g.c, bar: g.bar, glyph: g.g, ringOp: g.spin ? '.22' : '1', spinCls: g.spin ? 'data-table__state--spin' : '',
         rowBg: open ? 'var(--surface-sunken)' : '', open, openStr: open ? 'true' : 'false', rot: open ? '90deg' : '0deg', rotC: open ? '180deg' : '0deg',
-        toggleLabel: (open ? 'Hide' : 'Show') + ' details for release ' + r.n,
+        toggleLabel: (open ? 'Hide' : 'Show') + ' details for deployment ' + r.n,
         canRetry: !!r.canRetry, canSchedule: !!r.canSchedule, failSentence: r.failSentence || '', infoSentence: r.infoSentence || '',
         logOpen: !!r.logOpen, logCount: r.log.length + ' lines',
         steps: r.steps.map(s => ({ ...s, bar: G[s.k].bar, color: s.k === 'pending' ? 'var(--ink-4)' : G[s.k].c })),
@@ -345,9 +345,9 @@ class Component extends DCLogic {
       loading: kind === 'loading', ready: kind !== 'loading',
       empty: kind === 'empty', hasRows: rows.length > 0,
       primaryInHead: kind !== 'empty', primaryInEmpty: kind === 'empty',
-      approvals: kind === 'prod' ? [{ title: 'Release 13 - build #40', sentence: 'Build #40 finished at 07:12 and a release was prepared for Production. Approve it to install it in the next delivery window, or dismiss it.' }] : [],
+      approvals: kind === 'prod' ? [{ title: 'Deployment 13 - build #40', sentence: 'Build #40 finished at 07:12 and a deployment was prepared for Production. Approve it to install it in the next delivery window, or dismiss it.' }] : [],
       rows, wide: !compact, compact,
-      footText: kind === 'prod' ? 'Showing 4 of 12 releases' : 'Showing 5 of 49 releases',
+      footText: kind === 'prod' ? 'Showing 4 of 12 deployments' : 'Showing 5 of 49 deployments',
       skel: [{ w: '70%' }, { w: '50%' }, { w: '62%' }, { w: '44%' }, { w: '58%' }, { w: '66%' }],
       stop: e => e.stopPropagation()
     };
