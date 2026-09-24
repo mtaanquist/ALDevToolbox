@@ -2065,6 +2065,29 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// survive a refresh. <c>geoName</c> is absent from the by-name
     /// response, so a null there leaves the cached value in place rather than erasing it.
     /// </summary>
+    private static void ApplyFetched(OeProjectEnvironment row, BcEnvironment env, DateTime now)
+    {
+        row.Type = env.Type;
+        row.FriendlyName = env.FriendlyName;
+        row.ApplicationFamily = env.ApplicationFamily;
+        row.Status = env.Status;
+        row.StatusFetchedAt = now;
+        row.CountryCode = env.CountryCode;
+        row.AadTenantId = env.AadTenantId;
+        row.WebClientLoginUrl = env.WebClientLoginUrl;
+        row.LocationName = env.LocationName;
+        row.GeoName = env.GeoName ?? row.GeoName;
+        row.RingName = env.RingName;
+        row.AppSourceAppsUpdateCadence = env.AppSourceAppsUpdateCadence;
+        row.Version = env.Version;
+        row.GracePeriodStartDate = env.GracePeriodStartDate;
+        row.EnforcedUpdatePeriodStartDate = env.EnforcedUpdatePeriodStartDate;
+        row.SoftDeletedOn = env.SoftDeletedOn;
+        row.HardDeletePendingOn = env.HardDeletePendingOn;
+        row.DeleteReason = env.DeleteReason;
+        row.FetchedAt = now;
+    }
+
     /// <summary>
     /// The organisation's default delivery windows (issue #962). Runs under the query
     /// filter: a request has its org in scope, and the discovery worker pins the
@@ -2091,29 +2114,6 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             return (defaults.SandboxStart, defaults.SandboxEnd);
         }
         return (null, null);
-    }
-
-    private static void ApplyFetched(OeProjectEnvironment row, BcEnvironment env, DateTime now)
-    {
-        row.Type = env.Type;
-        row.FriendlyName = env.FriendlyName;
-        row.ApplicationFamily = env.ApplicationFamily;
-        row.Status = env.Status;
-        row.StatusFetchedAt = now;
-        row.CountryCode = env.CountryCode;
-        row.AadTenantId = env.AadTenantId;
-        row.WebClientLoginUrl = env.WebClientLoginUrl;
-        row.LocationName = env.LocationName;
-        row.GeoName = env.GeoName ?? row.GeoName;
-        row.RingName = env.RingName;
-        row.AppSourceAppsUpdateCadence = env.AppSourceAppsUpdateCadence;
-        row.Version = env.Version;
-        row.GracePeriodStartDate = env.GracePeriodStartDate;
-        row.EnforcedUpdatePeriodStartDate = env.EnforcedUpdatePeriodStartDate;
-        row.SoftDeletedOn = env.SoftDeletedOn;
-        row.HardDeletePendingOn = env.HardDeletePendingOn;
-        row.DeleteReason = env.DeleteReason;
-        row.FetchedAt = now;
     }
 
     /// <summary>Decrypts the stored credentials, or null when not fully configured / the key ring can't decrypt the secret.</summary>
