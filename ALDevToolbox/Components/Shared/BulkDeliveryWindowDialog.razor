@@ -1,0 +1,411 @@
+@rendermode InteractiveServer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+@inject ProjectConnectionService Connection
+@inject ILogger<BulkDeliveryWindowDialog> Log
+
+@*
+    "Set delivery window..." for the rows ticked on the Environments list (issue #961).
+    One start and end, or Any time, for every selected environment; a preview grouped the
+    way the Upgrades page groups its runs; then the per-row result. The grouping and the
+    writes are ProjectConnectionService's - this only renders them.
+
+    Named user: somebody on the upgrade team standardising delivery windows across every
+    customer, who would otherwise open thirty environment pages one by one.
+*@
+
+@if (_open)
+{
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="bdw-title"
+         tabindex="-1" @onkeydown="OnKeyDown" @ref="_root">
+        <div class="modal-backdrop" @onclick="Close" aria-hidden="true"></div>
+        <div class="confirm-dialog confirm-dialog--wide" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="clock" Width="17" Height="17" />
+                </span>
+                <h2 id="bdw-title" class="confirm-dialog__title">
+                    @(_results is null ? $"Set the delivery window on {Plural(_ids.Count)}" : "Delivery window set")
+                </h2>
+            </div>
+
+            @if (_results is { } results)
+            {
+                <div class="confirm-dialog__body bdw-body">
+                    <p class="bdw-lead">@ResultLine(results)</p>
+                    @ResultList(results)
+                </div>
+                <div class="confirm-dialog__actions">
+                    <button type="button" class="btn" @onclick="Close">Close</button>
+                </div>
+            }
+            else
+            {
+                <div class="confirm-dialog__body bdw-body">
+                    <p class="bdw-lead">
+                        The hours each day when AL Workbench may deploy apps to these environments.
+                        Business Central's own update window is not changed.
+                    </p>
+                    <div class="bdw-window">
+                        <label class="bdw-window__time">From
+                            <input type="time" class="input input--sm" aria-label="Window start"
+                                   value="@TimeValue(_start)" @onchange="e => OnTimeChangedAsync(e, start: true)" disabled="@(_anyTime || _saving)" />
+                        </label>
+                        <label class="bdw-window__time">To
+                            <input type="time" class="input input--sm" aria-label="Window end"
+                                   value="@TimeValue(_end)" @onchange="e => OnTimeChangedAsync(e, start: false)" disabled="@(_anyTime || _saving)" />
+                        </label>
+                        <label class="@AnyTimeClass">
+                            <input type="checkbox" checked="@_anyTime" disabled="@_saving"
+                                   @onchange="e => OnAnyTimeChangedAsync((bool)(e.Value ?? false))" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>Any time (no window)</span>
+                        </label>
+                    </div>
+                    <p class="field__hint bdw-zone">
+                        Times are in each customer's own Business Central time zone: 22:00 means 22:00 where that customer is.
+                    </p>
+                    @if (IsHalfFilled)
+                    {
+                        <span class="field__hint">Enter the @(_start is null ? "start" : "end") time too, or tick Any time.</span>
+                    }
+
+                    @if (_preview is { } preview)
+                    {
+                        @PreviewList(preview)
+                    }
+                    else if (_previewLoading)
+                    {
+                        <LoadingBlock Text="Checking the selected environments..." />
+                    }
+
+                    @if (_error is { } err)
+                    {
+                        <Alert Tone="AlertTone.Danger"><span>@err</span></Alert>
+                    }
+                </div>
+                <div class="confirm-dialog__actions">
+                    <button type="button" class="btn" @onclick="Close" disabled="@_saving">Cancel</button>
+                    <button type="button" class="btn @(_saving ? "btn--loading" : "")" @onclick="ApplyAsync" disabled="@(!CanApply)">
+                        <Icon Name="clock" Width="14" Height="14" />
+                        <span>@ConfirmLabel</span>
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Raised after a run, with the per-row results, so the list can re-read itself.</summary>
+    [Parameter] public EventCallback<List<DeliveryWindowChangeResult>> OnApplied { get; set; }
+
+    private bool _open;
+    private bool _focusPending;
+    private ElementReference _root;
+    private List<int> _ids = new();
+
+    /// <summary>The names the list already showed, for a row the service can no longer read at all.</summary>
+    private Dictionary<int, (string Project, string Environment)> _known = new();
+
+    private TimeOnly? _start;
+    private TimeOnly? _end;
+    private bool _anyTime;
+
+    private List<DeliveryWindowChangePreviewRow>? _preview;
+    private bool _previewLoading;
+    private bool _previewAgain;
+    private bool _saving;
+    private string? _error;
+    private List<DeliveryWindowChangeResult>? _results;
+
+    /// <summary>
+    /// True while the dialog is reading or writing. The page and the dialog share one
+    /// database context, so the page holds back its own background re-read meanwhile.
+    /// </summary>
+    public bool IsWorking => _previewLoading || _saving;
+
+    private bool IsHalfFilled => !_anyTime && _start is null != (_end is null);
+
+    /// <summary>A window has been chosen: both times, or Any time on purpose. Two empty boxes are not a choice.</summary>
+    private bool HasChoice => _anyTime || (_start is not null && _end is not null);
+
+    private int ChangeCount => _preview?.Count(p => p.Group == DeliveryWindowChangeGroup.WillChange) ?? 0;
+
+    private bool CanApply => HasChoice && !_saving && !_previewLoading && ChangeCount > 0;
+
+    private string AnyTimeClass => _anyTime ? "check is-checked" : "check";
+
+    /// <summary>
+    /// Counts only once there is something to count: "on 0 environments" under a title
+    /// naming four reads as a lost selection. Clearing says so rather than "set".
+    /// </summary>
+    private string ConfirmLabel =>
+        _saving ? "Setting..."
+        : !HasChoice || _preview is null ? "Set window"
+        : ChangeCount == 0 ? "Nothing to change"
+        : _anyTime ? $"Remove window on {Plural(ChangeCount)}"
+        : $"Set window on {Plural(ChangeCount)}";
+
+    private static string Plural(int n) => n == 1 ? "1 environment" : $"{n} environments";
+
+    /// <summary>Opens the dialog for the ticked rows. Nothing is chosen yet, so nothing is previewed.</summary>
+    public Task OpenAsync(IReadOnlyList<UpgradeFleetRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        _ids = rows.Select(r => r.EnvironmentId).Distinct().ToList();
+        _known = rows.GroupBy(r => r.EnvironmentId)
+            .ToDictionary(g => g.Key, g => (g.First().ProjectName, g.First().EnvironmentName));
+        _start = null;
+        _end = null;
+        _anyTime = false;
+        _preview = null;
+        _previewLoading = false;
+        _previewAgain = false;
+        _saving = false;
+        _error = null;
+        _results = null;
+        _open = true;
+        _focusPending = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending && _open)
+        {
+            _focusPending = false;
+            try { await _root.FocusAsync(); }
+            catch { /* detached */ }
+        }
+    }
+
+    /// <summary>
+    /// A browser sends "22:00" or "22:00:00" depending on the input's step, and a bind
+    /// with a fixed format drops the one it does not expect without a word; both are read here.
+    /// </summary>
+    private async Task OnTimeChangedAsync(ChangeEventArgs e, bool start)
+    {
+        TimeOnly? value = TimeOnly.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed : null;
+        if (start) _start = value;
+        else _end = value;
+        await RefreshPreviewAsync();
+    }
+
+    private static string TimeValue(TimeOnly? time) => time is { } t ? UpdateWindow.Clock(t) : string.Empty;
+
+    private async Task OnAnyTimeChangedAsync(bool on)
+    {
+        _anyTime = on;
+        if (on)
+        {
+            _start = null;
+            _end = null;
+        }
+        await RefreshPreviewAsync();
+    }
+
+    /// <summary>
+    /// Re-reads the preview for the window as it now stands. Two quick edits must not put
+    /// two queries on the one context at once, so a change that lands while a read is
+    /// running is picked up by the same loop instead of starting its own.
+    /// </summary>
+    private async Task RefreshPreviewAsync()
+    {
+        if (!HasChoice)
+        {
+            _preview = null;
+            return;
+        }
+        if (_previewLoading)
+        {
+            _previewAgain = true;
+            return;
+        }
+
+        _previewLoading = true;
+        _error = null;
+        try
+        {
+            do
+            {
+                _previewAgain = false;
+                if (!HasChoice)
+                {
+                    _preview = null;
+                    break;
+                }
+                _preview = await Connection.PreviewUpdateWindowForManyAsync(_ids, Target().Start, Target().End);
+            }
+            while (_previewAgain);
+        }
+        catch (PlanValidationException ex)
+        {
+            _preview = null;
+            _error = ex.Errors.Values.FirstOrDefault() ?? "That window can't be used.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Previewing a delivery window for {Count} environment(s) failed.", _ids.Count);
+            _preview = null;
+            _error = "Couldn't check the selected environments. Try again in a moment.";
+        }
+        finally
+        {
+            _previewLoading = false;
+        }
+    }
+
+    private (TimeOnly? Start, TimeOnly? End) Target() => _anyTime ? (null, null) : (_start, _end);
+
+    private async Task ApplyAsync()
+    {
+        if (!CanApply) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            var (start, end) = Target();
+            _results = await Connection.SetUpdateWindowForManyAsync(_ids, start, end);
+            await OnApplied.InvokeAsync(_results);
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.Values.FirstOrDefault() ?? "Couldn't set the window.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Setting a delivery window on {Count} environment(s) failed.", _ids.Count);
+            _error = "Couldn't finish. Some environments may already have the new window; open this again to see which still need it.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Close()
+    {
+        if (_saving) return;
+        _open = false;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Esc") Close();
+    }
+
+    // ── Wording ─────────────────────────────────────────────────────────
+
+    private static string Window(TimeOnly? start, TimeOnly? end) =>
+        start is { } s && end is { } e ? $"{UpdateWindow.Clock(s)}-{UpdateWindow.Clock(e)}" : "any time";
+
+    private string NewWindow => Window(Target().Start, Target().End);
+
+    private static string Capitalised(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
+    /// <summary>"Production - Production" says nothing twice; the pill is only for a production environment named something else.</summary>
+    private static bool ShowProductionPill(DeliveryWindowChangePreviewRow row) =>
+        row.IsProduction && !string.Equals(row.EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase);
+
+    private string Who(DeliveryWindowChangePreviewRow row)
+    {
+        var (project, environment) = _known.TryGetValue(row.EnvironmentId, out var k) ? k : (string.Empty, string.Empty);
+        return $"{row.ProjectName ?? project} - {row.EnvironmentName ?? environment}";
+    }
+
+    private static string GroupTitle(DeliveryWindowChangeGroup group) => group switch
+    {
+        DeliveryWindowChangeGroup.WillChange => "Will change",
+        DeliveryWindowChangeGroup.AlreadySet => "Already set",
+        DeliveryWindowChangeGroup.NoAccess => "No access",
+        _ => "Missing or being deleted",
+    };
+
+    private string What(DeliveryWindowChangePreviewRow row) => row.Group switch
+    {
+        DeliveryWindowChangeGroup.WillChange => Capitalised($"{Window(row.CurrentStart, row.CurrentEnd)} → {NewWindow}"),
+        DeliveryWindowChangeGroup.AlreadySet => $"Already {Window(row.CurrentStart, row.CurrentEnd)}",
+        DeliveryWindowChangeGroup.NoAccess => "Only people who manage this solution can change it - ask one of them",
+        _ => "Not found in Business Central, or being deleted",
+    };
+
+    private static readonly DeliveryWindowChangeGroup[] GroupOrder =
+    [
+        DeliveryWindowChangeGroup.WillChange, DeliveryWindowChangeGroup.AlreadySet,
+        DeliveryWindowChangeGroup.NoAccess, DeliveryWindowChangeGroup.Missing,
+    ];
+
+    private RenderFragment PreviewList(List<DeliveryWindowChangePreviewRow> preview) => @<div class="bdw-groups">
+        @foreach (var group in GroupOrder)
+        {
+            var rows = preview.Where(p => p.Group == group).ToList();
+            if (rows.Count == 0) continue;
+            var skipped = group != DeliveryWindowChangeGroup.WillChange;
+            <section aria-label="@GroupTitle(group)">
+                <p class="bdw-group__head">@GroupTitle(group) (@rows.Count)</p>
+                <ul class="bdw-list">
+                    @foreach (var row in rows)
+                    {
+                        var rowState = skipped ? "bdw-row bdw-row--skip" : "bdw-row";
+                        <li class="@rowState">
+                            <span class="bdw-row__who">
+                                @Who(row)
+                                @if (ShowProductionPill(row))
+                                {
+                                    <StatusPill Tone="muted" Class="bdw-prod"><span>Production</span></StatusPill>
+                                }
+                            </span>
+                            <span class="bdw-row__what">@What(row)</span>
+                            @if (row.HasDeploymentWaitingForWindow)
+                            {
+                                <span class="bdw-row__note">
+                                    <Icon Name="info" Width="13" Height="13" />
+                                    A deployment is already booked in the current window and keeps its time. Later deployments use the new window.
+                                </span>
+                            }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    </div>;
+
+    private string ResultLine(List<DeliveryWindowChangeResult> results)
+    {
+        var changed = results.Count(r => r.Outcome == DeliveryWindowChangeOutcome.Changed);
+        var failed = results.Count(r => r.Outcome == DeliveryWindowChangeOutcome.Failed);
+        var skipped = results.Count(r => r.Outcome == DeliveryWindowChangeOutcome.Skipped);
+        var line = Target().Start is null
+            ? $"Cleared the window on {Plural(changed)}: they take deliveries at any time."
+            : $"Set {NewWindow} on {Plural(changed)}.";
+        if (failed > 0) line += $" {failed} couldn't be changed.";
+        if (skipped > 0) line += $" {skipped} skipped.";
+        return line;
+    }
+
+    private RenderFragment ResultList(List<DeliveryWindowChangeResult> results) => @<ul class="bdw-list">
+        @foreach (var result in results)
+        {
+            var rowState = result.Outcome == DeliveryWindowChangeOutcome.Skipped ? "bdw-row bdw-row--skip" : "bdw-row";
+            <li class="@rowState">
+                <span class="bdw-row__who">@Who(result.Row)</span>
+                @if (result.Outcome == DeliveryWindowChangeOutcome.Changed)
+                {
+                    <span class="bdw-row__what bdw-row__what--done"><Icon Name="check" Width="13" Height="13" /> Now @NewWindow</span>
+                }
+                else if (result.Outcome == DeliveryWindowChangeOutcome.Failed)
+                {
+                    <span class="bdw-row__what bdw-row__what--failed"><Icon Name="triangle-alert" Width="13" Height="13" /> @result.Error</span>
+                }
+                else
+                {
+                    <span class="bdw-row__what">Skipped - @What(result.Row)</span>
+                }
+            </li>
+        }
+    </ul>;
+}

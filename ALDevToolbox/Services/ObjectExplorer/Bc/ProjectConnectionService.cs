@@ -1775,6 +1775,135 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// What setting the delivery window to <paramref name="start"/>-<paramref name="end"/>
+    /// on each of <paramref name="environmentIds"/> would do, one row per id in the order
+    /// given (issue #961): <see cref="DeliveryWindowChangeGroup.WillChange"/>,
+    /// <see cref="DeliveryWindowChangeGroup.AlreadySet"/>,
+    /// <see cref="DeliveryWindowChangeGroup.NoAccess"/> or
+    /// <see cref="DeliveryWindowChangeGroup.Missing"/>. Reads only our own mirror.
+    /// <para>Whether the caller manages a solution is asked once per solution, not once
+    /// per row. An environment of a solution the caller cannot see answers as one that
+    /// does not exist, as <see cref="UpgradeFleetService.GetEnvironmentAsync"/> does.</para>
+    /// </summary>
+    public async Task<List<DeliveryWindowChangePreviewRow>> PreviewUpdateWindowForManyAsync(
+        IReadOnlyCollection<int> environmentIds, TimeOnly? start, TimeOnly? end, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(environmentIds);
+        RequireOrganizationId();
+        if (start is null != (end is null))
+        {
+            throw Validation("UpdateWindow", "Set both a start and an end time for the window, or clear both for 'any time'.");
+        }
+
+        var ids = environmentIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+        var found = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => ids.Contains(e.Id))
+            .Where(e => _db.OeProjects.Where(visible).Any(p => p.Id == e.ProjectId))
+            .Select(e => new
+            {
+                e.Id,
+                e.ProjectId,
+                ProjectName = e.Project!.Name,
+                ProjectDeleted = e.Project!.DeletedAt != null,
+                OwnerId = e.Project!.CreatedByUserId,
+                e.Name,
+                e.Type,
+                e.Status,
+                e.SoftDeletedOn,
+                e.MissingSince,
+                e.UpdateWindowStart,
+                e.UpdateWindowEnd,
+            })
+            .ToDictionaryAsync(e => e.Id, ct);
+
+        // A deployment already booked for the environment's current window keeps its time;
+        // the preview says so, because the new window then only applies from the next one.
+        var waiting = (await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Status == ProjectDeliveryStatus.Scheduled && d.ScheduledByDeliveryWindow)
+            .Where(d => ids.Contains(d.ReleasePipeline!.ProjectEnvironmentId))
+            .Select(d => d.ReleasePipeline!.ProjectEnvironmentId)
+            .Distinct()
+            .ToListAsync(ct)).ToHashSet();
+
+        var canManage = new Dictionary<int, bool>();
+        foreach (var project in found.Values.Where(e => !e.ProjectDeleted).GroupBy(e => e.ProjectId))
+        {
+            canManage[project.Key] = await _access.CanManageAsync(project.Key, project.First().OwnerId, ct);
+        }
+
+        var rows = new List<DeliveryWindowChangePreviewRow>(ids.Count);
+        foreach (var id in ids)
+        {
+            if (!found.TryGetValue(id, out var e))
+            {
+                rows.Add(new DeliveryWindowChangePreviewRow(
+                    id, null, null, null, null, null, null, DeliveryWindowChangeGroup.Missing, false));
+                continue;
+            }
+
+            var gone = e.ProjectDeleted || e.MissingSince is not null
+                || e.SoftDeletedOn is not null || BcEnvironmentStatus.IsSoftDeleted(e.Status);
+            var group = gone ? DeliveryWindowChangeGroup.Missing
+                : !canManage[e.ProjectId] ? DeliveryWindowChangeGroup.NoAccess
+                : e.UpdateWindowStart == start && e.UpdateWindowEnd == end ? DeliveryWindowChangeGroup.AlreadySet
+                : DeliveryWindowChangeGroup.WillChange;
+            rows.Add(new DeliveryWindowChangePreviewRow(
+                id, e.ProjectId, e.ProjectName, e.Name, e.Type, e.UpdateWindowStart, e.UpdateWindowEnd,
+                group, group == DeliveryWindowChangeGroup.WillChange && waiting.Contains(id)));
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Sets the delivery window on many environments at once (issue #961). Groups first
+    /// with <see cref="PreviewUpdateWindowForManyAsync"/>, then writes each
+    /// <see cref="DeliveryWindowChangeGroup.WillChange"/> row through
+    /// <see cref="SetUpdateWindowAsync"/>, so the "both or neither" rule, the access check
+    /// and the log line are the single-environment ones. Every other row is skipped. A
+    /// row that fails is reported and does not stop the rest: the result has one entry
+    /// per id, which is what the dialog shows afterwards.
+    /// </summary>
+    public async Task<List<DeliveryWindowChangeResult>> SetUpdateWindowForManyAsync(
+        IReadOnlyCollection<int> environmentIds, TimeOnly? start, TimeOnly? end, CancellationToken ct = default)
+    {
+        var preview = await PreviewUpdateWindowForManyAsync(environmentIds, start, end, ct);
+        var results = new List<DeliveryWindowChangeResult>(preview.Count);
+        foreach (var row in preview)
+        {
+            if (row.Group != DeliveryWindowChangeGroup.WillChange)
+            {
+                results.Add(new DeliveryWindowChangeResult(row, DeliveryWindowChangeOutcome.Skipped, null));
+                continue;
+            }
+            try
+            {
+                await SetUpdateWindowAsync(row.ProjectId!.Value, row.EnvironmentId, start, end, ct);
+                results.Add(new DeliveryWindowChangeResult(row, DeliveryWindowChangeOutcome.Changed, null));
+            }
+            catch (PlanValidationException ex)
+            {
+                results.Add(new DeliveryWindowChangeResult(row, DeliveryWindowChangeOutcome.Failed,
+                    ex.Errors.Values.FirstOrDefault() ?? "The window couldn't be saved."));
+            }
+            catch (ProjectAccessDeniedException ex)
+            {
+                results.Add(new DeliveryWindowChangeResult(row, DeliveryWindowChangeOutcome.Failed, ex.Message));
+            }
+        }
+
+        _logger.LogInformation(
+            "User {UserId} set the delivery window {Start}-{End} on {Changed} of {Selected} environment(s) ({Failed} failed).",
+            _orgContext.CurrentUserId, start, end,
+            results.Count(r => r.Outcome == DeliveryWindowChangeOutcome.Changed), results.Count,
+            results.Count(r => r.Outcome == DeliveryWindowChangeOutcome.Failed));
+        return results;
+    }
+
+    /// <summary>
     /// Resolves a project's BC credentials and returns the token plus tenant the
     /// delivery worker publishes with. Deliberately <strong>not</strong> access-gated:
     /// it's called from the delivery worker <em>after</em> the release was authorised at
@@ -2313,6 +2442,55 @@ public sealed record BcConnectionStatus(
     DateTime? EffectiveSecretExpiresAt = null,
     /// <summary>The organisation's client id, when it has a complete registration - what a customer authorises in their admin centre.</summary>
     string? OrganizationClientId = null);
+
+/// <summary>Where one environment lands in the preview of "set the delivery window" (issue #961).</summary>
+public enum DeliveryWindowChangeGroup
+{
+    /// <summary>The window differs from the one asked for, and the caller manages the solution.</summary>
+    WillChange,
+
+    /// <summary>The environment already has exactly this window; skipped.</summary>
+    AlreadySet,
+
+    /// <summary>The caller cannot manage the environment's solution; skipped.</summary>
+    NoAccess,
+
+    /// <summary>The environment, or its solution, no longer exists, or the customer deleted it; skipped.</summary>
+    Missing,
+}
+
+/// <summary>
+/// One environment in the preview of a bulk delivery-window change. The names and the
+/// current window are null for a <see cref="DeliveryWindowChangeGroup.Missing"/> row this
+/// caller could not read at all.
+/// </summary>
+/// <param name="HasDeploymentWaitingForWindow">
+/// True on a row that will change and already has a deployment scheduled for its current
+/// delivery window. That deployment keeps its time; the next one uses the new window.
+/// </param>
+public sealed record DeliveryWindowChangePreviewRow(
+    int EnvironmentId,
+    int? ProjectId,
+    string? ProjectName,
+    string? EnvironmentName,
+    string? EnvironmentType,
+    TimeOnly? CurrentStart,
+    TimeOnly? CurrentEnd,
+    DeliveryWindowChangeGroup Group,
+    bool HasDeploymentWaitingForWindow)
+{
+    /// <summary>True for a Production environment.</summary>
+    public bool IsProduction => string.Equals(EnvironmentType, "Production", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>What happened to one environment in a bulk delivery-window change.</summary>
+public enum DeliveryWindowChangeOutcome { Changed, Skipped, Failed }
+
+/// <summary>One environment's result of a bulk delivery-window change; <paramref name="Error"/> is set on a failed row.</summary>
+public sealed record DeliveryWindowChangeResult(
+    DeliveryWindowChangePreviewRow Row,
+    DeliveryWindowChangeOutcome Outcome,
+    string? Error);
 
 /// <summary>One fetched BC environment — the project detail page's environment row.</summary>
 public sealed record ProjectEnvironmentRow(
