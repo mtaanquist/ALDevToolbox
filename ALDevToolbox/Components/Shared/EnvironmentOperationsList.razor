@@ -13,7 +13,7 @@
             <h2 class="card__title env-ops__counted">Operations<span class="badge">@Operations.Count</span></h2>
             <p class="card__sub">
                 What Business Central has done on @EnvironmentName, whoever asked for it - this
-                workbench, the admin centre, or Microsoft. Times are in @TimeZoneLabel time.
+                workbench, the admin centre, or Microsoft.
                 @if (HistoryHref is { } history)
                 {
                     <text>What was done from AL Workbench, including updates still booked, is under <a href="@history">Workbench history</a>.</text>
@@ -55,7 +55,7 @@
                             }
                         </td>
                         <td>@(string.IsNullOrWhiteSpace(op.CreatedBy) ? "—" : op.CreatedBy)</td>
-                        <td class="env-ops__when">@When(op)</td>
+                        <td class="env-ops__when"><Timestamp Value="@When(op)" Format="dd MMM yyyy, HH:mm" Placeholder="—" /></td>
                         <td class="u-num">@Took(op)</td>
                     </tr>
                 }
@@ -84,9 +84,6 @@
     /// <summary>Where our own record of the environment is, so the list can point at it.</summary>
     [Parameter] public string? HistoryHref { get; set; }
 
-    [Parameter] public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Utc;
-    [Parameter] public string TimeZoneLabel { get; set; } = "UTC";
-
     private bool _showAll;
 
     private static string RowClass(BcEnvironmentOperation op) => BcEnvironmentOperationDisplay.Status(op).Tone switch
@@ -98,12 +95,9 @@
         _ => string.Empty,
     };
 
-    private string When(BcEnvironmentOperation op)
-    {
-        if ((op.StartedOn ?? op.CreatedOn) is not { } at) return "—";
-        var local = TimeZoneInfo.ConvertTimeFromUtc(at.UtcDateTime, TimeZone);
-        return local.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
-    }
+    /// <summary>When the operation started, or was asked for; shown in the organisation's zone.</summary>
+    private static DateTime? When(BcEnvironmentOperation op) =>
+        (op.StartedOn ?? op.CreatedOn)?.UtcDateTime;
 
     private static string Took(BcEnvironmentOperation op)
     {

@@ -38,6 +38,7 @@ public sealed class ProjectsBrowserTests : IDisposable
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
                 .AddInterceptors(_db.CommandTracker));

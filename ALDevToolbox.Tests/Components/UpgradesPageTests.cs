@@ -41,6 +41,7 @@ public sealed class UpgradesPageTests : IDisposable
         // The page asks the browser for the last view picked; by default it has none.
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
                 .AddInterceptors(_db.CommandTracker));

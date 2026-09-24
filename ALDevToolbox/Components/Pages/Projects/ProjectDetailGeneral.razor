@@ -72,12 +72,12 @@
                             <span class="u-muted">Unknown</span>
                         }
                     </span>
-                    <span class="meta-item__value meta-item__value--mono">@proj.CreatedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</span>
+                    <span class="meta-item__value meta-item__value--mono"><Timestamp Value="@proj.CreatedAt" Format="d MMM yyyy · HH:mm" /></span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-item__label">Last updated</span>
                     <span class="meta-item__value">@(proj.UpdatedAt == proj.CreatedAt ? "Not changed since creation" : "")</span>
-                    <span class="meta-item__value meta-item__value--mono">@proj.UpdatedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</span>
+                    <span class="meta-item__value meta-item__value--mono"><Timestamp Value="@proj.UpdatedAt" Format="d MMM yyyy · HH:mm" /></span>
                 </div>
             </div>
         </div>

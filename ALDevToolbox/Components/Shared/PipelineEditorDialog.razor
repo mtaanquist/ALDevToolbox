@@ -5,6 +5,7 @@
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<PipelineEditorDialog> Log
 @inject IServiceScopeFactory ScopeFactory
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Projects
@@ -106,7 +107,7 @@
                         </div>
                     </div>
                     <div class="pe-discovery">
-                        <small class="field__hint">@DiscoveredCaption()</small>
+                        <small class="field__hint">@DiscoveredCaption</small>
                         <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
                             <Icon Name="refresh-cw" Width="14" Height="14" />
                             <span>Refresh</span>
@@ -135,7 +136,7 @@
                         <a href="@($"/solutions/{_projectId}?tab=repositories")">solution setup</a>.
                     </p>
                     <div class="pe-discovery">
-                        <small class="field__hint">@DiscoveredCaption()</small>
+                        <small class="field__hint">@DiscoveredCaption</small>
                         <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
                             <Icon Name="refresh-cw" Width="14" Height="14" />
                             <span>Refresh</span>
@@ -587,13 +588,16 @@
     }
 
     /// <summary>The "Last checked ..." caption under the checklist.</summary>
-    private string DiscoveredCaption()
-    {
-        if (_discovery?.DiscoveredAt is { } at) return $"Last checked {TimeAgo(at)}.";
-        return "Not checked yet.";
-    }
+    /// <summary>"Last checked 4 min ago.", with the exact instant in UTC on hover.</summary>
+    private RenderFragment DiscoveredCaption => _discovery?.DiscoveredAt is { } at
+        ? @<text>Last checked <span title="@Zone.UtcTooltip(at)">@TimeAgo(at)</span>.</text>
+        : @<text>Not checked yet.</text>;
 
-    private static string TimeAgo(DateTime utc)
+    /// <summary>
+    /// This dialog's shorter phrasing ("4 min ago", then "on 2026-07-01" past a week);
+    /// the date is in the organisation's display zone.
+    /// </summary>
+    private string TimeAgo(DateTime utc)
     {
         var span = DateTime.UtcNow - utc;
         if (span < TimeSpan.Zero) span = TimeSpan.Zero;
@@ -603,7 +607,7 @@
             { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes} min ago",
             { TotalHours: < 24 } => $"{(int)span.TotalHours} hr ago",
             { TotalDays: < 7 } => $"{(int)span.TotalDays} day{((int)span.TotalDays == 1 ? "" : "s")} ago",
-            _ => $"on {utc.ToLocalTime():yyyy-MM-dd}",
+            _ => $"on {Zone.Format(utc, "yyyy-MM-dd")}",
         };
     }
 

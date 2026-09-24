@@ -90,7 +90,7 @@
                         <span class="rp-live__eyebrow">Shipping now</span>
                         <span class="rp-live__name">@r.Name</span>
                     </div>
-                    <span class="rp-live__text">@LiveSentence(r)</span>
+                    <span class="rp-live__text">@LiveSentence(r)@if (live.StartedAt is { } liveStarted) { <text> Started <Timestamp Value="@liveStarted" Relative="true" />@LiveTook(live)</text> }</span>
                     <div class="rp-live__meter">
                         @if (live.AppCount > 0)
                         {
@@ -277,7 +277,7 @@
                                         }
                                         @if (live.StartedAt is { } started)
                                         {
-                                            <span title="@RelativeTime.ExactUtc(started)">started @RelativeTime.Ago(started)</span>
+                                            <span>started <Timestamp Value="@started" Relative="true" /></span>
                                         }
                                     </span>
                                 </span>
@@ -286,7 +286,7 @@
                             {
                                 <span class="cell-stack">
                                     <span class="cell-stack__main @OutcomeTone(r)" title="@OutcomeText(last)">@OutcomeText(last)</span>
-                                    <span class="cell-stack__sub" title="@RelativeTime.ExactUtc(last.At)">@RelativeTime.Ago(last.At)</span>
+                                    <span class="cell-stack__sub"><Timestamp Value="@last.At" Relative="true" /></span>
                                 </span>
                             }
                             else
@@ -378,7 +378,7 @@
                                 <span>@LiveText(live)</span>
                                 @if (live.StartedAt is { } started)
                                 {
-                                    <span title="@RelativeTime.ExactUtc(started)"> - started @RelativeTime.Ago(started)</span>
+                                    <span> - started <Timestamp Value="@started" Relative="true" /></span>
                                 }
                             </span>
                             @if (live.AppCount > 0)
@@ -394,7 +394,7 @@
                         {
                             <span>
                                 <span class="rp-card__outcome @OutcomeTone(r)">@OutcomeText(last)</span>
-                                <span class="rp-list__none" title="@RelativeTime.ExactUtc(last.At)">@RelativeTime.Ago(last.At)</span>
+                                <span class="rp-list__none"><Timestamp Value="@last.At" Relative="true" /></span>
                             </span>
                         }
                         else
@@ -603,21 +603,21 @@
         return live.AppCount > 0 ? $"{verb} app {live.CurrentApp} of {live.AppCount}" : verb;
     }
 
-    /// <summary>The band's sentence: what, where, for whom, since when, and how long it took last time.</summary>
+    /// <summary>
+    /// The band's sentence: what, where and for whom. Since when follows it in the
+    /// markup as a Timestamp, then <see cref="LiveTook"/>.
+    /// </summary>
     private static string LiveSentence(ReleasePipelineRow r)
     {
         var live = r.LiveDelivery!;
-        var sentence = $"{LiveText(live)} into {r.EnvironmentName} ({r.EnvironmentType}) for {r.ProjectName}.";
-        if (live.StartedAt is { } started)
-        {
-            var ago = RelativeTime.Ago(started);
-            sentence += ago == "just now" ? " Started just now" : $" Started {ago}";
-            sentence += live.PreviousDuration is { } took
-                ? $"; the last deployment here took {RelativeTime.Duration(took)}."
-                : ".";
-        }
-        return sentence;
+        return $"{LiveText(live)} into {r.EnvironmentName} ({r.EnvironmentType}) for {r.ProjectName}.";
     }
+
+    /// <summary>The tail after "Started 4 minutes ago": how long the last deployment here took.</summary>
+    private static string LiveTook(ReleasePipelineLiveDelivery live) =>
+        live.PreviousDuration is { } took
+            ? $"; the last deployment here took {RelativeTime.Duration(took)}."
+            : ".";
 
     private static string OutcomeText(ReleasePipelineLastDelivery last) => last.Status switch
     {

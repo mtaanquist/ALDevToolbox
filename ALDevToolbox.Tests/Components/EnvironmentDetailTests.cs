@@ -46,6 +46,7 @@ public sealed class EnvironmentDetailTests : IAsyncDisposable
         auth.SetAuthorized("owner@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
                 .AddInterceptors(_db.CommandTracker));
@@ -535,6 +536,34 @@ public sealed class EnvironmentDetailTests : IAsyncDisposable
         saved.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
         saved.UpdateWindowEnd.Should().Be(new TimeOnly(4, 0));
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("22:00-04:00"));
+    }
+
+    [Fact]
+    public async Task Instants_follow_the_organisations_zone_while_the_windows_stay_on_the_customers_clock()
+    {
+        // The solution is in Copenhagen; the organisation reads times in Tokyo (issue #942).
+        await _db.NewOrganizationAdminService(_db.NewContext()).SetDisplayTimeZoneAsync("Asia/Tokyo");
+        var (projectId, envId) = await SeedAsync();
+        _panels.Set(projectId, envId, Panel());
+        var cut = Render(envId);
+
+        cut.WaitForAssertion(() =>
+        {
+            // 02:00 UTC on 12 Oct is 11:00 in Tokyo; the same instant on the customer's
+            // clock sits under it, since the windows beside it are on that clock.
+            var scheduled = cut.FindAll(".kv-grid .meta-item")
+                .Single(m => m.QuerySelector(".meta-item__label")!.TextContent == "Scheduled for");
+            scheduled.QuerySelector("time")!.TextContent.Should().Be("12 Oct 2026, 11:00");
+            scheduled.QuerySelector("time")!.GetAttribute("title").Should().Be("2026-10-12 02:00:00 UTC");
+            scheduled.QuerySelector(".env-detail__utc")!.TextContent.Should().Be("Copenhagen time · 12 Oct, 04:00");
+            cut.FindAll(".meta-row .meta-item__value")[3].TextContent.Trim().Should()
+                .Be("22:00-04:00 (Copenhagen)", "a delivery window is a time of day on the customer's clock, never converted");
+        });
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Change the delivery window").Click());
+        cut.WaitForAssertion(() => cut.Find(".env-detail__window .field__hint").TextContent.Should()
+            .StartWith("Times are in the solution's own time zone, Copenhagen."));
     }
 
     [Fact]

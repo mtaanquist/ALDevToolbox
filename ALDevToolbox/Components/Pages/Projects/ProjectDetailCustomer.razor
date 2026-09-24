@@ -292,9 +292,9 @@ else
     /// <summary>Where the version and address came from and how fresh they are, e.g. "From the Production environment, read 3 hours ago."</summary>
     private const string NotReported = "Business Central hasn't reported this yet.";
 
-    private string ReadFrom => _basics?.Production is { } p
-        ? $"From the {p.EnvironmentName} environment, read {RelativeTime.Ago(p.FetchedAt)}."
-        : string.Empty;
+    private RenderFragment? ReadFrom => _basics?.Production is { } p
+        ? @<text>From the @p.EnvironmentName environment, read <Timestamp Value="@p.FetchedAt" Relative="true" />.</text>
+        : null;
 
     private bool EditIsOnPremises =>
         Enum.TryParse<ProjectHostingType>(_edit.Hosting, out var chosen) && chosen != ProjectHostingType.MicrosoftCloud;
