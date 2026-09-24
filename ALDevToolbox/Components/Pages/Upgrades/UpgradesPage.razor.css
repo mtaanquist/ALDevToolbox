@@ -507,3 +507,64 @@ a.cell-stack__main {
     color: var(--primary-ink);
     font-weight: var(--fw-semibold);
 }
+
+/* The search box the size it is on Solutions and Environments (.filter-bar__search),
+   so the three lists' first control lines up when you move between them (#966). */
+.upg-search {
+    flex: 1 1 300px;
+    min-width: 220px;
+    max-width: 380px;
+}
+
+/* ── Change the next version (#960) ─────────────────────────────────── */
+
+/* The versions stacked, one per line: each carries a count, and a row of radios
+   with counts beside them reads as one long sentence. */
+.upg-version__opts {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.upg-version__name {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.upg-version__count {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+}
+
+/* Said once, above the count: the date is Business Central's to pick. */
+.upg-version__date {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
+
+.upg-version__none {
+    margin: 0;
+    color: var(--ink-2);
+}
+
+/* Up to seven groups, so the version preview is one scroller - the dialog's own - not
+   a scroller per group inside it: each list cut at 12rem left the last group's
+   heading at the foot of the dialog with its rows in a second box nobody scrolled.
+   Each heading sticks to the top of its own group while that group scrolls past, so
+   a heading scrolled up never leaves its rows behind. */
+.upg-version__groups .upg-preview {
+    max-height: none;
+    overflow: visible;
+}
+
+.upg-version__group .upg-preview__head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0;
+    padding: var(--space-3) 0 var(--space-1);
+    background: var(--surface);
+}

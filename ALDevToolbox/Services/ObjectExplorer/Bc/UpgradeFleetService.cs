@@ -281,7 +281,8 @@ public sealed class UpgradeFleetService
             e.SoftDeletedOn,
             e.HardDeletePendingOn,
             _db.OeProjects.Where(manageable).Any(p => p.Id == e.ProjectId),
-            e.BcOfferedVersions);
+            e.BcOfferedVersions,
+            e.Project!.ShortName);
 
     // ── Change the next version (issue #960) ────────────────────────────
 
@@ -381,9 +382,13 @@ public sealed class UpgradeFleetService
         }
 
         if (!string.IsNullOrWhiteSpace(row.Version)
-            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) >= 0)
+            && VersionOrder.Compare(MajorMinor(row.Version), MajorMinor(target)) is var compared and >= 0)
         {
-            return Skip(SelectVersionGroup.AlreadyOnIt, $"Already on {target}");
+            // Past it, the row says where it is: "Already on 29.2" beside a "Now on 29.3"
+            // column reads as a mistake.
+            return Skip(SelectVersionGroup.AlreadyOnIt, compared == 0
+                ? $"Already on {target}"
+                : $"Already on {MajorMinor(row.Version)}, past {target}");
         }
 
         if (from is not null && VersionOrder.Compare(from, target) == 0)
@@ -552,7 +557,13 @@ public sealed record UpgradeFleetRow(
     /// first. Null when that list has never been read - a row mirrored before it was kept -
     /// which is a different fact from an empty list, where nothing is on offer.
     /// </summary>
-    List<string>? OfferedVersions = null)
+    List<string>? OfferedVersions = null,
+    /// <summary>
+    /// The solution's short name - how colleagues say the customer aloud ("KTM") - or
+    /// null when none is set. Shown after the solution name and matched by the search
+    /// box, the way the Solutions list does it (issue #966).
+    /// </summary>
+    string? ProjectShortName = null)
 {
     /// <summary>
     /// True for an environment the customer deleted and Business Central is still

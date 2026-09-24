@@ -118,6 +118,9 @@ internal sealed class UpgradeActionTestFixture : IDisposable
     public UpgradeActionWorker Worker() => new(
         Provider(), Clock, NullLogger<UpgradeActionWorker>.Instance, new WorkerHeartbeatRegistry());
 
+    /// <summary>A token service whose every request succeeds, for a page test that drives the real services.</summary>
+    public BcTokenService TokenService() => TokenOk();
+
     private BcTokenService TokenOk() =>
         new(new StubFactory(new StubHandler(HttpStatusCode.OK, "{\"access_token\":\"tok\",\"expires_in\":3600}")),
             NullLogger<BcTokenService>.Instance);
