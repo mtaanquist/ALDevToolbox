@@ -2,6 +2,7 @@ using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,6 +22,7 @@ public sealed class EnvironmentOperationsListTests : IDisposable
     public EnvironmentOperationsListTests()
     {
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+        _ctx.Services.AddUtcDisplayTimeZone();
     }
 
     public void Dispose() => _ctx.Dispose();
@@ -41,9 +43,7 @@ public sealed class EnvironmentOperationsListTests : IDisposable
         _ctx.Render<EnvironmentOperationsList>(p => p
             .Add(c => c.Operations, operations)
             .Add(c => c.EnvironmentName, "Production")
-            .Add(c => c.AppName, id => id == CoreId ? "Continia Core" : null)
-            .Add(c => c.TimeZone, TimeZoneInfo.FindSystemTimeZoneById("Europe/Copenhagen"))
-            .Add(c => c.TimeZoneLabel, "Copenhagen"));
+            .Add(c => c.AppName, id => id == CoreId ? "Continia Core" : null));
 
     [Fact]
     public void Each_operation_reads_as_a_sentence_with_a_status_and_how_long_it_took()
@@ -58,7 +58,8 @@ public sealed class EnvironmentOperationsListTests : IDisposable
         rows[0].Children[1].TextContent.Trim().Should().Be("Updated Continia Core to 28.5.0.1");
         rows[0].QuerySelector(".status-pill")!.TextContent.Should().Be("Succeeded");
         rows[0].Children[2].TextContent.Should().Be("ops@cronus.example");
-        rows[0].Children[3].TextContent.Should().Be("20 Sep 2026, 00:00", "times are in the customer's zone");
+        rows[0].Children[3].TextContent.Should().Be("19 Sep 2026, 22:00", "times are in the organisation's zone, UTC when it has not picked one");
+        rows[0].Children[3].QuerySelector("time")!.GetAttribute("title").Should().Be("2026-09-19 22:00:00 UTC");
         rows[0].Children[4].TextContent.Should().Be("5 min");
 
         rows[1].Children[1].TextContent.Trim().Should().Be("Business Central update to 28.3");

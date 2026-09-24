@@ -10,6 +10,7 @@
 @inject NavigationManager Nav
 @inject ILogger<PipelineBuilds> Log
 @inject IServiceScopeFactory ScopeFactory
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer.Delivery
 @using ALDevToolbox.Services.ObjectExplorer.Projects
@@ -112,7 +113,7 @@
         </span>
         <span class="meta-item">
             <span class="meta-item__label">Last build</span>
-            <span class="meta-item__value">@(_latest is null ? "—" : TimeAgo(_latest.FinishedAt ?? _latest.StartedAt))</span>
+            <span class="meta-item__value">@if (_latest is null) { <text>—</text> } else { <Timestamp Value="@(_latest.FinishedAt ?? _latest.StartedAt)" Relative="true" /> }</span>
         </span>
     </Meta>
     <ChildContent>
@@ -205,7 +206,7 @@
                                 {
                                     <span class="pb-topline__meta">BC @_latest.BcVersion</span>
                                 }
-                                <span class="pb-topline__meta pb-topline__when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
+                                <span class="pb-topline__meta pb-topline__when" title="@StartedBy(_latest)">@StartedVerb(_latest) <Timestamp Value="@StartedWhen(_latest)" Relative="true" /></span>
                             </div>
 
                             @* What the compiler said, as a count rather than as a log to
@@ -426,7 +427,7 @@
                                             }
                                         </td>
                                         <td>@(string.IsNullOrEmpty(b.Branch) ? "—" : b.Branch)</td>
-                                        <td>@TimeAgo(b.FinishedAt ?? b.StartedAt)</td>
+                                        <td><Timestamp Value="@(b.FinishedAt ?? b.StartedAt)" Relative="true" /></td>
                                         <td class="data-table__num">@(Duration(b) is { Length: > 0 } d ? d : "—")</td>
                                         <td class="data-table__num">@(b.ArtifactCount > 0 ? b.ArtifactCount.ToString() : "—")</td>
                                         <td class="data-table__actions">
@@ -587,7 +588,7 @@
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="send" Width="17" Height="17" />
                 </span>
-                <h2 id="pb-rel-title" class="confirm-dialog__title">Deploy build #@releasing.Id from @TimeAgo(releasing.FinishedAt ?? releasing.StartedAt)</h2>
+                <h2 id="pb-rel-title" class="confirm-dialog__title">Deploy build #@releasing.Id from <Timestamp Value="@(releasing.FinishedAt ?? releasing.StartedAt)" Relative="true" /></h2>
             </div>
             <div class="confirm-dialog__body">
                 @if (_releaseTargets.Count == 0)
@@ -692,6 +693,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await Zone.EnsureLoadedAsync();
         await LoadAsync();
         _loading = false;
         if (_inFlight) StartPoll();
@@ -933,7 +935,7 @@
             }
 
             var env = rp.ProjectEnvironment;
-            var options = ReleaseBuildDialog.OptionsFrom(_builds, await Artifacts.ListBuildAppsAsync(PipelineId));
+            var options = ReleaseBuildDialog.OptionsFrom(_builds, await Artifacts.ListBuildAppsAsync(PipelineId), Zone);
             _releasingThrough = (rp.Id, env.Name, buildId);
             await _releaseDialog.OpenAsync(
                 rp.Id, rp.Project?.Name ?? _header?.ProjectName ?? "", env.Name, env.Type,
@@ -1072,26 +1074,25 @@
         timer?.Dispose();
     }
 
-    /// <summary>The hero's relative build time ("Built 2 days ago"); the exact timestamp + who is the hover title.</summary>
-    private static string StartedLine(BuildRow b)
+    /// <summary>
+    /// The hero's verb before its relative build time ("Built 2 days ago"). The time
+    /// itself is a Timestamp, whose hover title is the exact instant; who started the
+    /// build is the hover title around it.
+    /// </summary>
+    private static string StartedVerb(BuildRow b) => b.Status switch
     {
-        var ago = TimeAgo(b.FinishedAt ?? b.StartedAt);
-        return b.Status switch
-        {
-            "ready" => $"Built {ago}",
-            "failed" => $"Failed {ago}",
-            _ => $"Started {TimeAgo(b.StartedAt)}",
-        };
-    }
+        "ready" => "Built",
+        "failed" => "Failed",
+        _ => "Started",
+    };
 
-    private static string StartedTitle(BuildRow b)
-    {
-        var when = (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
-        var who = b.StartedByName is { } n ? $" by {n}" : "";
-        return $"{when}{who}";
-    }
+    /// <summary>When a finished build finished; for one still running, when it started.</summary>
+    private static DateTime StartedWhen(BuildRow b) =>
+        b.Status is "ready" or "failed" ? b.FinishedAt ?? b.StartedAt : b.StartedAt;
 
-    /// <summary>A compact relative time ("2 days ago", "3 weeks ago") for the build history.</summary>
+    private static string? StartedBy(BuildRow b) =>
+        b.StartedByName is { } n ? $"Started by {n}" : null;
+
     /// <summary>
     /// How long a build took, for the run row's duration cell. A build still in
     /// flight has no duration yet - the row shows its live progress bar instead,
@@ -1110,10 +1111,9 @@
             : $"{(int)span.TotalMinutes}m {span.Seconds:00}s";
     }
 
-    private static string TimeAgo(DateTime utc) => ALDevToolbox.Components.Shared.RelativeTime.Ago(utc);
-
-    private static string BuildLabel(ComparableBuildRow c) =>
-        $"{c.StartedAt:yyyy-MM-dd HH:mm}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
+    /// <summary>A build in the compare picker. An option holds text only, so the time goes through the display zone here rather than through a Timestamp.</summary>
+    private string BuildLabel(ComparableBuildRow c) =>
+        $"{Zone.Format(c.StartedAt, "yyyy-MM-dd HH:mm")}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
 
     private static string Short(string hash) => hash.Length > 7 ? hash[..7] : hash;
 

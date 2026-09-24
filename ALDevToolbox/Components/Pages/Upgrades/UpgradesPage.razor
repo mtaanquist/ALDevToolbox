@@ -8,6 +8,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ILogger<UpgradesPage> Log
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using ALDevToolbox.Components.Shared
 @using static ALDevToolbox.Components.Shared.FleetRowState
 @using ALDevToolbox.Domain.ValueObjects
@@ -49,7 +50,7 @@
    Archetype 15 has a sticky .cmdbar where a list has its filter row, so the bar
    goes in ListPage's Toolbar slot rather than being forced into FilterBar. *@
 <ListPage Title="Upgrades"
-          Subtitle="@(_denied ? string.Empty : "When each solution's environment moves to its next Business Central version, and how much longer you can put that off. Dates are UTC; times you book land in the customer's local time.")"
+          Subtitle="@(_denied ? string.Empty : "When each solution's environment moves to its next Business Central version, and how much longer you can put that off. Times you book land in the customer's local time.")"
           IsLoading="@(!_denied && _rows is null)"
           IsEmpty="@(_denied || (_rows is not null && _totalCount == 0))"
           HasNoMatches="@(_rows is { Count: 0 })"
@@ -245,7 +246,7 @@
                             <span class="cell-stack">
                                 <span class="cell-stack__main" style="font-weight: var(--fw-semibold)"
                                       title="@row.NextUpdateVersion">@(row.HasUpdate ? ShortVersion(row.NextUpdateVersion) : "—")</span>
-                                <span class="cell-stack__sub">@UpdateWhen(row)</span>
+                                <span class="cell-stack__sub">@if (row.NextUpdateDate is { } nextAt) { <Timestamp Value="@nextAt" Format="dd MMM yyyy, HH:mm" /> } else { @UpdateWhen(row) }</span>
                             </span>
                             @if (row.NextUpdateIgnoresWindow == true)
                             {
@@ -299,9 +300,9 @@
                                 </div>
                             }
                         </td>
-                        <td>@LatestText(row)</td>
+                        <td><Timestamp Value="@row.EffectiveLatestDate" Format="dd MMM yyyy" Placeholder="—" /></td>
                         <td class="upg-checked @(IsStale(row) ? "upg-stale" : "u-muted")">
-                            @(row.FetchedAt is { } at ? RelativeTime.Ago(at) : "Not checked yet")
+                            @if (row.FetchedAt is { } at) { <Timestamp Value="@at" Relative="true" /> } else { <text>Not checked yet</text> }
                         </td>
                         <td class="data-table__actions">
                             @* History leads the menu: it is the one entry every row
@@ -555,6 +556,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await Zone.EnsureLoadedAsync();
         var snapshot = await Access.GetSnapshotAsync();
         // The grant is deliberately not in the sign-in claims, so the page asks the
         // same service the sidebar does rather than reading a role.
@@ -783,7 +785,7 @@
 
         _preview = rows.Select(r => r.CanPushDate
             ? new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
-                $"{WhenText(r.NextUpdateDate)} → {DateText(r.EffectiveLatestDate)} (UTC)", PreviewGroup.Acting)
+                $"{WhenText(r.NextUpdateDate)} → {DateText(r.EffectiveLatestDate)}", PreviewGroup.Acting)
             : new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
                 WhyNoPush(r), PreviewGroup.Skipped)).ToList();
 
@@ -1411,14 +1413,14 @@
     /// <summary>
     /// When the environment's next update happens, in the same words the solution
     /// page uses for the same fact - a person who reads both must not have to learn
-    /// two vocabularies.
+    /// two vocabularies. A dated update is a Timestamp in the markup, in the
+    /// organisation's zone; this is the line for one without a date.
     /// </summary>
     private static string UpdateWhen(UpgradeFleetRow row)
     {
-        // Bare, the way the sheet has it: the subtitle says once that dates are UTC, and
-        // the row's other "when" - a slot somebody here booked - announces itself
-        // ("Booked for 20:00 on 30 Aug ... by Anna Jensen"), so the pair stay tellable apart.
-        if (row.NextUpdateDate is { } at) return at.ToString("dd MMM yyyy, HH:mm");
+        // The dated line is bare, the way the sheet has it: the row's other "when" - a
+        // slot somebody here booked - announces itself ("Booked for 20:00 on 30 Aug ...
+        // by Anna Jensen"), so the pair stay tellable apart.
         if (row.HasUpdate)
         {
             return string.IsNullOrWhiteSpace(row.NextUpdateStatus) ? "no date set yet" : row.NextUpdateStatus;
@@ -1440,14 +1442,13 @@
         return parts.Length >= 2 ? $"{parts[0]}.{parts[1]}" : version;
     }
 
-    private static string LatestText(UpgradeFleetRow row) =>
-        row.EffectiveLatestDate is { } latest ? DateText(latest) : "—";
+    // The confirm dialog's preview lines are plain text, so these go through the display
+    // zone directly rather than through a Timestamp.
+    private string DateText(DateTime? at) =>
+        at is { } value ? Zone.Format(value, "dd MMM yyyy") : "no date";
 
-    private static string DateText(DateTime? at) =>
-        at is { } value ? value.ToString("dd MMM yyyy") : "no date";
-
-    private static string WhenText(DateTime? at) =>
-        at is { } value ? value.ToString("dd MMM yyyy") : "No date set";
+    private string WhenText(DateTime? at) =>
+        at is { } value ? Zone.Format(value, "dd MMM yyyy") : "No date set";
 
     /// <summary>
     /// Why a selected row won't move, in the same words the service refuses with, so

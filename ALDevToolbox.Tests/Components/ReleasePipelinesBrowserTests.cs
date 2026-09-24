@@ -37,6 +37,7 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();
@@ -139,7 +140,7 @@ public sealed class ReleasePipelinesBrowserTests : IDisposable
             var failed = rows[2];
             failed.ClassList.Should().Contain("is-failed");
             failed.Children[3].TextContent.Should().Contain("Failed on CRONUS Sales");
-            failed.Children[3].QuerySelector(".cell-stack__sub")!.GetAttribute("title").Should().EndWith("UTC",
+            failed.Children[3].QuerySelector(".cell-stack__sub time")!.GetAttribute("title").Should().EndWith(" UTC",
                 "every relative time carries the exact time on hover");
 
             // Never released: says so, rather than a blank cell.

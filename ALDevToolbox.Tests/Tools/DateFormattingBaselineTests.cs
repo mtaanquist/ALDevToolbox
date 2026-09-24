@@ -44,48 +44,53 @@ public sealed class DateFormattingBaselineTests
     /// </summary>
     private static readonly IReadOnlyDictionary<string, int> Baseline = new Dictionary<string, int>(StringComparer.Ordinal)
     {
-        ["ALDevToolbox/Components/Pages/Environments/EnvironmentDetail.razor"] = 16,
-        ["ALDevToolbox/Components/Pages/Environments/EnvironmentsList.razor"] = 5,
-        ["ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/Pipelines/PipelinesBrowser.razor"] = 2,
-        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor"] = 20,
-        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelinesBrowser.razor"] = 6,
-        ["ALDevToolbox/Components/Pages/Projects/Customer/CustomerModulesSection.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailBc.razor"] = 8,
-        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailCustomer.razor"] = 1,
-        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailGeneral.razor"] = 4,
-        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailSymbols.razor"] = 3,
-        ["ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor"] = 5,
-        ["ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor"] = 16,
-        ["ALDevToolbox/Components/Shared/EnvironmentActivityFeed.razor"] = 7,
-        ["ALDevToolbox/Components/Shared/EnvironmentOperationsList.razor"] = 1,
-        ["ALDevToolbox/Components/Shared/EnvironmentSessionsList.razor"] = 2,
-        ["ALDevToolbox/Components/Shared/PipelineEditorDialog.razor"] = 2,
-        ["ALDevToolbox/Components/Shared/ReleaseBuildDialog.razor"] = 8,
-        ["ALDevToolbox/Components/Shared/ReleasePipelineEditorDialog.razor"] = 2,
+        // Empty since both sweeps of issue #942 landed. A new hit fails the test.
     };
 
     /// <summary>
-    /// Hits that are not an instant on screen, so the component is the wrong
-    /// tool for them and they stay as they are. The scan subtracts these before
-    /// comparing with <see cref="Baseline"/>, and they are not part of the
-    /// target of an empty baseline. Each entry says why in one sentence; add one
-    /// only for a time that must not be converted into the display zone.
+    /// Hits that are not an instant shown on screen, so they never go through
+    /// <c>&lt;Timestamp&gt;</c> and are not converted into the organisation's zone: a
+    /// time of day agreed in the customer's Business Central zone (a delivery window), a
+    /// wall clock booked in the customer's zone and said back the way it was agreed, a
+    /// calendar date somebody typed, or relative wording inside a hover title (the same
+    /// in every zone, and a title cannot hold a Timestamp). The scan subtracts these
+    /// before comparing a file with <see cref="Baseline"/>. Unlike the baseline this is
+    /// not meant to reach zero; each entry says in one sentence why its hits are not a
+    /// time to convert. Counts are exact: a file that drops one fails until its entry is
+    /// lowered too.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, (int Count, string Reason)> Permitted = new Dictionary<string, (int, string)>(StringComparer.Ordinal)
     {
         ["ALDevToolbox/Components/Pages/AccountSecurity/RecoveryCodes.razor"] = (1, "The date is part of the downloaded file's name, not a time shown on screen."),
         ["ALDevToolbox/Components/Pages/Admin/Administration/AdminAdministrationBusinessCentral.razor"] = (2, "The client secret's expiry is a calendar date the admin typed from Entra, not an instant."),
+        ["ALDevToolbox/Components/Pages/Environments/EnvironmentDetail.razor"] = (5,
+            "The delivery window and Business Central's update window are times of day in the customer's zone, and the scheduled update is repeated as a labelled wall clock in that zone beside them so the three can be compared."),
         ["ALDevToolbox/Components/Pages/Error.razor"] = (1, "The error time is copied for someone matching it against server logs, which are in UTC, and it is labelled UTC; the page also has to render when the database is down."),
+        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor"] = (3,
+            "The delivery window is a time of day agreed in the customer's zone, and the client secret's expiry is a calendar date the consultant typed."),
+        ["ALDevToolbox/Components/Pages/Pipelines/ReleasePipelinesBrowser.razor"] = (1,
+            "\"Prepared 3 hours ago\" sits inside a hover title, where relative wording reads the same in every zone and a Timestamp cannot go."),
+        ["ALDevToolbox/Components/Pages/Projects/ProjectDetailBc.razor"] = (5,
+            "The delivery and update windows are times of day in the customer's zone, and the client secret's expiry is a calendar date the consultant typed."),
+        ["ALDevToolbox/Components/Pages/Projects/ProjectsBrowser.razor"] = (1,
+            "\"(2 days ago)\" sits inside the last-shipped hover title, where relative wording reads the same in every zone and a Timestamp cannot go."),
         ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminBackups.razor"] = (1, "The backup schedule is a UTC time of day, labelled UTC, so it does not move with daylight saving."),
         ["ALDevToolbox/Components/Pages/SiteAdmin/SiteAdminSettingsBackups.razor"] = (1, "The backup schedule input is a UTC time of day the site admin types, labelled UTC, so it does not move with daylight saving."),
+        ["ALDevToolbox/Components/Pages/Upgrades/UpgradesPage.razor"] = (12,
+            "A booked update slot is a wall clock the person types and Business Central runs in each customer's own zone, so it is said back in that zone and labelled with it."),
+        ["ALDevToolbox/Components/Shared/EnvironmentActivityFeed.razor"] = (2,
+            "A booked update slot is a wall clock in the customer's own zone, said back in that zone and labelled with it."),
+        ["ALDevToolbox/Components/Shared/ReleaseBuildDialog.razor"] = (5,
+            "The delivery window and the picked deployment time are wall clocks in the customer's zone, as the field's hint says, and the client secret's expiry is a calendar date the consultant typed."),
+        ["ALDevToolbox/Components/Shared/ReleasePipelineEditorDialog.razor"] = (2,
+            "The delivery window is a time of day agreed in the customer's zone."),
     };
 
     /// <summary>
     /// The sum of <see cref="Baseline"/>, written out so that a sweep has to lower
     /// both: the per-file numbers and the headline number the issue tracks.
     /// </summary>
-    private const int BaselineTotal = 112;
+    private const int BaselineTotal = 0;
 
     [Fact]
     public void No_razor_file_formats_a_time_more_often_than_its_baseline()
@@ -96,27 +101,28 @@ public sealed class DateFormattingBaselineTests
         foreach (var (path, hits) in actual.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             Baseline.TryGetValue(path, out var allowed);
-            var counted = hits.Count - PermittedCount(path);
-            if (counted <= allowed) continue;
+            allowed += Permitted.TryGetValue(path, out var permitted) ? permitted.Count : 0;
+            if (hits.Count <= allowed) continue;
             var where = string.Join("; ", hits.Select(h => $"line {h.Line}: {h.What}"));
             problems.Add(allowed == 0
-                ? $"{path} formats a time itself ({counted}x: {where}). Render it with <Timestamp Value=\"...\" /> instead, so it shows in the organisation's zone with the UTC instant on hover."
-                : $"{path}: baseline {allowed}, found {counted} ({where}). Render the new one with <Timestamp Value=\"...\" /> instead of formatting it in the page.");
+                ? $"{path} formats a time itself ({hits.Count}x: {where}). Render it with <Timestamp Value=\"...\" /> instead, so it shows in the organisation's zone with the UTC instant on hover."
+                : $"{path}: baseline {allowed}, found {hits.Count} ({where}). Render the new one with <Timestamp Value=\"...\" /> instead of formatting it in the page.");
+        }
+        foreach (var (path, (permittedCount, _)) in Permitted.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var found = actual.TryGetValue(path, out var hits) ? hits.Count : 0;
+            if (found < permittedCount)
+            {
+                problems.Add($"{path}: permitted {permittedCount}, found {found}. Lower this file's {nameof(Permitted)} entry so it stays exact.");
+            }
         }
         foreach (var (path, allowed) in Baseline.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
-            var found = (actual.TryGetValue(path, out var hits) ? hits.Count : 0) - PermittedCount(path);
+            var found = (actual.TryGetValue(path, out var hits) ? hits.Count : 0)
+                - (Permitted.TryGetValue(path, out var permitted) ? permitted.Count : 0);
             if (found < allowed)
             {
                 problems.Add($"{path}: baseline {allowed}, found {found}. Good news - lower this file's baseline (and {nameof(BaselineTotal)}) so it stays honest.");
-            }
-        }
-        foreach (var (path, (count, _)) in Permitted.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-        {
-            var found = actual.TryGetValue(path, out var hits) ? hits.Count : 0;
-            if (found < count)
-            {
-                problems.Add($"{path}: {count} permitted, found {found}. Lower its {nameof(Permitted)} entry so it names only what is still there.");
             }
         }
 
@@ -127,23 +133,20 @@ public sealed class DateFormattingBaselineTests
     }
 
     [Fact]
-    public void Every_permitted_time_says_why_it_is_not_an_instant()
-    {
-        Permitted.Should().AllSatisfy(kv =>
-        {
-            kv.Value.Count.Should().BePositive();
-            kv.Value.Reason.Should().NotBeNullOrWhiteSpace();
-        });
-    }
-
-    private static int PermittedCount(string path) =>
-        Permitted.TryGetValue(path, out var permitted) ? permitted.Count : 0;
-
-    [Fact]
     public void Baseline_total_is_the_sum_of_the_per_file_baseline()
     {
         Baseline.Values.Sum().Should().Be(BaselineTotal,
             "a sweep lowers both the per-file entries and the total, so neither can drift from the other");
+    }
+
+    [Fact]
+    public void Every_permitted_entry_says_why()
+    {
+        foreach (var (path, (count, reason)) in Permitted)
+        {
+            count.Should().BePositive($"{path} is only worth an entry if it has hits to permit");
+            reason.Should().NotBeNullOrWhiteSpace($"{path} must say why its hits are not a time to convert");
+        }
     }
 
     [Fact]

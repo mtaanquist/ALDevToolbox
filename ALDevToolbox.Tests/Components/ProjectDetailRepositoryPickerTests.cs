@@ -51,6 +51,7 @@ public sealed class ProjectDetailRepositoryPickerTests : IDisposable
         auth.SetAuthorized("consultant@cronus.example");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();

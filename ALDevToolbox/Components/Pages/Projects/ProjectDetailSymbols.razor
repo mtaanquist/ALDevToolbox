@@ -87,8 +87,8 @@ else
                 <div class="sub-row">
                     <div class="sub-row__stack">
                         <span class="sub-row__name">@row.FileName</span>
-                        <span class="sub-row__val" title="@row.CreatedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")">
-                            @FileSize(row.ContentLength) · added @RelativeTime.Ago(row.CreatedAt)
+                        <span class="sub-row__val">
+                            @FileSize(row.ContentLength) · added <Timestamp Value="@row.CreatedAt" Relative="true" />
                         </span>
                     </div>
                     @if (CanManage)

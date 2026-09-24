@@ -9,6 +9,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
 @inject ILogger<EnvironmentDetail> Log
 @inject NavigationManager Nav
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using System.Globalization
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.ValueObjects
@@ -113,19 +114,19 @@
             <span class="freshness__text">
                 @if (_panel is { } fresh)
                 {
-                    <text>Apps and settings read from Business Central <span class="freshness__age">@RelativeTime.Ago(fresh.FetchedAtUtc)</span>. </text>
+                    <text>Apps and settings read from Business Central <span class="freshness__age"><Timestamp Value="@fresh.FetchedAtUtc" Relative="true" /></span>. </text>
                 }
                 @if (_tab == Section.Operations && _operationsFetchedAt is { } opsRead)
                 {
-                    <text>Operations read from Business Central <span class="freshness__age">@RelativeTime.Ago(opsRead)</span>. </text>
+                    <text>Operations read from Business Central <span class="freshness__age"><Timestamp Value="@opsRead" Relative="true" /></span>. </text>
                 }
                 @if (_tab == Section.Sessions && _sessionsFetchedAt is { } sessionsRead)
                 {
-                    <text>Sessions read from Business Central <span class="freshness__age">@RelativeTime.Ago(sessionsRead)</span>. </text>
+                    <text>Sessions read from Business Central <span class="freshness__age"><Timestamp Value="@sessionsRead" Relative="true" /></span>. </text>
                 }
                 @if (Row.EnvironmentFetchedAt is { } mirrored)
                 {
-                    <text>Version and update dates last checked <span class="freshness__age">@RelativeTime.Ago(mirrored)</span>.</text>
+                    <text>Version and update dates last checked <span class="freshness__age"><Timestamp Value="@mirrored" Relative="true" /></span>.</text>
                 }
                 else
                 {
@@ -190,13 +191,13 @@
         {
             <Alert Tone="AlertTone.Danger" Block="true">
                 <span>
-                    <b>@DeletedSentence()</b>
+                    <b>@DeletedSentence</b>
                     @* The same reading as the Environments list, word for word: the two
                        are looked at in the same minute, and on a fortnight's window a day
                        either way is a customer's data. *@
                     @if (Row.HardDeletePendingOn is { } goneOn)
                     {
-                        <text> It is gone for good on @goneOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) - @RecoverWindowText(goneOn).</text>
+                        <text> It is gone for good on <Timestamp Value="@goneOn" Format="dd MMM yyyy" /> - @RecoverWindowText(goneOn).</text>
                     }
                     else
                     {
@@ -228,7 +229,7 @@
             <span class="meta-item"><span class="meta-item__label">BC version</span><span class="meta-item__value meta-item__value--mono">@(Row.Version ?? "—")</span></span>
             <span class="meta-item"><span class="meta-item__label">Country</span><span class="meta-item__value">@CountryText()</span></span>
             <span class="meta-item"><span class="meta-item__label">Delivery window</span><span class="meta-item__value">@DeliveryWindowText()</span></span>
-            <span class="meta-item"><span class="meta-item__label">Next update</span><span class="meta-item__value">@(Row.NextUpdateDate is { } next ? next.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) : "—")</span></span>
+            <span class="meta-item"><span class="meta-item__label">Next update</span><span class="meta-item__value"><Timestamp Value="@Row.NextUpdateDate" Format="dd MMM yyyy" Placeholder="—" /></span></span>
             <span class="meta-item"><span class="meta-item__label">Database</span><span class="meta-item__value">@(Row.DatabaseKb is { } dbSize ? StorageDisplay.Size(dbSize) : "—")</span></span>
             <span class="meta-item"><span class="meta-item__label">Apps installed</span><span class="meta-item__value">@(_panel is { InstalledAppsError: null } p ? p.InstalledApps.Count.ToString() : _panel is null && _panelError is null ? "—" : "Not read")</span></span>
         </div>
@@ -271,8 +272,8 @@
                     <div class="kv-grid">
                         <span class="meta-item"><span class="meta-item__label">Current version</span><span class="meta-item__value">@CurrentVersionShort()@if (Row.Version is { } full && full != CurrentVersionShort()) {<span class="u-muted"> (@full)</span>}</span></span>
                         <span class="meta-item"><span class="meta-item__label">Next update version</span><span class="meta-item__value">@(Row.NextUpdateVersion ?? "None announced")</span></span>
-                        <span class="meta-item"><span class="meta-item__label">Scheduled for</span><span class="meta-item__value">@ScheduledForText()@if (ScheduledUtcText() is { } utcText) {<span class="u-muted env-detail__utc">@utcText</span>}</span></span>
-                        <span class="meta-item"><span class="meta-item__label">Latest possible date</span><span class="meta-item__value">@(Row.EffectiveLatestDate is { } latest ? latest.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) : "—")</span></span>
+                        <span class="meta-item"><span class="meta-item__label">Scheduled for</span><span class="meta-item__value"><Timestamp Value="@Row.NextUpdateDate" Format="dd MMM yyyy, HH:mm" Placeholder="—" />@if (ScheduledCustomerText() is { } customerText) {<span class="u-muted env-detail__utc">@customerText</span>}</span></span>
+                        <span class="meta-item"><span class="meta-item__label">Latest possible date</span><span class="meta-item__value"><Timestamp Value="@Row.EffectiveLatestDate" Format="dd MMM yyyy" Placeholder="—" /></span></span>
                         <span class="meta-item"><span class="meta-item__label">Our delivery window</span><span class="meta-item__value">@DeliveryWindowText()</span></span>
                         <span class="meta-item"><span class="meta-item__label">BC update window</span><span class="meta-item__value">@BcWindowText()</span></span>
                     </div>
@@ -322,7 +323,7 @@
                                     <button type="button" class="btn btn--sm" @onclick="() => PersistWindowAsync(null, null)" disabled="@_windowSaving">Clear (any time)</button>
                                     <button type="button" class="btn btn--sm" @onclick="() => _windowEditing = false" disabled="@_windowSaving">Cancel</button>
                                 </div>
-                                <small class="field__hint">The hours agreed with the customer for our own installs, in the solution's time zone (@(ZoneCity(Row.TimeZone) ?? "UTC")). Deployments prefill to the next opening; you can still deploy outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
+                                <small class="field__hint">@WindowZoneCaption() These are the hours agreed with the customer for our own installs. Deployments prefill to the next opening; you can still deploy outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
                                 @if (_windowError is { } windowError)
                                 {
                                     <FieldError Message="@windowError" />
@@ -819,9 +820,7 @@
                 <EnvironmentOperationsList Operations="_operations"
                                            EnvironmentName="@Row.EnvironmentName"
                                            AppName="AppNameFor"
-                                           HistoryHref="@TabHref(Section.History)"
-                                           TimeZone="UpdateWindow.ResolveTimeZone(Row.TimeZone)"
-                                           TimeZoneLabel="@(ZoneCity(Row.TimeZone) ?? "UTC")" />
+                                           HistoryHref="@TabHref(Section.History)" />
             }
         }
         else if (_tab == Section.Sessions)
@@ -872,9 +871,7 @@
                                          CanCancel="_canManage"
                                          OperationsHref="@TabHref(Section.Operations)"
                                          OnCancel="CancelSessionAsync"
-                                         OnRefresh="RefreshSessionsAsync"
-                                         TimeZone="UpdateWindow.ResolveTimeZone(Row.TimeZone)"
-                                         TimeZoneLabel="@(ZoneCity(Row.TimeZone) ?? "UTC")" />
+                                         OnRefresh="RefreshSessionsAsync" />
             }
         }
         else
@@ -1135,6 +1132,7 @@
             _operationsError = null;
             LeaveSessionsTab();
             _startedUpdates.Clear();
+            await Zone.EnsureLoadedAsync();
             await LoadEnvironmentAsync();
             _loaded = true;
             _loadedId = Id;
@@ -1651,23 +1649,28 @@
     // ── Updates ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// In the customer's zone first, because the two windows beside it are, and whether
-    /// they collide is the question the card answers. UTC stays as the second half.
+    /// The update's time again in the customer's own zone, under the one in the
+    /// organisation's zone: the two windows beside it are in the customer's zone, and
+    /// whether they collide is the question the card answers. Left out when the two
+    /// zones are the same, or the solution has none.
     /// </summary>
-    private string ScheduledForText()
+    private string? ScheduledCustomerText()
     {
-        if (Row.NextUpdateDate is not { } at) return "—";
-        var utc = DateTime.SpecifyKind(at, DateTimeKind.Utc);
-        if (ZoneCity(Row.TimeZone) is null) return utc.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture) + " UTC";
-        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, UpdateWindow.ResolveTimeZone(Row.TimeZone));
-        return local.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
+        if (Row.NextUpdateDate is not { } at || ZoneCity(Row.TimeZone) is not { } city) return null;
+        var customerZone = UpdateWindow.ResolveTimeZone(Row.TimeZone);
+        if (customerZone.Id == Zone.Zone.Id) return null;
+        var local = TimeZoneInfo.ConvertTimeFromUtc(ALDevToolbox.Services.Organizations.DisplayTimeZone.AsUtc(at), customerZone);
+        return $"{city} time · {local:d MMM, HH:mm}";
     }
 
-    /// <summary>The UTC half, on its own line - only when the first line is in another zone.</summary>
-    private string? ScheduledUtcText() =>
-        Row.NextUpdateDate is { } at && ZoneCity(Row.TimeZone) is { } city
-            ? $"{city} time · {DateTime.SpecifyKind(at, DateTimeKind.Utc).ToString("HH:mm", CultureInfo.InvariantCulture)} UTC"
-            : null;
+    /// <summary>
+    /// Whose clock the delivery window is on. It is a time of day agreed with the
+    /// customer and kept in the solution's zone, not converted into the organisation's
+    /// display zone like the times elsewhere on the page.
+    /// </summary>
+    private string WindowZoneCaption() => ZoneCity(Row.TimeZone) is { } city
+        ? $"Times are in the solution's own time zone, {city}."
+        : "Times are in UTC, because the solution has no time zone set on its Business Central tab.";
 
     private string DeliveryWindowText() =>
         _env!.DeliveryWindowStart is { } s && _env.DeliveryWindowEnd is { } e
@@ -2009,9 +2012,9 @@
     /// date glued on, because "has been deleted on 20 Sep" is not a sentence - and this
     /// is the boldest line on the page.
     /// </summary>
-    private string DeletedSentence() => Row.SoftDeletedOn is { } deleted
-        ? $"{Row.EnvironmentName} was deleted on {deleted.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}."
-        : $"{Row.EnvironmentName} has been deleted.";
+    private RenderFragment DeletedSentence => Row.SoftDeletedOn is { } deleted
+        ? @<text>@Row.EnvironmentName was deleted on <Timestamp Value="@deleted" Format="dd MMM yyyy" />.</text>
+        : @<text>@Row.EnvironmentName has been deleted.</text>;
 
     /// <summary>
     /// How long is left, in the same words the Environments list uses under its date. A
@@ -2071,7 +2074,7 @@
         var chosenRow = _panel.EnvironmentUpdates.FirstOrDefault(u =>
             string.Equals(u.TargetVersion, version, StringComparison.OrdinalIgnoreCase));
         var when = chosenRow?.SelectedDateTime is { } at
-            ? $"Microsoft runs the upgrade on {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC"
+            ? $"Microsoft runs the upgrade on {Zone.Format(at.UtcDateTime, "yyyy-MM-dd HH:mm")}"
             : "Microsoft runs the upgrade in this environment's update window";
 
         var confirmed = await _confirm.OpenAsync(

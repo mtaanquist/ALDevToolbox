@@ -17,7 +17,7 @@
                 {
                     @if (_modules.EnvironmentName is { } envName && _modules.FetchedAt is { } fetched)
                     {
-                        <text>What is installed in <a href="@($"/environments/{_modules.EnvironmentId}/apps")">@envName</a>, as Business Central reported it @RelativeTime.Ago(fetched). Only modules in your organisation's catalogue are shown.</text>
+                        <text>What is installed in <a href="@($"/environments/{_modules.EnvironmentId}/apps")">@envName</a>, as Business Central reported it <Timestamp Value="@fetched" Relative="true" />. Only modules in your organisation's catalogue are shown.</text>
                     }
                     else
                     {

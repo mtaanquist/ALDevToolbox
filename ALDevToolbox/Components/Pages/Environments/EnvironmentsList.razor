@@ -86,9 +86,9 @@
                    act on. Naming it "oldest" makes the differing rows the obvious
                    consequence instead. *@
                 <span class="freshness__text">
-                    @if (OldestAge() is { } age)
+                    @if (OldestRead() is { } age)
                     {
-                        <text>Oldest reading <span class="freshness__age">@age</span>. Each row shows its own.</text>
+                        <text>Oldest reading <span class="freshness__age"><Timestamp Value="@age" Relative="true" /></span>. Each row shows its own.</text>
                     }
                     else
                     {
@@ -305,8 +305,38 @@
                                the version would have had: it is the fact the row is here
                                for, and a dash in bold over it in grey reads backwards. *@
                             <span class="cell-stack">
-                                <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">@(row.IsSoftDeleted ? GoneForGood(row) : NextVersion(row))</span>
-                                <span class="cell-stack__sub">@(row.IsSoftDeleted ? RecoverWindow(row) : NextWhen(row))</span>
+                                <span class="cell-stack__main" style="font-weight: var(--fw-semibold)">
+                                    @if (!row.IsSoftDeleted)
+                                    {
+                                        @NextVersion(row)
+                                    }
+                                    else if (row.HardDeletePendingOn is { } gone)
+                                    {
+                                        <text>Gone for good on <Timestamp Value="@gone" Format="dd MMM yyyy" /></text>
+                                    }
+                                    else
+                                    {
+                                        <text>Business Central hasn't said when it goes for good</text>
+                                    }
+                                </span>
+                                <span class="cell-stack__sub">
+                                    @if (row.IsSoftDeleted && row.HardDeletePendingOn is null && row.SoftDeletedOn is { } deleted)
+                                    {
+                                        <text>Deleted <Timestamp Value="@deleted" Format="dd MMM yyyy" /></text>
+                                    }
+                                    else if (row.IsSoftDeleted)
+                                    {
+                                        @RecoverWindow(row)
+                                    }
+                                    else if (row.NextUpdateDate is { } nextDate)
+                                    {
+                                        <Timestamp Value="@nextDate" Format="dd MMM yyyy, HH:mm" />
+                                    }
+                                    else
+                                    {
+                                        @NextWhen(row)
+                                    }
+                                </span>
                             </span>
                         </td>
                         <td>
@@ -332,7 +362,19 @@
                                 <span class="u-muted">—</span>
                             }
                         </td>
-                        <td class="u-muted">@Checked(row)</td>
+                        <td class="u-muted">
+                            @* fetched_at is NOT NULL on the row, so this always has a real
+                               answer; the dash is only for a projection that somehow didn't
+                               carry it. *@
+                            @if (row.EnvironmentFetchedAt is { } fetchedAt)
+                            {
+                                <Timestamp Value="@fetchedAt" Relative="true" />
+                            }
+                            else
+                            {
+                                <text>—</text>
+                            }
+                        </td>
                         <td class="data-table__actions">
                             @* The sheet's third entry, a refresh, is not here: a refresh
                                is per solution, not per environment, and the strip above
@@ -655,14 +697,13 @@
     // ── Presentation ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// The sub-line under the next version. Distinguishes a scheduled date, a version
-    /// Microsoft has named but not dated, nothing on offer at all, and an environment
-    /// we have never managed to read - see .design/environment-updates.md, which makes
-    /// the same distinction the mirror does.
+    /// The sub-line under the next version when it has no date (a dated one is a
+    /// Timestamp in the markup). Distinguishes a version Microsoft has named but not
+    /// dated, nothing on offer at all, and an environment we have never managed to read
+    /// - see .design/environment-updates.md, which makes the same distinction the mirror does.
     /// </summary>
     private static string NextWhen(UpgradeFleetRow row)
     {
-        if (row.NextUpdateDate is { } date) return date.ToString("dd MMM yyyy, HH:mm") + " UTC";
         if (row.NextUpdateVersion is not null) return "Date not announced yet";
         // With nothing scheduled, this line is where the design names a state that is
         // not plain Running - the state cell is a glyph, and this keeps the word on screen.
@@ -673,27 +714,19 @@
     private static string NextVersion(UpgradeFleetRow row) => row.IsSoftDeleted ? "—" : row.NextUpdateVersion ?? "—";
 
     /// <summary>
-    /// The day a deleted environment stops being recoverable. Microsoft doesn't always
-    /// give the date, and an unknown one is said plainly rather than left as a dash the
-    /// reader has to interpret as "no deadline".
-    /// </summary>
-    private static string GoneForGood(UpgradeFleetRow row) =>
-        row.HardDeletePendingOn is { } gone
-            ? $"Gone for good on {gone:dd MMM yyyy}"
-            : "Business Central hasn't said when it goes for good";
-
-    /// <summary>
     /// How long is left, under the date. A date alone makes somebody scanning a list do
     /// the arithmetic per row to find the customer who needs a call today, which is the
     /// question this view exists to answer - and the column beside it is already
     /// relative. A date already past is not dressed up as urgency: the mirror may simply
-    /// be older than the deadline it is repeating.
+    /// be older than the deadline it is repeating. (The day a deleted environment stops
+    /// being recoverable is the bold line above; an unknown one is said plainly there
+    /// rather than left as a dash the reader has to interpret as "no deadline".)
     /// </summary>
     private static string RecoverWindow(UpgradeFleetRow row)
     {
         if (row.HardDeletePendingOn is not { } gone)
         {
-            return row.SoftDeletedOn is { } deleted ? $"Deleted {deleted:dd MMM yyyy}" : "Deleted";
+            return "Deleted";
         }
         return (gone.Date - DateTime.UtcNow.Date).Days switch
         {
@@ -704,22 +737,17 @@
         };
     }
 
-    // fetched_at is NOT NULL on the row, so this always has a real answer; the
-    // fallback is only for a projection that somehow didn't carry it.
-    private static string Checked(UpgradeFleetRow row) =>
-        row.EnvironmentFetchedAt is { } at ? RelativeTime.Ago(at) : "—";
-
     /// <summary>
     /// The age of the oldest row that has ever been read, or null when none has. Null
     /// is a different sentence, not the word "never" dropped into this one.
     /// </summary>
-    private string? OldestAge()
+    private DateTime? OldestRead()
     {
         var read = (_rows ?? new())
             .Where(r => r.EnvironmentFetchedAt is not null)
             .Select(r => r.EnvironmentFetchedAt!.Value)
             .ToList();
-        return read.Count == 0 ? null : RelativeTime.Ago(read.Min());
+        return read.Count == 0 ? null : read.Min();
     }
 
     private string FreshnessClass()

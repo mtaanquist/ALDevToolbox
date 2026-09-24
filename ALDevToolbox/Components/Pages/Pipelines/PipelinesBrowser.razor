@@ -198,7 +198,7 @@
                         <td class="u-muted">
                             @if (p.Latest is { } w)
                             {
-                                <span title="@AbsoluteWhen(w)">@Verb(w.Status) @RelativeTime.Ago(w.FinishedAt ?? w.StartedAt)</span>
+                                <span>@Verb(w.Status) <Timestamp Value="@(w.FinishedAt ?? w.StartedAt)" Relative="true" /></span>
                             }
                             else
                             {
@@ -325,8 +325,4 @@
         "building" => "Started",
         _ => "Queued",
     };
-
-    /// <summary>The full local timestamp, shown as a hover title behind the relative "when".</summary>
-    private static string AbsoluteWhen(BuildSummary b) =>
-        (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
 }

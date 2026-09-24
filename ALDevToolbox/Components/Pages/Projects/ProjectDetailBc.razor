@@ -102,6 +102,8 @@
                             Entra shows this when you create the secret (it lasts at most two years).
                             @if (_bc?.SecretExpiresAt is { } exp)
                             {
+                                @* A calendar date the consultant typed, stored at midnight UTC:
+                                   printed as that date, never converted into a zone. *@
                                 <text> Current: @exp.ToString("yyyy-MM-dd").</text>
                             }
                         </small>
@@ -127,7 +129,7 @@
                 @if (_bc?.VerifiedAt is { } verified)
                 {
                     <span class="form-actions__spacer"></span>
-                    <span class="form-actions__note">Last verified @verified.ToLocalTime().ToString("d MMM yyyy · HH:mm")</span>
+                    <span class="form-actions__note">Last verified <Timestamp Value="@verified" Format="d MMM yyyy · HH:mm" /></span>
                 }
             </div>
         </div>
@@ -160,7 +162,7 @@
         <span class="section-label">Environments</span>
         @if (_environments.Count > 0)
         {
-            <StatusPill Tone="muted" style="margin-left:auto"><span>@EnvironmentsSummary()</span></StatusPill>
+            <StatusPill Tone="muted" style="margin-left:auto"><span>@EnvironmentsSummary() · checked <Timestamp Value="@_environments.Max(e => e.FetchedAt)" Relative="true" /></span></StatusPill>
         }
     </div>
     <div class="card pd-env-card">
@@ -418,17 +420,15 @@
 
 
     /// <summary>
-    /// The environments header pill: how many, and how fresh. The statuses and versions
-    /// in the table are only as good as the last fetch, so the count alone would invite
-    /// trusting a stale row. Uses the newest <c>FetchedAt</c> across the rows, since a
-    /// Refresh stamps them together.
+    /// The environments header pill's count. The markup follows it with how fresh: the
+    /// statuses and versions in the table are only as good as the last fetch, so the
+    /// count alone would invite trusting a stale row. That uses the newest
+    /// <c>FetchedAt</c> across the rows, since a Refresh stamps them together.
     /// </summary>
     private string EnvironmentsSummary()
     {
         var count = _environments.Count;
-        var noun = count == 1 ? "environment" : "environments";
-        var newest = _environments.Max(e => e.FetchedAt);
-        return $"{count} {noun} · checked {ALDevToolbox.Components.Shared.RelativeTime.Ago(newest)}";
+        return count == 1 ? "1 environment" : $"{count} environments";
     }
 
     /// <summary>

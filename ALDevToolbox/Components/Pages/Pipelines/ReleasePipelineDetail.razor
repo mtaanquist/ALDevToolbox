@@ -11,6 +11,7 @@
 @inject NavigationManager Nav
 @inject ILogger<ReleasePipelineDetail> Log
 @inject IServiceScopeFactory ScopeFactory
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using System.Globalization
 @using System.Text.RegularExpressions
 @using Microsoft.Extensions.DependencyInjection
@@ -219,7 +220,7 @@
                                         var lastLook = DeliveryLook(last.Status);
                                         var rowState = $"rp-strong rp-tone--{lastLook.Tone}";
                                         <span class="@rowState">@lastLook.Word</span>
-                                        <span class="u-muted" title="@Exact(LastWhen(last))"> @RelativeTime.Ago(LastWhen(last))</span>
+                                        <span class="u-muted"> <Timestamp Value="@LastWhen(last)" Relative="true" /></span>
                                     }
                                     else
                                     {
@@ -248,7 +249,7 @@
                     </div>
                     <div class="card__body rp-summary__block rp-summary__block--bc">
                         <p class="section-label rp-summary__label">
-                            <Icon Name="cloud-download" Width="13" Height="13" />From Business Central@(MirrorAge is { } age ? $", {age}" : "")
+                            <Icon Name="cloud-download" Width="13" Height="13" />From Business Central@(MirrorAgeTail)
                         </p>
                         <div class="rp-facts rp-facts--narrow">
                             <span class="meta-item rp-fact">
@@ -321,7 +322,7 @@
                     <div class="card__head">
                         <div>
                             <h2 class="card__title">Deployments</h2>
-                            <p class="card__sub">Newest first. Open a deployment for its apps, timings and log. Times are in @_tzPhrase.</p>
+                            <p class="card__sub">Newest first. Open a deployment for its apps, timings and log.</p>
                         </div>
                     </div>
 
@@ -398,11 +399,18 @@
                                             }
                                         </span>
                                     }
-                                    <span class="cell-stack__sub rp-rel__compact">@CompactLine(d)</span>
+                                    <span class="cell-stack__sub rp-rel__compact">@if (d.IsScheduled) { <text>for @When(d.ScheduledFor)</text> } else { <Timestamp Value="@LastWhen(d)" Relative="true" /> }@CompactTail(d)</span>
                                 </span>
                                 <span class="cell-stack rp-rel__outcome">
                                     <span class="@($"cell-stack__main rp-strong rp-tone--{state.Tone}")">@state.Word</span>
-                                    <span class="cell-stack__sub" title="@OutcomeExact(d)">@OutcomeWhen(d)</span>
+                                    @if (d.IsScheduled)
+                                    {
+                                        <span class="cell-stack__sub" title="@Exact(d.ScheduledFor)">for @When(d.ScheduledFor)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="cell-stack__sub"><Timestamp Value="@LastWhen(d)" Relative="true" /></span>
+                                    }
                                 </span>
                                 <span class="rp-rel__cell" title="@(StartOf(d) is { } s ? Exact(s) : null)">@(StartOf(d) is { } started ? When(started) : "Not started")</span>
                                 <span class="rp-rel__cell rp-rel__took u-num">@(Took(d) ?? "-")</span>
@@ -711,7 +719,6 @@
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
     private string _tzLabel = "UTC";
     private string _tzCity = "UTC";
-    private string _tzPhrase = "UTC";
 
     // Reschedule modal state.
     private int? _rescheduleId;
@@ -766,6 +773,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await Zone.EnsureLoadedAsync();
         await LoadPipelineAsync();
         if (_rp is null) return;
         // Draw the head and the skeleton while the history loads, as the sheet does.
@@ -805,7 +813,6 @@
         var tzId = _rp.Project?.BcTimeZone;
         _tzLabel = string.IsNullOrWhiteSpace(tzId) ? "UTC" : tzId!;
         _tzCity = string.IsNullOrWhiteSpace(tzId) ? "UTC" : tzId![(tzId!.LastIndexOf('/') + 1)..].Replace('_', ' ');
-        _tzPhrase = string.IsNullOrWhiteSpace(tzId) ? "UTC" : $"the solution's time zone ({_tzCity})";
         _canManage = await Releases.CanManageAsync(Id);
 
         _fromReleases = _rp.ArtifactSource == ReleaseArtifactSource.GithubRelease;
@@ -841,18 +848,7 @@
             // The apps each build carries, so the deployment dialog can show what is about
             // to be installed before the consultant confirms (#714).
             var appsByBuild = await Artifacts.ListBuildAppsAsync(buildPipelineId);
-            _successfulBuilds = builds
-                .Where(b => b.Status == "ready")
-                .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
-                .Select(b =>
-                {
-                    var apps = appsByBuild.TryGetValue(b.Id, out var found) ? found : [];
-                    return new ReleaseBuildDialog.ReleasableBuildOption(
-                        b.Id,
-                        BuildLabel(b, apps.Count),
-                        apps.Select(a => new ReleaseBuildDialog.ReleasableBuildApp(a.AppName, a.AppVersion)).ToList());
-                })
-                .ToList();
+            _successfulBuilds = ReleaseBuildDialog.OptionsFrom(builds, appsByBuild, Zone);
         }
 
         _loading = false;
@@ -1177,8 +1173,9 @@
         _rescheduleId = d.Id;
         _rescheduleError = null;
         _rescheduling = false;
-        // Prefill to the deployment's current time in the customer's tz.
-        var local = Local(d.ScheduledFor);
+        // Prefill to the deployment's current time in the customer's tz: the picker is a
+        // wall clock in the solution's zone, like the deployment dialog's.
+        var local = TimeZoneInfo.ConvertTimeFromUtc(ALDevToolbox.Services.Organizations.DisplayTimeZone.AsUtc(d.ScheduledFor), _tz);
         _rescheduleLocal = new DateTime(local.Year, local.Month, local.Day, local.Hour, local.Minute, 0, DateTimeKind.Unspecified);
     }
 
@@ -1204,8 +1201,9 @@
             var utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_rescheduleLocal, DateTimeKind.Unspecified), _tz);
             if (utc > expiry)
             {
-                var localExpiry = Local(expiry);
-                return $"The Business Central client secret expires {localExpiry:yyyy-MM-dd}. This time is after that and will fail unless the secret is rotated first.";
+                // A calendar date the consultant typed, stored at midnight UTC: printed as
+                // that date, never converted into a zone that could move it a day.
+                return $"The Business Central client secret expires {expiry:yyyy-MM-dd}. This time is after that and will fail unless the secret is rotated first.";
             }
             return null;
         }
@@ -1313,7 +1311,7 @@
 
     // ── The summary card ──────────────────────────────────────────────────────
 
-    private sealed record HealthView(string Tone, string Icon, string Title, string Sentence);
+    private sealed record HealthView(string Tone, string Icon, string Title, RenderFragment Sentence);
 
     /// <summary>
     /// The card's keyline, title and one sentence. Facts only: what happened last, what
@@ -1328,15 +1326,14 @@
         if (active is not null)
         {
             return new HealthView("running", "refresh-cw", "Deploying now",
-                $"Deployment {active.Number} is {DeliveryLook(active.Status).Word.ToLowerInvariant()} into \"{EnvName}\". {RunningSentence(active)}");
+                Plain($"Deployment {active.Number} is {DeliveryLook(active.Status).Word.ToLowerInvariant()} into \"{EnvName}\". {RunningSentence(active)}"));
         }
 
         var last = LastRelease;
         if (last is { Status: ProjectDeliveryStatus.Failed })
         {
-            var sentence = $"Deployment {last.Number} failed {RelativeTime.Ago(LastWhen(last))}";
             var failedApp = last.Apps.FirstOrDefault(a => a.Status == ProjectDeliveryResultStatus.Failed);
-            sentence += failedApp is null ? "." : $" on {failedApp.AppName}.";
+            var sentence = failedApp is null ? "." : $" on {failedApp.AppName}.";
             // The apps before the failure did install, so the environment is on a mix of
             // versions; say which went in rather than leave "failed" to imply none did.
             var installed = last.Apps.Where(a => a.Status == ProjectDeliveryResultStatus.Completed).ToList();
@@ -1345,44 +1342,47 @@
                 sentence += " " + string.Join(", ", installed.Select(a => $"{a.AppName} {a.AppVersion}"))
                     + (installed.Count == 1 ? " was" : " were") + " installed before it.";
             }
-            if (failedApp is not null && ReportedVersion(failedApp) is { } reported)
-            {
-                sentence += " " + reported;
-            }
-            if (NextRelease is { } queued)
-            {
-                sentence += $" Deployment {queued.Number} is scheduled {WhenPhrase(queued.ScheduledFor)}.";
-            }
-            return new HealthView("failed", "circle-x", "Last deployment failed", sentence);
+            var reported = failedApp is null ? null : ReportedVersion(failedApp);
+            var queuedTail = NextRelease is { } queued
+                ? $" Deployment {queued.Number} is scheduled {WhenPhrase(queued.ScheduledFor)}."
+                : "";
+            var failedAt = LastWhen(last);
+            var reportedLead = reported is null ? "" : " ";
+            return new HealthView("failed", "circle-x", "Last deployment failed",
+                @<text>Deployment @last.Number failed <Timestamp Value="@failedAt" Relative="true" />@sentence@reportedLead@reported@queuedTail</text>);
         }
 
         if (Proposals.FirstOrDefault() is { } waiting)
         {
             return new HealthView("draft", "user", "Waiting for approval",
-                $"Deployment {waiting.Number} (build #{waiting.ProjectBuildId}) was prepared {RelativeTime.Ago(waiting.CreatedAt)} and waits for approval under Deployments below. Nothing has been sent to \"{EnvName}\".");
+                @<text>Deployment @waiting.Number (build #@waiting.ProjectBuildId) was prepared <Timestamp Value="@waiting.CreatedAt" Relative="true" /> and waits for approval under Deployments below. Nothing has been sent to "@EnvName".</text>);
         }
 
         if (NextRelease is { } next)
         {
             var sentence = $"Deployment {next.Number} installs into \"{EnvName}\" {WhenPhrase(next.ScheduledFor)}.";
             if (IsForceSync && _isProduction) sentence += " Force sync is on for this Production environment.";
-            return new HealthView("queued", "clock", "Scheduled", sentence);
+            return new HealthView("queued", "clock", "Scheduled", Plain(sentence));
         }
 
         if (last is { Status: ProjectDeliveryStatus.Deployed })
         {
+            var succeededAt = LastWhen(last);
             return new HealthView("succeeded", "circle-check", "Healthy",
-                $"The last deployment succeeded {RelativeTime.Ago(LastWhen(last))}. Nothing is scheduled.");
+                @<text>The last deployment succeeded <Timestamp Value="@succeededAt" Relative="true" />. Nothing is scheduled.</text>);
         }
         if (last is { Status: ProjectDeliveryStatus.HandedOff })
         {
+            var handedAt = LastWhen(last);
             return new HealthView("handed", "send", "Handed to Business Central",
-                $"Deployment {last.Number} was handed to Business Central {RelativeTime.Ago(LastWhen(last))}, to install with its own update. Nothing else is scheduled.");
+                @<text>Deployment @last.Number was handed to Business Central <Timestamp Value="@handedAt" Relative="true" />, to install with its own update. Nothing else is scheduled.</text>);
         }
 
         return new HealthView("none", "circle-dashed", "Nothing deployed yet",
-            $"This pipeline has not installed anything into \"{EnvName}\" yet.");
+            Plain($"This pipeline has not installed anything into \"{EnvName}\" yet."));
     }
+
+    private static RenderFragment Plain(string text) => builder => builder.AddContent(0, text);
 
     /// <summary>
     /// What the environment has of the app that failed, and where that fact came from.
@@ -1390,7 +1390,7 @@
     /// finished deployment clears the cache, so it is only there when someone read the
     /// environment since); otherwise the version the run itself read before it began.
     /// </summary>
-    private string? ReportedVersion(DeliveryAppRow failed)
+    private RenderFragment? ReportedVersion(DeliveryAppRow failed)
     {
         var panel = _rp is null ? null : PanelCache.Get(_rp.ProjectId, _rp.ProjectEnvironmentId);
         var installed = panel?.InstalledApps.FirstOrDefault(a =>
@@ -1398,10 +1398,11 @@
             || string.Equals(a.Name, failed.AppName, StringComparison.OrdinalIgnoreCase));
         if (installed is not null)
         {
-            return $"The environment reports {installed.Name} {installed.Version} installed ({RelativeTime.Ago(panel!.FetchedAtUtc)}).";
+            var readAt = panel!.FetchedAtUtc;
+            return @<text>The environment reports @installed.Name @installed.Version installed (<Timestamp Value="@readAt" Relative="true" />).</text>;
         }
         return failed.PreviousVersion is { } before
-            ? $"Before this deployment the environment had {failed.AppName} {before} installed."
+            ? Plain($"Before this deployment the environment had {failed.AppName} {before} installed.")
             : null;
     }
 
@@ -1427,15 +1428,19 @@
         }
     }
 
-    /// <summary>How old the stored mirror of the environment is, as "4 minutes ago".</summary>
-    private string? MirrorAge
+    /// <summary>", 4 minutes ago" after the Business Central section's label; nothing when never read.</summary>
+    private RenderFragment? MirrorAgeTail => MirrorAt is { } age
+        ? @<text>, <Timestamp Value="@age" Relative="true" /></text>
+        : null;
+
+    /// <summary>When the stored mirror of the environment was last read.</summary>
+    private DateTime? MirrorAt
     {
         get
         {
             var env = _rp?.ProjectEnvironment;
             if (env is null || env.FetchedAt == default) return null;
-            var at = env.StatusFetchedAt is { } s && s > env.FetchedAt ? s : env.FetchedAt;
-            return RelativeTime.Ago(at);
+            return env.StatusFetchedAt is { } s && s > env.FetchedAt ? s : env.FetchedAt;
         }
     }
 
@@ -1453,7 +1458,7 @@
             if (!string.IsNullOrWhiteSpace(env.BcNextUpdateVersion))
             {
                 return env.BcNextUpdateDate is { } date
-                    ? $"{env.BcNextUpdateVersion}, {Local(date).ToString("d MMM", CultureInfo.InvariantCulture)}"
+                    ? $"{env.BcNextUpdateVersion}, {Zone.Format(date, "d MMM")}"
                     : env.BcNextUpdateVersion;
             }
             return env.BcNextUpdateFetchedAt is not null ? "None scheduled" : null;
@@ -1525,17 +1530,15 @@
         : !string.IsNullOrWhiteSpace(d.BuildBranch) ? $"Build #{d.ProjectBuildId} from {d.BuildBranch}"
         : $"Build #{d.ProjectBuildId}";
 
-    /// <summary>The phone layout's second line, which carries what the hidden columns do.</summary>
-    private string CompactLine(DeliveryHistoryRow d) =>
-        string.Join(" - ", new[] { OutcomeWhen(d), Took(d), AppsSummary(d) }.Where(s => !string.IsNullOrEmpty(s)));
+    /// <summary>
+    /// The phone layout's second line, which carries what the hidden columns do. The
+    /// markup leads with when (a Timestamp); this is the rest, took and apps.
+    /// </summary>
+    private string CompactTail(DeliveryHistoryRow d) =>
+        string.Concat(new[] { Took(d), AppsSummary(d) }.Where(s => !string.IsNullOrEmpty(s)).Select(s => " - " + s));
 
     private static DateTime? StartOf(DeliveryHistoryRow d) => d.ClaimedAt ?? d.StartedAt;
 
-    private string OutcomeWhen(DeliveryHistoryRow d) => d.IsScheduled
-        ? $"for {When(d.ScheduledFor)}"
-        : RelativeTime.Ago(LastWhen(d));
-
-    private string OutcomeExact(DeliveryHistoryRow d) => Exact(d.IsScheduled ? d.ScheduledFor : LastWhen(d));
 
     private static string? Took(DeliveryHistoryRow d) =>
         d.FinishedAt is { } end && (StartOf(d) ?? (d.Status is ProjectDeliveryStatus.Cancelled or ProjectDeliveryStatus.Dismissed ? null : d.CreatedAt)) is { } start
@@ -1814,7 +1817,8 @@
     private string SupportText(DeliveryHistoryRow d, string raw)
     {
         var when = d.FinishedAt ?? d.StartedAt ?? d.CreatedAt;
-        return $"Deployment {d.Number} of \"{_rp?.Name}\" into \"{d.EnvironmentName}\", failed {when.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC\n{raw}";
+        // In UTC on purpose: this is pasted into a ticket for someone in another zone.
+        return $"Deployment {d.Number} of \"{_rp?.Name}\" into \"{d.EnvironmentName}\", failed {Zone.UtcTooltip(when)}\n{raw}";
     }
 
     internal sealed record LogLine(string Time, string Message, bool Error);
@@ -1847,46 +1851,49 @@
 
     // ── Time ──────────────────────────────────────────────────────────────────
 
-    private DateTime Local(DateTime utc) =>
-        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), _tz);
+    // Instants on this page are shown in the organisation's display zone (#942), with the
+    // exact UTC instant as the hover title (Exact). "Today 02:00" has no Timestamp format,
+    // so these go through the same zone service the component uses. The two things that
+    // stay in the solution's own zone are the delivery window (a time of day agreed with
+    // the customer) and the reschedule picker, which says so beside it.
 
-    /// <summary>"Today 02:00", "Yesterday 15:02", "Tomorrow 22:00", else "20 Sep 11:40" - in the solution's time zone.</summary>
+    /// <summary>Whole days between the instant and today, both counted in the display zone.</summary>
+    private int DaysFromToday(DateTime utc) =>
+        (Zone.ToDisplay(utc).Date - Zone.ToDisplay(DateTime.UtcNow).Date).Days;
+
+    /// <summary>"Today 02:00", "Yesterday 15:02", "Tomorrow 22:00", else "20 Sep 11:40".</summary>
     private string When(DateTime utc, bool seconds = false)
     {
-        var local = Local(utc);
-        var today = Local(DateTime.UtcNow).Date;
-        var time = local.ToString(seconds ? "HH:mm:ss" : "HH:mm", CultureInfo.InvariantCulture);
-        var days = (local.Date - today).Days;
-        return days switch
+        var time = Zone.Format(utc, seconds ? "HH:mm:ss" : "HH:mm");
+        return DaysFromToday(utc) switch
         {
             0 => $"Today {time}",
             -1 => $"Yesterday {time}",
             1 => $"Tomorrow {time}",
-            _ => $"{local.ToString("d MMM", CultureInfo.InvariantCulture)} {time}",
+            _ => $"{Zone.Format(utc, "d MMM")} {time}",
         };
     }
 
     /// <summary>The same moment inside a sentence: "today at 22:00", "on 20 Sep at 11:40".</summary>
     private string WhenPhrase(DateTime utc)
     {
-        var local = Local(utc);
-        var time = local.ToString("HH:mm", CultureInfo.InvariantCulture);
-        return (local.Date - Local(DateTime.UtcNow).Date).Days switch
+        var time = Zone.Format(utc, "HH:mm");
+        return DaysFromToday(utc) switch
         {
             0 => $"today at {time}",
             -1 => $"yesterday at {time}",
             1 => $"tomorrow at {time}",
-            _ => $"on {local.ToString("d MMM", CultureInfo.InvariantCulture)} at {time}",
+            _ => $"on {Zone.Format(utc, "d MMM")} at {time}",
         };
     }
 
-    private string Clock(DateTime utc) => Local(utc).ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+    private string Clock(DateTime utc) => Zone.Format(utc, "HH:mm:ss");
 
-    private string Exact(DateTime utc) =>
-        $"{Local(utc).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} ({_tzLabel})";
+    /// <summary>The hover title behind a time: the exact instant in UTC, as every Timestamp has.</summary>
+    private string Exact(DateTime utc) => Zone.UtcTooltip(utc);
 
-    /// <summary>The scheduled time in the customer's timezone, e.g. "2026-07-01 22:00".</summary>
-    private string ScheduledWhen(DeliveryHistoryRow d) => Local(d.ScheduledFor).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+    /// <summary>The scheduled time, e.g. "2026-07-01 22:00", for the cancel confirmation.</summary>
+    private string ScheduledWhen(DeliveryHistoryRow d) => Zone.Format(d.ScheduledFor, "yyyy-MM-dd HH:mm");
 
     /// <summary>"3m 32s", "0m 48s", "1h 05m" - the sheet's durations.</summary>
     internal static string Duration(TimeSpan span)
@@ -1900,29 +1907,4 @@
     /// <summary>A repository's web address from its clone URL, for the source link.</summary>
     private static string RepositoryWebUrl(string url) =>
         url.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? url[..^4] : url;
-
-    /// <summary>
-    /// The picker label for one releasable build: what it is, not just when it ran.
-    /// A consultant picking a build for a customer's live tenant needs the branch,
-    /// the commit it was built at and how many apps it carries (#714) - e.g.
-    /// "#412 · main @a3f9c21 · 3 apps · built 29 Aug 14:21". Parts the build has no
-    /// value for are dropped rather than shown empty.
-    /// </summary>
-    private static string BuildLabel(BuildRow b, int appCount)
-    {
-        var parts = new List<string> { $"#{b.Id}" };
-
-        var source = string.Join(" ", new[]
-        {
-            b.Branch,
-            string.IsNullOrEmpty(b.HeadCommitShort) ? null : $"@{b.HeadCommitShort}",
-        }.Where(s => !string.IsNullOrEmpty(s)));
-        if (!string.IsNullOrEmpty(source)) parts.Add(source);
-
-        if (appCount > 0) parts.Add(appCount == 1 ? "1 app" : $"{appCount} apps");
-        if (!string.IsNullOrEmpty(b.BcVersion)) parts.Add($"BC {b.BcVersion}");
-        parts.Add("built " + (b.FinishedAt ?? b.StartedAt).ToString("d MMM HH:mm", CultureInfo.InvariantCulture));
-
-        return string.Join(" · ", parts);
-    }
 }

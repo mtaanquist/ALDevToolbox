@@ -4,6 +4,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Delivery;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
+using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,7 @@ public sealed class ReleaseBuildDialogTests : IDisposable
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
+        _ctx.Services.AddUtcDisplayTimeZone();
         _ctx.Services.AddSingleton(NewUnusedDeliveryService());
         _ctx.Services.AddSingleton(NewUnusedGitHubReleaseService());
     }

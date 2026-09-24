@@ -28,11 +28,13 @@
                 {
                     <text>Updates every @UpdateEverySeconds seconds while this tab is open.</text>
                 }
-                Times are in @TimeZoneLabel time, and nothing on this list is stored.
+                Nothing on this list is stored.
             </p>
         </div>
         <span class="u-row env-sessions__tools">
-            <span class="u-muted env-sessions__fresh">@FreshnessText()</span>
+            @* How old the list is, said out loud: a sessions list is the one thing on this
+               page where a minute's age changes the answer - somebody may have signed out since. *@
+            <span class="u-muted env-sessions__fresh">@if (FetchedAt is { } fetchedAt) { <text>Read <Timestamp Value="@fetchedAt" Relative="true" /></text> } else { <text>Not read yet</text> }</span>
             <button type="button" class="btn btn--sm @(Refreshing ? "btn--loading" : "")"
                     @onclick="OnRefresh" disabled="@Refreshing">
                 <Icon Name="refresh-cw" Width="14" Height="14" />
@@ -116,7 +118,7 @@
                         </td>
                         <td>@(string.IsNullOrWhiteSpace(session.UserId) ? "Not named" : session.UserId)</td>
                         <td>@BcSessionDisplay.ClientTypeWord(session.ClientType)</td>
-                        <td class="env-sessions__when">@Since(session)</td>
+                        <td class="env-sessions__when"><Timestamp Value="@(session.LogOnDate?.UtcDateTime)" Format="dd MMM, HH:mm" Placeholder="—" /></td>
                         <td>@BcSessionDisplay.Doing(session)</td>
                         <td class="u-num">@BcSessionDisplay.Duration(session.CurrentOperationDuration)</td>
                         @if (CanCancel)
@@ -192,24 +194,7 @@
     /// </summary>
     [Parameter] public string? OperationsHref { get; set; }
 
-    [Parameter] public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Utc;
-    [Parameter] public string TimeZoneLabel { get; set; } = "UTC";
-
     private string LongRunningText =>
         $"{(int)BcSessionDisplay.LongRunningAfter.TotalMinutes} minutes";
 
-    /// <summary>
-    /// How old the list is. Said out loud rather than left to the reader, because a
-    /// sessions list is the one thing on this page where a minute's age changes the
-    /// answer - somebody may have signed out since.
-    /// </summary>
-    private string FreshnessText() =>
-        FetchedAt is { } at ? $"Read {RelativeTime.Ago(at)}" : "Not read yet";
-
-    private string Since(BcSession session)
-    {
-        if (session.LogOnDate is not { } at) return "—";
-        var local = TimeZoneInfo.ConvertTimeFromUtc(at.UtcDateTime, TimeZone);
-        return local.ToString("dd MMM, HH:mm", CultureInfo.InvariantCulture);
-    }
 }

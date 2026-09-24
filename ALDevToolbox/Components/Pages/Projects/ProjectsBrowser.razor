@@ -4,6 +4,7 @@
 @inject IHttpContextAccessor Http
 @inject CustomerModuleService CustomerModules
 @inject ProjectCustomerInfoService CustomerInfo
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using ALDevToolbox.Components.Pages.Projects.Customer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Projects
@@ -395,16 +396,19 @@
         };
     }
 
-    private static string ShippedDate(DeliverySummary shipped) =>
-        shipped.FinishedAt.ToLocalTime().ToString("d MMM yyyy");
+    // The date sits inside a link whose hover title explains what "handed off" means, so
+    // it is formatted in the display zone here rather than as a Timestamp, whose own
+    // title would hide that explanation exactly where people hover.
+    private string ShippedDate(DeliverySummary shipped) =>
+        Zone.Format(shipped.FinishedAt, "d MMM yyyy");
 
     /// <summary>
     /// The hover text for "Last shipped": when, exactly, and what "handed off" means for a
     /// delivery that is waiting on Business Central rather than installed.
     /// </summary>
-    private static string ShippedTitle(DeliverySummary shipped)
+    private string ShippedTitle(DeliverySummary shipped)
     {
-        var when = $"{shipped.FinishedAt.ToLocalTime():d MMM yyyy HH:mm} ({RelativeTime.Ago(shipped.FinishedAt)})";
+        var when = $"{Zone.Format(shipped.FinishedAt, "d MMM yyyy HH:mm")} ({RelativeTime.Ago(shipped.FinishedAt)})";
         var what = shipped.Status == ProjectDeliveryStatus.HandedOff
             ? $"Handed to Business Central {when}. It accepted the apps and installs them in a later update window."
             : $"Installed in production {when}.";

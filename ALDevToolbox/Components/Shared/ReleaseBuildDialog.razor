@@ -3,6 +3,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.Delivery.DeliveryService Deliveries
 @inject ALDevToolbox.Services.GitHub.GitHubReleaseService GitHubReleases
 @inject ILogger<ReleaseBuildDialog> Log
+@inject ALDevToolbox.Services.Organizations.DisplayTimeZone Zone
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -15,7 +16,10 @@
     and deploy. A pipeline set to install in the delivery window says so beside the
     time, and "Now" is the explicit way out of it. "Deploy now" runs immediately; a
     future time is enqueued by the DeliveryScheduler when due. Picking a time outside the window is allowed but
-    recorded. Times are shown in the customer's timezone. Opened imperatively; raises
+    recorded. The picker and the window are in the customer's time zone, and say so: the
+    window is a time of day agreed with the customer, and booking against it in their
+    clock is what keeps the two tellable apart (#942). Build and release dates in the
+    pickers are instants, shown in the organisation's display zone. Opened imperatively; raises
     OnReleased with the new delivery id. See .design/saas-delivery.md.
 
     Named user: a BC consultant publishing a finished build to a customer environment.
@@ -263,11 +267,15 @@
     private IReadOnlyList<string> SelectedReleaseFiles =>
         _releases.FirstOrDefault(r => r.Tag == _tag)?.AppFileNames ?? [];
 
-    /// <summary>How one release reads in the picker: its tag, its title when it has a different one, and when it was published.</summary>
-    private static string ReleaseLabel(GitHubReleaseOption release)
+    /// <summary>
+    /// How one release reads in the picker: its tag, its title when it has a different one,
+    /// and when it was published. An option holds text only, so the date goes through the
+    /// display zone here rather than through a Timestamp.
+    /// </summary>
+    private string ReleaseLabel(GitHubReleaseOption release)
     {
         var title = string.IsNullOrWhiteSpace(release.Name) || release.Name == release.Tag ? null : release.Name;
-        var when = release.PublishedAt is { } at ? at.ToLocalTime().ToString("yyyy-MM-dd") : null;
+        var when = release.PublishedAt is { } at ? Zone.Format(at.UtcDateTime, "yyyy-MM-dd") : null;
         var suffix = string.Join(" - ", new[] { title, when }.Where(x => !string.IsNullOrEmpty(x)));
         return suffix.Length == 0 ? release.Tag : $"{release.Tag} ({suffix})";
     }
@@ -298,8 +306,9 @@
             }
             if (ScheduledUtc > expiry)
             {
-                var localExpiry = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(expiry, DateTimeKind.Utc), _tz);
-                return $"The Business Central client secret expires {localExpiry:yyyy-MM-dd}. This deployment is scheduled after that and will fail unless the secret is rotated first.";
+                // A calendar date the consultant typed, stored at midnight UTC: printed as
+                // that date, never converted into a zone that could move it a day.
+                return $"The Business Central client secret expires {expiry:yyyy-MM-dd}. This deployment is scheduled after that and will fail unless the secret is rotated first.";
             }
             return null;
         }
@@ -450,11 +459,12 @@
     /// The picker's options from a build pipeline's builds: the successful ones, newest
     /// first, each with the apps it carries. Shared by every page that opens this
     /// dialog for a build pipeline, so the picker reads the same wherever it opens
-    /// (#938).
+    /// (#938). <paramref name="zone"/> is the page's display zone, for the build time.
     /// </summary>
     public static List<ReleasableBuildOption> OptionsFrom(
         IEnumerable<ALDevToolbox.Services.ObjectExplorer.Projects.BuildRow> builds,
-        IReadOnlyDictionary<int, List<ALDevToolbox.Services.ObjectExplorer.Projects.BuildAppRow>> appsByBuild) =>
+        IReadOnlyDictionary<int, List<ALDevToolbox.Services.ObjectExplorer.Projects.BuildAppRow>> appsByBuild,
+        ALDevToolbox.Services.Organizations.DisplayTimeZone zone) =>
         builds
             .Where(b => b.Status == "ready")
             .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
@@ -463,7 +473,7 @@
                 var apps = appsByBuild.TryGetValue(b.Id, out var found) ? found : [];
                 return new ReleasableBuildOption(
                     b.Id,
-                    OptionLabel(b, apps.Count),
+                    OptionLabel(b, apps.Count, zone),
                     apps.Select(a => new ReleasableBuildApp(a.AppName, a.AppVersion)).ToList());
             })
             .ToList();
@@ -473,9 +483,11 @@
     /// A consultant picking a build for a customer's live tenant needs the branch,
     /// the commit it was built at and how many apps it carries (#714) - e.g.
     /// "#412 · main @a3f9c21 · 3 apps · built 29 Aug 14:21". Parts the build has no
-    /// value for are dropped rather than shown empty.
+    /// value for are dropped rather than shown empty. The build time is in the display
+    /// zone: an option holds text only, so it cannot carry a Timestamp.
     /// </summary>
-    public static string OptionLabel(ALDevToolbox.Services.ObjectExplorer.Projects.BuildRow b, int appCount)
+    public static string OptionLabel(ALDevToolbox.Services.ObjectExplorer.Projects.BuildRow b, int appCount,
+        ALDevToolbox.Services.Organizations.DisplayTimeZone zone)
     {
         var parts = new List<string> { $"#{b.Id}" };
 
@@ -488,7 +500,7 @@
 
         if (appCount > 0) parts.Add(appCount == 1 ? "1 app" : $"{appCount} apps");
         if (!string.IsNullOrEmpty(b.BcVersion)) parts.Add($"BC {b.BcVersion}");
-        parts.Add("built " + (b.FinishedAt ?? b.StartedAt).ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+        parts.Add("built " + zone.Format(b.FinishedAt ?? b.StartedAt, "d MMM HH:mm"));
 
         return string.Join(" · ", parts);
     }

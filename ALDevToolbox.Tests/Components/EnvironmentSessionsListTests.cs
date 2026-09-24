@@ -2,6 +2,7 @@ using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using AwesomeAssertions;
+using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,6 +22,7 @@ public sealed class EnvironmentSessionsListTests : IDisposable
     public EnvironmentSessionsListTests()
     {
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+        _ctx.Services.AddUtcDisplayTimeZone();
     }
 
     public void Dispose() => _ctx.Dispose();
@@ -40,9 +42,7 @@ public sealed class EnvironmentSessionsListTests : IDisposable
             p.Add(c => c.Sessions, sessions)
                 .Add(c => c.EnvironmentName, "Production")
                 .Add(c => c.FetchedAt, DateTime.UtcNow)
-                .Add(c => c.CanCancel, canCancel)
-                .Add(c => c.TimeZone, TimeZoneInfo.FindSystemTimeZoneById("Europe/Copenhagen"))
-                .Add(c => c.TimeZoneLabel, "Copenhagen");
+                .Add(c => c.CanCancel, canCancel);
             extra?.Invoke(p);
         });
 
@@ -61,7 +61,7 @@ public sealed class EnvironmentSessionsListTests : IDisposable
         var rows = cut.FindAll("tbody tr");
         rows[0].Children[1].TextContent.Should().Be("ola@cronus.example");
         rows[0].Children[2].TextContent.Should().Be("Web client");
-        rows[0].Children[3].TextContent.Should().Be("20 Sep, 08:30", "times are in the customer's zone");
+        rows[0].Children[3].TextContent.Should().Be("20 Sep, 06:30", "times are in the organisation's zone, UTC when it has not picked one");
         rows[0].Children[4].TextContent.Should().Be("Post Sales Documents (code unit 82)");
         rows[0].Children[5].TextContent.Should().Be("1 h 2 min");
 
@@ -115,7 +115,7 @@ public sealed class EnvironmentSessionsListTests : IDisposable
 
         cut.Find(".env-sessions__fresh").TextContent.Should().Be("Read just now");
         cut.Find(".card__sub").TextContent.Should().Contain("Updates every 30 seconds")
-            .And.Contain("Times are in Copenhagen time", "the zone is said before the times, not under them");
+            .And.NotContain("Times are in", "the times are in the organisation's zone like every other time, not the customer's");
 
         cut.WaitForAssertion(() => cut.FindAll("button").Single(b => b.TextContent.Contains("Refresh")).Click());
         cut.WaitForAssertion(() => pressed.Should().Be(1));

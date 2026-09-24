@@ -42,6 +42,7 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
         auth.SetAuthorized("owner@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString).AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();
@@ -360,6 +361,56 @@ public sealed class ReleasePipelineDetailTests : IAsyncDisposable
             cut.FindAll(".rp-rel__acts button").Select(b => b.TextContent).Should().Equal("Reschedule", "Cancel");
             cut.FindAll(".rp-step__label").Select(e => e.TextContent).Should().Equal("Scheduled", "Claim", "Upload", "Install");
             cut.FindAll(".rp-app__end .rp-strong").Select(e => e.TextContent).Should().Equal("Pending");
+        });
+    }
+
+    [Fact]
+    public async Task Times_show_in_the_organisations_zone_not_the_solutions_with_the_UTC_instant_on_hover()
+    {
+        // The solution is in Copenhagen; the organisation reads times in Tokyo (issue #942).
+        // A deployment is an instant, so it follows the organisation.
+        await _db.NewOrganizationAdminService(_db.NewContext()).SetDisplayTimeZoneAsync("Asia/Tokyo");
+        var seed = await SeedAsync();
+        var scheduled = new DateTime(2027, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Scheduled, scheduled);
+
+        var cut = Render(seed.ReleasePipelineId);
+
+        cut.WaitForAssertion(() =>
+        {
+            var when = cut.Find(".rp-rel__outcome .cell-stack__sub");
+            when.TextContent.Should().Be("for 15 Jan 21:00", "noon UTC is 21:00 in Tokyo, not 13:00 in Copenhagen");
+            when.GetAttribute("title").Should().Be("2027-01-15 12:00:00 UTC");
+            cut.Find(".rp-summary__sentence").TextContent.Should().Contain("on 15 Jan at 21:00");
+            cut.Markup.Should().NotContain("Times are in", "the list no longer claims the solution's zone");
+        });
+    }
+
+    [Theory]
+    [InlineData("2027-03-27T10:00:00", 9)] // before Copenhagen moves its clocks: UTC+1
+    [InlineData("2027-03-28T10:00:00", 8)] // after: UTC+2
+    public async Task Rescheduling_reads_the_picked_time_in_the_solutions_zone_across_the_March_change(string picked, int utcHour)
+    {
+        // The picker is a wall clock in the customer's zone, as its hint says, whatever
+        // zone the organisation reads times in - so a Tokyo display zone must not move it.
+        await _db.NewOrganizationAdminService(_db.NewContext()).SetDisplayTimeZoneAsync("Asia/Tokyo");
+        var seed = await SeedAsync();
+        await AddDeliveryAsync(seed, ProjectDeliveryStatus.Scheduled, new DateTime(2027, 1, 15, 12, 0, 0, DateTimeKind.Utc));
+
+        var cut = Render(seed.ReleasePipelineId);
+        cut.WaitForAssertion(() => cut.FindAll(".rp-rel__acts button").Single(b => b.TextContent == "Reschedule").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#rs-when").Input(picked);
+            cut.Find(".field__hint").TextContent.Should().Contain("Europe/Copenhagen");
+        });
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions .btn--primary").Single().Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            using var ctx = _db.NewContext();
+            var stored = ctx.OeProjectDeliveries.AsNoTracking().Single().ScheduledFor;
+            stored.Should().Be(new DateTime(2027, 3, int.Parse(picked[8..10]), utcHour, 0, 0));
         });
     }
 

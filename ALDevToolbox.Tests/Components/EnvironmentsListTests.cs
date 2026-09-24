@@ -36,6 +36,7 @@ public sealed class EnvironmentsListTests : IDisposable
         auth.SetAuthorized("owner@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        _ctx.Services.AddDisplayTimeZone(_db);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString)
                 .AddInterceptors(_db.CommandTracker));
@@ -145,12 +146,17 @@ public sealed class EnvironmentsListTests : IDisposable
 
         var cut = _ctx.Render<EnvironmentsList>();
 
-        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(1));
-        var lastChecked = cut.FindAll(".data-table tbody tr td")
-            .Last(c => !c.ClassList.Contains("data-table__actions")).TextContent.Trim();
-        lastChecked.Should().NotBe("never",
-            "the environment was read half an hour ago - only its updates were unreadable");
-        lastChecked.Should().Contain("minutes ago");
+        // Inside the wait: the time is a Timestamp, which renders once the organisation's
+        // zone has been read, a render after the row itself.
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().HaveCount(1);
+            var lastChecked = cut.FindAll(".data-table tbody tr td")
+                .Last(c => !c.ClassList.Contains("data-table__actions")).TextContent.Trim();
+            lastChecked.Should().NotBe("never",
+                "the environment was read half an hour ago - only its updates were unreadable");
+            lastChecked.Should().Contain("minutes ago");
+        });
         cut.Find(".freshness [data-page-refresh]").TextContent.Should().Contain("Refresh",
             "the command palette's Refresh presses the button carrying this mark");
     }

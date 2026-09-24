@@ -49,7 +49,7 @@ else
                            twenty entries reads as people, and "name <email>" on every line
                            is a log format, not a sentence. *@
                         <span class="u-muted" title="@entry.RequestedByEmail">@entry.RequestedByName</span>
-                        <span class="u-muted">@RelativeTime.Ago(entry.RequestedAt)</span>
+                        <span class="u-muted"><Timestamp Value="@entry.RequestedAt" Relative="true" /></span>
                     </div>
                     <div class="eaf__status">
                         <span>@StatusText(entry)</span>
@@ -142,22 +142,31 @@ else
     /// leads with when it runs, because that is the thing somebody reading this needs to
     /// decide whether to cancel it.
     /// </summary>
-    private string StatusText(UpgradeActionRow entry) => entry.Status switch
+    private RenderFragment StatusText(UpgradeActionRow entry)
     {
-        // A booked slot leads with when it runs: that is what somebody deciding whether
-        // to cancel it needs. Past its slot and still waiting is a different fact and
-        // says so plainly rather than promising a time that has gone.
-        UpgradeActionStatus.Pending => entry.ExecuteAfter <= DateTime.UtcNow
-            ? $"Was due at {SlotText(entry.ExecuteAfter)} - hasn't run yet."
-            : $"Runs at {SlotText(entry.ExecuteAfter)}",
-        UpgradeActionStatus.Sent => $"Done {RelativeTime.Ago(entry.SentAt ?? entry.RequestedAt)}",
-        UpgradeActionStatus.Failed => $"Didn't work ({RelativeTime.Ago(entry.SentAt ?? entry.RequestedAt)})",
-        _ => entry.CancelledByName is { Length: > 0 } who
-            ? $"Cancelled by {who} {RelativeTime.Ago(entry.CancelledAt ?? entry.RequestedAt)}"
-            : $"Cancelled {RelativeTime.Ago(entry.CancelledAt ?? entry.RequestedAt)}",
-    };
+        var sent = entry.SentAt ?? entry.RequestedAt;
+        var cancelled = entry.CancelledAt ?? entry.RequestedAt;
+        return entry.Status switch
+        {
+            // A booked slot leads with when it runs: that is what somebody deciding whether
+            // to cancel it needs. Past its slot and still waiting is a different fact and
+            // says so plainly rather than promising a time that has gone.
+            UpgradeActionStatus.Pending => entry.ExecuteAfter <= DateTime.UtcNow
+                ? @<text>Was due at @SlotText(entry.ExecuteAfter) - hasn't run yet.</text>
+                : @<text>Runs at @SlotText(entry.ExecuteAfter)</text>,
+            UpgradeActionStatus.Sent => @<text>Done <Timestamp Value="@sent" Relative="true" /></text>,
+            UpgradeActionStatus.Failed => @<text>Didn't work (<Timestamp Value="@sent" Relative="true" />)</text>,
+            _ => entry.CancelledByName is { Length: > 0 } who
+                ? @<text>Cancelled by @who <Timestamp Value="@cancelled" Relative="true" /></text>
+                : @<text>Cancelled <Timestamp Value="@cancelled" Relative="true" /></text>,
+        };
+    }
 
-    /// <summary>A booked slot in the customer's own time, named — "20:00 on 11 Sep, Europe/Copenhagen time".</summary>
+    /// <summary>
+    /// A booked slot in the customer's own time, named — "20:00 on 11 Sep, Europe/Copenhagen time".
+    /// Not the organisation's display zone: the slot was booked as a wall clock in the
+    /// customer's zone, and is said back the way it was agreed.
+    /// </summary>
     private string SlotText(DateTime utc)
     {
         var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeZone);
