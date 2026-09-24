@@ -74,6 +74,11 @@ internal static class TenantTableCatalog
         "oe_module_translations",
         "oe_projects",
         "oe_project_repositories",
+        // What GitHub's push and pull_request webhooks said about each solution
+        // repository's branches (#963). Not recomputable - nothing polls GitHub
+        // for it - so restored with the repositories they hang off.
+        "oe_repository_branch_heads",
+        "oe_repository_merged_pull_requests",
         "oe_project_environments",
         "oe_environment_upgrade_actions",
         "oe_pipelines",

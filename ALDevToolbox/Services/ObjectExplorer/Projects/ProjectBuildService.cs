@@ -138,7 +138,10 @@ public sealed class ProjectBuildService
         try
         {
             // 1. Clone every repo. A clone failure fails only that repo.
-            var clones = await CloneRepositoriesAsync(project, buildRoot, results, logs, options, ct).ConfigureAwait(false);
+            // A manual build checks out the branch its pipeline watches; a
+            // pull-request build keeps its own head and ignores it (#963).
+            var branch = build is { Trigger: ProjectBuildTrigger.Manual } ? build.Branch : null;
+            var clones = await CloneRepositoriesAsync(project, buildRoot, results, logs, options, branch, ct).ConfigureAwait(false);
 
             // Record the per-repo commit set + changelog while the clones are still
             // on disk (the changelog runs `git log` against them). Best-effort: a
@@ -845,10 +848,25 @@ public sealed class ProjectBuildService
 
     private async Task<List<ClonedRepo>> CloneRepositoriesAsync(
         OeProject project, string buildRoot, List<BuildAppResult> results, List<PendingLog> logs,
-        ProjectBuildOptions options, CancellationToken ct)
+        ProjectBuildOptions options, string? branch, CancellationToken ct)
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var clones = new List<ClonedRepo>();
+
+        // The branch came from a form a person filled in, so it is held to the
+        // same rule here, at the boundary that runs git, as the pipeline editor
+        // held it to - a stored value that predates the rule, or a second caller,
+        // must not reach the command line unchecked.
+        if (branch is not null && !GitBranchName.IsValid(branch))
+        {
+            foreach (var repo in project.Repositories)
+            {
+                results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
+                    "The pipeline's branch name is not one git accepts. Edit the pipeline and correct it.", RepoUrl: repo.Url));
+            }
+            logs.Add(new PendingLog(null, "Build", "Refused a branch name that git does not accept."));
+            return clones;
+        }
         var index = 0;
         foreach (var repo in project.Repositories)
         {
@@ -890,7 +908,12 @@ public sealed class ProjectBuildService
             // the changelog needs. The token travels in the environment
             // (GIT_CONFIG_* http.extraHeader), never in the URL, on disk, or in the
             // world-readable process argv.
-            var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
+            var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet" };
+            // The pipeline's watched branch, when it names one. A repository
+            // without that branch fails its clone with git's own message, which
+            // names the branch - the same as any other clone failure.
+            if (branch is not null) args.AddRange(["--branch", branch]);
+            args.AddRange([repo.Url, dest]);
             var (result, used, cloneFailure) = await CloneWithAsync(gitPath, args, buildRoot, dest, BuildCloneTimeout(), credentials, repo, ct)
                 .ConfigureAwait(false);
             var pat = used.Secret;

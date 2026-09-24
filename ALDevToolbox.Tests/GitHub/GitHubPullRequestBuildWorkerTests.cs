@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using ALDevToolbox.Data;
+using ALDevToolbox.Endpoints;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.GitHub;
@@ -198,6 +199,225 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
             .Which.ForkAuthor.Should().BeNull("a branch of the repository is not anybody's fork");
     }
 
+    // --- Branch watching: replayed push and merged-PR deliveries (#963) -----
+
+    [Fact]
+    public async Task A_push_to_a_tracked_repository_stores_the_branch_head()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var builds = new ReleaseImportQueue();
+
+        await NewWorker(builds: builds).RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(commitCount: 3)), CancellationToken.None);
+
+        var head = (await HeadsAsync()).Should().ContainSingle().Subject;
+        head.Branch.Should().Be("main");
+        head.HeadSha.Should().Be(GitHubWebhookPayloads.After);
+        head.PusherLogin.Should().Be("erik");
+        head.CommitCount.Should().Be(3);
+        head.Forced.Should().BeFalse();
+        head.IsDefaultBranch.Should().BeTrue();
+        head.DeletedAt.Should().BeNull();
+        head.PushedAt.Should().Be(DateTimeOffset.FromUnixTimeSeconds(1_790_000_000).UtcDateTime);
+        head.OrganizationId.Should().Be(TestDb.DefaultOrgId);
+        var commits = GitHubBranchActivityService.ReadCommits(head.CommitsJson);
+        commits.Select(c => c.Sha).Should().Equal(
+            GitHubWebhookPayloads.Sha(1), GitHubWebhookPayloads.Sha(2), GitHubWebhookPayloads.After);
+        commits[0].Message.Should().StartWith("Commit 1 on main");
+        builds.Reader.TryRead(out _).Should().BeFalse("nothing is built on a push");
+    }
+
+    [Fact]
+    public async Task A_push_keeps_only_the_newest_ten_commits()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+
+        await NewWorker().RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(commitCount: 20)), CancellationToken.None);
+
+        var head = (await HeadsAsync()).Single();
+        head.CommitCount.Should().Be(20, "the count is what the push carried");
+        var commits = GitHubBranchActivityService.ReadCommits(head.CommitsJson);
+        commits.Should().HaveCount(10);
+        commits[^1].Sha.Should().Be(GitHubWebhookPayloads.After, "the newest are the ones kept");
+    }
+
+    [Fact]
+    public async Task A_fast_forward_push_adds_to_the_stored_commits()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var worker = NewWorker();
+        const string Next = "4444444444444444444444444444444444444444";
+
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(commitCount: 1)), CancellationToken.None);
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(
+            before: GitHubWebhookPayloads.After, after: Next, commitCount: 1)), CancellationToken.None);
+
+        var head = (await HeadsAsync()).Single();
+        head.HeadSha.Should().Be(Next);
+        GitHubBranchActivityService.ReadCommits(head.CommitsJson).Select(c => c.Sha)
+            .Should().Equal(GitHubWebhookPayloads.After, Next);
+    }
+
+    [Fact]
+    public async Task A_force_push_is_flagged_and_replaces_the_stored_commits()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var worker = NewWorker();
+        const string Rewritten = "5555555555555555555555555555555555555555";
+
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(commitCount: 2)), CancellationToken.None);
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(
+            before: GitHubWebhookPayloads.After, after: Rewritten, forced: true, commitCount: 1)), CancellationToken.None);
+
+        var head = (await HeadsAsync()).Single();
+        head.HeadSha.Should().Be(Rewritten);
+        head.Forced.Should().BeTrue();
+        GitHubBranchActivityService.ReadCommits(head.CommitsJson).Select(c => c.Sha)
+            .Should().Equal([Rewritten], "the rewritten-away commits may not be on the branch any more");
+    }
+
+    [Fact]
+    public async Task A_deleted_branch_is_marked_gone_rather_than_removed_and_comes_back_when_pushed_again()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var worker = NewWorker();
+
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(branch: "release/25.0")), CancellationToken.None);
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(
+            branch: "release/25.0", before: GitHubWebhookPayloads.After, deleted: true)), CancellationToken.None);
+
+        var gone = (await HeadsAsync()).Single();
+        gone.DeletedAt.Should().NotBeNull();
+        gone.HeadSha.Should().Be(GitHubWebhookPayloads.After, "the commit the branch last pointed at is kept");
+        gone.IsDefaultBranch.Should().BeFalse();
+
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(
+            branch: "release/25.0", before: GitHubWebhookPayloads.Zero, created: true)), CancellationToken.None);
+
+        (await HeadsAsync()).Single().DeletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_tag_push_is_not_read_as_a_branch_moving()
+    {
+        var job = GitHubWebhookEndpoints.TryReadPush(
+            System.Text.Encoding.UTF8.GetBytes(GitHubWebhookPayloads.Push(reference: "refs/tags/v25.0.1")),
+            "delivery", NullLogger.Instance);
+
+        job.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_push_to_a_repository_no_solution_tracks_writes_nothing()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+
+        await NewWorker().RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(
+            cloneUrl: "https://github.com/cronus-dk/somebody-elses-tool.git")), CancellationToken.None);
+
+        (await HeadsAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_push_for_an_installation_nobody_connected_writes_nothing()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+
+        await NewWorker().RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(installationId: 4242)), CancellationToken.None);
+
+        (await HeadsAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Every_solution_tracking_the_repository_gets_its_own_head()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        await SeedSolutionTrackingTheRepositoryAsync("CRONUS Second Solution", "https://github.com/CRONUS-dk/customer-app");
+
+        await NewWorker().RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push()), CancellationToken.None);
+
+        (await HeadsAsync()).Select(h => h.ProjectRepositoryId).Distinct().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task A_default_branch_rename_moves_the_default_flag_on_the_next_push()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var worker = NewWorker();
+
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(branch: "master", defaultBranch: "master")), CancellationToken.None);
+        await worker.RunOneAsync(ReplayPush(GitHubWebhookPayloads.Push(branch: "main", defaultBranch: "main")), CancellationToken.None);
+
+        var heads = await HeadsAsync();
+        heads.Single(h => h.Branch == "main").IsDefaultBranch.Should().BeTrue();
+        heads.Single(h => h.Branch == "master").IsDefaultBranch.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_merged_pull_request_is_recorded_once_even_when_redelivered()
+    {
+        await ConfigureDeploymentAsync();
+        await ConnectAsync(TestDb.DefaultOrgId, ConnectedInstallation, "cronus-dk");
+        await SeedSolutionTrackingTheRepositoryAsync();
+        var worker = NewWorker();
+        var builds = new ReleaseImportQueue();
+        var job = GitHubWebhookEndpoints.TryReadMergedPullRequest(
+            System.Text.Encoding.UTF8.GetBytes(GitHubWebhookPayloads.MergedPullRequest(number: 12)), "delivery", NullLogger.Instance);
+        job.Should().NotBeNull();
+
+        await NewWorker(builds: builds).RunOneAsync(job!, CancellationToken.None);
+        await worker.RunOneAsync(job!, CancellationToken.None);
+
+        await using var ctx = _db.NewContext();
+        var row = (await ctx.OeRepositoryMergedPullRequests.AsNoTracking().ToListAsync()).Should().ContainSingle().Subject;
+        row.Number.Should().Be(12);
+        row.Title.Should().Be("Post VAT to the right account");
+        row.BaseBranch.Should().Be("main");
+        row.MergeSha.Should().Be(GitHubWebhookPayloads.MergeSha);
+        row.MergedAt.Should().Be(new DateTime(2026, 9, 24, 8, 30, 0, DateTimeKind.Utc));
+        row.AuthorLogin.Should().Be("erik");
+        builds.Reader.TryRead(out _).Should().BeFalse("a merged pull request is recorded, not built");
+    }
+
+    [Fact]
+    public void A_pull_request_closed_without_merging_is_not_read_as_a_merge()
+    {
+        var job = GitHubWebhookEndpoints.TryReadMergedPullRequest(
+            System.Text.Encoding.UTF8.GetBytes(GitHubWebhookPayloads.MergedPullRequest(merged: false)), "delivery", NullLogger.Instance);
+
+        job.Should().BeNull();
+    }
+
+    private static GitHubPushJob ReplayPush(string json)
+    {
+        var job = GitHubWebhookEndpoints.TryReadPush(System.Text.Encoding.UTF8.GetBytes(json), "delivery", NullLogger.Instance);
+        job.Should().NotBeNull("the replayed payload is a branch push the parser accepts");
+        return job!;
+    }
+
+    private async Task<List<ALDevToolbox.Domain.Entities.ObjectExplorer.OeRepositoryBranchHead>> HeadsAsync()
+    {
+        await using var ctx = _db.NewContext();
+        return await ctx.OeRepositoryBranchHeads.AsNoTracking().OrderBy(h => h.Id).ToListAsync();
+    }
+
     // --- Fixture -----------------------------------------------------------
 
     private static GitHubPullRequestJob NewJob(bool isMemberFork = false, string authorLogin = "erik") => new(
@@ -228,13 +448,14 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
     }
 
     /// <summary>A solution tracking the repository the deliveries are about.</summary>
-    private async Task SeedSolutionTrackingTheRepositoryAsync()
+    private async Task SeedSolutionTrackingTheRepositoryAsync(
+        string name = "CRONUS Customer App", string url = "https://github.com/cronus-dk/customer-app.git")
     {
         await using var ctx = _db.NewContext();
         var project = new ALDevToolbox.Domain.Entities.ObjectExplorer.OeProject
         {
             OrganizationId = TestDb.DefaultOrgId,
-            Name = "CRONUS Customer App",
+            Name = name,
             CreatedAt = DateTime.UtcNow,
         };
         ctx.OeProjects.Add(project);
@@ -244,7 +465,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         {
             OrganizationId = TestDb.DefaultOrgId,
             ProjectId = project.Id,
-            Url = "https://github.com/cronus-dk/customer-app.git",
+            Url = url,
             Provider = ALDevToolbox.Domain.ValueObjects.RepositoryProvider.GitHub,
             DisplayName = "customer-app",
         });
@@ -298,6 +519,7 @@ public sealed class GitHubPullRequestBuildWorkerTests : IDisposable
         services.AddScoped<PersistedImportJobs>();
         services.AddScoped<ProjectAccess>();
         services.AddScoped<ProjectBuildImporter>();
+        services.AddScoped<GitHubBranchActivityService>();
 
         var provider = services.BuildServiceProvider();
         return new GitHubPullRequestBuildWorker(

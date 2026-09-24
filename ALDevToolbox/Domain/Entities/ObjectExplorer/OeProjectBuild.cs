@@ -54,8 +54,10 @@ public class OeProjectBuild
     public OeRelease? Release { get; set; }
 
     /// <summary>
-    /// The branch built (provenance label). A manual build clones the default
-    /// branch and leaves this null; a pull-request build stamps the head ref.
+    /// The branch built. A manual build snapshots its pipeline's branch here and
+    /// clones it (null = each repository's default branch, #963); a pull-request
+    /// build stamps the head ref as a provenance label and checks out the head
+    /// commit instead.
     /// </summary>
     public string? Branch { get; set; }
 

@@ -74,7 +74,7 @@
                             names. The first is where GitHub sends an admin back to after they
                             install the app, the second is where it sends anyone who connects
                             their own GitHub account, and the third is where it tells the
-                            workbench that a pull request has changed. Make up a webhook secret
+                            workbench that a pull request changed or a branch got new commits. Make up a webhook secret
                             of your own, paste the same text into GitHub's Webhook secret box
                             and into the Webhook secret field below. Tick "Active" beside the
                             webhook on GitHub.
@@ -102,13 +102,15 @@
                         </Text>
                     </SetupStep>
 
-                    <SetupStep Number="5" Title="Subscribe it to pull requests">
+                    <SetupStep Number="5" Title="Subscribe the app to Push and Pull request events">
                         <Text>
                             Further down the same page, under "Subscribe to events", tick
-                            "Pull request". That is what lets the workbench build a branch when
-                            somebody opens a pull request and post the result back on it.
-                            Leave it unticked and nothing else changes - the workbench simply
-                            never hears about pull requests.
+                            "Push" and "Pull request". Pull request events let the workbench build
+                            a pull request as soon as someone opens it, and post the result back
+                            on it; push events let a pipeline show when its branch has new
+                            commits it hasn't built yet. You can leave either one unticked -
+                            everything else still works, the workbench just won't hear about
+                            those events.
                         </Text>
                     </SetupStep>
 
@@ -142,7 +144,7 @@
                     </SettingRow>
 
                     <SettingRow Name="Webhook URL"
-                                Hint="On GitHub, put this in the app's Webhook URL box and tick Active. It is how GitHub tells the workbench a pull request has changed, so it can build the branch and report back.">
+                                Hint="Paste this into the app's Webhook URL box on GitHub, tick Active, and subscribe the app to the Push and Pull request events (steps 2 and 5). It is how GitHub tells the workbench when a pull request changes or a branch gets new commits.">
                         <input class="input input--ro" type="text" value="@WebhookUrl" readonly
                                aria-label="Webhook URL to copy into GitHub" />
                         @if (!Origin.IsConfigured)

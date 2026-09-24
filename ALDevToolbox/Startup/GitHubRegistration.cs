@@ -48,6 +48,9 @@ public static class GitHubRegistration
         services.AddScoped<GitHubCheckRunService>();
         services.AddSingleton<GitHubWebhookQueue>();
         services.AddHostedService<GitHubPullRequestBuildWorker>();
+        // Branch watching (#963): the same worker records push and merged-pull-
+        // request deliveries through this, inside the organisation it resolved.
+        services.AddScoped<GitHubBranchActivityService>();
         // Typed client on a fixed public host (api.github.com), so no SSRF
         // guard is needed - just a bounded timeout and the headers GitHub
         // requires on every request. Authorization is set per request, because

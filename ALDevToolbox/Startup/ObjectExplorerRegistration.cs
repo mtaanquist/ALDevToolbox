@@ -86,6 +86,8 @@ public static class ObjectExplorerRegistration
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.CloneCredentialResolver>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.ProjectBuildImporter>();
+        // Whether a pipeline's last build is still what its watched branch holds (#963).
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Projects.BuildFreshnessService>();
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
         // Background warm of the per-project discovered-extensions cache (the pipeline
         // editor's checklist): an in-process queue + worker, mirroring the release-import

@@ -67,6 +67,13 @@
                                disabled="@_saving" placeholder="e.g. Production or Test environment" />
                         <small class="field__hint">A solution can have several pipelines, each compiling a different set of extensions - name this one for its environment.</small>
                     </div>
+                    <div class="field">
+                        <label class="field__label" for="pe-branch">Branch (optional)</label>
+                        <input id="pe-branch" type="text" class="input" maxlength="@GitBranchName.MaxLength"
+                               pattern="@GitBranchName.HtmlPattern" @bind="_branch"
+                               disabled="@_saving" placeholder="e.g. main or release/25.0" spellcheck="false" autocomplete="off" />
+                        <small class="field__hint">Builds check out this branch. Leave empty for each repository's default branch.</small>
+                    </div>
                 }
 
                 @if (_pickProject && _projectId == 0)
@@ -232,6 +239,8 @@
     private string? _projectName;
     private int? _pipelineId;
     private string _name = string.Empty;
+    // The branch the pipeline builds; blank = each repository's default branch (#963).
+    private string _branch = string.Empty;
     // The solution's GitHub repositories inside the connected organisation. Empty
     // (and the whole field hidden) when there is no GitHub connection - an
     // organisation on Azure DevOps is shown no GitHub machinery at all.
@@ -292,7 +301,7 @@
 
     /// <summary>Opens the dialog to edit an existing pipeline. <paramref name="requestedAppIdsJson"/> is the stored selection (null = all).</summary>
     public async Task OpenForEditAsync(int pipelineId, int projectId, string projectName, string name, string? requestedAppIdsJson,
-        int? githubReleaseRepositoryId = null)
+        int? githubReleaseRepositoryId = null, string? branch = null)
     {
         ResetForCreate();
         _editing = true;
@@ -305,6 +314,7 @@
         _initialSelection = parsed;
         _initialIsAll = parsed is null;
         _releaseRepositoryId = githubReleaseRepositoryId ?? 0;
+        _branch = branch ?? string.Empty;
         _open = true;
         _focusPending = true;
         await LoadReleaseRepositoriesAsync();
@@ -317,6 +327,7 @@
         _editing = false;
         _pipelineId = null;
         _name = string.Empty;
+        _branch = string.Empty;
         _initialSelection = null;
         _initialIsAll = true; // new pipelines default to "build everything"
         _selectionSeeded = false;
@@ -626,7 +637,8 @@
             var selection = picked.Count == _extensions.Count ? null : picked;
             var input = new PipelineInput(
                 _projectId, _name.Trim(), selection,
-                _releaseRepositoryId == 0 ? null : _releaseRepositoryId);
+                _releaseRepositoryId == 0 ? null : _releaseRepositoryId,
+                string.IsNullOrWhiteSpace(_branch) ? null : _branch.Trim());
 
             int id;
             if (_editing && _pipelineId is { } pid)

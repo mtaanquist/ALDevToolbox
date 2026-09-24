@@ -54,6 +54,16 @@ public class OePipeline
     public int? GithubReleaseRepositoryId { get; set; }
     public OeProjectRepository? GithubReleaseRepository { get; set; }
 
+    /// <summary>
+    /// The branch this pipeline builds and watches, checked out in every repository
+    /// of the solution. Null means each repository's default branch, which is what
+    /// a build took before pipelines had a branch. Held to
+    /// <c>GitBranchName.IsValid</c>. A pull-request build ignores it and keeps its
+    /// own head. See <c>.design/github-integration-phase2.md</c>, "Branch watching"
+    /// (#963).
+    /// </summary>
+    public string? Branch { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
