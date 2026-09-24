@@ -58,6 +58,20 @@ public sealed record OrgIdentityView(
     int MembersWithoutEntraLink,
     string? DisplayTimeZoneId = null);
 
+/// <summary>
+/// The delivery windows a newly discovered environment starts with, one pair per
+/// environment type (issue #962). A pair of nulls means "any time". Clock digits in
+/// the customer's zone, copied as they are onto the new environment.
+/// </summary>
+public sealed record DefaultDeliveryWindows(
+    TimeOnly? ProductionStart,
+    TimeOnly? ProductionEnd,
+    TimeOnly? SandboxStart,
+    TimeOnly? SandboxEnd)
+{
+    public static readonly DefaultDeliveryWindows None = new(null, null, null, null);
+}
+
 /// <summary>The current org's tool switches, for Administration → Tools.</summary>
 public sealed record OrgToolsView(bool McpEnabled, HashSet<ToolKey> DisabledTools);
 
@@ -306,6 +320,54 @@ public sealed class OrganizationAdminService
         await _db.SaveChangesAsync(ct);
         _config.InvalidateCache(orgId);
         _logger.LogInformation("Org {OrgId} set display_time_zone_id = {ZoneId}.", orgId, normalised ?? "UTC");
+    }
+
+    /// <summary>
+    /// Sets the delivery windows new Production and Sandbox environments start with
+    /// (issue #962). Each pair is both-or-neither, the same rule as an environment's own
+    /// window editor; a half-filled pair is refused under
+    /// <c>DefaultDeliveryWindowProduction</c> or <c>DefaultDeliveryWindowSandbox</c> and
+    /// nothing is saved. Only discovery reads it, and only when it creates a row: no
+    /// existing environment changes. Audited through the interceptor like the other
+    /// settings columns. See <c>.design/saas-delivery.md</c> ("Update window").
+    /// </summary>
+    public async Task SetDefaultDeliveryWindowsAsync(DefaultDeliveryWindows windows, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var errors = new Dictionary<string, string>();
+        if (windows.ProductionStart is null != (windows.ProductionEnd is null))
+        {
+            errors["DefaultDeliveryWindowProduction"] = "Set both a start and an end time, or clear both for 'any time'.";
+        }
+        if (windows.SandboxStart is null != (windows.SandboxEnd is null))
+        {
+            errors["DefaultDeliveryWindowSandbox"] = "Set both a start and an end time, or clear both for 'any time'.";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        if (row.DefaultDeliveryWindowProductionStart == windows.ProductionStart
+            && row.DefaultDeliveryWindowProductionEnd == windows.ProductionEnd
+            && row.DefaultDeliveryWindowSandboxStart == windows.SandboxStart
+            && row.DefaultDeliveryWindowSandboxEnd == windows.SandboxEnd)
+        {
+            return;
+        }
+        row.DefaultDeliveryWindowProductionStart = windows.ProductionStart;
+        row.DefaultDeliveryWindowProductionEnd = windows.ProductionEnd;
+        row.DefaultDeliveryWindowSandboxStart = windows.SandboxStart;
+        row.DefaultDeliveryWindowSandboxEnd = windows.SandboxEnd;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _config.InvalidateCache(orgId);
+        _logger.LogInformation(
+            "Org {OrgId} set default delivery windows: Production {ProductionStart}-{ProductionEnd}, Sandbox {SandboxStart}-{SandboxEnd}.",
+            orgId, windows.ProductionStart, windows.ProductionEnd, windows.SandboxStart, windows.SandboxEnd);
     }
 
     /// <summary>
