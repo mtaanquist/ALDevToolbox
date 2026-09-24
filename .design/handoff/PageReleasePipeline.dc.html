@@ -16,14 +16,14 @@
 </helmet>
 <div class="doc">
   <header class="doc__head">
-    <p class="doc__eyebrow">AL Workbench - page sheet - Releases</p>
-    <h1 class="doc__title">Release pipeline</h1>
-    <p class="doc__sub">One release pipeline, read by someone who was just told "the release to Contoso's test environment failed". The summary card answers "is this healthy"; the releases list answers what, when, how long and why without leaving the page. Built on the detail archetype (<code>PageDetail</code>); like <code>PageEnvironmentDetail</code>, data stored by AL Workbench and data read live from Business Central sit in separate, labelled blocks. Desktop frames are 1440px shells scaled down; phone frames are 390px at 1:1.</p>
+    <p class="doc__eyebrow">AL Workbench - page sheet - Deployments</p>
+    <h1 class="doc__title">Deployment pipeline</h1>
+    <p class="doc__sub">One deployment pipeline, read by someone who was just told "the deployment to Contoso's test environment failed". The summary card answers "is this healthy"; the deployments list answers what, when, how long and why without leaving the page. Built on the detail archetype (<code>PageDetail</code>); like <code>PageEnvironmentDetail</code>, data stored by AL Workbench and data read live from Business Central sit in separate, labelled blocks. Desktop frames are 1440px shells scaled down; phone frames are 390px at 1:1.</p>
   </header>
 
   <div class="arch">
     <section>
-      <div class="arch__head"><div><span class="arch__n">Failed - desktop</span><h2 class="arch__t">Release 49 failed, expanded</h2></div><span class="arch__use">One app completed, one failed with the reason Business Central gave, one skipped. Timings and log inline. Source and environment are both called "Test".</span></div>
+      <div class="arch__head"><div><span class="arch__n">Failed - desktop</span><h2 class="arch__t">Deployment 49 failed, expanded</h2></div><span class="arch__use">One app completed, one failed with the reason Business Central gave, one skipped. Timings and log inline. Source and environment are both called "Test".</span></div>
       <div class="themes themes--wide">
         <section class="panel" data-theme="light">
           <div class="panel__label"><span class="panel__dot"></span>Light</div>
@@ -37,7 +37,7 @@
     </section>
 
     <section>
-      <div class="arch__head"><div><span class="arch__n">Healthy and Production - desktop</span><h2 class="arch__t">Deployed, and scheduled for tonight</h2></div><span class="arch__use">Rows collapsed to one line. The Production pipeline shows a danger pill, a Force sync warning, the "waiting for approval" slot at the top of the list (future), and Reschedule / Cancel on the scheduled release.</span></div>
+      <div class="arch__head"><div><span class="arch__n">Healthy and Production - desktop</span><h2 class="arch__t">Deployed, and scheduled for tonight</h2></div><span class="arch__use">Rows collapsed to one line. The Production pipeline shows a danger pill, a Force sync warning, the "waiting for approval" slot at the top of the list (future), and Reschedule / Cancel on the scheduled deployment.</span></div>
       <div class="themes themes--wide">
         <section class="panel" data-theme="light">
           <div class="panel__label"><span class="panel__dot"></span>Healthy - light</div>
@@ -51,7 +51,7 @@
     </section>
 
     <section>
-      <div class="arch__head"><div><span class="arch__n">Phone, 390px</span><h2 class="arch__t">Same order, stacked</h2></div><span class="arch__use">Rows become tap targets of at least 44px; the expanded release keeps apps, timings and log, and moves its actions to full-width buttons at the bottom.</span></div>
+      <div class="arch__head"><div><span class="arch__n">Phone, 390px</span><h2 class="arch__t">Same order, stacked</h2></div><span class="arch__use">Rows become tap targets of at least 44px; the expanded deployment keeps apps, timings and log, and moves its actions to full-width buttons at the bottom.</span></div>
       <div style="display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start">
         <section class="panel" data-theme="light" style="flex: none">
           <div class="panel__label"><span class="panel__dot"></span>Failed - light</div>
@@ -69,14 +69,14 @@
     </section>
 
     <section>
-      <div class="arch__head"><div><span class="arch__n">Empty and loading - desktop</span><h2 class="arch__t">Before the first release</h2></div><span class="arch__use">Empty keeps the summary card, because the configuration is still worth checking; the one primary moves from the head into the empty state.</span></div>
+      <div class="arch__head"><div><span class="arch__n">Empty and loading - desktop</span><h2 class="arch__t">Before the first deployment</h2></div><span class="arch__use">Empty keeps the summary card, because the configuration is still worth checking; the one primary moves from the head into the empty state.</span></div>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: var(--space-5)">
         <section class="panel" data-theme="light">
-          <div class="panel__label"><span class="panel__dot"></span>No releases yet - light</div>
+          <div class="panel__label"><span class="panel__dot"></span>No deployments yet - light</div>
           <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipeline" body-kind="empty" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
         </section>
         <section class="panel" data-theme="dark">
-          <div class="panel__label"><span class="panel__dot"></span>No releases yet - dark</div>
+          <div class="panel__label"><span class="panel__dot"></span>No deployments yet - dark</div>
           <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="release-pipeline" body-kind="empty" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
         </section>
         <section class="panel" data-theme="light">
@@ -97,28 +97,28 @@
       <div>
         <h3>Head</h3>
         <ul>
-          <li>Title is the pipeline name; the pill is the environment type: <code>status-pill--danger</code> for Production, <code>--muted</code> for Sandbox. Actions: "All releases", "Edit", and the one <code>.btn--primary</code> "Release".</li>
-          <li>Same-name safety: source and environment are never printed bare. The sub line reads build pipeline "Test" into the Sandbox environment "Test"; the summary labels each ("Source ... build pipeline", "Environment ... Sandbox"). A pipeline called "Releases Test into Test" still reads unambiguously.</li>
+          <li>Title is the pipeline name; the pill is the environment type: <code>status-pill--danger</code> for Production, <code>--muted</code> for Sandbox. Actions: "All deployments", "Edit", and the one <code>.btn--primary</code> "Release".</li>
+          <li>Same-name safety: source and environment are never printed bare. The sub line reads build pipeline "Test" into the Sandbox environment "Test"; the summary labels each ("Source ... build pipeline", "Environment ... Sandbox"). A pipeline called "Deployments Test into Test" still reads unambiguously.</li>
         </ul>
         <h3>Summary card</h3>
         <ul>
-          <li>Top keyline and heading take the health colour: Healthy (success), Last release failed (danger), Scheduled (queued). The sentence says what the environment runs now, which is the question after "it failed".</li>
-          <li>Left block, "This pipeline": stored by AL Workbench - source, when installs run, schema sync, last and next release. Right block, sunken, "From Business Central, 4 min ago": environment, type, health, version, next update. The delivery window is stored on the environment by whoever set it up, so it sits on the left. Never mixed.</li>
+          <li>Top keyline and heading take the health colour: Healthy (success), Last deployment failed (danger), Scheduled (queued). The sentence says what the environment runs now, which is the question after "it failed".</li>
+          <li>Left block, "This pipeline": stored by AL Workbench - source, when installs run, schema sync, last and next deployment. Right block, sunken, "From Business Central, 4 min ago": environment, type, health, version, next update. The delivery window is stored on the environment by whoever set it up, so it sits on the left. Never mixed.</li>
           <li>Force sync carries the warning triangle; on a Production pipeline it also gets a <code>alert--warn</code> saying the data is deleted.</li>
         </ul>
       </div>
       <div>
-        <h3>Releases list</h3>
+        <h3>Deployments list</h3>
         <ul>
-          <li>Collapsed row, 50px: chevron / state glyph / Release n + build / outcome word + relative time / started / took / apps / row actions. Same glyph + right keyline vocabulary as every table. States: scheduled, claimed, uploading, installing (spinning arc), deployed, failed, cancelled, handed to Business Central.</li>
-          <li>Row actions only where they mean something: failed gets "Release again", scheduled gets "Reschedule" and "Cancel". No kebab.</li>
+          <li>Collapsed row, 50px: chevron / state glyph / Deployment n + build / outcome word + relative time / started / took / apps / row actions. Same glyph + right keyline vocabulary as every table. States: scheduled, claimed, uploading, installing (spinning arc), deployed, failed, cancelled, handed to Business Central.</li>
+          <li>Row actions only where they mean something: failed gets "Deploy again", scheduled gets "Reschedule" and "Cancel". No kebab.</li>
           <li>Expanded: failure sentence (<code>alert--danger</code>) that names the app, the cause and what the environment still runs; a step strip with times and durations; per-app results (pending, uploading, installing, scheduled, completed, failed, skipped) with version change and an optional message; a diagnostics log, open by default only on failures, error lines in <code>--danger-bg</code>. The log is the one place mono is used.</li>
-          <li>Drawn from data not recorded yet (issue #929): per-app timings, the version an app moved from, the "Uploaded" step, who cancelled. Until it lands the port hides those cells rather than inventing a value. "Release 49" is a per-pipeline sequence computed for display.</li>
-          <li>"Waiting for approval" (future) sits above the newest release in <code>--warning-bg</code> with Approve / Dismiss as secondary buttons, so it never competes with "Release".</li>
+          <li>Drawn from data not recorded yet (issue #929): per-app timings, the version an app moved from, the "Uploaded" step, who cancelled. Until it lands the port hides those cells rather than inventing a value. "Deployment 49" is a per-pipeline sequence computed for display.</li>
+          <li>"Waiting for approval" (future) sits above the newest deployment in <code>--warning-bg</code> with Approve / Dismiss as secondary buttons, so it never competes with "Release".</li>
         </ul>
         <h3>Files</h3>
         <ul>
-          <li><code>ReleasePipelineBody.dc.html</code>, props <code>kind</code> (failed | healthy | prod | empty | loading) and <code>compact</code>. <code>ShellFrame</code> gained <code>body="release-pipeline"</code>, current under Deliver &gt; Releases. No new tokens or colours.</li>
+          <li><code>ReleasePipelineBody.dc.html</code>, props <code>kind</code> (failed | healthy | prod | empty | loading) and <code>compact</code>. <code>ShellFrame</code> gained <code>body="release-pipeline"</code>, current under Deliver &gt; Deployments. No new tokens or colours.</li>
         </ul>
       </div>
     </div>
