@@ -310,6 +310,21 @@ commands, the order Solutions and Environments use (#966). The filters live in t
 usual. The layout is the design's archetype 15 - see "The Upgrades page, against its designed
 sheet" below.
 
+**The selection outlives the search.** The team builds one evening's batch by finding each
+customer by short name in turn, so the search and the view never untick a row (#985) -
+ticking three customers and then searching for a fourth used to lose the first three. Only a
+re-read of the fleet drops a tick, for an environment that is gone or that the viewer may no
+longer act on. Because part of the selection can then be off screen, the bar says so once
+anything is ticked: "8 selected, 5 shown" (just "8 selected" when every tick is on screen),
+then **Show selected** and **Clear selection**. Show selected replaces the search and the view
+rather than narrowing them: the reader asked to see the selection, and a search left in the
+box from finding the last customer must not hide the other seven. Changing the search or the
+view afterwards ends it, with every tick kept. The header box keeps meaning "every row shown":
+it ticks or unticks the rows on screen and leaves a hidden tick alone. The commands act on
+the whole selection, on screen or not, and every confirm names each environment before
+anything is sent, so a hidden tick is seen before it is acted on. The Environments list
+works the same way; both share `SelectionSet`.
+
 **The join is the guard.** `OeProjectEnvironment` has no visibility rule of its own — it
 inherits its project's. `UpgradeFleetService.ListFleetAsync` therefore reaches the
 environments table *through* `VisibleProjectPredicate`, and any future query that lists
@@ -645,7 +660,8 @@ Where it still differs, and why:
 | --- | --- | --- |
 | "Export the list" and a primary "Refresh from Business Central" in the page head | Refresh in the freshness strip only | There is no export. Refresh sits beside the age it fixes, and a second copy in the head would be the same button twice. Recorded upstream in the design project's `briefs/2026-09-port-corrections.md`, with the freshness copy, the "Solution" column name and the unread-row glyph. |
 | A row menu: Open environment, Open in Business Central, Refresh this environment | The first two, plus Upload an app and Copy, or - on a deleted environment - Recover | A refresh is per solution, not per environment, and the freshness strip already does it. The other three are writes the sheet does not draw; see "Deleted environments" and "Copying an environment". Copy is the only one shown to managers alone, for the reason given there. **Needs a design pass upstream.** |
-| No row selection | A tick box per row (none on a deleted environment), a header box for every row shown, and the list's bulk bar with **Set delivery window...** once something is ticked | Setting the same window on thirty customers is otherwise thirty page visits (#961). The ticks follow the Upgrades sheet; a tab, filter or search that takes a ticked row off the screen drops its tick. The dialog is described in `saas-delivery.md`, "Update window". The solution cell also carries the short name, as the Solutions list does, and the search and the solution filter match it (#966). **No sheet draws the dialog; it needs a design pass upstream.** |
+| No row selection | A tick box per row (none on a deleted environment), a header box for every row shown, and the list's bulk bar with **Set delivery window...** once something is ticked | Setting the same window on thirty customers is otherwise thirty page visits (#961). The ticks follow the Upgrades sheet. A tab, filter or search that takes a ticked row off the screen leaves it ticked (#985), as on the Upgrades page - see "The page"; only a re-read drops the tick of an environment that has gone or been deleted. The header box ticks and unticks the rows shown and nothing else. The dialog lists every ticked environment by name, shown or not, before it writes, and is described in `saas-delivery.md`, "Update window". The solution cell also carries the short name, as the Solutions list does, and the search and the solution filter match it (#966). **No sheet draws the dialog; it needs a design pass upstream.** |
+| No counter | "8 selected, 5 shown" in the bulk bar, then **Show selected** and **Clear selection** | Business Central's own lists show no counter, which is why the sheet has none; but a selection that can be off screen needs one, and a way to see it. Show selected replaces the tab, search and filters while it is on, and changing any of them ends it (#985). **Needs a design pass upstream.** |
 | Three views | A fourth, **Deleted**, when there is one | The sheet has no notion of an environment that is deleted but recoverable. See "Deleted environments" above. |
 | Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
 | Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
@@ -654,8 +670,8 @@ Where it still differs, and why:
 
 `/upgrades` is archetype 15, the actionable list, in `.design/handoff/PageUpgrades.dc.html`. It
 follows the sheet: crumbs, the time-zone rule as a clause of the subtitle, one `.cmdbar` whose
-selection commands are plainly disabled until rows are ticked (no counter and no instruction,
-as in Business Central's own lists), `.check` boxes in a `data-table__col-check` column with
+selection commands are plainly disabled until rows are ticked (no instruction, as in Business
+Central's own lists; the counter is a departure, below), `.check` boxes in a `data-table__col-check` column with
 `is-indeterminate` on the header and `is-selected` on the row, the same glyph-only state cell
 and state wording as the Environments list (`FleetRowState` serves both), `.cell-stack` cells,
 "Now on" and "Latest possible date", bare dates, and the row's commands in one `.ra` menu with
@@ -676,6 +692,7 @@ Where it still differs, and why:
 | The view select first in the bar, then the search | The search first, then the view select, then the commands | The order Solutions and Environments use, with the same search width and F3. Maintainer's decision, 2026-09-24 (#966). |
 | Two fleet commands | A third, **Change the next version...**, beside them in the bar and in the row menu | #960. No sheet: it reuses the bar's disabled-until-ticked button and the other dialogs' preview (grouped rows under `upg-preview__head` headings, the count line, the typed word). **Needs a design pass upstream.** |
 | The solution name alone | The name, then the short name in the Solutions list's quieter tone | #966: customers are called by their abbreviation in daily speech; the search matches it too. |
+| No counter in the bar | Once a row is ticked, "8 selected, 5 shown", **Show selected** and **Clear selection** between the view select and the commands | The search and the view no longer untick rows (#985), so part of a selection can be off screen, and a bar that stayed silent about it would let a command act on customers nobody can see. Business Central's lists have no counter because their selection cannot hide; this one can. Described under "The page". **Needs a design pass upstream.** |
 
 Row menus anywhere in the app now open upwards when there is no room under them
 (`row-actions-menu.js` sets the sheet's `.ra--up`), which this table needed for its last rows.
