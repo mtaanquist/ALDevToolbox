@@ -215,7 +215,9 @@ departs from the ranking below. Alphabetically, `trans` puts "Translation memory
 "Translator" - so the three letters a consultant types for the tool in their sidebar land
 them on the admin page that curates it. The sidebar's order is editorial (tools first,
 then the pages that administer them) and it gets that pair, and the four like it
-(Templates, Cookbook, Object Explorer, Audit log), right by construction.
+(Templates, Cookbook, Object Explorer, Audit log), right by construction. It is the
+*shipped* order, from `NavDestinations`: a person who has rearranged their own sidebar
+(#956) still gets the same tie-break, because the palette searches rather than browses.
 
 Releases and Recipes search **names, titles and a recipe's tags only**, never objects,
 source or recipe bodies - those tables are large and Object Explorer already has a search
