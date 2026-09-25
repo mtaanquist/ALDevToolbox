@@ -98,6 +98,14 @@
                     }
                 </span>
                 <span class="freshness__spacer"></span>
+                @* Per viewer and per visit: nothing remembers it, so a screen left on
+                   overnight does not keep asking tomorrow. The two-hour stop in
+                   AutoRefreshTickAsync is what stands in for knowing the tab is hidden. *@
+                <label class="check freshness__auto @(_autoRefresh ? "is-checked" : "")">
+                    <input type="checkbox" checked="@_autoRefresh" @onchange="OnAutoRefreshChanged" data-auto-refresh />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                    <span>Refresh every 5 minutes</span>
+                </label>
                 <button type="button" class="btn btn--sm @(_refreshing ? "btn--loading" : "")"
                         @onclick="RefreshAsync" disabled="@_refreshing" data-page-refresh>
                     <Icon Name="refresh-cw" Width="14" Height="14" />
@@ -606,9 +614,18 @@
     /// <summary>
     /// Asks for a fresh read of every solution on the page. The refresh runs in the
     /// background worker, so the page polls itself rather than telling the reader to
-    /// reload - the same shape the Upgrades page uses.
+    /// reload - the same shape the Upgrades page uses. A pressed Refresh always asks:
+    /// the person has decided the rows are too old, whatever the timestamps say.
     /// </summary>
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => RequestRefreshAsync(force: true);
+
+    /// <summary>
+    /// The one path both Refresh and the auto-refresh tick take. Unforced, the service
+    /// leaves out any solution Business Central answered for in the last few minutes,
+    /// which is what keeps a room full of open Environments lists from multiplying the
+    /// calls (see UpgradeFleetService.RequestRefreshAsync).
+    /// </summary>
+    private async Task RequestRefreshAsync(bool force)
     {
         if (_refreshing || _rows is null) return;
         _refreshing = true;
@@ -616,22 +633,13 @@
         try
         {
             var projectIds = _rows.Select(r => r.ProjectId).Distinct().ToList();
-            var result = await Fleet.RequestRefreshAsync(projectIds);
+            var result = await Fleet.RequestRefreshAsync(projectIds, force);
             // Skipped rows are solutions this person may see but not act on. Saying
             // "asking about 3 customers" when 3 were asked and 5 were skipped is the
             // honest count, and it explains a table that only partly moves.
             var asked = result.Queued + result.AlreadyRunning;
             var total = projectIds.Count;
-            _refreshNote = asked == 0
-                ? "You can see these environments but not refresh them. Ask an admin on the "
-                  + "solution's page to re-read them."
-                // Saying only the number asked, with a table that then half-moves, reads
-                // as a bug. The ratio explains the rows that stay put.
-                : asked == total
-                    ? $"Asking Business Central about {asked} solution{(asked == 1 ? "" : "s")}. "
-                      + "New answers appear here as they arrive."
-                    : $"Asking Business Central about {asked} of {total} solutions. "
-                      + "The rest aren't yours to refresh.";
+            _refreshNote = RefreshNote(asked, result.Fresh, total);
             if (asked == 0)
             {
                 _refreshing = false;
@@ -645,6 +653,31 @@
             _refreshing = false;
             _error = "Couldn't ask Business Central for a refresh. Try again in a moment.";
         }
+    }
+
+    /// <summary>What a refresh request did, in the reader's words.</summary>
+    private static string RefreshNote(int asked, int fresh, int total)
+    {
+        if (asked == 0)
+        {
+            return fresh > 0
+                ? "Already up to date - Business Central was asked less than five minutes ago."
+                : "You can see these environments but not refresh them. Ask an admin on the "
+                  + "solution's page to re-read them.";
+        }
+        // Saying only the number asked, with a table that then half-moves, reads as a
+        // bug. The ratio explains the rows that stay put.
+        if (asked == total)
+        {
+            return $"Asking Business Central about {asked} solution{(asked == 1 ? "" : "s")}. "
+                   + "New answers appear here as they arrive.";
+        }
+        var rest = fresh == 0
+            ? "The rest aren't yours to refresh."
+            : fresh == total - asked
+                ? "The rest were read less than five minutes ago."
+                : "The rest were read less than five minutes ago or aren't yours to refresh.";
+        return $"Asking Business Central about {asked} of {total} solutions. {rest}";
     }
 
     // A refresh happens off the request thread, so the page re-reads on a timer for a
@@ -688,6 +721,104 @@
     {
         _poll?.Dispose();
         _searchDebounce.Dispose();
+        _autoTimer?.Dispose();
+    }
+
+    // ── Auto-refresh ─────────────────────────────────────────────────────
+
+    /// <summary>How often the auto-refresh asks. Tests shorten it; the page never changes it.</summary>
+    internal static TimeSpan AutoRefreshEvery { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long the auto-refresh runs before it turns itself off. The page cannot tell
+    /// a hidden tab from a watched one without script, so it bounds the time instead:
+    /// a list forgotten in a background tab stops asking after this.
+    /// </summary>
+    internal static TimeSpan AutoRefreshFor { get; set; } = TimeSpan.FromHours(2);
+
+    /// <summary><c>?auto=1</c> opens the page with the auto-refresh already on, for a screen set up to watch it.</summary>
+    [SupplyParameterFromQuery(Name = "auto")] public string? AutoParam { get; set; }
+
+    private bool _autoRefresh;
+    private bool _autoFromAddressDone;
+    private System.Threading.Timer? _autoTimer;
+    private DateTime _autoUntilUtc;
+
+    // After a render rather than in OnInitializedAsync: a prerender must never start a
+    // timer, and the rows have to be there before a first tick has anything to ask about.
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_autoFromAddressDone || _rows is null) return;
+        _autoFromAddressDone = true;
+        if (AutoParam == "1" && !_loadFailed && _rows.Count > 0)
+        {
+            StartAutoRefresh();
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnAutoRefreshChanged(ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            StartAutoRefresh();
+            // Straight away as well: ticking the box is asking for current rows now,
+            // and the freshness gate makes this free when they already are.
+            await AutoRefreshTickAsync();
+        }
+        else
+        {
+            StopAutoRefresh();
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        _autoTimer?.Dispose();
+        _autoRefresh = true;
+        _autoUntilUtc = DateTime.UtcNow.Add(AutoRefreshFor);
+        _autoTimer = new System.Threading.Timer(
+            _ => _ = InvokeAsync(async () =>
+            {
+                await AutoRefreshTickAsync();
+                StateHasChanged();
+            }),
+            null, AutoRefreshEvery, AutoRefreshEvery);
+    }
+
+    private void StopAutoRefresh()
+    {
+        _autoRefresh = false;
+        _autoTimer?.Dispose();
+        _autoTimer = null;
+    }
+
+    /// <summary>
+    /// One auto-refresh round: an unforced request through the same path as Refresh, so
+    /// its answers arrive through the same re-read. Internal so a test can drive it
+    /// without waiting on the timer; it must run on the renderer's context.
+    /// </summary>
+    internal async Task AutoRefreshTickAsync()
+    {
+        if (!_autoRefresh) return;
+        if (DateTime.UtcNow >= _autoUntilUtc)
+        {
+            StopAutoRefresh();
+            _refreshNote = "Stopped refreshing every 5 minutes after two hours. Tick the box again to carry on.";
+            return;
+        }
+        // Never beside a Refresh or its re-reads, and never beside the dialog: the
+        // dialog and the page share one database context.
+        if (_refreshing || _bulkWindowDialog?.IsWorking == true) return;
+        try
+        {
+            await RequestRefreshAsync(force: false);
+        }
+        catch (Exception ex)
+        {
+            // RequestRefreshAsync handles its own failures; this is the timer's last resort.
+            Log.LogError(ex, "Environments auto-refresh tick failed.");
+        }
     }
 
     // ── Filtering ────────────────────────────────────────────────────────

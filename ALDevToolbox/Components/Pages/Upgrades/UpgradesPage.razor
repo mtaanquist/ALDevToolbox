@@ -1231,7 +1231,7 @@
             return;
         }
 
-        var result = await Fleet.RequestRefreshAsync(projectIds);
+        var result = await Fleet.RequestRefreshAsync(projectIds, force: true);
         var asked = result.Queued + result.AlreadyRunning;
         _notice = new Notice(
             $"Asking Business Central about {asked} solution{(asked == 1 ? "" : "s")}. "
