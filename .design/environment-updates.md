@@ -176,9 +176,16 @@ the project; the version change picks the update itself.
   Central update" setting has always used, now also run over a selection from the Upgrades
   page. It refuses a version the live read does not offer (not rolled out to that region or
   tenant yet, or one the environment can only reach through an earlier major), and it
-  refuses while an update is running, which Microsoft owns. It sends **no date**:
+  refuses while an update is running, which Microsoft owns. It normally sends **no date**:
   Business Central keeps or assigns one inside the new version's rollout, and the latest
   possible date changes with the version, so moving the date is a second step afterwards.
+  The exception (#980) is a target update that already carries a date in the past (or
+  within five minutes of now, which will have passed by the time the write lands):
+  Business Central refuses to select it until the date is changed, so a date goes with the
+  selection - the customer's current slot when it is still ahead and inside the new
+  version's latest date, so the agreed day survives the change, otherwise that latest date
+  (where Move dates would put it). With no latest date to fall back on it refuses and sends
+  the person to the admin centre. It never ignores the update window.
   Like the date push, the re-read is also the proof - a re-read that still shows another
   version selected fails the action rather than recording it as done. Gated on managing the
   project *or* the grant, because picking the version was open to a solution's managers
@@ -197,8 +204,8 @@ a failure of the batch.
 ### The wire shape
 
 All three go through the same `PATCH .../environments/{family}/{name}/updates/{targetVersion}`.
-The version change sends `selected` and `targetVersionType` alone; the two date moves add a
-`scheduleDetails` object alongside them. The two scheduling fields go **inside**
+The version change sends `selected` and `targetVersionType` alone, unless its target carries
+a past date (see above); the two date moves add a `scheduleDetails` object alongside them. The two scheduling fields go **inside**
 that object, where the updates read also returns them. Sent at the top level they are
 ignored with a 200, which is how the first version of this failed to move any date:
 
@@ -206,7 +213,7 @@ ignored with a 200, which is how the first version of this failed to move any da
 |---|---|---|
 | `selected` | JSON boolean, always `true` | always — a date set on an update the customer had not picked selects it in the same request |
 | `targetVersionType` | string, verbatim from the updates read | when the read gave one |
-| `scheduleDetails.selectedDateTime` | ISO-8601 in **UTC** (`yyyy-MM-ddTHH:mm:ssZ`) | only when the caller is moving the date; omitting it leaves the customer's existing slot alone |
+| `scheduleDetails.selectedDateTime` | ISO-8601 in **UTC** (`yyyy-MM-ddTHH:mm:ssZ`) | only when the caller is moving the date, or by the version change when its target carries a past date (the current slot if still allowed, else the latest date); omitting it leaves the customer's existing slot alone |
 | `scheduleDetails.ignoreUpdateWindow` | **a real JSON boolean** | only by "update now" |
 
 `ignoreUpdateWindow` is a boolean and not the string `"true"` the Microsoft 365 licence
