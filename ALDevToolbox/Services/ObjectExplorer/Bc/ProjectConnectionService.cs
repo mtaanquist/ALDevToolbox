@@ -465,6 +465,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         await UpsertEnvironmentsAsync(project, environments, ct);
         if (markVerified) project.BcConnectionVerifiedAt = DateTime.UtcNow;
+        project.BcEnvironmentsFetchedAt = DateTime.UtcNow; // the refresh freshness gate reads this
         project.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 

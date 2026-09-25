@@ -778,6 +778,142 @@ public sealed class EnvironmentsListTests : IDisposable
         });
     }
 
+    // ── Auto-refresh (#983) ──────────────────────────────────────────────
+    //
+    // The named user here is an ops engineer with the list open on a second screen
+    // during a release week. The tick is driven directly; the timer only calls it.
+
+    private async Task MakeOwnerAnAdminAsync()
+    {
+        await using var ctx = _db.NewContext();
+        (await ctx.Users.SingleAsync(u => u.Id == OwnerUserId)).Role = UserRole.Admin;
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task StampEnvironmentsReadAsync(int projectId, DateTime at)
+    {
+        await using var ctx = _db.NewContext();
+        (await ctx.OeProjects.SingleAsync(p => p.Id == projectId)).BcEnvironmentsFetchedAt = at;
+        await ctx.SaveChangesAsync();
+    }
+
+    private static AngleSharp.Dom.IElement AutoBox(IRenderedComponent<EnvironmentsList> cut) =>
+        cut.Find(".freshness input[data-auto-refresh]");
+
+    [Fact]
+    public async Task The_auto_refresh_switch_sits_in_the_freshness_strip_and_starts_off()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".freshness .freshness__auto").TextContent.Trim().Should().Be("Refresh every 5 minutes");
+            AutoBox(cut).HasAttribute("checked").Should().BeFalse("nothing remembers it between visits");
+        });
+    }
+
+    [Fact]
+    public async Task Auto_in_the_address_starts_the_page_with_the_switch_on()
+    {
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        _ctx.Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>()
+            .NavigateTo("/environments?auto=1");
+
+        var cut = _ctx.Render<EnvironmentsList>();
+
+        cut.WaitForAssertion(() => AutoBox(cut).HasAttribute("checked").Should().BeTrue());
+    }
+
+    [Fact]
+    public async Task A_tick_asks_Business_Central_about_a_solution_whose_read_has_gone_stale()
+    {
+        await MakeOwnerAnAdminAsync();
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        await StampEnvironmentsReadAsync(id, now.AddMinutes(-10));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => AutoBox(cut));
+        // Ticking the box runs the first round straight away.
+        await AutoBox(cut).ChangeAsync(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = true });
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".note--info .note__body").TextContent.Should().Contain("Asking Business Central about 1 solution"));
+        _ctx.Services.GetRequiredService<EnvironmentRefreshQueue>().IsInFlight(id).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_tick_leaves_a_freshly_read_solution_alone_and_says_so()
+    {
+        await MakeOwnerAnAdminAsync();
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+        await StampEnvironmentsReadAsync(id, now.AddMinutes(-1));
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => AutoBox(cut));
+        await AutoBox(cut).ChangeAsync(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = true });
+        await cut.InvokeAsync(() => cut.Instance.AutoRefreshTickAsync());
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".note--info .note__body").TextContent.Should().StartWith("Already up to date"));
+        _ctx.Services.GetRequiredService<EnvironmentRefreshQueue>().IsInFlight(id).Should().BeFalse(
+            "another open page, or the sweep, read it a minute ago");
+    }
+
+    [Fact]
+    public async Task A_tick_does_nothing_while_the_switch_is_off()
+    {
+        await MakeOwnerAnAdminAsync();
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => AutoBox(cut));
+        await cut.InvokeAsync(() => cut.Instance.AutoRefreshTickAsync());
+
+        _ctx.Services.GetRequiredService<EnvironmentRefreshQueue>().IsInFlight(id).Should().BeFalse();
+        cut.FindAll(".note--info").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_auto_refresh_turns_itself_off_when_its_time_is_up()
+    {
+        await MakeOwnerAnAdminAsync();
+        var id = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(id, "Production", "Production", "Active", now, now);
+
+        var saved = EnvironmentsList.AutoRefreshFor;
+        EnvironmentsList.AutoRefreshFor = TimeSpan.Zero;
+        try
+        {
+            var cut = _ctx.Render<EnvironmentsList>();
+            cut.WaitForAssertion(() => AutoBox(cut));
+            await AutoBox(cut).ChangeAsync(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = true });
+
+            cut.WaitForAssertion(() =>
+            {
+                cut.Find(".note--info .note__body").TextContent.Should().StartWith("Stopped refreshing every 5 minutes");
+                AutoBox(cut).HasAttribute("checked").Should().BeFalse();
+            });
+            _ctx.Services.GetRequiredService<EnvironmentRefreshQueue>().IsInFlight(id).Should().BeFalse();
+        }
+        finally
+        {
+            EnvironmentsList.AutoRefreshFor = saved;
+        }
+    }
+
     /// <summary>
     /// Typing fast used to lose characters: every keystroke redrew the page and wrote
     /// the value of an older keystroke back into the box (#981). The box is bound now,

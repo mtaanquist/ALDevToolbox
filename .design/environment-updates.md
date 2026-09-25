@@ -79,7 +79,7 @@ the previous mirror and its age intact rather than blanking it.
 found nothing** — "nothing is scheduled" and "we never asked" are different facts and the
 page says which it has.
 
-Three things fill it. A consultant's Refresh on the project's Business Central tab; a
+Four things fill it. A consultant's Refresh on the project's Business Central tab; a
 nightly sweep (`EnvironmentRefreshScheduler`, a fixed quiet UTC hour, `DeliveryScheduler`'s
 shape) that offers every BC-connected project to the in-process
 `EnvironmentRefreshQueue`/`Worker` pair so the fleet is fresh each morning without anyone
@@ -92,6 +92,31 @@ anyone who doesn't want to wait. The sweep takes a
 non-user-gated refresh path (the `AcquireDeliveryContextAsync` precedent) and never stamps
 `bc_connection_verified_at` — a refresh nobody asked for must not present itself as the
 consultant's own connection test.
+
+The fourth is the Environments list's **Refresh every 5 minutes** switch (#983), for
+somebody keeping the list open on a second screen through a release week. It is off on every
+visit and remembered nowhere (`?auto=1` in the address opens the page with it on); on, it
+takes the same path as Refresh every five minutes and shows the answers through the same
+20-second re-read. Two things keep it a guest:
+
+- *A freshness gate, on the server.* Every successful read of a solution's environments
+  stamps `oe_projects.bc_environments_fetched_at`, and an unforced refresh request leaves
+  out a solution read less than four minutes ago - four, not five, so a five-minute tick
+  never lands just inside the window and skips a round. The queue's dedupe only coalesces
+  requests while a job is queued or running; the gate is what makes ten open pages cost
+  the same as one, because the organisation asks about each customer at most once per
+  window however many people are watching. The page says "already up to date" when a
+  whole round was fresh. A hand-pressed Refresh, on this page or on Upgrades, is forced
+  and bypasses the gate: the person has decided the rows are too old.
+- *A two-hour stop.* The page cannot tell a hidden tab from a watched one without script,
+  so it bounds the time instead: after two hours the switch turns itself off and the strip
+  says so. A tick is skipped while a Refresh or its re-reads are running, and while the
+  delivery-window dialog is working, since they share the page's database context.
+
+At its busiest that is twelve rounds an hour per customer, each four plus three per
+environment requests (below) - about 130 an hour for a customer with three environments,
+and for a hundred customers about a thousand requests every five minutes from the one
+worker, under two minutes at its one-at-a-time pace.
 
 **The sweep is a guest on somebody else's API, and behaves like one.** Microsoft documents
 no limits for the admin center API, so there is nothing to pace against in advance; what we
@@ -696,6 +721,7 @@ Where it still differs, and why:
 | Three views | A fourth, **Deleted**, when there is one | The sheet has no notion of an environment that is deleted but recoverable. See "Deleted environments" above. |
 | Sortable Customer and Next update headers | Fixed order | Not built. Follow-up. |
 | Previous / Next | Count only | The whole set is rendered; buttons that can never be enabled are noise. |
+| No auto-refresh | A **Refresh every 5 minutes** switch in the freshness strip, off by default | #983: an ops engineer watching the list through a release week. It stops itself after two hours, and a server-side freshness gate keeps several open pages from multiplying the calls; see "Freshness" above. **No sheet draws the switch; it needs a design pass upstream.** |
 
 ## The Upgrades page, against its designed sheet
 

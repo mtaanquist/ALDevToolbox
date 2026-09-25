@@ -435,9 +435,20 @@ public sealed class UpgradeFleetService
     /// page offers this over a selection, and one row the person cannot touch must not
     /// cost them the other ninety-nine. Returns how many projects were newly queued and
     /// how many were already in flight, so the page can say what happened.</para>
+    ///
+    /// <para><b>The freshness gate.</b> The queue's dedupe only coalesces requests while a
+    /// job is queued or running; it forgets a project the moment the worker is done. So
+    /// unless <paramref name="force"/> is set, a project whose environments were read
+    /// less than <see cref="FreshFor"/> ago is not queued again and is counted as
+    /// <see cref="UpgradeRefreshResult.Fresh"/>. That is what keeps the Environments
+    /// list's auto-refresh from multiplying load: however many people have it open, the
+    /// organisation asks Business Central about each customer at most once per window.
+    /// A person pressing Refresh passes <paramref name="force"/> and always gets a new
+    /// read. See <c>.design/environment-updates.md</c>, "Freshness".</para>
     /// </summary>
+    /// <param name="force">Ask even when the last read is still fresh - a hand-pressed Refresh.</param>
     public async Task<UpgradeRefreshResult> RequestRefreshAsync(
-        IEnumerable<int> projectIds, CancellationToken ct = default)
+        IEnumerable<int> projectIds, bool force = false, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(projectIds);
         var orgId = _orgContext.CurrentOrganizationId
@@ -445,7 +456,7 @@ public sealed class UpgradeFleetService
                 "No organization in scope; an environment refresh was requested outside an authenticated request.");
 
         var wanted = projectIds.Distinct().ToList();
-        if (wanted.Count == 0) return new UpgradeRefreshResult(0, 0, 0);
+        if (wanted.Count == 0) return new UpgradeRefreshResult(0, 0, 0, 0);
 
         // One query for the whole selection, and the ops axis is the gate: the refresh
         // reads the customer's tenant with their credentials, so it is the same grant
@@ -455,15 +466,21 @@ public sealed class UpgradeFleetService
         var allowed = await _db.OeProjects.AsNoTracking()
             .Where(actionable)
             .Where(p => wanted.Contains(p.Id) && p.DeletedAt == null)
-            .Select(p => p.Id)
+            .Select(p => new { p.Id, p.BcEnvironmentsFetchedAt })
             .ToListAsync(ct).ConfigureAwait(false);
+
+        var freshSince = DateTime.UtcNow - FreshFor;
+        var fresh = force ? 0 : allowed.Count(p => p.BcEnvironmentsFetchedAt > freshSince);
+        var toAsk = force
+            ? allowed.Select(p => p.Id).ToList()
+            : allowed.Where(p => !(p.BcEnvironmentsFetchedAt > freshSince)).Select(p => p.Id).ToList();
 
         var identity = new AmbientOrganizationScope.OrganizationIdentity(
             orgId, _orgContext.CurrentUserId, _orgContext.IsSiteAdmin, _orgContext.IsSystemOrganization);
 
         var queued = 0;
         var alreadyRunning = 0;
-        foreach (var projectId in allowed)
+        foreach (var projectId in toAsk)
         {
             if (await _refreshQueue.EnqueueAsync(new EnvironmentRefreshJob(projectId, identity), ct).ConfigureAwait(false))
             {
@@ -476,11 +493,18 @@ public sealed class UpgradeFleetService
         }
 
         _logger.LogInformation(
-            "User {UserId} asked for an environment refresh of {Queued} project(s) ({AlreadyRunning} already running, {Skipped} not permitted).",
-            _orgContext.CurrentUserId, queued, alreadyRunning, wanted.Count - allowed.Count);
+            "User {UserId} asked for an environment refresh of {Queued} project(s) ({AlreadyRunning} already running, {Fresh} read recently, {Skipped} not permitted, forced {Force}).",
+            _orgContext.CurrentUserId, queued, alreadyRunning, fresh, wanted.Count - allowed.Count, force);
 
-        return new UpgradeRefreshResult(queued, alreadyRunning, wanted.Count - allowed.Count);
+        return new UpgradeRefreshResult(queued, alreadyRunning, wanted.Count - allowed.Count, fresh);
     }
+
+    /// <summary>
+    /// How long a successful read of a project's environments counts as fresh for an
+    /// unforced refresh. Four minutes, under the Environments list's five-minute
+    /// auto-refresh, so a tick never lands just inside the window and skips a round.
+    /// </summary>
+    internal static readonly TimeSpan FreshFor = TimeSpan.FromMinutes(4);
 }
 
 /// <summary>
@@ -689,10 +713,11 @@ public sealed record OfferedVersionOption(string Version, int RowCount);
 
 /// <summary>
 /// What a refresh request did: how many projects were newly queued, how many were
-/// already being refreshed (a sweep or another person got there first), and how many
-/// were left alone because the caller may not act on them.
+/// already being refreshed (a sweep or another person got there first), how many
+/// were left alone because the caller may not act on them, and how many were not
+/// asked about because Business Central answered for them a few minutes ago.
 /// </summary>
-public sealed record UpgradeRefreshResult(int Queued, int AlreadyRunning, int Skipped);
+public sealed record UpgradeRefreshResult(int Queued, int AlreadyRunning, int Skipped, int Fresh);
 
 /// <summary>
 /// One environment for its own page: the fleet row, plus what only that page shows -

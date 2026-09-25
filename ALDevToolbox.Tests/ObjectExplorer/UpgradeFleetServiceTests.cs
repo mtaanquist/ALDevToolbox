@@ -70,7 +70,8 @@ public sealed class UpgradeFleetServiceTests : IDisposable
     // ── Seeding ─────────────────────────────────────────────────────────
 
     private async Task<int> SeedProjectAsync(
-        string name, ProjectVisibility visibility = ProjectVisibility.Public)
+        string name, ProjectVisibility visibility = ProjectVisibility.Public,
+        DateTime? environmentsFetchedAt = null)
     {
         await using var ctx = _db.NewContext();
         var project = new OeProject
@@ -81,6 +82,7 @@ public sealed class UpgradeFleetServiceTests : IDisposable
             CreatedByUserId = OwnerUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
+            BcEnvironmentsFetchedAt = environmentsFetchedAt,
         };
         ctx.OeProjects.Add(project);
         await ctx.SaveChangesAsync();
@@ -540,6 +542,54 @@ public sealed class UpgradeFleetServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var result = await Svc(ctx).RequestRefreshAsync(Array.Empty<int>());
 
-        result.Should().Be(new UpgradeRefreshResult(0, 0, 0));
+        result.Should().Be(new UpgradeRefreshResult(0, 0, 0, 0));
+    }
+
+    [Fact]
+    public async Task Refresh_leaves_out_a_project_read_in_the_last_few_minutes_and_counts_it_as_fresh()
+    {
+        var fresh = await SeedProjectAsync("CRONUS Denmark", environmentsFetchedAt: DateTime.UtcNow.AddMinutes(-1));
+        await SeedEnvironmentAsync(fresh);
+
+        ActAs(AdminUserId);
+        await using var ctx = _db.NewContext();
+        var result = await Svc(ctx).RequestRefreshAsync(new[] { fresh });
+
+        result.Should().Be(new UpgradeRefreshResult(0, 0, 0, 1),
+            "a read a minute old is not asked for again, however many open pages ask");
+        _queue.IsInFlight(fresh).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Refresh_queues_a_project_whose_last_read_is_older_than_the_window()
+    {
+        var stale = await SeedProjectAsync("CRONUS Denmark", environmentsFetchedAt: DateTime.UtcNow.AddMinutes(-6));
+        await SeedEnvironmentAsync(stale);
+        var neverRead = await SeedProjectAsync("CRONUS Sweden");
+        await SeedEnvironmentAsync(neverRead);
+
+        ActAs(AdminUserId);
+        await using var ctx = _db.NewContext();
+        var result = await Svc(ctx).RequestRefreshAsync(new[] { stale, neverRead });
+
+        result.Queued.Should().Be(2, "a read older than the window, or none at all, is asked for");
+        result.Fresh.Should().Be(0);
+        _queue.IsInFlight(stale).Should().BeTrue();
+        _queue.IsInFlight(neverRead).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_forced_refresh_asks_even_when_the_last_read_is_fresh()
+    {
+        var fresh = await SeedProjectAsync("CRONUS Denmark", environmentsFetchedAt: DateTime.UtcNow.AddMinutes(-1));
+        await SeedEnvironmentAsync(fresh);
+
+        ActAs(AdminUserId);
+        await using var ctx = _db.NewContext();
+        var result = await Svc(ctx).RequestRefreshAsync(new[] { fresh }, force: true);
+
+        result.Queued.Should().Be(1, "a person pressing Refresh has decided the rows are too old");
+        result.Fresh.Should().Be(0);
+        _queue.IsInFlight(fresh).Should().BeTrue();
     }
 }

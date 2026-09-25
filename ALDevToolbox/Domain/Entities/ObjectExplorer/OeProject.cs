@@ -132,7 +132,6 @@ public class OeProject
     /// </summary>
     public string? VoiceAccountNumber { get; set; }
 
-    /// <summary>How to get in: VPN, jump host, who to ask. Prose, never credentials.</summary>
     /// <summary>
     /// The storage the customer's tenant is allowed, across all its environments, in
     /// kilobytes, as Business Central last reported it. Null until read.
@@ -142,6 +141,7 @@ public class OeProject
     /// <summary>When the storage figures were last read - this and each environment's size.</summary>
     public DateTime? BcStorageFetchedAt { get; set; }
 
+    /// <summary>How to get in: VPN, jump host, who to ask. Prose, never credentials.</summary>
     public string? AccessDescription { get; set; }
 
     /// <summary>Where and how it is hosted, beyond the hosting type.</summary>
@@ -176,6 +176,16 @@ public class OeProject
 
     /// <summary>Set by the "Test connection" action (an OAuth token + list-environments round-trip succeeded). Null until first verified.</summary>
     public DateTime? BcConnectionVerifiedAt { get; set; }
+
+    /// <summary>
+    /// When this project's environment list was last read from Business Central
+    /// successfully, by a Test connection, a Refresh or the nightly sweep. Null until the
+    /// first read. It is the freshness gate on a refresh request: a read younger than a
+    /// few minutes is not asked for again unless somebody pressed Refresh themselves, so
+    /// several people with the Environments list open cannot multiply the calls. See
+    /// <c>.design/environment-updates.md</c>, "Freshness".
+    /// </summary>
+    public DateTime? BcEnvironmentsFetchedAt { get; set; }
 
     /// <summary>This project's fetched BC environments (the delivery targets). Populated by Test connection / Refresh.</summary>
     public ICollection<OeProjectEnvironment> Environments { get; set; } = new List<OeProjectEnvironment>();
