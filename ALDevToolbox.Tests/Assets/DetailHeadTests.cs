@@ -149,6 +149,43 @@ public sealed class DetailHeadTests
                    + "crumbs into the flex row that holds the title and the actions");
     }
 
+    /// <summary>
+    /// The two run monitors' heads hold three or four buttons, which at phone width run off
+    /// the right edge unless the head and its actions wrap (#929, #978). DetailPage renders
+    /// the head, so the rules live in app.css keyed on the page's own class.
+    /// </summary>
+    [Theory]
+    [InlineData("ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor", "pb-page")]
+    [InlineData("ALDevToolbox/Components/Pages/Pipelines/ReleasePipelineDetail.razor", "rp-page")]
+    public void A_run_monitor_head_wraps_its_actions_at_phone_width(string page, string pageClass)
+    {
+        StripComments(Read(page)).Should().Contain($"PageClass=\"{pageClass}\"");
+
+        var rules = RulesFor(Read("ALDevToolbox/wwwroot/app.css"));
+        rules.Should().ContainKey($".{pageClass} .detail-head")
+            .WhoseValue.Should().Contain("flex-wrap: wrap");
+        rules.Should().ContainKey($".{pageClass} .page-head__actions")
+            .WhoseValue.Should().Contain("flex-wrap: wrap").And.Contain("flex: 0 1 auto",
+                because: "components.css gives the actions `flex: none`, and a box that cannot "
+                       + "shrink below one line of buttons never wraps them");
+    }
+
+    /// <summary>Each single selector to its declaration block, a selector list split apart.</summary>
+    private static Dictionary<string, string> RulesFor(string css)
+    {
+        var stripped = Regex.Replace(css, @"/\*.*?\*/", "", RegexOptions.Singleline);
+        var rules = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(stripped, @"(?<sel>[^{}@]+)\{(?<body>[^{}]*)\}"))
+        {
+            foreach (var sel in m.Groups["sel"].Value.Split(','))
+            {
+                var key = Regex.Replace(sel.Trim(), @"\s+", " ");
+                rules[key] = rules.TryGetValue(key, out var prior) ? prior + ";" + m.Groups["body"].Value : m.Groups["body"].Value;
+            }
+        }
+        return rules;
+    }
+
     [Fact]
     public void No_detail_page_carries_two_pills_for_one_state()
     {
