@@ -34,6 +34,8 @@ public sealed class EnvironmentsListTests : IDisposable
     {
         var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("owner@example.com");
+        // The search filters straight away here; the one test about the wait sets its own.
+        EnvironmentsList.SearchDebounce = TimeSpan.Zero;
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDisplayTimeZone(_db);
@@ -78,6 +80,8 @@ public sealed class EnvironmentsListTests : IDisposable
 
     public void Dispose()
     {
+        // A test that set a real wait must not hand it to a page in another test class.
+        EnvironmentsList.SearchDebounce = TimeSpan.Zero;
         _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
@@ -666,5 +670,39 @@ public sealed class EnvironmentsListTests : IDisposable
             rows.Should().ContainSingle();
             rows[0].TextContent.Should().Contain("CRONUS Denmark");
         });
+    }
+
+    /// <summary>
+    /// Typing fast used to lose characters: every keystroke redrew the page and wrote
+    /// the value of an older keystroke back into the box (#981). The box is bound now,
+    /// and the table follows once typing pauses.
+    /// </summary>
+    [Fact]
+    public async Task The_table_filters_once_typing_pauses_and_the_box_keeps_every_keystroke()
+    {
+        var cronus = await SeedSolutionAsync("CRONUS Denmark");
+        var other = await SeedSolutionAsync("Fabrikam");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(cronus, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(other, "Live", "Production", "Active", now, now);
+        EnvironmentsList.SearchDebounce = TimeSpan.FromMilliseconds(300);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+
+        cut.Find("input[type=search]").Input("CRONUS");
+        cut.Find("input[type=search]").Input("CRONUS ");
+        cut.Find("input[type=search]").Input("CRONUS D");
+
+        cut.WaitForAssertion(() =>
+            cut.Find("input[type=search]").GetAttribute("value").Should().Be("CRONUS D"));
+
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle();
+            rows[0].TextContent.Should().Contain("CRONUS Denmark");
+        }, TimeSpan.FromSeconds(5));
+        cut.Find("input[type=search]").GetAttribute("value").Should().Be("CRONUS D");
     }
 }

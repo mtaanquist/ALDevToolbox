@@ -180,7 +180,7 @@
         <input class="input" type="search" placeholder="Solution or environment"
                aria-label="Search solution or environment"
                aria-keyshortcuts="F3" title="Search solution or environment (F3)"
-               value="@_search" @oninput="OnSearchInput" />
+               @bind="_searchInput" @bind:event="oninput" @bind:after="OnSearchInput" />
     </Search>
     <Filters>
         <SelectBox style="width: 200px">
@@ -682,15 +682,31 @@
         });
     }
 
-    public void Dispose() => _poll?.Dispose();
+    public void Dispose()
+    {
+        _poll?.Dispose();
+        _searchDebounce.Dispose();
+    }
 
     // ── Filtering ────────────────────────────────────────────────────────
 
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        _search = e.Value?.ToString() ?? string.Empty;
-        PruneSelection();
-    }
+    /// <summary>How long the search box waits for typing to stop before it filters. Tests set it to zero.</summary>
+    internal static TimeSpan SearchDebounce { get; set; } = TimeSpan.FromMilliseconds(200);
+
+    private readonly Debouncer _searchDebounce = new(SearchDebounce);
+
+    // The box is bound to what is being typed; the table filters on _search, which
+    // catches up once typing pauses (#981). Binding the box straight to _search would
+    // redraw the table on every keystroke.
+    private string _searchInput = string.Empty;
+
+    private void OnSearchInput() =>
+        _searchDebounce.Trigger(() => InvokeAsync(() =>
+        {
+            _search = _searchInput;
+            PruneSelection();
+            StateHasChanged();
+        }));
 
     private void SelectTab(Tab tab)
     {
@@ -700,7 +716,8 @@
 
     private void ClearFilters()
     {
-        _search = string.Empty;
+        _searchDebounce.Cancel();
+        _search = _searchInput = string.Empty;
         _solutionFilter = string.Empty;
         _typeFilter = string.Empty;
         _tab = Tab.All;
