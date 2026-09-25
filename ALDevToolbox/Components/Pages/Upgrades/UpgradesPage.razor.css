@@ -568,3 +568,17 @@ a.cell-stack__main {
     padding: var(--space-3) 0 var(--space-1);
     background: var(--surface);
 }
+
+/* The selection, once there is one: its count, then Show selected and Clear
+   selection. The count is text in the bar rather than a button, so it gets the
+   bar's own control height to sit level with the buttons beside it. */
+.upg-picked__count {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-h);
+    padding: 0 var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: var(--fw-medium);
+    color: var(--ink-2);
+    white-space: nowrap;
+}

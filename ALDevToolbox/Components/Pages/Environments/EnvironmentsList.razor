@@ -35,7 +35,9 @@
 
 @{
     // Worked out once: the no-matches state, the table and the count all read it.
-    var shown = _rows is null ? [] : Filtered().ToList();
+    // With Show selected on it is every ticked row, whatever the filters say.
+    var shown = _rows is null ? [] : _selection.Shown(Filtered(), _rows, r => r.EnvironmentId, FilterKey()).ToList();
+    var shownIds = Selectable(shown).Select(r => r.EnvironmentId).ToList();
 }
 
 <ListPage Title="Environments" Sticky="true"
@@ -184,7 +186,7 @@
     </Search>
     <Filters>
         <SelectBox style="width: 200px">
-            <select class="select" aria-label="Filter by solution" @bind="_solutionFilter" @bind:after="PruneSelection">
+            <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
                 <option value="">All solutions</option>
                 @* "CRONUS (CRN)": many customers are only ever called by their short name. *@
                 @foreach (var solution in _rows!.GroupBy(r => r.ProjectName).OrderBy(g => g.Key))
@@ -195,7 +197,7 @@
             </select>
         </SelectBox>
         <SelectBox style="width: 170px">
-            <select class="select" aria-label="Filter by environment type" @bind="_typeFilter" @bind:after="PruneSelection">
+            <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
                 <option value="">All types</option>
                 <option value="Production">Production only</option>
                 <option value="Sandbox">Sandbox only</option>
@@ -214,6 +216,13 @@
         </div>
     </Trailing>
     <NoMatches>
+        @* The frame draws this instead of the table, so the bar comes too: a tab or a
+           search that hides every ticked row is exactly when the count and Show
+           selected are needed. *@
+        @if (_selection.Count > 0)
+        {
+            @BulkBar(shownIds)
+        }
         @* An empty "Needs attention" is good news and must not be dressed as a
            failed search telling the reader to widen their filters. *@
         <div class="card">
@@ -261,31 +270,20 @@
         </div>
     </NoMatches>
     <ChildContent>
-        @if (_selected.Count > 0)
+        @if (_selection.Count > 0)
         {
-            <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
-                <span class="bulk-bar__summary">@_selected.Count selected</span>
-                <div class="bulk-bar__actions">
-                    <button type="button" class="btn btn--sm" @onclick="OpenBulkWindowAsync" disabled="@_busy">
-                        <Icon Name="clock" Width="14" Height="14" />
-                        <span>Set delivery window...</span>
-                    </button>
-                    <button type="button" class="btn btn--sm" @onclick="() => _selected.Clear()">
-                        <Icon Name="x" Width="14" Height="14" />
-                        <span>Clear selection</span>
-                    </button>
-                </div>
-            </div>
+            @BulkBar(shownIds)
         }
         <table class="data-table data-table--edge">
             <thead>
                 <tr>
                     <th class="data-table__col-check">
-                        @if (Selectable(shown).Count > 0)
+                        @if (shownIds.Count > 0)
                         {
-                            var rowState = SomePicked(shown) ? "check is-indeterminate" : "check";
+                            var rowState = _selection.SomeShownPicked(shownIds) ? "check is-indeterminate" : "check";
                             <label class="@rowState" aria-label="Select every environment shown">
-                                <input type="checkbox" checked="@AllPicked(shown)" @onchange="e => ToggleAll(shown, e)" />
+                                <input type="checkbox" checked="@_selection.AllShownPicked(shownIds)"
+                                       @onchange="e => _selection.ToggleShown(shownIds, e.Value is true)" />
                                 <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                             </label>
                         }
@@ -310,7 +308,7 @@
             <tbody>
                 @foreach (var row in shown)
                 {
-                    var picked = _selected.Contains(row.EnvironmentId);
+                    var picked = _selection.Contains(row.EnvironmentId);
                     var rowState = RowState(row) + (picked ? " is-selected" : "");
                     <tr class="@rowState">
                         @* A deleted environment has nothing to set: Business Central is only
@@ -319,7 +317,7 @@
                             @if (!row.IsSoftDeleted)
                             {
                                 <label class="check" aria-label="@($"Select {row.ProjectName} {row.EnvironmentName}")">
-                                    <input type="checkbox" checked="@picked" @onchange="e => TogglePick(row.EnvironmentId, e)" />
+                                    <input type="checkbox" checked="@picked" @onchange="e => _selection.Set(row.EnvironmentId, e.Value is true)" />
                                     <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                                 </label>
                             }
@@ -506,8 +504,12 @@
     private UploadAppDialog? _uploadDialog;
     private BulkDeliveryWindowDialog? _bulkWindowDialog;
 
-    /// <summary>The ticked rows, by environment id. Only rows on screen stay ticked.</summary>
-    private readonly HashSet<int> _selected = new();
+    /// <summary>
+    /// The ticked rows, by environment id. A search, a filter or a view leaves them
+    /// ticked even when it takes them off screen (#985); only a re-read drops a tick,
+    /// for an environment that is gone or has since been deleted.
+    /// </summary>
+    private readonly SelectionSet _selection = new();
     private CopyEnvironmentDialog? _copyDialog;
     private ConfirmDialog? _confirm;
 
@@ -583,7 +585,7 @@
             _rows = await Fleet.ListFleetAsync(includeSoftDeleted: true);
             _error = null;
             _loadFailed = false;
-            PruneSelection();
+            _selection.Prune(Selectable(_rows).Select(r => r.EnvironmentId));
         }
         catch (Exception ex)
         {
@@ -689,14 +691,16 @@
     private void OnSearchInput(ChangeEventArgs e)
     {
         _search = e.Value?.ToString() ?? string.Empty;
-        PruneSelection();
     }
 
-    private void SelectTab(Tab tab)
-    {
-        _tab = tab;
-        PruneSelection();
-    }
+    private void SelectTab(Tab tab) => _tab = tab;
+
+    /// <summary>
+    /// The search, both dropdowns and the view as they stand. Show selected holds only
+    /// while this does: changing any of them is asking to see something else.
+    /// </summary>
+    private (string Search, string Solution, string Type, Tab Tab) FilterKey() =>
+        (_search.Trim(), _solutionFilter, _typeFilter, _tab);
 
     private void ClearFilters()
     {
@@ -708,52 +712,45 @@
 
     // ── Selection ────────────────────────────────────────────────────────
 
-    /// <summary>The rows on screen that can be ticked: every one but a deleted environment.</summary>
-    private static List<UpgradeFleetRow> Selectable(IEnumerable<UpgradeFleetRow> shown) =>
-        shown.Where(r => !r.IsSoftDeleted).ToList();
-
-    private bool AllPicked(IEnumerable<UpgradeFleetRow> shown)
-    {
-        var selectable = Selectable(shown);
-        return selectable.Count > 0 && selectable.All(r => _selected.Contains(r.EnvironmentId));
-    }
-
-    /// <summary>Some but not all: the header box shows a dash rather than a tick.</summary>
-    private bool SomePicked(IEnumerable<UpgradeFleetRow> shown) => _selected.Count > 0 && !AllPicked(shown);
-
-    private void ToggleAll(IEnumerable<UpgradeFleetRow> shown, ChangeEventArgs e)
-    {
-        if (e.Value is true)
-        {
-            foreach (var row in Selectable(shown)) _selected.Add(row.EnvironmentId);
-        }
-        else
-        {
-            _selected.Clear();
-        }
-    }
-
-    private void TogglePick(int environmentId, ChangeEventArgs e)
-    {
-        if (e.Value is true) _selected.Add(environmentId);
-        else _selected.Remove(environmentId);
-    }
+    /// <summary>The rows that can be ticked: every one but a deleted environment.</summary>
+    private static List<UpgradeFleetRow> Selectable(IEnumerable<UpgradeFleetRow> rows) =>
+        rows.Where(r => !r.IsSoftDeleted).ToList();
 
     /// <summary>
-    /// Drops the ticks on rows a tab, a filter, the search or a re-read has taken off
-    /// the screen: the count in the bar and the dialog act on what the person can see.
+    /// The bulk bar, drawn over the table and over the no-matches state alike: ticks
+    /// survive a search or a tab that hides them all (#985), and the bar is then the
+    /// only sign of them and the only way back to them.
     /// </summary>
-    private void PruneSelection()
-    {
-        if (_selected.Count == 0) return;
-        var onScreen = Selectable(Filtered()).Select(r => r.EnvironmentId).ToHashSet();
-        _selected.RemoveWhere(id => !onScreen.Contains(id));
-    }
+    private RenderFragment BulkBar(IReadOnlyCollection<int> shownIds) => @<text>
+        @* The count says how many ticks are off screen, because a search or a filter
+           no longer takes them away (#985). Show selected is the way to see them. *@
+        <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
+            <span class="bulk-bar__summary">@_selection.Summary(shownIds)</span>
+            <div class="bulk-bar__actions">
+                <button type="button" class="btn btn--sm" @onclick="OpenBulkWindowAsync" disabled="@_busy">
+                    <Icon Name="clock" Width="14" Height="14" />
+                    <span>Set delivery window...</span>
+                </button>
+                <button type="button" class="btn btn--sm @(_selection.ShowSelectedOnly ? "is-active" : "")"
+                        aria-pressed="@(_selection.ShowSelectedOnly ? "true" : "false")"
+                        @onclick="() => _selection.ShowSelected(!_selection.ShowSelectedOnly, FilterKey())">
+                    <Icon Name="eye" Width="14" Height="14" />
+                    <span>Show selected</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="() => _selection.Clear()">
+                    <Icon Name="x" Width="14" Height="14" />
+                    <span>Clear selection</span>
+                </button>
+            </div>
+        </div>
+    </text>;
 
     private async Task OpenBulkWindowAsync()
     {
         if (_bulkWindowDialog is null || _rows is null) return;
-        var rows = _rows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
+        // Every ticked row, on screen or not: the dialog lists each one by name before
+        // anything is written, so a tick a search has hidden is still seen first.
+        var rows = _rows.Where(r => _selection.Contains(r.EnvironmentId)).ToList();
         if (rows.Count == 0) return;
         await _bulkWindowDialog.OpenAsync(rows);
     }
@@ -762,7 +759,7 @@
     /// The dialog shows its own per-row result; the list shows no windows, so there is
     /// nothing to re-read. The ticks have done their job.
     /// </summary>
-    private void OnBulkWindowApplied(List<DeliveryWindowChangeResult> results) => _selected.Clear();
+    private void OnBulkWindowApplied(List<DeliveryWindowChangeResult> results) => _selection.Clear();
 
     /// <summary>True when only a tab is narrowing the list — the search and both dropdowns are clear.</summary>
     private bool NoOtherFilters() =>

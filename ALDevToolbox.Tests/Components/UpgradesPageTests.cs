@@ -345,6 +345,110 @@ public sealed class UpgradesPageTests : IDisposable
         });
     }
 
+    // ── The selection survives the search (#985) ───────────────────────
+
+    private static string PickedCount(IRenderedComponent<UpgradesPage> cut) =>
+        cut.Find(".cmdbar .upg-picked__count").TextContent.Trim();
+
+    private static AngleSharp.Dom.IElement BarButton(IRenderedComponent<UpgradesPage> cut, string label) =>
+        cut.FindAll(".cmdbar button").Single(b => b.TextContent.Trim() == label);
+
+    /// <summary>
+    /// The named user builds an evening's batch by finding each customer by short name
+    /// in turn. A search must not untick the ones already found; the bar says how many
+    /// are off screen; the header box only reaches the rows under it; and the command
+    /// acts on - and its preview names - every tick, hidden or not.
+    /// </summary>
+    [Fact]
+    public async Task A_search_keeps_the_ticks_and_the_preview_names_the_hidden_ones()
+    {
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Production", shortName: "CRD");
+        await SeedFleetEnvironmentAsync("Fabrikam Norway", "Production", shortName: "FAB");
+
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+        cut.FindAll(".upg-picked__count").Should().BeEmpty("nothing is ticked yet");
+
+        cut.Find(".cmdbar__search input").Input("crd");
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().ContainSingle());
+        cut.Find("tbody .data-table__col-check input").Change(true);
+
+        cut.Find(".cmdbar__search input").Input("fab");
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().ContainSingle()
+                .Which.TextContent.Should().Contain("Fabrikam Norway");
+            PickedCount(cut).Should().Be("1 selected, 0 shown");
+            BarButton(cut, "Move dates").HasAttribute("disabled").Should().BeFalse(
+                "the tick the search hid is still a selection to act on");
+        });
+
+        // The header box ticks the row shown, then unticks only that one.
+        cut.Find("thead .data-table__col-check input").Change(true);
+        cut.WaitForAssertion(() => PickedCount(cut).Should().Be("2 selected, 1 shown"));
+        cut.Find("thead .data-table__col-check input").Change(false);
+        cut.WaitForAssertion(() => PickedCount(cut).Should().Be("1 selected, 0 shown"));
+
+        // The command names the hidden customer before it sends anything.
+        BarButton(cut, "Move dates").Click();
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".confirm-dialog .upg-preview__who").Select(w => w.TextContent.Trim())
+                .Should().ContainSingle().Which.Should().StartWith("CRONUS Denmark - Production"));
+        cut.FindAll(".confirm-dialog__actions .btn").First(b => b.TextContent.Trim() == "Cancel").Click();
+
+        // Show selected brings it back into view, whatever the search says.
+        cut.WaitForAssertion(() => BarButton(cut, "Show selected").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().ContainSingle()
+                .Which.TextContent.Should().Contain("CRONUS Denmark");
+            BarButton(cut, "Show selected").GetAttribute("aria-pressed").Should().Be("true");
+            PickedCount(cut).Should().Be("1 selected");
+        });
+
+        cut.WaitForAssertion(() => BarButton(cut, "Clear selection").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".upg-picked__count").Should().BeEmpty();
+            cut.FindAll(".data-table tbody tr").Should().ContainSingle()
+                .Which.TextContent.Should().Contain("Fabrikam Norway", "the search is still in the box");
+            BarButton(cut, "Move dates").HasAttribute("disabled").Should().BeTrue();
+        });
+    }
+
+    /// <summary>
+    /// Only a re-read takes a tick away, and only for a row that is no longer there.
+    /// </summary>
+    [Fact]
+    public async Task A_reload_drops_the_tick_on_an_environment_that_has_gone()
+    {
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Production");
+        await SeedFleetEnvironmentAsync("Fabrikam Norway", "Production");
+
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+        cut.Find("thead .data-table__col-check input").Change(true);
+        cut.WaitForAssertion(() => PickedCount(cut).Should().Be("2 selected"));
+
+        await using (var ctx = _db.NewContext())
+        {
+            var gone = await ctx.OeProjectEnvironments
+                .SingleAsync(e => e.Project!.Name == "Fabrikam Norway");
+            ctx.OeProjectEnvironments.Remove(gone);
+            await ctx.SaveChangesAsync();
+        }
+
+        cut.WaitForAssertion(() => BarButton(cut, "Refresh").Click());
+        // Reload now sits on the notice under the bar, not in it.
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Reload now").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".data-table tbody tr").Should().ContainSingle();
+            PickedCount(cut).Should().Be("1 selected");
+        });
+    }
+
     // ── Change the next version (#960) ──────────────────────────────────
 
     /// <summary>
