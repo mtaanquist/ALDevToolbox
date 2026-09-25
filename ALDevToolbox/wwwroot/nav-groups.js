@@ -56,6 +56,9 @@
         if (!head) return;
         const group = head.closest(".nav-group[data-group]");
         if (!group) return;
+        // Arranging lays every group open (nav-arrange.js); a head pressed then
+        // must not quietly fold a group the person will only see afterwards.
+        if (head.closest(".app__nav.is-arranging")) return;
 
         const key = group.getAttribute("data-group");
         const collapsed = read();

@@ -34,6 +34,8 @@ public sealed class EnvironmentsListTests : IDisposable
     {
         var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("owner@example.com");
+        // The search filters straight away here; the one test about the wait sets its own.
+        EnvironmentsList.SearchDebounce = TimeSpan.Zero;
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDisplayTimeZone(_db);
@@ -78,6 +80,8 @@ public sealed class EnvironmentsListTests : IDisposable
 
     public void Dispose()
     {
+        // A test that set a real wait must not hand it to a page in another test class.
+        EnvironmentsList.SearchDebounce = TimeSpan.Zero;
         _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
@@ -530,13 +534,20 @@ public sealed class EnvironmentsListTests : IDisposable
     private static IEnumerable<AngleSharp.Dom.IElement> RowChecks(IRenderedComponent<EnvironmentsList> cut) =>
         cut.FindAll(".data-table tbody td.data-table__col-check input[type=checkbox]");
 
+    private static string Summary(IRenderedComponent<EnvironmentsList> cut) =>
+        cut.Find(".bulk-bar__summary").TextContent.Trim();
+
+    private static AngleSharp.Dom.IElement BarButton(IRenderedComponent<EnvironmentsList> cut, string label) =>
+        cut.FindAll(".bulk-bar button").Single(b => b.TextContent.Trim() == label);
+
     /// <summary>
     /// Ticking rows brings up the bar with the count and the one action; the header box
     /// ticks every row on screen; and a tab that takes the ticked rows off the screen
-    /// takes their ticks with them, so the bar never counts rows nobody can see.
+    /// leaves them ticked (#985) - the bar stays over the empty view, says they are
+    /// there but not shown, and Show selected brings them back.
     /// </summary>
     [Fact]
-    public async Task Ticked_rows_bring_up_the_bulk_bar_and_a_tab_that_hides_them_clears_them()
+    public async Task Ticked_rows_bring_up_the_bulk_bar_and_stay_ticked_under_a_tab_that_hides_them()
     {
         var id = await SeedSolutionAsync("CRONUS Denmark");
         var now = DateTime.UtcNow;
@@ -550,17 +561,116 @@ public sealed class EnvironmentsListTests : IDisposable
         cut.WaitForAssertion(() => RowChecks(cut).First().Change(true));
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".bulk-bar__summary").TextContent.Trim().Should().Be("1 selected");
+            Summary(cut).Should().Be("1 selected");
             cut.Find(".bulk-bar").TextContent.Should().Contain("Set delivery window...");
         });
 
         cut.WaitForAssertion(() => cut.Find("th.data-table__col-check input[type=checkbox]").Change(true));
-        cut.WaitForAssertion(() => cut.Find(".bulk-bar__summary").TextContent.Trim().Should().Be("2 selected"));
+        cut.WaitForAssertion(() => Summary(cut).Should().Be("2 selected"));
 
         // Nothing needs attention here, so that view shows none of the ticked rows.
         cut.WaitForAssertion(() =>
             cut.FindAll(".pill-tab").Single(t => t.TextContent.Trim().StartsWith("Needs attention")).Click());
-        cut.WaitForAssertion(() => cut.FindAll(".bulk-bar").Should().BeEmpty());
+        cut.WaitForAssertion(() => Summary(cut).Should().Be("2 selected, 0 shown"));
+
+        // The view is empty, and the bar over its empty state is the way back to the ticks.
+        cut.WaitForAssertion(() => BarButton(cut, "Show selected").Click());
+        cut.WaitForAssertion(() =>
+        {
+            RowChecks(cut).Should().HaveCount(2).And.OnlyContain(c => c.HasAttribute("checked"));
+            Summary(cut).Should().Be("2 selected");
+        });
+    }
+
+    /// <summary>
+    /// The upgrade team finds each customer by short name in turn. A search must not
+    /// throw away the customers already found, the header box must only reach the rows
+    /// under it, and Show selected brings the whole selection back into view (#985).
+    /// </summary>
+    [Fact]
+    public async Task A_search_keeps_the_ticks_and_show_selected_brings_them_back()
+    {
+        var cronus = await SeedSolutionAsync("CRONUS Denmark");
+        var fabrikam = await SeedSolutionAsync("Fabrikam");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(cronus, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(fabrikam, "Live", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(fabrikam, "Test", "Sandbox", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => RowChecks(cut).Should().HaveCount(3));
+
+        cut.WaitForAssertion(() => cut.Find("input[type=search]").Input("cronus"));
+        cut.WaitForAssertion(() => RowChecks(cut).Should().ContainSingle());
+        RowChecks(cut).Single().Change(true);
+
+        cut.WaitForAssertion(() => cut.Find("input[type=search]").Input("fabrikam"));
+        cut.WaitForAssertion(() =>
+        {
+            RowChecks(cut).Should().HaveCount(2);
+            Summary(cut).Should().Be("1 selected, 0 shown");
+            cut.Find("th.data-table__col-check label").ClassList.Should().NotContain("is-indeterminate",
+                "the tick off screen is not one of the rows under the box");
+        });
+
+        // The header box ticks the two rows shown and leaves the hidden one alone...
+        cut.Find("th.data-table__col-check input[type=checkbox]").Change(true);
+        cut.WaitForAssertion(() => Summary(cut).Should().Be("3 selected, 2 shown"));
+
+        // ...and unticking it takes only those two back off.
+        cut.Find("th.data-table__col-check input[type=checkbox]").Change(false);
+        cut.WaitForAssertion(() => Summary(cut).Should().Be("1 selected, 0 shown"));
+
+        cut.WaitForAssertion(() => BarButton(cut, "Show selected").Click());
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle().Which.TextContent.Should().Contain("CRONUS Denmark");
+            BarButton(cut, "Show selected").GetAttribute("aria-pressed").Should().Be("true");
+            Summary(cut).Should().Be("1 selected");
+        });
+
+        // The bulk action acts on every tick and names each one before it writes.
+        cut.WaitForAssertion(() => BarButton(cut, "Set delivery window...").Click());
+        cut.WaitForAssertion(() =>
+            cut.Find("#bdw-title").TextContent.Trim().Should().Be("Set the delivery window on 1 environment"));
+        cut.FindAll(".confirm-dialog__actions button").First(b => b.TextContent.Trim() == "Cancel").Click();
+
+        cut.WaitForAssertion(() => BarButton(cut, "Clear selection").Click());
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".bulk-bar").Should().BeEmpty();
+            // The search is still in the box, so the table goes back to what it finds.
+            RowChecks(cut).Should().HaveCount(2);
+        });
+    }
+
+    /// <summary>
+    /// Show selected is a view of its own: typing a new search or picking a filter is
+    /// asking for something else, so it ends and every tick is kept.
+    /// </summary>
+    [Fact]
+    public async Task Changing_a_filter_under_show_selected_goes_back_to_the_filtered_table()
+    {
+        var cronus = await SeedSolutionAsync("CRONUS Denmark");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(cronus, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(cronus, "Test", "Sandbox", "Active", now, now);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => RowChecks(cut).Should().HaveCount(2));
+        RowChecks(cut).First().Change(true);
+        cut.WaitForAssertion(() => BarButton(cut, "Show selected").Click());
+        cut.WaitForAssertion(() => RowChecks(cut).Should().ContainSingle());
+
+        cut.Find("select[aria-label='Filter by environment type']").Change("Sandbox");
+        cut.WaitForAssertion(() =>
+        {
+            RowChecks(cut).Should().ContainSingle();
+            cut.Find(".data-table tbody tr").TextContent.Should().Contain("Test");
+            BarButton(cut, "Show selected").GetAttribute("aria-pressed").Should().Be("false");
+            Summary(cut).Should().Be("1 selected, 0 shown");
+        });
     }
 
     [Fact]
@@ -802,5 +912,38 @@ public sealed class EnvironmentsListTests : IDisposable
         {
             EnvironmentsList.AutoRefreshFor = saved;
         }
+
+    /// <summary>
+    /// Typing fast used to lose characters: every keystroke redrew the page and wrote
+    /// the value of an older keystroke back into the box (#981). The box is bound now,
+    /// and the table follows once typing pauses.
+    /// </summary>
+    [Fact]
+    public async Task The_table_filters_once_typing_pauses_and_the_box_keeps_every_keystroke()
+    {
+        var cronus = await SeedSolutionAsync("CRONUS Denmark");
+        var other = await SeedSolutionAsync("Fabrikam");
+        var now = DateTime.UtcNow;
+        await SeedEnvironmentAsync(cronus, "Production", "Production", "Active", now, now);
+        await SeedEnvironmentAsync(other, "Live", "Production", "Active", now, now);
+        EnvironmentsList.SearchDebounce = TimeSpan.FromMilliseconds(300);
+
+        var cut = _ctx.Render<EnvironmentsList>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+
+        cut.Find("input[type=search]").Input("CRONUS");
+        cut.Find("input[type=search]").Input("CRONUS ");
+        cut.Find("input[type=search]").Input("CRONUS D");
+
+        cut.WaitForAssertion(() =>
+            cut.Find("input[type=search]").GetAttribute("value").Should().Be("CRONUS D"));
+
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle();
+            rows[0].TextContent.Should().Contain("CRONUS Denmark");
+        }, TimeSpan.FromSeconds(5));
+        cut.Find("input[type=search]").GetAttribute("value").Should().Be("CRONUS D");
     }
 }
