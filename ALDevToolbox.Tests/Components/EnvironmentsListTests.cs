@@ -912,6 +912,7 @@ public sealed class EnvironmentsListTests : IDisposable
         {
             EnvironmentsList.AutoRefreshFor = saved;
         }
+    }
 
     /// <summary>
     /// Typing fast used to lose characters: every keystroke redrew the page and wrote
