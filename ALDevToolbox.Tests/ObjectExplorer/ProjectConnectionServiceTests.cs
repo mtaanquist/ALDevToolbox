@@ -63,13 +63,30 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
     private sealed class FakeAdminClient : IBcAdminClient
     {
+        /// <summary>
+        /// Every read of the tenant, in order, as "Method:environment" - so a test can pin
+        /// exactly how many requests an operation cost.
+        /// </summary>
+        public List<string> Reads { get; } = new();
+
         public Func<IReadOnlyList<BcEnvironment>> OnList = () => Array.Empty<BcEnvironment>();
         public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
-            => Task.FromResult(OnList());
+        {
+            Reads.Add("ListEnvironments");
+            return Task.FromResult(OnList());
+        }
 
-        // The by-name read is the delivery gate's surface, not the connection page's.
+        /// <summary>
+        /// The by-name read. Only the Upgrades page's watch reaches it from this service
+        /// (the delivery gate uses its own client); unset, it refuses, so nothing else
+        /// starts using it unnoticed.
+        /// </summary>
+        public Func<string, BcEnvironment?>? OnGetEnvironment;
         public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => throw new NotSupportedException();
+        {
+            Reads.Add("GetEnvironment:" + environmentName);
+            return OnGetEnvironment is { } read ? Task.FromResult(read(environmentName)) : throw new NotSupportedException();
+        }
 
         /// <summary>Microsoft's update window per environment name. Throwing here stands in for a per-environment API failure.</summary>
         public Func<string, BcUpdateSettings?> OnUpdateSettings = _ => null;
@@ -77,6 +94,7 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
         {
+            Reads.Add("GetUpdateSettings:" + environmentName);
             UpdateSettingsRequested.Add(environmentName);
             return Task.FromResult(OnUpdateSettings(environmentName));
         }
@@ -193,9 +211,15 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             => Task.FromResult(OnOperations(environmentName));
         public Func<BcTenantStorage> OnStorage { get; set; } = () => new BcTenantStorage(new Dictionary<string, long>(), null);
         public Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default)
-            => Task.FromResult(OnStorage());
+        {
+            Reads.Add("GetTenantStorage");
+            return Task.FromResult(OnStorage());
+        }
         public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
-            => Task.FromResult(OnEnvironmentUpdates(environmentName));
+        {
+            Reads.Add("ListEnvironmentUpdates:" + environmentName);
+            return Task.FromResult(OnEnvironmentUpdates(environmentName));
+        }
     }
 
     /// <summary>
@@ -3056,6 +3080,158 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         admin.SelectedDateTime.Should().Be(Latest);
         admin.SelectWrites.Should().Be(1, "the same PATCH both picks the version and dates it");
+    }
+
+    // ── Re-reading one environment while its update runs (#982) ───────────
+
+    private static BcEnvironmentUpdate RunningUpdate(string version = "27.6", string status = "Running") =>
+        new(version, true, true, status, "GA", DateTimeOffset.UtcNow.AddMinutes(-6), Latest, true, "Active", null, null);
+
+    private static FakeAdminClient AdminReporting(string status, string version, BcEnvironmentUpdate? update) => new()
+    {
+        OnGetEnvironment = name => new BcEnvironment(name, "Production")
+        {
+            ApplicationFamily = "BusinessCentral",
+            Status = status,
+            Version = version,
+        },
+        OnEnvironmentUpdates = _ => update is null ? Array.Empty<BcEnvironmentUpdate>() : new[] { update },
+    };
+
+    /// <summary>
+    /// The watch on the Upgrades page calls this every ten seconds, so what it costs the
+    /// customer's tenant is the point: the environment and its updates, nothing else, and
+    /// only the one row written - a sibling environment of the same customer is not
+    /// touched, which is what separates this from a Refresh.
+    /// </summary>
+    [Fact]
+    public async Task Refreshing_one_environment_makes_two_reads_and_writes_only_its_row()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        DateTime siblingFetched;
+        int siblingId;
+        await using (var seed = _db.NewContext())
+        {
+            siblingFetched = DateTime.UtcNow.AddDays(-2);
+            var sibling = new OeProjectEnvironment
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Sandbox", Type = "Sandbox",
+                ApplicationFamily = "BusinessCentral", Status = "Active", Version = "27.4.1.0", FetchedAt = siblingFetched,
+            };
+            seed.OeProjectEnvironments.Add(sibling);
+            await seed.SaveChangesAsync();
+            siblingId = sibling.Id;
+        }
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminReporting("Upgrading", "27.5.12345.0", RunningUpdate());
+
+        BcEnvironmentReading reading;
+        await using (var ctx = _db.NewContext())
+            reading = await Svc(ctx, TokenOk(), admin).RefreshEnvironmentAsync(projectId, envId);
+
+        admin.Reads.Should().Equal("GetEnvironment:Production", "ListEnvironmentUpdates:Production");
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.Status.Should().Be("Upgrading");
+        row.Version.Should().Be("27.5.12345.0");
+        row.StatusFetchedAt.Should().NotBeNull();
+        row.FetchedAt.Should().BeCloseTo(_clock.GetUtcNow().UtcDateTime, TimeSpan.FromSeconds(1));
+        row.BcNextUpdateVersion.Should().Be("27.6");
+        row.BcNextUpdateStatus.Should().Be("Running");
+        row.BcNextUpdateIgnoresWindow.Should().BeTrue();
+        row.BcNextUpdateFetchedAt.Should().NotBeNull();
+
+        var sibling2 = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == siblingId);
+        sibling2.FetchedAt.Should().BeCloseTo(siblingFetched, TimeSpan.FromMilliseconds(1));
+        sibling2.BcNextUpdateFetchedAt.Should().BeNull();
+
+        // What the page lays over its row without reading the fleet again.
+        reading.Status.Should().Be("Upgrading");
+        reading.Version.Should().Be("27.5.12345.0");
+        reading.NextUpdateVersion.Should().Be("27.6");
+        reading.NextUpdateStatus.Should().Be("Running");
+        // Postgres keeps microseconds and .NET keeps 100 ns ticks, so the stored stamp and
+        // the one handed back can differ below a microsecond.
+        reading.NextUpdateFetchedAt.Should().BeCloseTo(row.BcNextUpdateFetchedAt!.Value, TimeSpan.FromMilliseconds(1));
+    }
+
+    [Fact]
+    public async Task Refreshing_one_environment_drops_the_panel_it_had_cached()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        _panelCache.Set(projectId, envId, new BcEnvironmentPanel(
+            "Production", new HashSet<Guid>(), [], null, [], null, [], null, [], null, DateTime.UtcNow));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), AdminReporting("Active", "27.6.1.0", null)).RefreshEnvironmentAsync(projectId, envId);
+
+        _panelCache.Get(projectId, envId).Should().BeNull("the panel must not show an answer older than the row");
+    }
+
+    [Fact]
+    public async Task Refreshing_one_environment_needs_the_environment_updates_grant()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = PlainTeamUserId;
+        var admin = AdminReporting("Upgrading", "27.5.12345.0", RunningUpdate());
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).RefreshEnvironmentAsync(projectId, envId);
+            await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        }
+
+        admin.Reads.Should().BeEmpty("a person who may not act on the solution's updates does not get to read its tenant");
+        await using var verify = _db.NewContext();
+        (await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId)).Status.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Refreshing_an_environment_business_central_no_longer_has_writes_nothing()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient { OnGetEnvironment = _ => null };
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).RefreshEnvironmentAsync(projectId, envId);
+            (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors
+                .Should().ContainKey("Environment", "a caller watching it must stop rather than ask again");
+        }
+
+        admin.Reads.Should().Equal("GetEnvironment:Production");
+        await using var verify = _db.NewContext();
+        (await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId)).BcNextUpdateFetchedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_failed_updates_read_leaves_the_row_as_it_was()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminReporting("Active", "27.6.1.0", null);
+        admin.OnEnvironmentUpdates = _ => throw new BcApiException(HttpStatusCode.ServiceUnavailable, "busy");
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).RefreshEnvironmentAsync(projectId, envId);
+            (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors
+                .Should().ContainKey("Refresh", "a read that failed is worth asking again");
+        }
+
+        // A state without its update would let the page call a running update over.
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.Status.Should().BeNull();
+        row.BcNextUpdateFetchedAt.Should().BeNull();
     }
 
     // ── The two axes: manage and environment updates ──────────────────────

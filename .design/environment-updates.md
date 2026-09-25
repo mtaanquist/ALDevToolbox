@@ -136,6 +136,9 @@ can do is be unhurried and do as we are told.
   after the `Retry-After` it was given, capped at a minute. A write is never re-sent on
   our own initiative. Still throttled after that is an ordinary failed read: the customer
   keeps last night's mirror.
+- *A watched update is read on its own.* The Upgrades page's watch after Start update reads
+  one environment twice every ten seconds, bounded to ten environments a tick and slower above
+  that, and only until the update ends or 45 minutes pass - see "The page".
 - *Parallelism was considered and left out.* Several customers at once would be safe for
   the same per-tenant reason and would shorten the run, but it means a degree-of-parallelism
   knob on `QueueDrainWorker`, which every worker inherits. The worker now logs each run -
@@ -414,6 +417,34 @@ and the summary says so; an `Update` key means this particular update can't move
 message already explains. A genuine failure never shows raw exception text — the row says
 Business Central didn't accept the change and links to the project, and the detail goes to the
 log.
+
+**Watching an update through (#982).** After an immediate Start update the person often
+stays on the page to see it finish before calling the customer back, so the page watches it
+rather than asking them to press Refresh. An environment joins the watch when its Start update
+lands as sent, and on load when its mirrored state is busy (`BcEnvironmentStatus`'s Busy group)
+or its next update is running - so a slot the worker fired at 20:00 is watched too when somebody
+opens the page - and only on rows the viewer may act on, because the re-read asks for the same
+grant. Every ten seconds the page calls `ProjectConnectionService.RefreshEnvironmentAsync` for
+each watched environment: two reads against that one tenant (the environment by name, and its
+updates list), mapped onto the row by the same helpers the environment list and the sweep use,
+stamped, and the panel cache for that environment invalidated. The service hands back what the
+row now says, so a tick costs the page no fleet query of its own. The row shows "Updating...
+started 6 minutes ago" under the next update while it is watched. It leaves the watch when the
+environment is running again and the update is no longer under way: "Updated to 29.2" when it is
+now on the version it was going to, else "Update failed" with a link to the environment's
+Operations tab. A running environment still on the old version before Business Central was ever
+seen busy has not picked the update up yet, and stays watched. The watch stops, with a line
+saying so and that Refresh starts it again, after 45 minutes, after three reads in a row with no
+answer, or at once when the environment is gone or its connection needs setting up. It is a
+timer of its own beside the 20-second database poll above (which it leaves alone), with the same
+rules: ticks on the renderer's synchronisation context, none while a run or a dialog is open,
+stopped when the page goes. **As a guest** it is fine: two requests every ten seconds for one
+update, against the one tenant whose update was just started, is a small load and a short one:
+it ends with the update. The cap bounds the rest - a tick
+reads at most ten environments, longest-waiting first, and with more than ten watched the tick
+slows to thirty seconds, so fifty updates started at once cost at most twenty requests every
+thirty seconds, spread over fifty tenants, not six hundred a minute. A throttled read is retried
+once by `BcThrottleHandler` like any other.
 
 **A booking is visible on the fleet row itself**, not only in the batch result that made it
 (which a reload discards). One booking shows the whole fact — when, in whose time, who booked
@@ -717,6 +748,7 @@ Where it still differs, and why:
 | The table directly in the page | The table in a box that scrolls sideways, with the checkbox, state and Solution columns pinned | The page container clips rather than scrolls (#574), and nine columns do not fit a narrow window. |
 | The view select first in the bar, then the search | The search first, then the view select, then the commands | The order Solutions and Environments use, with the same search width and F3. Maintainer's decision, 2026-09-24 (#966). |
 | Two fleet commands | A third, **Change the next version...**, beside them in the bar and in the row menu | #960. No sheet: it reuses the bar's disabled-until-ticked button and the other dialogs' preview (grouped rows under `upg-preview__head` headings, the count line, the typed word). **Needs a design pass upstream.** |
+| Nothing while an update runs | "Updating... started 6 minutes ago" under the next update while the page watches it, then "Updated to 29.2", or "Update failed" with a link to the environment's Operations tab | #982: the team sits on the page to see a started update finish. No sheet draws a live row; it reuses the row-result line (`upg-note`) and its spinner. **Needs a design pass upstream.** |
 | The solution name alone | The name, then the short name in the Solutions list's quieter tone | #966: customers are called by their abbreviation in daily speech; the search matches it too. |
 | No counter in the bar | Once a row is ticked, "8 selected, 5 shown", **Show selected** and **Clear selection** between the view select and the commands | The search and the view no longer untick rows (#985), so part of a selection can be off screen, and a bar that stayed silent about it would let a command act on customers nobody can see. Business Central's lists have no counter because their selection cannot hide; this one can. Described under "The page". **Needs a design pass upstream.** |
 

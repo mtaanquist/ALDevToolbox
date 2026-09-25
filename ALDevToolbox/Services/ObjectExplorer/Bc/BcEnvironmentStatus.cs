@@ -81,7 +81,9 @@ public static class BcEnvironmentStatus
         (status ?? string.Empty).ToLowerInvariant() switch
         {
             "active" => "Running",
-            "updating" => "Update in progress",
+            // "Upgrading" is what Business Central actually reports while a platform
+            // update runs; without it here a watched update read as a state nobody knew.
+            "updating" or "upgrading" => "Update in progress",
             "preparing" => "Being prepared",
             "suspended" => "Suspended by Microsoft",
             "softdeleted" => Humanise(status),
