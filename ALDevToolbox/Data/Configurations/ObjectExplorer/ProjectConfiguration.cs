@@ -59,6 +59,7 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<OeProject>
         entity.Property(e => e.BcCredentialsUpdatedAt).HasColumnName("bc_credentials_updated_at");
         entity.Property(e => e.BcTimeZone).HasColumnName("bc_time_zone").HasMaxLength(100);
         entity.Property(e => e.BcConnectionVerifiedAt).HasColumnName("bc_connection_verified_at");
+        entity.Property(e => e.BcEnvironmentsFetchedAt).HasColumnName("bc_environments_fetched_at");
 
         entity.HasOne(e => e.Organization)
             .WithMany()

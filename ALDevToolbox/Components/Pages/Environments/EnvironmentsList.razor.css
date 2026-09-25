@@ -18,3 +18,7 @@ a.cell-stack__main {
 .env-storage__bar--danger::-moz-progress-bar { background: var(--danger); }
 .env-storage__note--warn { color: var(--warning-text); }
 .env-storage__note--danger { color: var(--danger-text); font-weight: var(--fw-semibold); }
+
+/* The auto-refresh switch sits in the freshness strip, so it takes the strip's type size
+   rather than a form's. */
+.freshness__auto { font-size: var(--text-sm); }
