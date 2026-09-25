@@ -32,9 +32,14 @@
     over a table with a selection column. The bar holds the search, the view and
     the commands, in that order - the order Solutions and Environments use (#966;
     the sheet draws the view first, and the maintainer chose alignment); commands that need a selection are plainly disabled until rows
-    are ticked, the way Business Central's own lists behave. No counter and no
-    instruction - the checkboxes and the disabled buttons already say it. Filters
-    live in the address, so a filtered fleet is something you can send a colleague.
+    are ticked, the way Business Central's own lists behave. No instruction - the
+    checkboxes and the disabled buttons already say it. Filters live in the address,
+    so a filtered fleet is something you can send a colleague.
+
+    A search or a view change never unticks a row (#985): the team builds an evening's
+    batch by finding each customer by short name in turn. So, unlike the sheet, the
+    bar counts the selection once there is one, says how much of it is off screen,
+    and offers Show selected and Clear selection beside the count.
 
     "Move dates" is this page's one primary: it is what the team comes here to do,
     a hundred at a time. "Start update..." is irreversible, and its dialog is where that
@@ -117,11 +122,14 @@
                    search in the address once you leave the box or press Enter. *@
                 <span class="search cmdbar__search upg-search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-                    <input class="input" type="search" value="@_search"
+                    @* Bound, not value= plus oninput: a redraw must never write an older
+                       value over what is still being typed (#981). *@
+                    <input class="input" type="search"
                            placeholder="Search solution or environment..."
                            aria-label="Search solutions and environments"
                            data-page-search aria-keyshortcuts="F3" title="Search solutions and environments (F3)"
-                           @oninput="OnSearchInput" @onchange="OnSearchCommitted" />
+                           @bind="_search" @bind:event="oninput" @bind:after="OnSearchInput"
+                           @onchange="OnSearchCommitted" />
                 </span>
                 <div class="cmdbar__group">
                     <SelectBox Class="upg-view">
@@ -144,6 +152,25 @@
                         </select>
                     </SelectBox>
                 </div>
+                @if (_selection.Count > 0)
+                {
+                    @* Only once something is ticked. The count says how many of the
+                       ticks a search or the view has taken off screen; the commands
+                       act on all of them, and each dialog names every one first. *@
+                    <div class="cmdbar__group">
+                        <span class="upg-picked__count" aria-live="polite">@_selection.Summary(ShownActionableIds())</span>
+                        <button type="button" class="btn btn--ghost @(_selection.ShowSelectedOnly ? "is-active" : "")"
+                                aria-pressed="@(_selection.ShowSelectedOnly ? "true" : "false")"
+                                disabled="@_running" @onclick="ToggleShowSelected">
+                            <Icon Name="eye" Width="15" Height="15" />
+                            <span>Show selected</span>
+                        </button>
+                        <button type="button" class="btn btn--ghost" disabled="@_running" @onclick="ClearSelection">
+                            <Icon Name="x" Width="15" Height="15" />
+                            <span>Clear selection</span>
+                        </button>
+                    </div>
+                }
                 <div class="cmdbar__group">
                     <button type="button" class="btn btn--primary" disabled="@ActionsDisabled"
                             title="Move the selected environments to their latest possible update date"
@@ -209,7 +236,7 @@
             <tbody>
                 @foreach (var row in _rows!)
                 {
-                    var picked = _selected.Contains(row.EnvironmentId);
+                    var picked = _selection.Contains(row.EnvironmentId);
                     <tr @key="row.EnvironmentId"
                         class="@RowClass(row, picked)">
                         <td class="data-table__col-check">
@@ -580,9 +607,14 @@
     [Parameter, SupplyParameterFromQuery(Name = "type")] public string? TypeFilter { get; set; }
     [Parameter, SupplyParameterFromQuery(Name = "waiting")] public string? WaitingFilter { get; set; }
 
-    /// <summary>The fleet after the filters, or null while it is still loading.</summary>
+    /// <summary>
+    /// The rows on screen: the fleet after the filters, or every ticked row while Show
+    /// selected is on. Null while it is still loading.
+    /// </summary>
     private List<UpgradeFleetRow>? _rows;
     private List<UpgradeFleetRow> _all = new();
+
+    /// <summary>The rows on screen that this person can act on - what the header checkbox ticks.</summary>
     private List<UpgradeFleetRow> _actionableRows = new();
     private List<string> _typeOptions = new();
     private int _totalCount;
@@ -592,7 +624,12 @@
     private string _type = string.Empty;
     private bool _onlyWaiting;
 
-    private readonly HashSet<int> _selected = new();
+    /// <summary>
+    /// The ticked rows. The search and the view leave them ticked when they take them
+    /// off screen (#985); only a re-read drops a tick, for a row that is gone or that
+    /// this person can no longer act on.
+    /// </summary>
+    private readonly SelectionSet _selection = new();
     private readonly Dictionary<int, RowResult> _results = new();
     private List<PreviewItem> _preview = new();
 
@@ -661,7 +698,7 @@
     private int? _feedEnvId;
     private List<UpgradeActionRow>? _feed;
 
-    private bool ActionsDisabled => _selected.Count == 0 || _running;
+    private bool ActionsDisabled => _selection.Count == 0 || _running;
 
     protected override async Task OnInitializedAsync()
     {
@@ -690,6 +727,7 @@
     public void Dispose()
     {
         StopPolling();
+        _searchDebounce.Dispose();
         _disposed = true;
         StopWatching();
         // A read in flight is abandoned with the page rather than finishing into it.
@@ -766,13 +804,26 @@
         }
     }
 
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        _search = (e.Value?.ToString() ?? string.Empty).Trim();
-        ApplyFilters();
-    }
+    /// <summary>How long the search box waits for typing to stop before it filters. Tests set it to zero.</summary>
+    internal static TimeSpan SearchDebounce { get; set; } = TimeSpan.FromMilliseconds(200);
 
-    private void OnSearchCommitted(ChangeEventArgs e) => GoToFilters(_type, _onlyWaiting);
+    private readonly Debouncer _searchDebounce = new(SearchDebounce);
+
+    // The box is bound to _search as it is typed, untrimmed - trimming it here would
+    // eat the space between two words. The table follows once typing pauses.
+    private void OnSearchInput() =>
+        _searchDebounce.Trigger(() => InvokeAsync(() =>
+        {
+            ApplyFilters();
+            StateHasChanged();
+        }));
+
+    private void OnSearchCommitted(ChangeEventArgs e)
+    {
+        _searchDebounce.Cancel();
+        ApplyFilters();
+        GoToFilters(_type, _onlyWaiting);
+    }
 
     /// <summary>
     /// Applies a filter change by changing the address, so every state of this table
@@ -781,7 +832,8 @@
     private void GoToFilters(string type, bool waiting)
     {
         var parts = new List<string>();
-        if (_search.Length > 0) parts.Add("q=" + Uri.EscapeDataString(_search));
+        var search = _search.Trim();
+        if (search.Length > 0) parts.Add("q=" + Uri.EscapeDataString(search));
         if (type.Length > 0) parts.Add("type=" + Uri.EscapeDataString(type));
         if (waiting) parts.Add("waiting=1");
         Nav.NavigateTo(parts.Count == 0 ? "/upgrades" : "/upgrades?" + string.Join("&", parts));
@@ -791,6 +843,10 @@
     {
         _all = await Fleet.ListFleetAsync();
         _pending = await Actions.ListPendingAsync();
+        // Against the whole fleet, not the rows on screen: a tick the search has
+        // hidden is still wanted. A row that has gone, or that is no longer this
+        // person's to change, is not.
+        _selection.Prune(_all.Where(r => r.CanAct).Select(r => r.EnvironmentId));
         _totalCount = _all.Count;
         _typeOptions = _all
             .Select(r => r.EnvironmentType)
@@ -805,12 +861,13 @@
     private void ApplyFilters()
     {
         IEnumerable<UpgradeFleetRow> q = _all;
-        if (_search.Length > 0)
+        var term = _search.Trim();
+        if (term.Length > 0)
         {
             q = q.Where(r =>
-                r.ProjectName.Contains(_search, StringComparison.OrdinalIgnoreCase)
-                || (r.ProjectShortName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
-                || r.EnvironmentName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+                r.ProjectName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (r.ProjectShortName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                || r.EnvironmentName.Contains(term, StringComparison.OrdinalIgnoreCase));
         }
         if (_type.Length > 0)
         {
@@ -821,39 +878,56 @@
             q = q.Where(r => r.HasUpdate);
         }
 
-        _rows = q.ToList();
+        // Filtering never unticks anything (#985): the count in the bar says how many
+        // of the ticks are off screen, and the commands act on all of them.
+        _rows = _selection.Shown(q, _all, r => r.EnvironmentId, FilterKey()).ToList();
         _actionableRows = _rows.Where(r => r.CanAct).ToList();
-        // A row that is no longer listed can't stay picked - the buttons count what
-        // the person can see.
-        _selected.RemoveWhere(id => !_actionableRows.Any(r => r.EnvironmentId == id));
     }
 
-    private bool AllPicked =>
-        _actionableRows.Count > 0 && _actionableRows.All(r => _selected.Contains(r.EnvironmentId));
+    /// <summary>
+    /// The search and the view as they stand. Show selected holds only while this
+    /// does: changing either is asking to see something else.
+    /// </summary>
+    private (string Search, string Type, bool Waiting) FilterKey() => (_search, _type, _onlyWaiting);
+
+    private List<int> ShownActionableIds() => _actionableRows.Select(r => r.EnvironmentId).ToList();
+
+    private bool AllPicked => _selection.AllShownPicked(ShownActionableIds());
 
     /// <summary>The keyline state, plus the tint of a ticked row and the mark of a locked one.</summary>
     private static string RowClass(UpgradeFleetRow row, bool picked) =>
         RowState(row) + (picked ? " is-selected" : "") + (row.CanAct ? "" : " upg-row--locked");
 
-    /// <summary>Some but not all: the header box shows a dash rather than a tick.</summary>
-    private bool SomePicked => _selected.Count > 0 && !AllPicked;
+    /// <summary>Some of the rows on screen but not all: the header box shows a dash rather than a tick.</summary>
+    private bool SomePicked => _selection.SomeShownPicked(ShownActionableIds());
 
+    /// <summary>
+    /// The header box ticks or unticks the rows on screen, and only those: a tick the
+    /// search has hidden is left as it was.
+    /// </summary>
     private void ToggleAll(ChangeEventArgs e)
     {
-        if (e.Value is true)
-        {
-            foreach (var row in _actionableRows) _selected.Add(row.EnvironmentId);
-        }
-        else
-        {
-            _selected.Clear();
-        }
+        _selection.ToggleShown(ShownActionableIds(), e.Value is true);
+        ApplyFilters();
     }
 
     private void TogglePick(int environmentId, ChangeEventArgs e)
     {
-        if (e.Value is true) _selected.Add(environmentId);
-        else _selected.Remove(environmentId);
+        _selection.Set(environmentId, e.Value is true);
+        // Under Show selected, a row unticked leaves the table; the last one ends the view.
+        if (_selection.ShowSelectedOnly || _selection.Count == 0) ApplyFilters();
+    }
+
+    private void ToggleShowSelected()
+    {
+        _selection.ShowSelected(!_selection.ShowSelectedOnly, FilterKey());
+        ApplyFilters();
+    }
+
+    private void ClearSelection()
+    {
+        _selection.Clear();
+        ApplyFilters();
     }
 
     /// <summary>
@@ -863,10 +937,14 @@
     /// </summary>
     private UpgradeFleetRow? _single;
 
-    /// <summary>What the open dialog or the running batch acts on.</summary>
+    /// <summary>
+    /// What the open dialog or the running batch acts on: every ticked row, whether the
+    /// search and the view have it on screen or not. Each dialog lists them all by name
+    /// before anything is sent, so a hidden tick is seen before it is acted on.
+    /// </summary>
     private List<UpgradeFleetRow> SelectedRows() => _single is { } one
         ? new List<UpgradeFleetRow> { one }
-        : _actionableRows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
+        : _all.Where(r => r.CanAct && _selection.Contains(r.EnvironmentId)).ToList();
 
     // ── The three bulk actions ──────────────────────────────────────────
 
@@ -1125,13 +1203,8 @@
             kind == UpgradeActionKind.RunNow && _scheduleLater ? BookedForText() : null);
 
         // Re-read the fleet so the table shows what Business Central now says rather
-        // than what we asked it for.
-        var keep = _selected.ToList();
+        // than what we asked it for. The ticks stay, less any row that has gone.
         await LoadAsync();
-        foreach (var id in keep)
-        {
-            if (_actionableRows.Any(r => r.EnvironmentId == id)) _selected.Add(id);
-        }
         WatchStartedUpdates(started);
     }
 
@@ -1189,7 +1262,7 @@
     {
         // With a selection, refresh those customers; with none, everything you can act
         // on - which is what someone starting their morning wants.
-        var projectIds = _selected.Count > 0
+        var projectIds = _selection.Count > 0
             ? SelectedRows().Select(r => r.ProjectId).Distinct().ToList()
             : _actionableRows.Select(r => r.ProjectId).Distinct().ToList();
 
@@ -1209,15 +1282,7 @@
     }
 
     /// <summary>Re-reads the fleet now, for someone who doesn't want to wait for the next poll.</summary>
-    private async Task ReloadNowAsync()
-    {
-        var keep = _selected.ToList();
-        await LoadAsync();
-        foreach (var id in keep)
-        {
-            if (_actionableRows.Any(r => r.EnvironmentId == id)) _selected.Add(id);
-        }
-    }
+    private async Task ReloadNowAsync() => await LoadAsync();
 
     // ── Polling while a refresh is outstanding ──────────────────────────
     //
