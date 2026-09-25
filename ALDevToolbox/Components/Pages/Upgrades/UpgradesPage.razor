@@ -121,11 +121,14 @@
                    search in the address once you leave the box or press Enter. *@
                 <span class="search cmdbar__search upg-search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-                    <input class="input" type="search" value="@_search"
+                    @* Bound, not value= plus oninput: a redraw must never write an older
+                       value over what is still being typed (#981). *@
+                    <input class="input" type="search"
                            placeholder="Search solution or environment..."
                            aria-label="Search solutions and environments"
                            data-page-search aria-keyshortcuts="F3" title="Search solutions and environments (F3)"
-                           @oninput="OnSearchInput" @onchange="OnSearchCommitted" />
+                           @bind="_search" @bind:event="oninput" @bind:after="OnSearchInput"
+                           @onchange="OnSearchCommitted" />
                 </span>
                 <div class="cmdbar__group">
                     <SelectBox Class="upg-view">
@@ -692,7 +695,11 @@
         if (_rows is not null) ApplyFilters();
     }
 
-    public void Dispose() => StopPolling();
+    public void Dispose()
+    {
+        StopPolling();
+        _searchDebounce.Dispose();
+    }
 
     private void ReadQuery()
     {
@@ -764,13 +771,26 @@
         }
     }
 
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        _search = (e.Value?.ToString() ?? string.Empty).Trim();
-        ApplyFilters();
-    }
+    /// <summary>How long the search box waits for typing to stop before it filters. Tests set it to zero.</summary>
+    internal static TimeSpan SearchDebounce { get; set; } = TimeSpan.FromMilliseconds(200);
 
-    private void OnSearchCommitted(ChangeEventArgs e) => GoToFilters(_type, _onlyWaiting);
+    private readonly Debouncer _searchDebounce = new(SearchDebounce);
+
+    // The box is bound to _search as it is typed, untrimmed - trimming it here would
+    // eat the space between two words. The table follows once typing pauses.
+    private void OnSearchInput() =>
+        _searchDebounce.Trigger(() => InvokeAsync(() =>
+        {
+            ApplyFilters();
+            StateHasChanged();
+        }));
+
+    private void OnSearchCommitted(ChangeEventArgs e)
+    {
+        _searchDebounce.Cancel();
+        ApplyFilters();
+        GoToFilters(_type, _onlyWaiting);
+    }
 
     /// <summary>
     /// Applies a filter change by changing the address, so every state of this table
@@ -779,7 +799,8 @@
     private void GoToFilters(string type, bool waiting)
     {
         var parts = new List<string>();
-        if (_search.Length > 0) parts.Add("q=" + Uri.EscapeDataString(_search));
+        var search = _search.Trim();
+        if (search.Length > 0) parts.Add("q=" + Uri.EscapeDataString(search));
         if (type.Length > 0) parts.Add("type=" + Uri.EscapeDataString(type));
         if (waiting) parts.Add("waiting=1");
         Nav.NavigateTo(parts.Count == 0 ? "/upgrades" : "/upgrades?" + string.Join("&", parts));
@@ -806,12 +827,13 @@
     private void ApplyFilters()
     {
         IEnumerable<UpgradeFleetRow> q = _all;
-        if (_search.Length > 0)
+        var term = _search.Trim();
+        if (term.Length > 0)
         {
             q = q.Where(r =>
-                r.ProjectName.Contains(_search, StringComparison.OrdinalIgnoreCase)
-                || (r.ProjectShortName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
-                || r.EnvironmentName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+                r.ProjectName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (r.ProjectShortName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                || r.EnvironmentName.Contains(term, StringComparison.OrdinalIgnoreCase));
         }
         if (_type.Length > 0)
         {

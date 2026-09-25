@@ -37,6 +37,8 @@ public sealed class UpgradesPageTests : IDisposable
     {
         var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("upgrades@example.com");
+        // The search filters straight away here; the one test about the wait sets its own.
+        UpgradesPage.SearchDebounce = TimeSpan.Zero;
 
         // The page asks the browser for the last view picked; by default it has none.
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
@@ -82,6 +84,8 @@ public sealed class UpgradesPageTests : IDisposable
 
     public void Dispose()
     {
+        // A test that set a real wait must not hand it to a page in another test class.
+        UpgradesPage.SearchDebounce = TimeSpan.Zero;
         _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
@@ -318,6 +322,62 @@ public sealed class UpgradesPageTests : IDisposable
             cut.FindAll(".data-table tbody tr").Should().BeEmpty();
             cut.Find(".empty-state__title").TextContent.Should().Be("No environments match these filters");
         });
+    }
+
+    // ── Typing fast (#981) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// The box used to be trimmed as it was typed and the trimmed value written back,
+    /// so the space between two words vanished and "CRONUS Denmark" could not be typed.
+    /// </summary>
+    [Fact]
+    public async Task A_trailing_space_stays_in_the_box_and_the_search_still_finds_the_row()
+    {
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Production");
+        await SeedFleetEnvironmentAsync("Fabrikam Norway", "Production");
+
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+
+        cut.Find(".cmdbar__search input").Input("CRONUS ");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".cmdbar__search input").GetAttribute("value").Should().Be("CRONUS ");
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle();
+            rows[0].QuerySelector("td.upg-customer a")!.TextContent.Should().Be("CRONUS Denmark");
+        });
+    }
+
+    /// <summary>
+    /// The table waits for typing to pause instead of redrawing per keystroke, and the
+    /// box keeps the latest text throughout.
+    /// </summary>
+    [Fact]
+    public async Task The_table_filters_once_typing_pauses_and_the_box_keeps_every_keystroke()
+    {
+        await SeedFleetEnvironmentAsync("CRONUS Denmark", "Production");
+        await SeedFleetEnvironmentAsync("Fabrikam Norway", "Production");
+        UpgradesPage.SearchDebounce = TimeSpan.FromMilliseconds(300);
+
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.FindAll(".data-table tbody tr").Should().HaveCount(2));
+
+        cut.Find(".cmdbar__search input").Input("f");
+        cut.Find(".cmdbar__search input").Input("fa");
+        cut.Find(".cmdbar__search input").Input("fab");
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".cmdbar__search input").GetAttribute("value").Should().Be("fab"));
+
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll(".data-table tbody tr");
+            rows.Should().ContainSingle();
+            rows[0].QuerySelector("td.upg-customer a")!.TextContent.Should().Be("Fabrikam Norway");
+        }, TimeSpan.FromSeconds(5));
+        cut.Find(".cmdbar__search input").GetAttribute("value").Should().Be("fab");
     }
 
     // ── The solution's short name (#966) ───────────────────────────────

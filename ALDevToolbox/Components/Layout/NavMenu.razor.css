@@ -17,3 +17,83 @@
     color: var(--ink-2);
     text-decoration: underline;
 }
+
+/* ---------- Arrange mode (issue #956) ----------
+   wwwroot/nav-arrange.js puts .is-arranging on the <nav class="app__nav">
+   MainLayout owns, and copies .nav-arrange onto every group and every row.
+   No sheet exists for this yet - see divergence 74 in
+   .design/design-migration.md - so it is built from the sidebar's own parts:
+   the controls are sized like .nav-link-btn and coloured like the group heads. */
+
+/* A bare wrapper with no box of its own, so the grid gap and the active
+   keyline still belong to the .nav-item inside it. */
+.nav-row { display: block; }
+
+/* Where the script copies the row controls from; never shown itself. */
+.nav-arrange-source { display: none; }
+.nav-arrange-toggle { margin-left: auto; }
+.nav-arrange-bar { display: none; gap: var(--space-2); }
+.nav-arrange-status { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-sm); font-size: var(--text-2xs); color: var(--ink-3); }
+.nav-arrange-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.app__nav.is-arranging .nav-links { display: none; }
+.app__nav.is-arranging .nav-arrange-bar { display: grid; }
+
+/* Everything is laid out flat while arranging: every group open, links and
+   group heads inert so a stray click cannot navigate away or fold a group
+   mid-arrange. Sub-pages stay in view, dimmed and without controls of their
+   own, so moving Solutions visibly carries Environments with it - someone
+   who came to move a sub-page sees where it went. */
+.app__nav.is-arranging .nav-group.is-collapsed > .nav-group__items { display: grid; }
+.app__nav.is-arranging .nav-sub { opacity: .55; }
+.app__nav.is-arranging .nav-group[data-group],
+.app__nav.is-arranging .nav-row { cursor: grab; }
+.app__nav.is-arranging .app__nav-scroll ::deep a,
+.app__nav.is-arranging .nav-group ::deep .nav-group__head { pointer-events: none; }
+.app__nav.is-arranging .nav-group ::deep .nav-group__caret { visibility: hidden; }
+
+/* Room on the right of each row for the controls laid over it. */
+.app__nav.is-arranging .nav-row { position: relative; }
+.app__nav.is-arranging .nav-row ::deep .nav-item,
+.app__nav.is-arranging .nav-group ::deep .nav-group__head { padding-right: 80px; }
+
+.nav-arrange {
+    position: absolute; top: 0; right: 0; height: 34px;
+    display: flex; align-items: center; gap: 2px; padding-right: var(--space-1);
+}
+/* A group's controls share the head's grid cell rather than being positioned
+   from the group's top edge, which carries the rule and padding between groups. */
+.app__nav.is-arranging .nav-group ::deep .nav-group__head { grid-area: 1 / 1; }
+.nav-group > .nav-arrange { position: static; grid-area: 1 / 1; justify-self: end; height: 26px; }
+.nav-arrange__grip {
+    width: 20px; height: 24px; display: grid; place-items: center;
+    color: var(--ink-4); cursor: grab;
+}
+.nav-arrange__btn {
+    width: 24px; height: 24px; display: grid; place-items: center;
+    background: none; border: 0; border-radius: var(--r-control);
+    color: var(--ink-3); cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.nav-arrange__btn:hover { background: var(--surface-sunken); color: var(--primary-ink); }
+.nav-arrange__btn:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.nav-arrange__btn[disabled] { color: var(--ink-4); opacity: .5; background: none; cursor: default; }
+.is-dragging { opacity: .5; }
+
+/* Dragging is unreliable under a finger, so a touch screen gets the Move up
+   and Move down buttons alone, at a size a thumb can hit, rather than a grip
+   that half works. */
+@media (pointer: coarse) {
+    .nav-arrange__grip { display: none; }
+    .nav-arrange__btn { width: 32px; height: 32px; }
+}
+
+/* The icon rail has no labels to arrange by. The phone drawer does, so it
+   gets the controls back while it is open. */
+@container (max-width: 1080px) {
+    .nav-arrange-toggle, .app__nav.is-arranging .nav-arrange-bar, .nav-arrange { display: none; }
+}
+@container (max-width: 700px) {
+    .app.is-drawer-open .nav-arrange-toggle { display: inline-flex; }
+    .app.is-drawer-open .app__nav.is-arranging .nav-arrange-bar { display: grid; }
+    .app.is-drawer-open .nav-arrange { display: flex; }
+}
