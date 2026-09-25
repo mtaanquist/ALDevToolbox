@@ -51,7 +51,8 @@
 <DetailPage IsLoading="@(_loading)"
             LoadingText="Loading pipeline..."
             IsNotFound="@(_notFound)"
-            Title="@(_header?.Name)">
+            Title="@(_header?.Name)"
+            PageClass="pb-page">
     <NotFound>
         <EmptyState Icon="rocket" Title="This pipeline doesn't exist" Heading="true">
             <Text>It may have been deleted. Head back to the list to pick another.</Text>

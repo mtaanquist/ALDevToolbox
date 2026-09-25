@@ -383,14 +383,24 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .data-table tbody tr.is-target:focus { outline: none; }
 .data-table tbody tr.is-target td:first-child { box-shadow: inset 2px 0 0 var(--primary); }
 
-/* The release pipeline head wraps as its sheet draws it (ReleasePipelineBody.dc.html:
-   flex-wrap on the head and the actions, the title block 300px before it wraps), so
-   on a phone the three actions drop under the title instead of squeezing it to one
-   word a line. On the page, not the frame, because DetailPage is shared (#929). */
-.rp-page .detail-head { flex-wrap: wrap; }
-.rp-page .detail-head > div:first-child { min-width: 0; flex: 1 1 300px; }
-.rp-page .detail-head__title-row { flex-wrap: wrap; }
-.rp-page .page-head__actions { flex-wrap: wrap; }
+/* The run monitors' heads wrap as the release pipeline's sheet draws it
+   (ReleasePipelineBody.dc.html: flex-wrap on the head and the actions, the title
+   block 300px before it wraps), so on a phone the actions drop under the title
+   instead of squeezing it to one word a line (#929) or running off the right edge
+   (#978). The actions box also has to be allowed to shrink: components.css gives it
+   `flex: none`, and a box that cannot shrink below one line of buttons never wraps
+   them, however much room the head gives it. Here and not in a scoped sheet because
+   DetailPage renders the head, and a page's ::deep can only reach into markup under
+   an element the page renders itself; on the page, not the frame, because
+   DetailPage is shared. */
+.rp-page .detail-head,
+.pb-page .detail-head { flex-wrap: wrap; }
+.rp-page .detail-head > div:first-child,
+.pb-page .detail-head > div:first-child { min-width: 0; flex: 1 1 300px; }
+.rp-page .detail-head__title-row,
+.pb-page .detail-head__title-row { flex-wrap: wrap; }
+.rp-page .page-head__actions,
+.pb-page .page-head__actions { flex: 0 1 auto; flex-wrap: wrap; }
 
 /* A solution's short name after its name, quieter: it is how colleagues say the
    customer aloud, and a second way to spot the row. Shared by every list that names a

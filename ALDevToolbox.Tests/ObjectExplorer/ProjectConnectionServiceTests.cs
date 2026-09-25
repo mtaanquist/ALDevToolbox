@@ -2549,6 +2549,92 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         admin.SelectedVersionType.Should().Be("GA", "preview versions are only valid for sandboxes, so the type travels with the choice");
     }
 
+    // ── Version change over a stale date (issue #980) ─────────────────────
+
+    /// <summary>
+    /// The current selection (28.5) and the target (29.2) as one updates list. After the
+    /// write the re-read shows 29.2 selected, so the re-mirror proof passes.
+    /// </summary>
+    private static FakeAdminClient AdminForVersionChange(
+        DateTimeOffset? currentDate, DateTimeOffset? targetDate, DateTimeOffset? targetLatest)
+    {
+        var admin = new FakeAdminClient();
+        admin.OnEnvironmentUpdates = _ => admin.SelectWrites == 0
+            ? new[]
+            {
+                new BcEnvironmentUpdate("28.5", true, true, "scheduled", "GA", currentDate, null, false, "Active", null, null),
+                new BcEnvironmentUpdate("29.2", true, false, "", "GA", targetDate, targetLatest, false, "Active", null, null),
+            }
+            : new[]
+            {
+                new BcEnvironmentUpdate("28.5", true, false, "", "GA", null, null, false, "Active", null, null),
+                new BcEnvironmentUpdate("29.2", true, true, "scheduled", "GA", admin.SelectedDateTime, targetLatest, false, "Active", null, null),
+            };
+        return admin;
+    }
+
+    [Fact]
+    public async Task Changing_the_version_sends_no_date_when_the_target_has_none()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var now = _clock.GetUtcNow();
+        var admin = AdminForVersionChange(now.AddDays(10), targetDate: null, targetLatest: now.AddDays(40));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "29.2");
+
+        admin.SelectedVersion.Should().Be("29.2");
+        admin.SelectedDateTime.Should().BeNull("Business Central keeps or assigns the date when the target carries none");
+        admin.SelectedIgnoreUpdateWindow.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Changing_the_version_over_a_past_date_keeps_the_customers_current_slot()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var now = _clock.GetUtcNow();
+        var agreed = now.AddDays(10);
+        var admin = AdminForVersionChange(agreed, targetDate: now.AddDays(-2), targetLatest: now.AddDays(40));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "29.2");
+
+        admin.SelectedVersion.Should().Be("29.2");
+        admin.SelectedDateTime.Should().Be(agreed, "the agreed slot survives the version change when the new version allows it");
+        admin.SelectedIgnoreUpdateWindow.Should().BeNull("only 'Start update' takes the customer's window away");
+    }
+
+    [Fact]
+    public async Task Changing_the_version_over_a_past_date_sends_the_latest_allowed_when_the_current_slot_has_passed()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var now = _clock.GetUtcNow();
+        var bound = new DateTimeOffset(now.UtcDateTime.Date.AddDays(40), TimeSpan.Zero);
+        var admin = AdminForVersionChange(now.AddDays(-1), targetDate: now.AddDays(-2), targetLatest: bound);
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "29.2");
+
+        admin.SelectedDateTime.Should().Be(BcUpdateSchedule.EffectiveLatest(bound),
+            "a midnight bound is exclusive, so the last day allowed is the one before");
+        admin.SelectedIgnoreUpdateWindow.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Changing_the_version_over_a_past_date_with_no_bound_is_refused_and_sends_nothing()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var now = _clock.GetUtcNow();
+        var admin = AdminForVersionChange(now.AddDays(10), targetDate: now.AddDays(-2), targetLatest: null);
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "29.2");
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["TargetVersion"]
+            .Should().Contain("admin centre");
+        admin.SelectWrites.Should().Be(0);
+    }
+
     // ── Update-date writes (issue #657 Stage 3) ───────────────────────────
 
     private const int FlagUserId = 9600;

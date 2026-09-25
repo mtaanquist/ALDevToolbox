@@ -1164,8 +1164,10 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// (issue #960).
     /// </para>
     /// <para>
-    /// No date is sent: Business Central keeps or assigns one inside the new version's
-    /// rollout. Like the two date writes, the row is re-mirrored from a fresh read
+    /// Usually no date is sent: Business Central keeps or assigns one inside the new
+    /// version's rollout. The exception is a target update that already carries a date in
+    /// the past, which Business Central refuses to select (issue #980); then a date goes
+    /// with the selection, chosen by <see cref="DateForVersionChange"/>. Like the two date writes, the row is re-mirrored from a fresh read
     /// afterwards, and that read is also the proof - a read that still shows another
     /// version selected fails the call rather than being recorded as done (the #804
     /// lesson). The change is recorded in the audit log the same way.
@@ -1206,11 +1208,14 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         }
 
         var before = PickNextUpdate(updates);
+        var date = DateForVersionChange(chosen, before, _clock.GetUtcNow());
 
         try
         {
+            // Never ignoreUpdateWindow: only "Start update" may take the window away.
             await _adminClient.SelectTargetVersionAsync(
-                env.Token, env.Family, env.Name, chosen.TargetVersion, chosen.TargetVersionType, ct: ct);
+                env.Token, env.Family, env.Name, chosen.TargetVersion, chosen.TargetVersionType,
+                selectedDateTime: date, ct: ct);
         }
         catch (BcApiException ex)
         {
@@ -1225,9 +1230,59 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         await RecordUpdateActionAsync(
             projectId, env, before, $"Set the next version to {chosen.TargetVersion}", ct);
 
-        _logger.LogInformation(
-            "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}).",
-            _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId);
+        if (date is { } sent)
+        {
+            _logger.LogInformation(
+                "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}), sending {SelectedDateTime} because the update carried a past date ({StaleDateTime}).",
+                _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId, sent, chosen.SelectedDateTime);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}).",
+                _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId);
+        }
+    }
+
+    /// <summary>
+    /// How far ahead of now a date must sit to count as "in the future" for a version
+    /// change. A date a few seconds ahead when we read it is in the past by the time the
+    /// PATCH lands, and Business Central refuses the selection then just as it would for
+    /// yesterday's date.
+    /// </summary>
+    internal static readonly TimeSpan VersionChangeDateGrace = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// The date to send with a version change, or null to send none. Business Central
+    /// refuses to select an update whose own stored date is already past ("Modify the
+    /// selected date time first", issue #980), so only then does a date travel: the
+    /// customer's current slot (<paramref name="current"/>) when it is still ahead and
+    /// inside the target's bound, so the agreed day survives the version change; otherwise
+    /// the target's last allowed date, which is where "Move dates" would put it. With no
+    /// usable bound there is nothing we may send, so the change is refused with a message
+    /// that sends the person to the admin centre. See <c>.design/environment-updates.md</c>,
+    /// "The three writes".
+    /// </summary>
+    internal static DateTimeOffset? DateForVersionChange(
+        BcEnvironmentUpdate target, BcEnvironmentUpdate? current, DateTimeOffset now)
+    {
+        var earliest = now + VersionChangeDateGrace;
+        if (target.SelectedDateTime is not { } stale || stale > earliest) return null;
+
+        var latest = BcUpdateSchedule.EffectiveLatest(target.LatestSelectableDateTime);
+        if (latest is not { } bound || bound <= earliest)
+        {
+            throw Validation("TargetVersion",
+                $"Business Central {target.TargetVersion} carries an update date that has already passed, and "
+                + "Microsoft allows no later date to move it to from here. Set a new date for it in the Business Central "
+                + "admin centre, then change the version again.");
+        }
+
+        if (current?.SelectedDateTime is { } agreed && agreed > earliest && agreed <= bound)
+        {
+            return agreed;
+        }
+        return bound;
     }
 
     /// <summary>
