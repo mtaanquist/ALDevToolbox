@@ -317,6 +317,26 @@ public sealed class PipelineBuildsReleaseTests : IDisposable
         (await ctx.OeReleasePipelines.AsNoTracking().SingleAsync()).BuildPipelineId.Should().Be(seed.PipelineId);
     }
 
+    /// <summary>
+    /// At phone width the head's actions wrap under the title rather than running off the
+    /// right edge (#978). bunit cannot measure layout, so this pins what the layout hangs
+    /// on: the page class app.css's wrap rules select, around the head's actions, with
+    /// Build still the first of them.
+    /// </summary>
+    [Fact]
+    public async Task The_head_actions_sit_in_the_wrapping_head_with_Build_first()
+    {
+        var seed = await SeedAsync();
+        var cut = RenderPage(seed);
+
+        cut.WaitForAssertion(() =>
+        {
+            var actions = cut.Find(".page.pb-page > .detail-head > .page-head__actions");
+            actions.Children[0].TextContent.Trim().Should().Be("Build");
+            actions.Children[0].ClassList.Should().Contain("btn--primary");
+        });
+    }
+
     [Fact]
     public async Task Someone_who_cannot_manage_the_solution_gets_no_release_action()
     {
