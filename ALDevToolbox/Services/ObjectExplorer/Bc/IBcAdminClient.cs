@@ -41,12 +41,6 @@ public interface IBcAdminClient
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>
-    /// The operations Business Central has recorded against one environment, in the
-    /// order it returns them. An environment that is gone answers with an empty list,
-    /// as <see cref="ListEnvironmentUpdatesAsync"/> does. Throws
-    /// <see cref="BcApiException"/> on any other non-success status.
-    /// </summary>
-    /// <summary>
     /// The database size of every environment in the tenant, by environment name, and
     /// what the tenant is allowed in total. The allowance is the <em>tenant's</em> - all
     /// its environments share it - which is why this is one read and not one per
@@ -55,6 +49,12 @@ public interface IBcAdminClient
     /// </summary>
     Task<BcTenantStorage> GetTenantStorageAsync(string accessToken, CancellationToken ct = default);
 
+    /// <summary>
+    /// The operations Business Central has recorded against one environment, in the
+    /// order it returns them. An environment that is gone answers with an empty list,
+    /// as <see cref="ListEnvironmentUpdatesAsync"/> does. Throws
+    /// <see cref="BcApiException"/> on any other non-success status.
+    /// </summary>
     Task<IReadOnlyList<BcEnvironmentOperation>> ListEnvironmentOperationsAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 

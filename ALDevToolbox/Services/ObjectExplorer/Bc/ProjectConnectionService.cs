@@ -1398,6 +1398,86 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// Re-reads one environment while an update runs on it, and re-mirrors that one row:
+    /// its state and version, and its next update. What the Upgrades page's watch calls
+    /// every ten seconds after "Start update" (issue #982), so a person can see the update
+    /// through to the end without pressing Refresh.
+    /// <para>
+    /// Deliberately narrow: two requests against one tenant - the environment by name and
+    /// its updates list - where a Refresh makes the whole tenant answer for every
+    /// environment it has. The row is written through the same mapping the environment
+    /// list uses (<see cref="ApplyFetched"/>, <see cref="ApplyNextUpdate"/>), so a watched
+    /// row and a refreshed one cannot disagree about what a field means. See
+    /// <c>.design/environment-updates.md</c>, "The page", for why this load is a fine
+    /// guest on Microsoft's API.
+    /// </para>
+    /// <para>
+    /// Gated on the environment-updates grant, the same one the Refresh on that page
+    /// queues under and the one that started the update. Both reads must answer or nothing
+    /// is written: a status without its update would let the page call an update over that
+    /// is still running. A read that fails comes back under the <c>Refresh</c> key, which a
+    /// caller can retry; an environment that is gone, or a connection that needs setting
+    /// up, comes back under <c>Environment</c>, which retrying will not fix.
+    /// </para>
+    /// </summary>
+    /// <returns>What the row now says, for the page to show without reading the fleet again.</returns>
+    public async Task<BcEnvironmentReading> RefreshEnvironmentAsync(
+        int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.UpdateOps);
+
+        BcEnvironment? fetched;
+        IReadOnlyList<BcEnvironmentUpdate> updates;
+        try
+        {
+            fetched = await _adminClient.GetEnvironmentAsync(env.Token, env.Family, env.Name, ct);
+            updates = fetched is null
+                ? Array.Empty<BcEnvironmentUpdate>()
+                : await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning(
+                "Couldn't re-read {Environment} (project {ProjectId}) while watching its update: {Message}.",
+                env.Name, projectId, ex.Message);
+            throw Validation("Refresh", "Couldn't read the environment from Business Central. " + ex.Message);
+        }
+
+        if (fetched is null)
+        {
+            throw Validation("Environment", "Business Central no longer has this environment.");
+        }
+
+        var row = await _db.OeProjectEnvironments.FirstOrDefaultAsync(e => e.Id == env.Id, ct)
+            ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
+
+        var now = _clock.GetUtcNow().UtcDateTime;
+        ApplyFetched(row, fetched, now);
+        ApplyNextUpdate(row, updates);
+        await _db.SaveChangesAsync(ct);
+
+        // What the panel cached before this read is now older than the row.
+        _panelCache.Invalidate(projectId, environmentId);
+
+        _logger.LogInformation(
+            "Re-read {Environment} (project {ProjectId}) while watching its update: {Status}, version {Version}, next update {NextVersion} {NextStatus}.",
+            env.Name, projectId, row.Status, row.Version, row.BcNextUpdateVersion, row.BcNextUpdateStatus);
+
+        return new BcEnvironmentReading(
+            row.Status,
+            row.Version,
+            row.FetchedAt,
+            row.BcNextUpdateVersion,
+            row.BcNextUpdateType,
+            row.BcNextUpdateStatus,
+            row.BcNextUpdateDate,
+            row.BcNextUpdateLatestDate,
+            row.BcNextUpdateIgnoresWindow,
+            row.BcOfferedVersions,
+            row.BcNextUpdateFetchedAt);
+    }
+
+    /// <summary>
     /// Reads the environment's updates live and picks the one a date write acts on — the
     /// same rule the mirror caches, so the fleet page and the write agree on which update
     /// "the next update" is. Null when the environment has nothing on offer.
@@ -2593,3 +2673,42 @@ public sealed record BcEnvironmentPanel(
     string? EnvironmentUpdatesError,
     /// <summary>When these sections were read from Business Central — a cached panel keeps its original read time, so the page can say how old the answer is.</summary>
     DateTime FetchedAtUtc);
+
+/// <summary>
+/// What one environment's row says after <see cref="ProjectConnectionService.RefreshEnvironmentAsync"/>
+/// re-read it: the fields the Upgrades page shows, exactly as the mirror now holds them.
+/// Returned rather than re-read from the fleet, so a watch tick costs the page no query
+/// of its own.
+/// </summary>
+public sealed record BcEnvironmentReading(
+    string? Status,
+    string? Version,
+    DateTime? EnvironmentFetchedAt,
+    string? NextUpdateVersion,
+    string? NextUpdateType,
+    string? NextUpdateStatus,
+    DateTime? NextUpdateDate,
+    DateTime? NextUpdateLatestDate,
+    bool? NextUpdateIgnoresWindow,
+    List<string>? OfferedVersions,
+    DateTime? NextUpdateFetchedAt)
+{
+    /// <summary>
+    /// <paramref name="row"/> with this reading laid over it. Everything the reading does
+    /// not carry - who may act on the row, its solution, its storage - is kept.
+    /// </summary>
+    public UpgradeFleetRow ApplyTo(UpgradeFleetRow row) => row with
+    {
+        Status = Status,
+        Version = Version,
+        EnvironmentFetchedAt = EnvironmentFetchedAt,
+        NextUpdateVersion = NextUpdateVersion,
+        NextUpdateType = NextUpdateType,
+        NextUpdateStatus = NextUpdateStatus,
+        NextUpdateDate = NextUpdateDate,
+        NextUpdateLatestDate = NextUpdateLatestDate,
+        NextUpdateIgnoresWindow = NextUpdateIgnoresWindow,
+        OfferedVersions = OfferedVersions,
+        FetchedAt = NextUpdateFetchedAt,
+    };
+}

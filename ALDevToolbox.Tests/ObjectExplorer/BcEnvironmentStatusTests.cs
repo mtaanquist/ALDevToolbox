@@ -114,4 +114,22 @@ public sealed class BcEnvironmentStatusTests
     {
         BcEnvironmentStatus.StatusWord(status).Should().Be(expected);
     }
+
+    /// <summary>
+    /// "Upgrading" is what Business Central reports while a platform update runs. The
+    /// Upgrades page watches rows in exactly that state (#982), so it must read as an
+    /// update in progress - and draw as one - rather than as a state nobody recognises.
+    /// </summary>
+    [Theory]
+    [InlineData("Upgrading")]
+    [InlineData("upgrading")]
+    [InlineData("Updating")]
+    public void An_update_in_progress_is_named_as_one(string status)
+    {
+        BcEnvironmentStatus.StatusWord(status).Should().Be("Update in progress");
+        var row = new UpgradeFleetRow(1, "CRONUS Denmark", null, 2, "Production", "Production", status, null,
+            null, null, null, null, null, null, null, CanAct: true);
+        ALDevToolbox.Components.Shared.FleetRowState.RowState(row).Should().Be("is-running");
+        ALDevToolbox.Components.Shared.FleetRowState.StatusIcon(row).Should().Be("clock");
+    }
 }

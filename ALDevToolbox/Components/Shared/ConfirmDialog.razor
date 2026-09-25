@@ -221,6 +221,12 @@
         }
     }
 
+    /// <summary>
+    /// True while the dialog is on screen. For a page that refreshes its rows on a timer:
+    /// the rows a person is reading in the dialog must not move under them.
+    /// </summary>
+    public bool IsOpen => _open;
+
     /// <summary>Opens the dialog with the current default parameters.</summary>
     public Task<bool> OpenAsync()
     {

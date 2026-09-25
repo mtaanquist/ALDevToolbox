@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.DataProtection;
 using ALDevToolbox.Components.Pages.Upgrades;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
@@ -550,6 +551,234 @@ public sealed class UpgradesPageTests : IDisposable
         await ctx.SaveChangesAsync();
     }
 
+    // ── Watching an update through to its end (#982) ───────────────────
+
+    /// <summary>
+    /// An Admin Center that answers the three calls a started-and-watched update makes:
+    /// the updates list, the date write, and the environment by name. Everything else
+    /// still refuses, so a watch that reached for more would fail the test.
+    /// </summary>
+    private sealed class WatchAdminClient : UnreachableAdminClient
+    {
+        public List<string> Reads { get; } = new();
+        public string Status = "Active";
+        public string Version = "27.5.12345.0";
+        public List<BcEnvironmentUpdate> Updates = [NextUpdate("Scheduled")];
+
+        public override Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            Reads.Add("GetEnvironment:" + environmentName);
+            return Task.FromResult<BcEnvironment?>(new BcEnvironment(environmentName, "Production")
+            {
+                ApplicationFamily = "BusinessCentral",
+                Status = Status,
+                Version = Version,
+            });
+        }
+
+        public override Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            Reads.Add("ListEnvironmentUpdates:" + environmentName);
+            return Task.FromResult<IReadOnlyList<BcEnvironmentUpdate>>(Updates.ToList());
+        }
+
+        public override Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
+
+    private static BcEnvironmentUpdate NextUpdate(string status) =>
+        new("27.6", true, true, status, "GA", DateTimeOffset.UtcNow.AddMinutes(-6),
+            DateTimeOffset.UtcNow.AddDays(20), true, "Active", null, null);
+
+    /// <summary>Points the page's connection service at <paramref name="admin"/> with a token that is always granted.</summary>
+    private void UseBusinessCentral(WatchAdminClient admin)
+    {
+        _ctx.Services.AddSingleton<IBcAdminClient>(admin);
+        _ctx.Services.AddSingleton(new BcTokenService(
+            new ALDevToolbox.Tests.ObjectExplorer.StubHttpClientFactory(new Dictionary<string, string>
+            {
+                ["oauth2"] = "{\"access_token\":\"tok\",\"expires_in\":3600}",
+            }),
+            NullLogger<BcTokenService>.Instance));
+    }
+
+    /// <summary>A connected solution with <paramref name="count"/> environments in the given state.</summary>
+    private async Task<List<int>> SeedConnectedAsync(
+        string status = "Active", string? nextStatus = "Scheduled", int count = 1)
+    {
+        await using var ctx = _db.NewContext();
+        var project = new OeProject
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = "CRONUS Denmark",
+            BcTenantId = TenantId,
+            BcClientId = "client-abc",
+            BcClientSecretEncrypted = _db.DataProtectionProvider
+                .CreateProtector(ProjectConnectionService.SecretProtectionPurpose).Protect("s3cr3t"),
+            BcClientSecretExpiresAt = DateTime.UtcNow.AddYears(1),
+            CreatedByUserId = AdminUserId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+
+        var rows = Enumerable.Range(0, count).Select(i => new OeProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ProjectId = project.Id,
+            Name = count == 1 ? "Production" : $"Sandbox {i + 1:00}",
+            Type = count == 1 ? "Production" : "Sandbox",
+            ApplicationFamily = "BusinessCentral",
+            Status = status,
+            Version = "27.5.12345.0",
+            FetchedAt = DateTime.UtcNow,
+            BcNextUpdateVersion = "27.6",
+            BcNextUpdateStatus = nextStatus,
+            BcNextUpdateDate = DateTime.UtcNow.AddMinutes(-6),
+            BcNextUpdateFetchedAt = DateTime.UtcNow,
+        }).ToList();
+        ctx.OeProjectEnvironments.AddRange(rows);
+        await ctx.SaveChangesAsync();
+        return rows.Select(r => r.Id).ToList();
+    }
+
+    /// <summary>
+    /// The named user has just started a customer's update and is staying on the page to
+    /// see it finish. The row must say it is being watched without them pressing anything.
+    /// </summary>
+    [Fact]
+    public async Task Starting_an_update_now_puts_its_row_on_the_watch()
+    {
+        var envId = (await SeedConnectedAsync()).Single();
+        var admin = new WatchAdminClient();
+        UseBusinessCentral(admin);
+        var cut = RenderWithOneRow();
+        cut.Instance.WatchedEnvironmentIds.Should().BeEmpty("nothing is updating yet");
+
+        cut.Find("tbody .data-table__col-check input").Change(true);
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".cmdbar .cmdbar__group:last-child button")[1].HasAttribute("disabled").Should().BeFalse());
+        cut.FindAll(".cmdbar .cmdbar__group:last-child button")[1].Click();
+        cut.WaitForAssertion(() => cut.Find(".confirm-dialog__gate input").Input("update"));
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions .btn")
+            .First(b => b.TextContent.Trim() == "Start the updates").Click());
+        // The grace period's own way past the wait.
+        cut.WaitForAssertion(() => cut.FindAll(".confirm-dialog__actions .btn")
+            .First(b => b.TextContent.Trim() == "Start now").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Instance.WatchedEnvironmentIds.Should().Equal(envId);
+            cut.Find("td.upg-next .upg-note--busy").TextContent.Trim().Should().StartWith("Updating... started");
+        });
+    }
+
+    /// <summary>
+    /// A slot the worker fired at 20:00 is under way when somebody opens the page, and it
+    /// deserves the same watch as one started from here. A row that is simply waiting for
+    /// its date is not watched: nothing is happening to it.
+    /// </summary>
+    [Theory]
+    [InlineData("Upgrading", "Scheduled", true)]
+    [InlineData("Active", "Running", true)]
+    [InlineData("Active", "Scheduled", false)]
+    public async Task A_row_already_updating_is_watched_from_the_moment_the_page_opens(
+        string status, string nextStatus, bool watched)
+    {
+        var envId = (await SeedConnectedAsync(status, nextStatus)).Single();
+        UseBusinessCentral(new WatchAdminClient());
+
+        var cut = RenderWithOneRow();
+
+        if (watched)
+        {
+            cut.Instance.WatchedEnvironmentIds.Should().Equal(envId);
+            cut.Find("td.upg-next .upg-note--busy").TextContent.Should().Contain("started");
+        }
+        else
+        {
+            cut.Instance.WatchedEnvironmentIds.Should().BeEmpty();
+            cut.FindAll("td.upg-next .upg-note--busy").Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task A_re_read_that_is_still_updating_keeps_the_watch()
+    {
+        var envId = (await SeedConnectedAsync("Upgrading")).Single();
+        var admin = new WatchAdminClient { Status = "Upgrading", Updates = [NextUpdate("Running")] };
+        UseBusinessCentral(admin);
+        var cut = RenderWithOneRow();
+
+        await cut.InvokeAsync(() => cut.Instance.WatchTickAsync());
+
+        admin.Reads.Should().Equal("GetEnvironment:Production", "ListEnvironmentUpdates:Production");
+        cut.Instance.WatchedEnvironmentIds.Should().Equal(envId);
+    }
+
+    /// <summary>
+    /// The update is over when the environment is running again and nothing is under way.
+    /// On the new version it went through, and the row says so in words, not API ones.
+    /// </summary>
+    [Fact]
+    public async Task A_running_re_read_on_the_new_version_ends_the_watch_as_updated()
+    {
+        await SeedConnectedAsync("Upgrading");
+        var admin = new WatchAdminClient { Status = "Active", Version = "27.6.20001.0", Updates = [] };
+        UseBusinessCentral(admin);
+        var cut = RenderWithOneRow();
+
+        await cut.InvokeAsync(() => cut.Instance.WatchTickAsync());
+
+        cut.Instance.WatchedEnvironmentIds.Should().BeEmpty();
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("td.upg-next .upg-note--ok").TextContent.Trim().Should().EndWith("Updated to 27.6");
+            cut.Find("td.u-num").TextContent.Should().Be("27.6", "the row shows what Business Central now says");
+        });
+    }
+
+    [Fact]
+    public async Task A_running_re_read_still_on_the_old_version_ends_the_watch_as_failed()
+    {
+        var envId = (await SeedConnectedAsync("Upgrading")).Single();
+        var admin = new WatchAdminClient { Status = "Active", Updates = [NextUpdate("Failed")] };
+        UseBusinessCentral(admin);
+        var cut = RenderWithOneRow();
+
+        await cut.InvokeAsync(() => cut.Instance.WatchTickAsync());
+
+        cut.Instance.WatchedEnvironmentIds.Should().BeEmpty();
+        cut.WaitForAssertion(() =>
+        {
+            var note = cut.Find("td.upg-next .upg-note--bad");
+            note.TextContent.Should().Contain("Update failed");
+            note.QuerySelector("a.upg-note__link")!.GetAttribute("href")
+                .Should().Be($"/environments/{envId}/operations");
+        });
+    }
+
+    /// <summary>
+    /// Fifty updates started at once must not become six hundred requests a minute
+    /// against Microsoft: one tick reads ten, two requests each.
+    /// </summary>
+    [Fact]
+    public async Task One_tick_reads_at_most_ten_environments()
+    {
+        await SeedConnectedAsync("Upgrading", count: 12);
+        var admin = new WatchAdminClient { Status = "Upgrading", Updates = [NextUpdate("Running")] };
+        UseBusinessCentral(admin);
+        var cut = _ctx.Render<UpgradesPage>();
+        cut.WaitForAssertion(() => cut.Instance.WatchedEnvironmentIds.Should().HaveCount(12));
+
+        await cut.InvokeAsync(() => cut.Instance.WatchTickAsync());
+
+        admin.Reads.Should().HaveCount(2 * UpgradesPage.WatchPerTick);
+        admin.Reads.Where(r => r.StartsWith("GetEnvironment:")).Should().OnlyHaveUniqueItems();
+        cut.Instance.WatchedEnvironmentIds.Should().HaveCount(12);
+    }
+
     [Fact]
     public void A_row_without_a_tenant_has_no_Business_Central_address_and_a_name_is_escaped()
     {
@@ -558,5 +787,100 @@ public sealed class UpgradesPageTests : IDisposable
 
         row.BusinessCentralUrl.Should().BeNull();
         (row with { TenantId = TenantId }).BusinessCentralUrl.Should().EndWith("/UAT%202");
+    }
+}
+
+/// <summary>
+/// When a watched update counts as over, and how it went - the rule the Upgrades page's
+/// watch applies to each re-read (#982). Pure, so it runs without a database.
+/// </summary>
+public sealed class UpgradeWatchVerdictTests
+{
+    private static UpgradeFleetRow Row(string? status, string? version, string? nextStatus = null) =>
+        new(1, "CRONUS Denmark", null, 2, "Production", "Production", status, version,
+            "27.6", "GA", nextStatus, null, null, null, null, CanAct: true);
+
+    [Theory]
+    [InlineData("Upgrading", null, true)]
+    [InlineData("Preparing", null, true)]
+    [InlineData("NotReady", null, true)]
+    [InlineData("Recovering", null, true)]
+    [InlineData("Active", "Running", true)]
+    [InlineData("active", "running", true)]
+    [InlineData("Active", "Scheduled", false)]
+    [InlineData("Active", null, false)]
+    [InlineData(null, null, false)]
+    public void An_update_is_under_way_when_the_state_is_busy_or_the_update_is_running(
+        string? status, string? nextStatus, bool expected)
+    {
+        UpgradesPage.IsUpdating(Row(status, "27.5.1.0", nextStatus)).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Busy_is_still_updating()
+    {
+        UpgradesPage.Judge(Row("Upgrading", "27.5.1.0"), "27.6", seenBusy: true)
+            .Should().Be(UpgradesPage.WatchVerdict.StillUpdating);
+    }
+
+    [Fact]
+    public void Running_with_the_update_still_running_is_still_updating()
+    {
+        UpgradesPage.Judge(Row("Active", "27.5.1.0", "Running"), "27.6", seenBusy: true)
+            .Should().Be(UpgradesPage.WatchVerdict.StillUpdating);
+    }
+
+    [Theory]
+    [InlineData("27.6.20001.0")]
+    [InlineData("28.0.1.0")]
+    public void Running_on_the_target_version_or_later_is_updated(string version)
+    {
+        UpgradesPage.Judge(Row("Active", version), "27.6", seenBusy: false)
+            .Should().Be(UpgradesPage.WatchVerdict.Updated);
+    }
+
+    [Fact]
+    public void Running_on_the_old_version_after_being_busy_is_failed()
+    {
+        UpgradesPage.Judge(Row("Active", "27.5.1.0", "Failed"), "27.6", seenBusy: true)
+            .Should().Be(UpgradesPage.WatchVerdict.Failed);
+    }
+
+    /// <summary>
+    /// Right after Start update, Business Central has not picked the update up yet: the
+    /// environment is running, on the old version. That is not a failure.
+    /// </summary>
+    [Fact]
+    public void Running_on_the_old_version_before_ever_being_busy_is_not_picked_up_yet()
+    {
+        UpgradesPage.Judge(Row("Active", "27.5.1.0", "Scheduled"), "27.6", seenBusy: false)
+            .Should().Be(UpgradesPage.WatchVerdict.StillUpdating);
+    }
+
+    [Fact]
+    public void A_failed_state_is_failed_whatever_else_the_row_says()
+    {
+        UpgradesPage.Judge(Row("UpgradingFailed", "27.5.1.0", "Running"), "27.6", seenBusy: false)
+            .Should().Be(UpgradesPage.WatchVerdict.Failed);
+    }
+
+    [Fact]
+    public void A_reading_replaces_what_business_central_said_and_keeps_the_rest()
+    {
+        var row = Row("Upgrading", "27.5.1.0", "Running") with { TenantId = Guid.NewGuid(), ProjectShortName = "CRD" };
+        var at = new DateTime(2026, 9, 25, 10, 0, 0, DateTimeKind.Utc);
+
+        var after = new BcEnvironmentReading("Active", "27.6.1.0", at, null, null, null, null, null, null, [], at)
+            .ApplyTo(row);
+
+        after.Status.Should().Be("Active");
+        after.Version.Should().Be("27.6.1.0");
+        after.EnvironmentFetchedAt.Should().Be(at);
+        after.FetchedAt.Should().Be(at);
+        after.HasUpdate.Should().BeFalse();
+        after.OfferedVersions.Should().BeEmpty();
+        after.CanAct.Should().BeTrue();
+        after.TenantId.Should().Be(row.TenantId);
+        after.ProjectShortName.Should().Be("CRD");
     }
 }
