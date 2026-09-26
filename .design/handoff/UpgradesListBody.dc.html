@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head" style="flex-wrap: wrap">
+    <div style="min-width: 0; flex: 1 1 280px">
+      <div class="page-head__crumbs"><a href="#">Home</a><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">Solutions</a><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Upgrades</span></div>
+      <h2 class="page-head__title">Upgrades</h2>
+      <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}"><span class="skeleton" style="display: block; width: 240px; max-width: 100%; margin-top: var(--space-2)"></span></sc-if>
+      <sc-if value="{{ notLoading }}" hint-placeholder-val="{{ true }}"><p class="page-head__sub">{{ sub }}</p></sc-if>
+    </div>
+    <sc-if value="{{ headPrimary }}" hint-placeholder-val="{{ true }}">
+      <div class="page-head__actions"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New upgrade</button></div>
+    </sc-if>
+  </div>
+
+  <div style="overflow-x: auto">
+    <div class="pill-tabs" role="tablist" aria-label="View" style="width: max-content">
+      <sc-for list="{{ views }}" as="v" hint-placeholder-count="3">
+        <button class="pill-tab {{ v.cls }}" type="button" role="tab" aria-selected="{{ v.sel }}">{{ v.label }}<span class="pill-tab__count">{{ v.count }}</span></button>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ isFleet }}" hint-placeholder-val="{{ false }}">
+    <dc-import name="PageUpgrades" embedded="{{ yes }}" selected="{{ three }}" hint-size="100%,900px"></dc-import>
+  </sc-if>
+
+  <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+    <sc-if value="{{ showBar }}" hint-placeholder-val="{{ true }}">
+      <div class="filter-bar">
+        <span class="search filter-bar__search"><svg class="search__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="{{ searchPh }}" disabled="{{ isLoading }}" /></span>
+        <sc-if value="{{ isOpenWide }}" hint-placeholder-val="{{ true }}">
+          <span class="select-wrap" style="width: 170px"><select class="select" aria-label="Status" disabled="{{ isLoading }}"><option>Every status</option><option>Planned</option><option>In progress</option><option>Updated</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+        <table class="data-table" style="table-layout: fixed">
+          <thead><tr><th style="width: 24%">Upgrade</th><th style="width: 11%">Status</th><th style="width: 24%">Environments</th><th style="width: 13%">Checked</th><th style="width: 13%">Planned</th><th style="width: 11%">Created by</th><th style="width: 52px"><span class="u-sr">Actions</span></th></tr></thead>
+          <tbody>
+            <sc-for list="{{ skel }}" as="k" hint-placeholder-count="4">
+              <tr><td><span style="display: grid; gap: 6px"><span class="skeleton" style="width: {{ k.a }}"></span><span class="skeleton" style="width: 50%; height: 9px"></span></span></td><td><span class="skeleton" style="width: 70px; height: 18px"></span></td><td><span style="display: grid; gap: 6px"><span class="skeleton" style="width: 30%"></span><span class="skeleton" style="width: {{ k.b }}; height: 9px"></span></span></td><td><span class="skeleton" style="width: 60%"></span></td><td><span class="skeleton" style="width: 70%"></span></td><td><span class="skeleton" style="width: 60%"></span></td><td></td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+      <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+          <sc-for list="{{ skel }}" as="k" hint-placeholder-count="4">
+            <div style="display: grid; gap: 7px; padding: var(--space-3); border-bottom: 1px solid var(--border)"><span class="skeleton" style="width: {{ k.a }}"></span><span class="skeleton" style="width: {{ k.b }}; height: 9px"></span><span class="skeleton" style="width: 40%; height: 9px"></span></div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div class="loading-block" style="padding: 0"><span class="spinner"></span><span>Loading upgrades...</span></div>
+    </sc-if>
+
+    <sc-if value="{{ isEmptyOpen }}" hint-placeholder-val="{{ false }}">
+      <div class="card">
+        <div class="empty-state">
+          <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.4" y="3" width="11.2" height="10.4" rx="1"></rect><path d="M2.4 6.4h11.2M5.4 1.8v2.4M10.6 1.8v2.4M8 8.4v3M6.5 9.9h3"></path></svg></span>
+          <span class="empty-state__title">Nothing planned yet</span>
+          <span class="empty-state__text">An upgrade is a named wave: a target version, a slot, and the environments you agreed it with. Create one, add the environments, then start them together and tick each one off the morning after.</span>
+          <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New upgrade</button></span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isEmptyArchive }}" hint-placeholder-val="{{ false }}">
+      <div class="card">
+        <div class="empty-state">
+          <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.6" width="12.4" height="3.2" rx=".8"></rect><path d="M2.8 5.8v6.8a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V5.8M6.4 8.6h3.2"></path></svg></span>
+          <span class="empty-state__title">No upgrade has been marked done yet</span>
+          <span class="empty-state__text">When an upgrade's environments are updated and checked, mark it done from its page. It moves here, read-only, as the record of what the wave ran over.</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ openRowsWide }}" hint-placeholder-val="{{ true }}">
+      <table class="data-table" style="table-layout: fixed">
+        <thead><tr>
+          <th style="width: 24%"><button class="data-table__sort" type="button">Upgrade<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6.5L8 3.5l3 3M5 9.5l3 3 3-3"></path></svg></button></th>
+          <th style="width: 11%">Status</th>
+          <th style="width: 24%">Environments</th>
+          <th style="width: 13%">Checked</th>
+          <th style="width: 13%"><button class="data-table__sort is-sorted" type="button">Planned<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg></button></th>
+          <th style="width: 11%">Created by</th>
+          <th class="data-table__actions" style="width: 52px"><span class="u-sr">Actions</span></th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ open }}" as="u" hint-placeholder-count="5">
+            <tr>
+              <td><span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-medium)"><a href="#">{{ u.name }}</a></span><span class="cell-stack__sub">to {{ u.target }}{{ u.slotSub }}</span></span></td>
+              <td><span class="status-pill {{ u.pill }}"><span class="status-pill__dot"></span>{{ u.status }}</span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main">{{ u.count }}</span><span class="cell-stack__sub" style="display: flex; flex-wrap: wrap; gap: 0 var(--space-2)"><sc-for list="{{ u.parts }}" as="b" hint-placeholder-count="2"><span style="color: {{ b.color }}; font-weight: {{ b.weight }}; white-space: nowrap">{{ b.text }}</span></sc-for></span></span></td>
+              <td>
+                <sc-if value="{{ u.hasCheck }}" hint-placeholder-val="{{ true }}"><span style="display: grid; gap: 4px"><span class="u-num" style="font-size: var(--text-sm); color: var(--ink)">{{ u.checked }}</span><progress class="progress" value="{{ u.checkPct }}" max="100" style="height: 5px; width: 88px" aria-label="{{ u.checked }} checked"></progress></span></sc-if>
+                <sc-if value="{{ u.noCheck }}" hint-placeholder-val="{{ false }}"><span class="u-muted">-</span></sc-if>
+              </td>
+              <td><span class="cell-stack"><span class="cell-stack__main" style="font-weight: {{ u.slotWeight }}">{{ u.slot }}</span><span class="cell-stack__sub">{{ u.slotDate }}</span></span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main">{{ u.by }}</span><span class="cell-stack__sub">{{ u.on }}</span></span></td>
+              <td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-haspopup="menu" aria-label="Actions for {{ u.name }}" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Open</button><button class="menu__item" type="button">Mark done...</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button" disabled="{{ u.noDelete }}" title="{{ u.deleteTitle }}">Delete</button></div></span></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <div class="pager"><span class="pager__count">{{ openCount }}</span></div>
+    </sc-if>
+
+    <sc-if value="{{ openRowsCompact }}" hint-placeholder-val="{{ false }}">
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+        <sc-for list="{{ open }}" as="u" hint-placeholder-count="5">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--border)">
+            <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-semibold)"><a href="#">{{ u.name }}</a></span><span class="cell-stack__sub">to {{ u.target }} - {{ u.slot }}</span></span>
+            <span class="ra"><button class="btn btn--icon" type="button" aria-haspopup="menu" aria-label="Actions for {{ u.name }}" style="width: 44px; height: 44px; margin: -10px -10px 0 0" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Open</button><button class="menu__item" type="button">Mark done...</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button" disabled="{{ u.noDelete }}">Delete</button></div></span>
+            <span style="grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--text-sm)"><span class="status-pill {{ u.pill }}"><span class="status-pill__dot"></span>{{ u.status }}</span><span style="color: var(--ink-2)">{{ u.count }}</span><sc-for list="{{ u.parts }}" as="b" hint-placeholder-count="2"><span style="color: {{ b.color }}; font-weight: {{ b.weight }}; white-space: nowrap">{{ b.text }}</span></sc-for></span>
+            <sc-if value="{{ u.hasCheck }}" hint-placeholder-val="{{ true }}"><span style="grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--ink-2)"><span class="u-num" style="white-space: nowrap">{{ u.checked }} checked</span><progress class="progress" value="{{ u.checkPct }}" max="100" style="height: 5px; flex: 1; max-width: 160px"></progress></span></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div class="pager"><span class="pager__count">{{ openCount }}</span></div>
+    </sc-if>
+
+    <sc-if value="{{ archRowsWide }}" hint-placeholder-val="{{ false }}">
+      <table class="data-table" style="table-layout: fixed">
+        <thead><tr><th style="width: 28%">Upgrade</th><th style="width: 10%">Target</th><th style="width: 18%">Environments</th><th style="width: 22%"><button class="data-table__sort is-sorted" type="button">Closed<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v9M4.5 8.5L8 12l3.5-3.5"></path></svg></button></th><th style="width: 16%">Created by</th><th class="data-table__actions" style="width: 52px"><span class="u-sr">Actions</span></th></tr></thead>
+        <tbody>
+          <sc-for list="{{ archive }}" as="a" hint-placeholder-count="5">
+            <tr>
+              <td><a href="#" style="font-weight: var(--fw-medium)">{{ a.name }}</a></td>
+              <td class="u-num">{{ a.target }}</td>
+              <td><span class="cell-stack"><span class="cell-stack__main">{{ a.count }}</span><sc-if value="{{ a.failed }}" hint-placeholder-val="{{ false }}"><span class="cell-stack__sub" style="color: var(--danger-text); font-weight: var(--fw-medium)">{{ a.failed }}</span></sc-if></span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main">{{ a.closed }}</span><span class="cell-stack__sub">by {{ a.closedBy }}</span></span></td>
+              <td><span class="cell-stack"><span class="cell-stack__main">{{ a.by }}</span><span class="cell-stack__sub">{{ a.on }}</span></span></td>
+              <td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-haspopup="menu" aria-label="Actions for {{ a.name }}" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Open</button><button class="menu__item" type="button">Reopen</button></div></span></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <div class="pager"><span class="pager__count">Showing 5 of 12 done upgrades</span><span class="pager__buttons"><button class="btn btn--sm" type="button" disabled="disabled">Previous</button><button class="btn btn--sm" type="button">Next</button></span></div>
+    </sc-if>
+
+    <sc-if value="{{ archRowsCompact }}" hint-placeholder-val="{{ false }}">
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+        <sc-for list="{{ archive }}" as="a" hint-placeholder-count="5">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--border)">
+            <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-semibold)"><a href="#">{{ a.name }}</a></span><span class="cell-stack__sub">to {{ a.target }} - {{ a.count }}<sc-if value="{{ a.failed }}" hint-placeholder-val="{{ false }}">, <span style="color: var(--danger-text); font-weight: var(--fw-medium)">{{ a.failed }}</span></sc-if></span><span class="cell-stack__sub">Closed {{ a.closed }} by {{ a.closedBy }}</span></span>
+            <span class="ra"><button class="btn btn--icon" type="button" aria-haspopup="menu" aria-label="Actions for {{ a.name }}" style="width: 44px; height: 44px; margin: -10px -10px 0 0" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Open</button><button class="menu__item" type="button">Reopen</button></div></span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;open&quot;,&quot;archive&quot;,&quot;fleet&quot;],&quot;default&quot;:&quot;open&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;populated&quot;,&quot;loading&quot;,&quot;empty&quot;],&quot;default&quot;:&quot;populated&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compact&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const PART = {
+  running: { color: 'var(--info-text)', weight: 'var(--fw-semibold)' },
+  failed: { color: 'var(--danger-text)', weight: 'var(--fw-semibold)' },
+  plain: { color: 'var(--ink-2)', weight: 'normal' }
+};
+const PILL = { 'Planned': 'status-pill--queued', 'In progress': 'status-pill--running', 'Updated': 'status-pill--warn' };
+
+const OPEN = [
+  { name: '28.4 evening wave, 26 Sep', target: '28.4', status: 'In progress', n: 11, parts: [['11 booked']], checked: 0, slot: 'Tonight, 20:00', slotDate: 'Sat 26 Sep', near: true, by: 'Mads', on: '17 Sep', sent: true },
+  { name: '28.4 for Friday evening', target: '28.4', status: 'In progress', n: 8, parts: [['6 updated'], ['1 running', 'running'], ['1 failed', 'failed']], checked: 3, slot: 'Last night, 20:00', slotDate: 'Fri 25 Sep', near: true, by: 'Mads', on: '14 Sep', sent: true },
+  { name: '28.3 test sandboxes', target: '28.3', status: 'Updated', n: 5, parts: [['5 updated']], checked: 5, slot: 'Tue 22 Sep, 18:00', slotDate: '4 days ago', by: 'Louise', on: '15 Sep', sent: true },
+  { name: '28.3 Production stragglers', target: '28.3', status: 'In progress', n: 6, parts: [['3 booked'], ['1 date moved'], ['2 planned']], checked: 0, slot: 'Tue 29 Sep, 21:00', slotDate: 'in 3 days', by: 'Louise', on: '22 Sep', sent: true },
+  { name: '28.5 in November 2026', target: '28.5', status: 'Planned', n: 0, parts: [], checked: 0, slot: 'Thu 12 Nov, 20:00', slotDate: 'in 7 weeks', by: 'Mads', on: '25 Sep', sent: false }
+];
+const ARCHIVE = [
+  { name: '28.3 September Production', target: '28.3', n: 14, failed: 1, closed: 'Sat 19 Sep', closedBy: 'Mads', by: 'Mads', on: '2 Sep' },
+  { name: '28.3 Contoso and CRONUS sandboxes', target: '28.3', n: 6, failed: 0, closed: 'Tue 15 Sep', closedBy: 'Louise', by: 'Louise', on: '8 Sep' },
+  { name: '28.2 August wave', target: '28.2', n: 9, failed: 0, closed: 'Fri 28 Aug', closedBy: 'Mads', by: 'Mads', on: '17 Aug' },
+  { name: '28.1 July Production', target: '28.1', n: 12, failed: 2, closed: 'Thu 23 Jul', closedBy: 'Mads', by: 'Louise', on: '6 Jul' },
+  { name: '28.0 in April 2026', target: '28.0', n: 10, failed: 0, closed: 'Wed 22 Apr', closedBy: 'Louise', by: 'Mads', on: '1 Apr' }
+];
+const envs = n => n === 1 ? '1 environment' : n + ' environments';
+
+class Component extends DCLogic {
+  renderVals() {
+    const view = this.props.view ?? 'open';
+    const kind = this.props.kind ?? 'populated';
+    const compact = !!this.props.compact;
+    const loading = kind === 'loading';
+    const empty = kind === 'empty';
+    const populated = kind === 'populated';
+    const openList = empty && view === 'open' ? [] : OPEN;
+    const tonight = OPEN[0].n;
+    const sub = loading ? '' : (openList.length === 0 ? 'Nothing planned.' : openList.length + ' open, ' + tonight + ' environments booked for tonight.');
+    const open = OPEN.map(u => ({
+      ...u,
+      pill: PILL[u.status],
+      count: u.n ? envs(u.n) : 'No environments yet',
+      parts: u.parts.map(([text, tone]) => ({ text, ...PART[tone || 'plain'] })),
+      hasCheck: u.n > 0, noCheck: u.n === 0,
+      checked: u.checked + ' of ' + u.n,
+      checkPct: u.n ? Math.round(u.checked / u.n * 100) : 0,
+      slotSub: ' - ' + u.slot,
+      slotWeight: u.near ? 'var(--fw-semibold)' : 'normal',
+      noDelete: u.sent,
+      deleteTitle: u.sent ? 'Something has been sent to Business Central for this upgrade, so it can only be marked done.' : ''
+    }));
+    const archive = ARCHIVE.map(a => ({ ...a, count: envs(a.n), failed: a.failed ? a.failed + ' failed' : '' }));
+    const isOpen = view === 'open', isArchive = view === 'archive', isFleet = view === 'fleet';
+    const archEmpty = isArchive && empty;
+    const tab = (k, label, count) => ({ label, count, cls: view === k ? 'is-active' : '', sel: view === k ? 'true' : 'false' });
+    return {
+      sub, isLoading: loading, notLoading: !loading,
+      headPrimary: !(isOpen && empty),
+      views: [tab('open', 'Open', empty ? 0 : OPEN.length), tab('archive', 'Archive', archEmpty ? 0 : 12), tab('fleet', 'Fleet', 26)],
+      isFleet, isList: !isFleet,
+      showBar: !(empty),
+      isOpenWide: isOpen && !compact,
+      searchPh: isArchive ? 'Search by name or target version...' : 'Search upgrades...',
+      wide: !compact, compact,
+      isEmptyOpen: isOpen && empty, isEmptyArchive: archEmpty,
+      openRowsWide: isOpen && populated && !compact, openRowsCompact: isOpen && populated && compact,
+      archRowsWide: isArchive && populated && !compact, archRowsCompact: isArchive && populated && compact,
+      open, archive,
+      openCount: OPEN.length + ' open upgrades',
+      skel: [{ a: '70%', b: '80%' }, { a: '55%', b: '60%' }, { a: '75%', b: '70%' }, { a: '60%', b: '50%' }],
+      yes: true, three: 3,
+      toggleMenu: e => {
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const was = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => { x.classList.remove('is-open'); x.classList.remove('ra--up'); });
+        if (was) return;
+        w.classList.add('is-open');
+        const menu = w.querySelector('.ra__menu');
+        const box = w.closest('.app__content');
+        if (menu && box) {
+          const room = box.getBoundingClientRect().bottom - w.getBoundingClientRect().bottom;
+          w.classList.toggle('ra--up', room < menu.getBoundingClientRect().height + 12);
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

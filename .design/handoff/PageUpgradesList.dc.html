@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Workbench - page sheet - Upgrades (issue #984, prompt 1 of 3)</p>
+    <h1 class="doc__title">Upgrades: Open, Archive and Fleet</h1>
+    <p class="doc__sub">The Upgrades page at <code>/upgrades</code> becomes the home of planned upgrades: named waves with a target version, a slot and the environments agreed for it. The flat fleet table stays, unchanged, as the Fleet view. Built on the list archetype (<code>PageList</code>). Desktop frames are 1440px shells scaled down; phone frames are 390px at 1:1.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Open - desktop</span><h2 class="arch__t">Five open upgrades, the morning after</h2></div><span class="arch__use">Saturday morning: last night's wave has one still running and one failed, three checked. Tonight's wave is booked. One Planned upgrade has no environments yet.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Dark - same markup</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archive and Fleet - desktop</span><h2 class="arch__t">The record, and the table everything is picked from</h2></div><span class="arch__use">Archive is read-only and searchable by name and target version. Fleet is today's table with three rows ticked, showing "Add to upgrade..." as the fourth selection command.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Archive - light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-view="archive" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Fleet, 3 selected - dark</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-view="fleet" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Loading and empty - desktop</span><h2 class="arch__t">Before there is a wave</h2></div><span class="arch__use">The Open view's empty state takes the one primary button, so the head drops it. The Archive's empty state has no action: upgrades are marked done from their own page.</span></div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: var(--space-5)">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Open, loading - light</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-kind="loading" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Open, loading - dark</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-kind="loading" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Open, nothing planned - light</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-kind="empty" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Archive, empty - dark</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-view="archive" body-kind="empty" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Phone, 390px</span><h2 class="arch__t">Rows become stacked items</h2></div><span class="arch__use">Status and the breakdown share one line; Checked keeps its bar. The view switch scrolls sideways if it has to.</span></div>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start">
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Open - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Open - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-compact="{{ yes }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Open, loading - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-kind="loading" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Open, nothing planned - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-kind="empty" body-compact="{{ yes }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Archive - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrades-list" body-view="archive" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">"New upgrade" dialog</span><h2 class="arch__t">Name, target, slot, note</h2></div><span class="arch__use">Opened from the head's primary. Only the name and target version are required; lines are added from the upgrade's page.</span></div>
+      <div class="themes">
+        <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+          <section class="panel" data-theme="{{ th.id }}">
+            <div class="panel__label"><span class="panel__dot"></span>{{ th.label }}</div>
+            <div style="position: relative; display: grid; place-items: center; padding: var(--space-6) var(--space-3); border-radius: var(--r); overflow: hidden">
+              <div class="modal-backdrop"></div>
+              <div class="confirm-dialog confirm-dialog--wide" role="dialog" aria-modal="true" aria-label="New upgrade">
+                <div class="confirm-dialog__head"><h3 class="confirm-dialog__title">New upgrade</h3></div>
+                <div class="confirm-dialog__body" style="display: grid; gap: var(--space-3)">
+                  <label class="field"><span class="field__label">Name <span class="req">*</span></span><input class="input" type="text" placeholder="28.5 in November 2026" /></label>
+                  <label class="field"><span class="field__label">Target version <span class="req">*</span></span><span class="select-wrap"><select class="select"><option>28.5</option><option>28.4</option><option>28.3</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span></label>
+                  <div class="field"><span class="field__label">Planned slot</span><span style="display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: var(--space-2)"><input class="input" type="date" aria-label="Planned date" /><input class="input" type="time" aria-label="Planned time" /></span><span class="field__hint">Optional. Nothing is booked until you start the update.</span></div>
+                  <label class="field"><span class="field__label">Note</span><textarea class="textarea" placeholder="Agreed with the customers on the September call."></textarea></label>
+                </div>
+                <div class="confirm-dialog__actions"><button class="btn" type="button">Cancel</button><button class="btn btn--primary" type="button">Create upgrade</button></div>
+              </div>
+            </div>
+          </section>
+        </sc-for>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>UpgradesListBody.dc.html</code> owns the page: head, view switch, Open and Archive. Props <code>view</code> (open | archive | fleet), <code>kind</code> (populated | loading | empty), <code>compact</code>.</li>
+          <li><code>PageUpgrades.dc.html</code> still owns the fleet table and its sheet is unchanged. New prop <code>embedded</code>: drops its own head, makes "Move dates..." outline so "New upgrade" stays the only primary, uses the app's labels ("Start update...") and adds "Add to upgrade..." as a button. "Change the next version..." goes first in the More menu, the filter narrows to 190px and Refresh becomes icon-only, so the command row stays one 48px line at 1440px.</li>
+          <li><code>ShellFrame</code>: <code>body="upgrades-list"</code> with <code>bodyView</code>. Upgrades stays current under Solutions.</li>
+        </ul>
+        <h3>Views</h3>
+        <ul>
+          <li>Open, Archive and Fleet are <code>.pill-tabs</code> on their own row under the head, so the switch never moves when the command row changes. Each tab carries its count. Archive is always present, even at 0.</li>
+          <li>Subtitle is computed: "5 open, 11 environments booked for tonight." or "Nothing planned."</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Open view</h3>
+        <ul>
+          <li>Upgrade (name, then "to 28.4 - slot"), Status, Environments, Checked, Planned, Created by. Sorted by the planned slot, nearest first.</li>
+          <li>Status uses <code>.status-pill</code>, as the brief asks, though components.css keeps pills out of table rows. Planned = queued, In progress = running, Updated = warn (checks outstanding). Done only appears in Archive.</li>
+          <li>The breakdown uses words with tone on the counts that need action: running in <code>--info-text</code>, failed in <code>--danger-text</code>, the rest plain. Checked lines are counted as updated here and shown in the Checked column, so no line is counted twice.</li>
+          <li>Checked: "3 of 8" and a small <code>&lt;progress&gt;</code>; "-" while the upgrade has no environments.</li>
+          <li>Row menu: Open, Mark done..., Delete. Delete is disabled once anything has been sent, with the reason in its tooltip.</li>
+        </ul>
+        <h3>Archive view</h3>
+        <ul>
+          <li>Upgrade, Target, Environments (failed count in danger), Closed (when, by whom), Created by. Row menu: Open, Reopen. No selection, no primary.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() { return { yes: true, themes: [{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }] }; }
+}
+</script>
+</body>
+</html>

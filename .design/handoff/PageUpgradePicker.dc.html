@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Workbench - page sheet - Upgrades (issue #984, prompt 3 of 3)</p>
+    <h1 class="doc__title">Environment picker, "Add to upgrade", Open upgrades tile</h1>
+    <p class="doc__sub">The dialogs that put environments on an upgrade, from either end: the picker on the upgrade page, and "Add to upgrade..." on the Fleet view. Both are live: tick, search and toggle to try them.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Picker - desktop</span><h2 class="arch__t">Nothing selected yet</h2></div><span class="arch__use">Opened from "Add environments..." on the upgrade page. Two lines are already on this upgrade: ticked and locked. Two are on another open upgrade: locked, with its name in the sub-line.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light"><div class="panel__label"><span class="panel__dot"></span>Light</div><dc-import name="UpgradePicker" preset="empty" hint-size="100%,720px"></dc-import></section>
+        <section class="panel" data-theme="dark"><div class="panel__label"><span class="panel__dot"></span>Dark</div><dc-import name="UpgradePicker" preset="empty" hint-size="100%,720px"></dc-import></section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Picker - desktop</span><h2 class="arch__t">Mid-selection with a search, and Show selected</h2></div><span class="arch__use">Three CRONUS lines were ticked, then "contoso" was typed and Contoso Retail Production ticked. The footer still counts all four and says how many are in view. Show selected lists only the four.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light"><div class="panel__label"><span class="panel__dot"></span>Search active - light</div><dc-import name="UpgradePicker" preset="mid" hint-size="100%,720px"></dc-import></section>
+        <section class="panel" data-theme="dark"><div class="panel__label"><span class="panel__dot"></span>Show selected - dark</div><dc-import name="UpgradePicker" preset="selected" hint-size="100%,720px"></dc-import></section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Picker - phone, 390px</span><h2 class="arch__t">Full screen</h2></div><span class="arch__use">The dialog fills the screen. Only search is left of the filters; the fill buttons stay. Each row is one 44px tap target, and the footer stays pinned.</span></div>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start">
+        <section class="panel" data-theme="light" style="flex: none"><div class="panel__label"><span class="panel__dot"></span>Search active - light</div><div class="shell-frame" style="width: 390px; height: 844px"><dc-import name="UpgradePicker" preset="mid" compact="{{ yes }}" hint-size="100%,100%"></dc-import></div></section>
+        <section class="panel" data-theme="dark" style="flex: none"><div class="panel__label"><span class="panel__dot"></span>Nothing selected - dark</div><div class="shell-frame" style="width: 390px; height: 844px"><dc-import name="UpgradePicker" preset="empty" compact="{{ yes }}" hint-size="100%,100%"></dc-import></div></section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">"Add to upgrade..." - from the Fleet view</span><h2 class="arch__t">The reverse of the picker</h2></div><span class="arch__use">Eight ticked on the Fleet view; two are already on "28.5 in October", marked and left out, so the primary reads "Add 6 of 8". Choosing New upgrade opens the name and target inline.</span></div>
+      <div class="themes">
+        <section class="panel" data-theme="light"><div class="panel__label"><span class="panel__dot"></span>Existing upgrade - light</div><dc-import name="UpgradePicker" mode="add" preset="empty" theme-key="l" hint-size="100%,820px"></dc-import></section>
+        <section class="panel" data-theme="dark"><div class="panel__label"><span class="panel__dot"></span>New upgrade - dark</div><dc-import name="UpgradePicker" mode="add" preset="new" theme-key="d" hint-size="100%,860px"></dc-import></section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Open upgrades tile - parked</span><h2 class="arch__t">Waiting for a dashboard its users see</h2></div><span class="arch__use">Not placed. The Admin dashboard is Admin-only, and the upgrade team usually has only the environment-updates grant, so the tile was taken off <code>PageDashboard</code> again. Until Upgrades gets a small dashboard of its own, the Open view's subtitle carries the same count. With a failed line the tile takes <code>.cue--attention</code>; without one it is the quiet teal.</span></div>
+      <div class="themes">
+        <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+          <section class="panel" data-theme="{{ th.id }}">
+            <div class="panel__label"><span class="panel__dot"></span>{{ th.label }}</div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 200px)); gap: var(--space-3)">
+              <a class="cue cue--attention" href="#"><span class="cue__label">Open upgrades</span><span class="cue__value">5</span><span class="cue__rule"></span><span class="cue__foot"><span>11 running, 1 failed</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+              <a class="cue" href="#"><span class="cue__label">Open upgrades</span><span class="cue__value">5</span><span class="cue__rule"></span><span class="cue__foot"><span>11 running</span><svg class="cue__drill" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+            </div>
+          </section>
+        </sc-for>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Picker</h3>
+        <ul>
+          <li>The Fleet table's columns and the Environments list's filters (search over solution, short name and environment; solution, type, view) inside a 1000px dialog. The dialog has a fixed height, and only the table scrolls.</li>
+          <li>Selection is a set of IDs held by the dialog. Search, filters and Show selected only change what is shown, so a ticked line stays ticked when it scrolls or filters out. The footer says "4 selected, 1 shown" when they differ.</li>
+          <li>Fill buttons add to the selection, never replace it. The version comes from the upgrade's target. They skip locked lines and lines already on the target.</li>
+          <li>Locked: on this upgrade = ticked and disabled, "Already on this upgrade". On another open upgrade = unticked, disabled, its name in <code>--warning-text</code>.</li>
+          <li>Primary: "Add environments" (disabled) at 0, then "Add 1 environment" and "Add 4 environments".</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Add to upgrade</h3>
+        <ul>
+          <li>A radio list of open upgrades (name, target, slot, line count), then New upgrade, which opens Name and Target inline. The slot is left for the upgrade page.</li>
+          <li>Ticked environments are listed below with a tick or a warning. Environments on another open upgrade say which one and "Left out", and the primary counts only the rest: "Add 6 of 8".</li>
+        </ul>
+        <h3>Palette</h3>
+        <ul>
+          <li><code>Components.dc.html</code> has no command palette section, so no note was added there. When the palette sheet from <code>2026-09-command-palette.md</code> is drawn, list Upgrade as a result kind with name, target and state pill.</li>
+        </ul>
+        <h3>Files</h3>
+        <ul>
+          <li><code>UpgradePicker.dc.html</code>, props <code>mode</code> (picker | add), <code>preset</code>, <code>compact</code>. The Open upgrades tile is drawn here only; <code>PageDashboard.dc.html</code> is unchanged.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() { return { yes: true, themes: [{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }] }; }
+}
+</script>
+</body>
+</html>

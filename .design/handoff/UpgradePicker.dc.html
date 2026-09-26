@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="{{ wrapStyle }}">
+  <div class="modal-backdrop"></div>
+
+  <sc-if value="{{ isPicker }}" hint-placeholder-val="{{ true }}">
+    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-label="Add environments" style="{{ dlgStyle }}">
+      <div class="confirm-dialog__head" style="align-items: center; justify-content: space-between">
+        <div style="display: grid; gap: 2px; min-width: 0"><h3 class="confirm-dialog__title">Add environments</h3><span style="font-size: var(--text-sm); color: var(--ink-3)">To "28.5 in November 2026", target 28.5</span></div>
+        <button class="btn btn--icon btn--ghost" type="button" aria-label="Close" style="width: 44px; height: 44px; flex: none"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></button>
+      </div>
+
+      <div class="confirm-dialog__body" style="display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--space-3); min-height: 0; overflow: hidden">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2)">
+          <span style="font-size: var(--text-sm); color: var(--ink-3)">Start with</span>
+          <button class="btn btn--sm" type="button" onClick="{{ fillProd }}">Production not yet on 28.5</button>
+          <button class="btn btn--sm" type="button" onClick="{{ fillSand }}">Sandboxes not yet on 28.5</button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2)">
+          <span class="search" style="flex: 1 1 220px"><svg class="search__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Solution, short name or environment..." value="{{ q }}" onChange="{{ setQ }}" /></span>
+          <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+            <span class="select-wrap" style="width: 160px"><select class="select" aria-label="Solution"><option>All solutions</option><option>CRONUS Danmark</option><option>CRONUS Sverige</option><option>CRONUS UK</option><option>Contoso Logistics</option><option>Contoso Retail</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+            <span class="select-wrap" style="width: 140px"><select class="select" aria-label="Type"><option>Every type</option><option>Production</option><option>Sandbox</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+            <span class="select-wrap" style="width: 150px"><select class="select" aria-label="View"><option>Active</option><option>Update waiting</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+          </sc-if>
+        </div>
+
+        <div style="overflow: auto; min-height: 0; border: 1px solid var(--border); border-radius: var(--r-control)">
+          <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+            <table class="data-table" style="table-layout: fixed; border: 0">
+              <thead><tr><th style="width: 40px"><span class="u-sr">Select</span></th><th style="width: 36%">Environment</th><th style="width: 14%">Short name</th><th style="width: 14%">Now on</th><th>Next update</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+                  <tr class="{{ r.trCls }}">
+                    <td><label class="check" aria-label="Select {{ r.sol }} {{ r.env }}"><input type="checkbox" checked="{{ r.checked }}" disabled="{{ r.locked }}" onChange="{{ r.toggle }}" /><span class="check__box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span></label></td>
+                    <td><span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-medium); color: {{ r.ink }}">{{ r.sol }}</span><span class="cell-stack__sub">{{ r.envLabel }}</span><sc-if value="{{ r.why }}" hint-placeholder-val="{{ false }}"><span class="cell-stack__sub" style="color: {{ r.whyColor }}; font-weight: var(--fw-medium)">{{ r.why }}</span></sc-if></span></td>
+                    <td style="color: {{ r.ink }}">{{ r.short }}</td>
+                    <td class="u-num" style="color: {{ r.ink }}">{{ r.ver }}</td>
+                    <td style="color: var(--ink-2); font-size: var(--text-sm)">{{ r.next }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+          <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+              <label class="check" style="display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: var(--space-3); min-height: 44px; padding: var(--space-3); border-bottom: 1px solid var(--border); background: {{ r.bg }}"><input type="checkbox" checked="{{ r.checked }}" disabled="{{ r.locked }}" onChange="{{ r.toggle }}" /><span class="check__box" style="margin-top: 2px"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-medium); color: {{ r.ink }}">{{ r.sol }}</span><span class="cell-stack__sub">{{ r.envLabel }} - {{ r.ver }}</span><sc-if value="{{ r.why }}" hint-placeholder-val="{{ false }}"><span class="cell-stack__sub" style="color: {{ r.whyColor }}; font-weight: var(--fw-medium)">{{ r.why }}</span></sc-if></span></label>
+            </sc-for>
+          </sc-if>
+          <sc-if value="{{ noRows }}" hint-placeholder-val="{{ false }}"><div class="empty-state empty-state--quiet"><span class="empty-state__title">{{ noRowsText }}</span></div></sc-if>
+        </div>
+      </div>
+
+      <div class="confirm-dialog__actions" style="flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3)">
+        <span style="display: flex; align-items: center; gap: var(--space-3); min-height: 44px; white-space: nowrap">
+          <span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--ink); line-height: 1" aria-live="polite">{{ selText }}</span>
+          <label class="switch" style="align-items: center; line-height: 1"><input type="checkbox" checked="{{ showSel }}" disabled="{{ none }}" onChange="{{ toggleShow }}" /><span class="switch__track"><span class="switch__knob"></span></span>Show selected</label>
+        </span>
+        <span style="display: flex; align-items: center; gap: var(--space-2); margin-left: auto">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn btn--primary" type="button" disabled="{{ none }}">{{ addLabel }}</button>
+        </span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isAdd }}" hint-placeholder-val="{{ false }}">
+    <div class="confirm-dialog confirm-dialog--wide" role="dialog" aria-modal="true" aria-label="Add to upgrade" style="{{ addStyle }}">
+      <div class="confirm-dialog__head"><div style="display: grid; gap: 2px"><h3 class="confirm-dialog__title">Add 8 environments to an upgrade</h3><span style="font-size: var(--text-sm); color: var(--ink-3)">An environment can be on one open upgrade at a time.</span></div></div>
+      <div class="confirm-dialog__body" style="display: grid; gap: var(--space-4); overflow: auto">
+        <div style="display: grid; gap: var(--space-2)">
+          <span class="section-label" style="margin: 0">Upgrade</span>
+          <div role="radiogroup" style="display: grid; border: 1px solid var(--border); border-radius: var(--r-control)">
+            <sc-for list="{{ ups }}" as="u" hint-placeholder-count="4">
+              <label class="check" style="display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: start; gap: var(--space-3); min-height: 44px; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); background: {{ u.bg }}"><input type="radio" name="{{ radioName }}" checked="{{ u.on }}" onChange="{{ u.pick }}" /><span class="check__dot" style="margin-top: 2px"></span><span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="color: var(--ink); font-weight: var(--fw-medium)">{{ u.name }}</span><span class="cell-stack__sub">{{ u.sub }}</span></span><span style="font-size: var(--text-sm); color: var(--ink-3); white-space: nowrap">{{ u.lines }}</span></label>
+            </sc-for>
+            <label class="check" style="display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: var(--space-3); min-height: 44px; padding: var(--space-2) var(--space-3); background: {{ newBg }}"><input type="radio" name="{{ radioName }}" checked="{{ isNew }}" onChange="{{ pickNew }}" /><span class="check__dot" style="margin-top: 2px"></span><span style="color: var(--ink); font-weight: var(--fw-medium)">New upgrade</span></label>
+            <sc-if value="{{ isNew }}" hint-placeholder-val="{{ false }}">
+              <div style="display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: var(--space-2); padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) * 2 + 18px); background: var(--primary-weak)">
+                <label class="field"><span class="field__label">Name <span class="req">*</span></span><input class="input" type="text" value="28.5 for Contoso in December" onChange="{{ noop }}" /></label>
+                <label class="field"><span class="field__label">Target <span class="req">*</span></span><span class="select-wrap"><select class="select"><option>28.5</option><option>28.4</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span></label>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="display: grid; gap: var(--space-2)">
+          <span class="section-label" style="margin: 0">Environments</span>
+          <div style="display: grid; border: 1px solid var(--border); border-radius: var(--r-control)">
+            <sc-for list="{{ ticked }}" as="t" hint-placeholder-count="8">
+              <div style="display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border)">
+                <span style="color: {{ t.iconColor }}; margin-top: 2px"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.icon }}"></path></svg></span>
+                <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-size: var(--text-sm); color: {{ t.ink }}">{{ t.sol }} - {{ t.envLabel }}</span><sc-if value="{{ t.why }}" hint-placeholder-val="{{ false }}"><span class="cell-stack__sub" style="color: var(--warning-text); font-weight: var(--fw-medium)">{{ t.why }}. Left out.</span></sc-if></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <div class="confirm-dialog__actions"><button class="btn" type="button">Cancel</button><button class="btn btn--primary" type="button">Add 6 of 8</button></div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;picker&quot;,&quot;add&quot;],&quot;default&quot;:&quot;picker&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;preset&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;empty&quot;,&quot;mid&quot;,&quot;selected&quot;,&quot;new&quot;],&quot;default&quot;:&quot;empty&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compact&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;themeKey&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;}}">
+const ENVS = [
+  { id: 1, sol: 'CRONUS Danmark', env: 'Production', short: 'CRDK', type: 'Production', ver: '28.4', next: '28.5 on 12 Nov', on: 'this' },
+  { id: 2, sol: 'CRONUS Danmark', env: 'Sandbox', short: 'CRDK', type: 'Sandbox', ver: '28.4', next: '28.5 on 12 Nov', on: 'this' },
+  { id: 3, sol: 'CRONUS Danmark', env: 'Test', short: 'CRDK', type: 'Sandbox', ver: '28.4', next: '28.5 by 30 Nov' },
+  { id: 4, sol: 'CRONUS Sverige', env: 'Production', short: 'CRSE', type: 'Production', ver: '28.4', next: '28.5 by 30 Nov' },
+  { id: 5, sol: 'CRONUS Sverige', env: 'Sandbox', short: 'CRSE', type: 'Sandbox', ver: '28.5', next: 'None waiting' },
+  { id: 6, sol: 'CRONUS UK', env: 'Production', short: 'CRUK', type: 'Production', ver: '28.4', next: '28.5 by 30 Nov' },
+  { id: 7, sol: 'CRONUS UK', env: 'UAT', short: 'CRUK', type: 'Sandbox', ver: '28.4', next: '28.5 by 30 Nov', on: 'On 28.5 in October' },
+  { id: 8, sol: 'Contoso Logistics', env: 'Production', short: 'COLO', type: 'Production', ver: '28.3', next: '28.5 by 30 Nov', on: 'On 28.5 in October' },
+  { id: 9, sol: 'Contoso Logistics', env: 'Sandbox', short: 'COLO', type: 'Sandbox', ver: '28.4', next: '28.5 by 30 Nov' },
+  { id: 10, sol: 'Contoso Retail', env: 'Production', short: 'CORE', type: 'Production', ver: '28.4', next: '28.5 by 30 Nov' },
+  { id: 11, sol: 'Contoso Retail', env: 'Sandbox', short: 'CORE', type: 'Sandbox', ver: '28.4', next: '28.5 by 30 Nov' },
+  { id: 12, sol: 'Contoso Retail', env: 'Test', short: 'CORE', type: 'Sandbox', ver: '28.4', next: '28.5 by 30 Nov' }
+];
+const PRESET = { empty: { sel: [], q: '', show: false }, mid: { sel: [3, 4, 6, 10], q: 'contoso', show: false }, selected: { sel: [3, 4, 6, 10], q: '', show: true } };
+const UPS = [
+  { id: 'a', name: '28.5 in November 2026', sub: 'Target 28.5 - Thu 12 Nov, 20:00', lines: '8 environments' },
+  { id: 'b', name: '28.5 in October', sub: 'Target 28.5 - Thu 29 Oct, 20:00', lines: '11 environments' },
+  { id: 'c', name: '28.4 evening wave, 26 Sep', sub: 'Target 28.4 - Sat 26 Sep, 20:00', lines: '11 environments' }
+];
+const TICKED = [3, 4, 6, 7, 8, 9, 10, 11];
+
+class Component extends DCLogic {
+  state = {};
+  renderVals() {
+    const mode = this.props.mode ?? 'picker';
+    const compact = !!this.props.compact;
+    const p = PRESET[this.props.preset ?? 'empty'] || PRESET.empty;
+    const sel = this.state.sel ?? new Set(p.sel);
+    const q = this.state.q ?? p.q;
+    const show = this.state.show ?? p.show;
+    const lower = q.trim().toLowerCase();
+    const rowsAll = ENVS.map(e => {
+      const onThis = e.on === 'this', onOther = !!e.on && !onThis;
+      const prod = e.type === 'Production';
+      const checked = onThis || sel.has(e.id);
+      return {
+        ...e, checked, locked: onThis || onOther, envLabel: e.env === e.type ? e.env : e.env + ' (' + e.type + ')',
+        why: onThis ? 'Already on this upgrade' : onOther ? e.on : '',
+        whyColor: onOther ? 'var(--warning-text)' : 'var(--ink-3)',
+        ink: onOther ? 'var(--ink-3)' : 'var(--ink)',
+        typeColor: prod ? 'var(--ink)' : 'inherit', typeWeight: prod ? 'var(--fw-semibold)' : 'inherit',
+        trCls: sel.has(e.id) ? 'is-selected' : '', bg: sel.has(e.id) ? 'var(--primary-weak)' : '',
+        toggle: () => this.setState(() => { const s = new Set(sel); s.has(e.id) ? s.delete(e.id) : s.add(e.id); return { sel: s }; })
+      };
+    });
+    const rows = rowsAll.filter(r => (show ? sel.has(r.id) : true) && (!lower || (r.sol + ' ' + r.env + ' ' + r.short).toLowerCase().includes(lower)));
+    const fill = type => () => this.setState(() => { const s = new Set(sel); ENVS.forEach(e => { if (e.type === type && !e.on && e.ver !== '28.5') s.add(e.id); }); return { sel: s }; });
+    const n = sel.size;
+    const upPick = this.state.up ?? (this.props.preset === 'new' ? 'new' : 'a');
+    const full = compact;
+    return {
+      isPicker: mode === 'picker', isAdd: mode === 'add', wide: !compact, compact,
+      wrapStyle: full ? 'position: relative; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr)' : 'position: relative; display: grid; place-items: center; padding: var(--space-5) var(--space-3); border-radius: var(--r); overflow: hidden',
+      dlgStyle: full ? 'position: relative; width: 100%; height: 100%; max-width: none; border-radius: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto' : 'position: relative; width: min(1000px, 100%); height: 640px; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto',
+      addStyle: 'position: relative',
+      rows, noRows: rows.length === 0, noRowsText: show ? 'Nothing selected yet' : 'No environment matches "' + q + '"',
+      q, setQ: e => this.setState({ q: e.target.value }),
+      showSel: show, toggleShow: e => this.setState({ show: e.target.checked }),
+      none: n === 0,
+      selText: n === 0 ? 'None selected' : n + ' selected' + (lower || show ? ', ' + rows.filter(r => sel.has(r.id)).length + ' shown' : ''),
+      addLabel: n === 0 ? 'Add environments' : n === 1 ? 'Add 1 environment' : 'Add ' + n + ' environments',
+      fillProd: fill('Production'), fillSand: fill('Sandbox'),
+      radioName: 'up-' + (this.props.preset ?? 'x') + (this.props.themeKey ?? ''),
+      ups: UPS.map(u => ({ ...u, on: upPick === u.id, bg: upPick === u.id ? 'var(--primary-weak)' : '', pick: () => this.setState({ up: u.id }) })),
+      isNew: upPick === 'new', newBg: upPick === 'new' ? 'var(--primary-weak)' : '', pickNew: () => this.setState({ up: 'new' }),
+      ticked: TICKED.map(id => ENVS.find(e => e.id === id)).map(e => {
+        const other = !!e.on && e.on !== 'this', prod = e.type === 'Production';
+        return { ...e, envLabel: e.env === e.type ? e.env : e.env + ' (' + e.type + ')', why: other ? e.on : '', ink: other ? 'var(--ink-3)' : 'var(--ink)', icon: other ? 'M8 2.5L14.5 13.5H1.5zM8 6.3v3.4M8 11.6v.6' : 'M3.5 8.4l3 3 6-6.4', iconColor: other ? 'var(--warning-text)' : 'var(--success-text)', typeColor: prod ? 'var(--ink)' : 'inherit', typeWeight: prod ? 'var(--fw-semibold)' : 'inherit' };
+      }),
+      noop: () => {}
+    };
+  }
+}
+</script>
+</body>
+</html>
