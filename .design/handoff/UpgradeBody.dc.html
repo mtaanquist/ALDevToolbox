@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head__crumbs"><a href="#">Upgrades</a><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>{{ crumb }}</span></div>
+
+  <sc-if value="{{ isNotFound }}" hint-placeholder-val="{{ false }}">
+    <div class="card">
+      <div class="empty-state">
+        <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.4 10.4L14 14M5.4 7h3.2"></path></svg></span>
+        <span class="empty-state__title">This upgrade does not exist</span>
+        <span class="empty-state__text">It may have been deleted, or the link is wrong. Upgrades that were marked done are kept in the Archive.</span>
+        <span class="empty-state__action" style="display: flex; gap: var(--space-2); justify-content: center; flex-wrap: wrap"><a class="btn" href="#">Open upgrades</a><a class="btn btn--ghost" href="#">Archive</a></span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+    <div class="detail-head"><div style="display: grid; gap: var(--space-2); flex: 1"><span class="skeleton" style="width: 280px; max-width: 80%; height: 22px"></span><span class="skeleton" style="width: 180px; height: 10px"></span></div></div>
+    <div class="meta-row"><sc-for list="{{ skel }}" as="k" hint-placeholder-count="5"><span class="meta-item"><span class="skeleton" style="width: 50px; height: 9px"></span><span class="skeleton" style="width: {{ k.w }}; margin-top: 6px"></span></span></sc-for></div>
+    <div class="card">
+      <sc-for list="{{ skel }}" as="k" hint-placeholder-count="5">
+        <div style="display: flex; align-items: center; gap: var(--space-4); min-height: 50px; padding: 0 var(--space-4); border-bottom: 1px solid var(--border)"><span class="skeleton" style="width: 16px; height: 16px; flex: none"></span><span style="display: grid; gap: 6px; flex: 1"><span class="skeleton" style="width: {{ k.w }}"></span><span class="skeleton" style="width: 30%; height: 9px"></span></span><span class="skeleton" style="width: 64px; height: 18px"></span></div>
+      </sc-for>
+      <div class="loading-block" style="padding: var(--space-3) var(--space-4)"><span class="spinner"></span><span>Loading the upgrade and each environment from Business Central...</span></div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isReady }}" hint-placeholder-val="{{ true }}">
+    <div class="detail-head" style="flex-wrap: wrap; gap: var(--space-3)">
+      <div style="min-width: 0; flex: 1 1 260px">
+        <div class="detail-head__title-row" style="flex-wrap: wrap"><h2 class="detail-head__title">{{ u.name }}</h2><span class="status-pill {{ u.pill }}"><span class="status-pill__dot"></span>{{ u.state }}</span></div>
+        <sc-if value="{{ u.note }}" hint-placeholder-val="{{ false }}"><p class="page-head__sub">{{ u.note }}</p></sc-if>
+      </div>
+      <div class="page-head__actions" style="flex-wrap: wrap; min-width: 0; max-width: 100%; flex-shrink: 1">
+        <sc-for list="{{ ribbon }}" as="b" hint-placeholder-count="4">
+          <button class="btn {{ b.cls }}" type="button" disabled="{{ b.off }}" title="{{ b.title }}">{{ b.label }}</button>
+        </sc-for>
+        <span class="ra">
+          <button class="btn btn--icon" type="button" aria-haspopup="menu" aria-label="More upgrade actions" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button>
+          <div class="ra__menu menu" role="menu">
+            <sc-for list="{{ overflow }}" as="m" hint-placeholder-count="5">
+              <sc-if value="{{ m.sep }}" hint-placeholder-val="{{ false }}"><div class="menu__sep"></div></sc-if>
+              <button class="menu__item {{ m.cls }}" type="button" disabled="{{ m.off }}" title="{{ m.title }}">{{ m.label }}</button>
+            </sc-for>
+          </div>
+        </span>
+      </div>
+    </div>
+
+    <div class="meta-row">
+      <sc-for list="{{ meta }}" as="m" hint-placeholder-count="6">
+        <span class="meta-item"><span class="meta-item__label">{{ m.k }}</span><span class="meta-item__value" style="font-weight: {{ m.w }}">{{ m.v }}</span></span>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div class="card">
+        <div class="empty-state">
+          <span class="empty-state__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 4h7M2.6 8h7M2.6 12h4.4"></path><path d="M12 9.4v4.4M9.8 11.6h4.4"></path></svg></span>
+          <span class="empty-state__title">No environments yet</span>
+          <span class="empty-state__text">Add the environments you agreed this upgrade with. They are then moved, started and checked together, and each environment can be on one open upgrade at a time.</span>
+          <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>Add environments...</button></span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasLines }}" hint-placeholder-val="{{ true }}">
+      <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-height: 48px">
+          <span class="search" style="flex: 1 1 200px; max-width: 280px"><svg class="search__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search environments..." /></span>
+          <label class="switch" style="min-height: 44px"><input type="checkbox" checked="{{ mine }}" onChange="{{ toggleMine }}" /><span class="switch__track"><span class="switch__knob"></span></span>Mine</label>
+          <span class="select-wrap" style="width: 150px"><select class="select" aria-label="State"><option>Every state</option><option>Planned</option><option>Date moved</option><option>Booked</option><option>Running</option><option>Updated</option><option>Failed</option><option>Checked</option></select><svg class="select-wrap__caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+          <span style="flex: 1"></span>
+          <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2)">
+              <span style="font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--ink)">{{ selText }}</span>
+              <button class="btn btn--sm" type="button">Move dates...</button>
+              <button class="btn btn--sm" type="button">Start update...</button>
+              <span class="ra"><button class="btn btn--sm" type="button" aria-haspopup="menu" onClick="{{ toggleMenu }}">More<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Change the next version...</button><button class="menu__item" type="button">Assign to...</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button" disabled="{{ selSent }}" title="{{ selSentTitle }}">Remove from upgrade</button></div></span>
+              <button class="btn btn--sm btn--ghost" type="button" onClick="{{ clearSel }}">Clear</button>
+            </span>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+        <table class="data-table" style="table-layout: fixed">
+          <thead><tr>
+            <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><th style="width: 40px"><label class="check {{ allCls }}" aria-label="Select all"><input type="checkbox" checked="{{ allSel }}" onChange="{{ toggleAll }}" /><span class="check__box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span></label></th></sc-if>
+            <th style="width: 17%">Environment</th>
+            <th style="width: 14%">Now</th>
+            <th style="width: 10%">State</th>
+            <th style="width: 17%">Last action</th>
+            <th style="width: 12%">Assignee</th>
+            <th style="width: 17%">Checked</th>
+            <th style="width: 13%">Contact</th>
+            <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><th class="data-table__actions" style="width: 48px"><span class="u-sr">Actions</span></th></sc-if>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{ lines }}" as="l" hint-placeholder-count="8">
+              <tr class="{{ l.trCls }}">
+                <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><td><label class="check" aria-label="Select {{ l.sol }} {{ l.env }}"><input type="checkbox" checked="{{ l.sel }}" onChange="{{ l.toggleSel }}" /><span class="check__box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span></label></td></sc-if>
+                <td><span class="cell-stack"><span class="cell-stack__main" style="font-weight: var(--fw-medium)"><a href="#">{{ l.sol }}</a></span><span class="cell-stack__sub"><a href="#" style="color: inherit">{{ l.env }}</a> <span style="color: {{ l.typeColor }}; font-weight: {{ l.typeWeight }}">{{ l.type }}</span></span></span></td>
+                <td><span class="cell-stack"><span class="cell-stack__main">{{ l.now }}</span><span class="cell-stack__sub" style="color: {{ l.nowColor }}">{{ l.nowSub }}</span></span></td>
+                <td><span class="status-pill {{ l.pill }}"><span class="status-pill__dot"></span>{{ l.stateWord }}</span></td>
+                <td><span class="cell-stack"><span class="cell-stack__main" style="font-size: var(--text-sm)">{{ l.last }}</span><span class="cell-stack__sub">{{ l.lastWho }}</span></span></td>
+                <td>
+                  <sc-if value="{{ l.hasAssignee }}" hint-placeholder-val="{{ false }}">
+                    <span class="ra"><button type="button" aria-haspopup="menu" disabled="{{ readonly }}" onClick="{{ toggleMenu }}" style="display: inline-flex; align-items: center; gap: var(--space-2); min-height: 32px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: var(--text-sm); cursor: pointer"><span class="activity__avatar" style="width: 22px; height: 22px; font-size: 10px">{{ l.initials }}</span>{{ l.assignee }}</button><div class="ra__menu menu" role="menu"><sc-for list="{{ people }}" as="p" hint-placeholder-count="3"><button class="menu__item" type="button">{{ p }}</button></sc-for><div class="menu__sep"></div><button class="menu__item" type="button">Nobody</button></div></span>
+                  </sc-if>
+                  <sc-if value="{{ l.canAssign }}" hint-placeholder-val="{{ true }}">
+                    <span class="ra"><button class="btn btn--sm btn--ghost" type="button" aria-haspopup="menu" onClick="{{ toggleMenu }}" style="color: var(--ink-3)"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"></path></svg>Assign</button><div class="ra__menu menu" role="menu"><sc-for list="{{ people }}" as="p" hint-placeholder-count="3"><button class="menu__item" type="button">{{ p }}</button></sc-for></div></span>
+                  </sc-if>
+                </td>
+                <td>
+                  <span style="display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px var(--space-2); align-items: start">
+                    <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><label class="check" aria-label="Checked {{ l.sol }} {{ l.env }}" style="margin-top: 2px"><input type="checkbox" checked="{{ l.checked }}" disabled="{{ l.noCheck }}" onChange="{{ l.toggleCheck }}" /><span class="check__box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span></label></sc-if>
+                    <sc-if value="{{ readonly }}" hint-placeholder-val="{{ false }}"><span style="color: {{ l.roColor }}; margin-top: 1px" aria-label="{{ l.roLabel }}"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ l.roGlyph }}"></path></svg></span></sc-if>
+                    <span class="cell-stack" style="padding: 0; min-width: 0">
+                      <sc-if value="{{ l.checked }}" hint-placeholder-val="{{ false }}"><span class="cell-stack__main" style="font-size: var(--text-sm)">{{ l.checkWho }}</span><span class="cell-stack__sub" style="white-space: normal; text-wrap: pretty">{{ l.checkNote }}</span></sc-if>
+                      <sc-if value="{{ l.unchecked }}" hint-placeholder-val="{{ true }}"><span class="cell-stack__sub" style="padding-top: 1px">{{ l.checkHint }}</span></sc-if>
+                    </span>
+                  </span>
+                </td>
+                <td><span class="cell-stack"><span class="cell-stack__main" style="font-size: var(--text-sm)">{{ l.contact }}</span><span class="cell-stack__sub"><a href="{{ l.tel }}" class="u-num">{{ l.phone }}</a></span></span></td>
+                <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-haspopup="menu" aria-label="Actions for {{ l.sol }} {{ l.env }}" onClick="{{ toggleMenu }}"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Move date...</button><button class="menu__item" type="button">Start update...</button><button class="menu__item" type="button">Change the next version...</button><button class="menu__item" type="button">Assign to...</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button" disabled="{{ l.sent }}" title="{{ l.removeTitle }}">Remove from upgrade</button></div></span></td></sc-if>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+
+      <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r)">
+          <sc-for list="{{ lines }}" as="l" hint-placeholder-count="8">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--border)">
+              <span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-weight: var(--fw-semibold)"><a href="#">{{ l.sol }}</a></span><span class="cell-stack__sub">{{ l.env }} <span style="color: {{ l.typeColor }}; font-weight: {{ l.typeWeight }}">{{ l.type }}</span> - {{ l.now }}</span></span>
+              <span class="status-pill {{ l.pill }}" style="align-self: start"><span class="status-pill__dot"></span>{{ l.stateWord }}</span>
+              <span style="grid-column: 1 / -1; font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty">{{ l.last }}, {{ l.lastWho }}<sc-if value="{{ l.hasAssignee }}" hint-placeholder-val="{{ false }}"> - {{ l.assignee }}</sc-if></span>
+              <span style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px">
+                <sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><label class="check" style="min-height: 44px; align-items: center"><input type="checkbox" checked="{{ l.checked }}" disabled="{{ l.noCheck }}" onChange="{{ l.toggleCheck }}" /><span class="check__box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-6.4"></path></svg></span><span style="display: grid; font-size: var(--text-sm)"><span style="color: var(--ink)">{{ l.checkLabel }}</span><sc-if value="{{ l.checked }}" hint-placeholder-val="{{ false }}"><span style="color: var(--ink-3); font-size: var(--text-xs)">{{ l.checkNote }}</span></sc-if></span></label></sc-if>
+                <sc-if value="{{ readonly }}" hint-placeholder-val="{{ false }}"><span style="display: grid; font-size: var(--text-sm)"><span style="color: {{ l.roColor }}; font-weight: var(--fw-medium)">{{ l.roLabel }}</span><sc-if value="{{ l.checked }}" hint-placeholder-val="{{ false }}"><span style="color: var(--ink-3); font-size: var(--text-xs)">{{ l.checkNote }}</span></sc-if></span></sc-if>
+                <a class="btn btn--sm" href="{{ l.tel }}" style="min-height: 44px; flex: none" aria-label="Call {{ l.contact }}"><svg class="btn__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 2.6l1.4 3-1.3 1a7.4 7.4 0 0 0 3.7 3.7l1-1.3 3 1.4v2.2a1 1 0 0 1-1.1 1A11 11 0 0 1 2.4 3.7a1 1 0 0 1 1-1.1z"></path></svg>{{ l.contactFirst }}</a>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <div class="pager"><span class="pager__count">{{ lineCount }}</span></div>
+    </sc-if>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;open&quot;,&quot;done&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;notfound&quot;],&quot;default&quot;:&quot;open&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compact&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:8,&quot;tsType&quot;:&quot;number&quot;}}">
+const PILL = { planned: 'status-pill--queued', moved: 'status-pill--muted', booked: 'status-pill--info', running: 'status-pill--running', updated: 'status-pill--warn', failed: 'status-pill--failed', checked: 'status-pill--succeeded' };
+const WORD = { planned: 'Planned', moved: 'Date moved', booked: 'Booked', running: 'Running', updated: 'Updated', failed: 'Failed', checked: 'Checked' };
+const HEAD = { planned: ['Planned', 'status-pill--queued'], progress: ['In progress', 'status-pill--running'], updated: ['Updated', 'status-pill--warn'], done: ['Done', 'status-pill--succeeded'] };
+const PEOPLE = ['Mads', 'Louise', 'Jonas'];
+
+const LINES = [
+  { id: 1, sol: 'CRONUS Danmark', env: 'Production', type: 'Production', st: 'checked', now: '28.5', nowSub: 'Updated 20:31', last: 'Update started', lastWho: 'Mads, yesterday 20:00', assignee: 'Louise', checkBy: 'Louise, 07:52', note: 'Posting OK, reports OK', contact: 'Anne Holm', phone: '+45 31 22 40 18', sent: true },
+  { id: 2, sol: 'CRONUS Danmark', env: 'Sandbox', type: 'Sandbox', st: 'checked', now: '28.5', nowSub: 'Updated 20:18', last: 'Update started', lastWho: 'Mads, yesterday 20:00', assignee: 'Louise', checkBy: 'Louise, 07:40', note: 'Opened, no errors', contact: 'Anne Holm', phone: '+45 31 22 40 18', sent: true },
+  { id: 3, sol: 'CRONUS UK', env: 'Production', type: 'Production', st: 'checked', now: '28.5', nowSub: 'Updated 20:44', last: 'Update started', lastWho: 'Mads, yesterday 20:00', assignee: 'Mads', checkBy: 'Mads, 08:05', note: 'Signed in, posted a sales order', contact: 'Tom Ellis', phone: '+44 20 7946 0321', sent: true },
+  { id: 4, sol: 'Contoso Retail', env: 'Production', type: 'Production', st: 'updated', now: '28.5', nowSub: 'Updated 21:02', last: 'Update started', lastWho: 'Mads, yesterday 20:00', assignee: 'Mads', contact: 'Sara Lind', phone: '+45 42 18 77 03', sent: true },
+  { id: 5, sol: 'Contoso Retail', env: 'Sandbox', type: 'Sandbox', st: 'updated', now: '28.5', nowSub: 'Updated 20:26', last: 'Update started', lastWho: 'Mads, yesterday 20:00', assignee: '', contact: 'Sara Lind', phone: '+45 42 18 77 03', sent: true },
+  { id: 6, sol: 'Contoso Logistics', env: 'Production', type: 'Production', st: 'failed', now: '28.4', nowSub: 'Update to 28.5 failed 20:37', danger: true, last: 'Update started', lastWho: 'Mads, yesterday 20:00', assignee: 'Jonas', contact: 'Peter Vang', phone: '+45 26 90 14 55', sent: true },
+  { id: 7, sol: 'CRONUS Sverige', env: 'Production', type: 'Production', st: 'running', now: '28.4', nowSub: 'Updating to 28.5 since 07:58', info: true, last: 'Update started again', lastWho: 'Jonas, 25 min ago', assignee: 'Jonas', contact: 'Eva Berg', phone: '+46 8 123 456 70', sent: true },
+  { id: 8, sol: 'Contoso Retail', env: 'Test', type: 'Sandbox', st: 'moved', now: '28.4', nowSub: 'Update on Thu 19 Nov', last: 'Date moved to 19 Nov', lastWho: 'Louise, 3 days ago', assignee: '', contact: 'Sara Lind', phone: '+45 42 18 77 03', sent: false }
+];
+const DONE = LINES.map(l => {
+  if (l.st === 'updated') return { ...l, st: 'checked', checkBy: 'Mads, Fri 13 Nov 10:20', note: 'Posting OK' };
+  if (l.st === 'running') return { ...l, st: 'checked', now: '28.5', nowSub: 'Updated 08:31', info: false, checkBy: 'Jonas, Fri 13 Nov 09:10', note: 'Signed in, invoices OK' };
+  if (l.st === 'moved') return { ...l, st: 'checked', now: '28.5', nowSub: 'Updated 19 Nov 20:22', last: 'Update started', lastWho: 'Louise, 19 Nov 20:00', checkBy: 'Louise, 20 Nov 08:15', note: 'Opened, no errors', sent: true };
+  if (l.st === 'failed') return { ...l, last: 'Removed from checks', lastWho: 'Mads, 20 Nov 09:00' };
+  return l;
+});
+
+class Component extends DCLogic {
+  state = { sel: null, checks: {}, mine: false };
+  renderVals() {
+    const kind = this.props.kind ?? 'open';
+    const compact = !!this.props.compact;
+    const done = kind === 'done', empty = kind === 'empty';
+    const src = done ? DONE : empty ? [] : LINES;
+    const preset = this.props.selected ?? 0;
+    const sel = this.state.sel ?? new Set(src.slice(3, 3 + preset).map(l => l.id));
+    const readonly = done;
+    const lines = src.map(l0 => {
+      const ov = this.state.checks[l0.id];
+      const l = ov === undefined ? l0 : ov
+        ? { ...l0, st: 'checked', checkBy: 'You, just now', note: '' }
+        : { ...l0, st: l0.st === 'checked' ? 'updated' : l0.st };
+      const checked = l.st === 'checked';
+      const canCheck = ['updated', 'checked', 'failed'].includes(l.st);
+      const prod = l.type === 'Production';
+      return {
+        ...l,
+        stateWord: WORD[l.st], pill: PILL[l.st], trCls: sel.has(l.id) ? 'is-selected' : '',
+        typeColor: prod ? 'var(--ink)' : 'inherit', typeWeight: prod ? 'var(--fw-semibold)' : 'inherit',
+        nowColor: l.danger ? 'var(--danger-text)' : l.info ? 'var(--info-text)' : 'inherit',
+        hasAssignee: !!l.assignee, canAssign: !l.assignee && !readonly, initials: (l.assignee || '').slice(0, 2),
+        checked, unchecked: !checked, noCheck: !canCheck,
+        checkWho: l.checkBy || '', checkNote: l.note || (checked ? 'Add a note' : ''),
+        checkHint: readonly ? (l.st === 'failed' ? 'Not checked, update failed' : 'Not checked') : canCheck ? 'Tick when checked' : 'After the update',
+        checkLabel: checked ? 'Checked by ' + l.checkBy : canCheck ? 'Tick when checked' : 'Can be ticked after the update',
+        roColor: checked ? 'var(--success-text)' : 'var(--danger-text)', roLabel: checked ? 'Checked by ' + l.checkBy : 'Not checked',
+        roGlyph: checked ? 'M3.5 8.4l3 3 6-6.4' : 'M5 5l6 6M11 5l-6 6',
+        contactFirst: l.contact.split(' ')[0], tel: 'tel:' + l.phone.replace(/\s/g, ''),
+        removeTitle: l.sent ? 'Something has been sent to Business Central for this environment.' : '',
+        sel: sel.has(l.id),
+        toggleSel: () => this.setState(() => { const s = new Set(sel); s.has(l.id) ? s.delete(l.id) : s.add(l.id); return { sel: s }; }),
+        toggleCheck: e => { const v = e.target.checked; this.setState(s => ({ checks: { ...s.checks, [l0.id]: v } })); }
+      };
+    });
+    const nUpd = lines.filter(l => l.st === 'updated' || l.st === 'checked').length;
+    const nChk = lines.filter(l => l.checked).length;
+    const hk = empty ? 'planned' : done ? 'done' : 'progress';
+    const [state, pill] = HEAD[hk];
+    const meta = [
+      { k: 'Target', v: '28.5' },
+      { k: 'Planned', v: 'Thu 12 Nov, 20:00' },
+      { k: 'Environments', v: String(src.length) },
+      ...(empty ? [] : [{ k: 'Progress', v: nUpd + ' of ' + src.length + ' updated, ' + nChk + ' checked' }]),
+      { k: 'Created', v: 'Mads, 3 Nov' },
+      ...(done ? [{ k: 'Closed', v: 'Mads, Fri 20 Nov 09:04' }] : [])
+    ].map(m => ({ ...m, w: 'inherit' }));
+    const B = (label, primary, title, off) => ({ label, cls: primary ? 'btn--primary' : '', title: title || '', off: !!off });
+    const ribbon = done ? [] : empty
+      ? [B('Add environments...', true), B('Move dates...', false, 'Add environments first', true), B('Start update...', false, 'Add environments first', true), B('Change the next version...', false, 'Add environments first', true)]
+      : [B('Start update...', true, 'Runs over the lines that have not been sent yet: 1 environment'), B('Add environments...'), B('Move dates...'), B('Change the next version...')];
+    const O = (label, o = {}) => ({ label, cls: o.danger ? 'menu__item--danger' : '', off: !!o.off, title: o.title || '', sep: !!o.sep });
+    const overflow = done
+      ? [O('Reopen'), O('New upgrade from the leftovers', { title: 'Starts a new upgrade with the one environment that was not checked' })]
+      : [O('Edit details'), O('Mark done...'), O('Reopen', { off: true, title: 'Only a done upgrade can be reopened' }), O('New upgrade from the leftovers', { off: empty }), O('Delete', { danger: true, sep: true, off: !empty, title: empty ? '' : 'Something has been sent to Business Central, so this upgrade can only be marked done' })];
+    if (compact && ribbon.length) {
+      const outline = ribbon.filter(b => !b.cls);
+      overflow.unshift(...outline.map((b, i) => ({ label: b.label, cls: '', off: b.off, title: b.title, sep: false })));
+      if (overflow[outline.length]) overflow[outline.length].sep = true;
+      ribbon.splice(0, ribbon.length, ...ribbon.filter(b => b.cls));
+    }
+    const selLines = lines.filter(l => l.sel);
+    return {
+      crumb: kind === 'notfound' ? 'Not found' : '28.5 in November 2026',
+      isNotFound: kind === 'notfound', isLoading: kind === 'loading', isReady: !['notfound', 'loading'].includes(kind),
+      isEmpty: empty, hasLines: src.length > 0,
+      u: { name: '28.5 in November 2026', state, pill, note: empty ? '' : 'Agreed with the customers on the October call. Contoso Logistics wants a call before 08:00.' },
+      ribbon, overflow, meta,
+      editable: !readonly, readonly, wide: !compact, compact,
+      lines, people: PEOPLE,
+      mine: this.state.mine, toggleMine: e => this.setState({ mine: e.target.checked }),
+      hasSel: selLines.length > 0, selText: selLines.length + ' selected',
+      selSent: selLines.some(l => l.sent), selSentTitle: 'Only lines that nothing has been sent for can be removed',
+      allSel: selLines.length === lines.length && lines.length > 0,
+      allCls: selLines.length && selLines.length < lines.length ? 'is-indeterminate' : '',
+      toggleAll: () => this.setState({ sel: selLines.length === lines.length ? new Set() : new Set(lines.map(l => l.id)) }),
+      clearSel: () => this.setState({ sel: new Set() }),
+      lineCount: src.length + ' environments' + (done ? '' : ', ' + (src.length - nChk) + ' still to check'),
+      skel: [{ w: '60%' }, { w: '45%' }, { w: '70%' }, { w: '52%' }, { w: '64%' }],
+      toggleMenu: e => {
+        e.stopPropagation();
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const was = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => { x.classList.remove('is-open'); x.classList.remove('ra--up'); });
+        if (was) return;
+        w.classList.add('is-open');
+        const menu = w.querySelector('.ra__menu'), box = w.closest('.app__content');
+        if (menu && box) w.classList.toggle('ra--up', box.getBoundingClientRect().bottom - w.getBoundingClientRect().bottom < menu.getBoundingClientRect().height + 12);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
