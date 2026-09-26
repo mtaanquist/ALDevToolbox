@@ -812,6 +812,46 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_merged_pair_keeps_the_old_rows_place_on_a_planned_upgrade()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+        var oldId = await SeedLiveEnvironmentAsync(id, "JLE");
+        var stampedId = await SeedLiveEnvironmentAsync(id, "JLE-260911110359");
+        int upgradeId;
+        await using (var seed = _db.NewContext())
+        {
+            var old = await seed.OeProjectEnvironments.SingleAsync(e => e.Id == oldId);
+            old.MissingSince = DateTime.UtcNow.AddDays(-8);
+            var upgrade = new OeEnvironmentUpgrade
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = "28.5 in November 2026", TargetVersion = "28.5",
+                CreatedBy = "Anna Jensen", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+                Lines =
+                [
+                    new OeEnvironmentUpgradeLine
+                    {
+                        OrganizationId = TestDb.DefaultOrgId, EnvironmentId = oldId, ProjectId = id,
+                        IsOpen = true, AddedAt = DateTime.UtcNow,
+                    },
+                ],
+            };
+            seed.OeEnvironmentUpgrades.Add(upgrade);
+            await seed.SaveChangesAsync();
+            upgradeId = upgrade.Id;
+        }
+
+        var admin = new FakeAdminClient { OnList = () => new[] { SoftDeleted("JLE-260911110359") } };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var line = await verify.OeEnvironmentUpgradeLines.AsNoTracking().SingleAsync(l => l.UpgradeId == upgradeId);
+        line.EnvironmentId.Should().Be(stampedId, "deleting the old row must not cascade its place on the upgrade away");
+    }
+
+    [Fact]
     public async Task A_recreated_environment_beside_its_deleted_namesake_is_never_merged_away()
     {
         var id = await SeedProjectAsync();
