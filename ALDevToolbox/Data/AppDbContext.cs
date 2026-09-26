@@ -229,6 +229,10 @@ public class AppDbContext : DbContext
     // What the upgrade team did (or scheduled) to a customer's environment — the rows
     // behind the per-environment activity feed. See .design/saas-delivery.md.
     public DbSet<OeEnvironmentUpgradeAction> OeEnvironmentUpgradeActions => Set<OeEnvironmentUpgradeAction>();
+    // Planned upgrades (#984): a named wave of environments moved, started and checked
+    // together. See .design/environment-updates.md, "Planned upgrades".
+    public DbSet<OeEnvironmentUpgrade> OeEnvironmentUpgrades => Set<OeEnvironmentUpgrade>();
+    public DbSet<OeEnvironmentUpgradeLine> OeEnvironmentUpgradeLines => Set<OeEnvironmentUpgradeLine>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
@@ -357,6 +361,8 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeRepositoryBranchHead>(modelBuilder);
         ScopeToOrganization<OeRepositoryMergedPullRequest>(modelBuilder);
         ScopeToOrganization<OeEnvironmentUpgradeAction>(modelBuilder);
+        ScopeToOrganization<OeEnvironmentUpgrade>(modelBuilder);
+        ScopeToOrganization<OeEnvironmentUpgradeLine>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever

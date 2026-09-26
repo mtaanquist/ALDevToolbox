@@ -109,6 +109,9 @@ public static class ObjectExplorerRegistration
         // worker polls the table rather than a channel, so a slot survives a restart.
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
         services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionWorker>();
+        // Planned upgrades (#984): the named waves the team moves, starts and checks
+        // together. Reads the fleet through UpgradeFleetService, so it is scoped like it.
+        services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentUpgradeService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.TranslationQueryService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ReleaseComparisonService>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Explore.ObjectSearchService>();
