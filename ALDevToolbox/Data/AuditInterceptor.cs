@@ -93,6 +93,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // action moves pending → sent. The write that actually reaches the
             // customer's tenant still writes its own audit row from
             // ProjectConnectionService. See .design/saas-delivery.md and issue #657.
+            // Also absent: OeEnvironmentUpgrade and OeEnvironmentUpgradeLine (#984). A
+            // planned upgrade is a working list that stamps its own who-and-when on the
+            // moves that matter (created, checked, marked done), and every action run from
+            // it lands in the action log above; auditing the list's edits on top would
+            // record a tick-and-untick as noise. See .design/environment-updates.md.
         };
 
     /// <summary>

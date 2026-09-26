@@ -324,6 +324,90 @@ panel on a project's Business Central tab — so the history cannot read differe
 on which page somebody opened. Its empty state says nothing has been done to this environment
 yet.
 
+## Planned upgrades: a header with lines
+
+> **Status: engine only** ([#984](https://github.com/mtaanquist/al-workbench/issues/984), sub-issue B).
+> `EnvironmentUpgradeService` and `EnvironmentUpgradeLineState` under
+> `Services/ObjectExplorer/Bc/`; no page, palette entry or MCP read yet.
+
+The flat table is the right tool for ad hoc work and the wrong one for a wave. The team agrees
+the same evening slot with eight customers, starts them at 20:00, and the next morning wants
+exactly those eight with a tick beside each one they have checked. So a batch is now a thing
+with a name: an **upgrade** ("28.5 in November 2026") holding **lines**, one per environment,
+in the Business Central header-and-lines shape the team asked for.
+
+**The tables.** `oe_environment_upgrades` is the header: a name, a target release as
+Major.Minor, an optional planned slot (advisory - nothing fires from it), a note, who made it
+and when, and who marked it done and when (`closed_at` / `closed_by`, null while open). The
+people are stored twice, as a nullable user id (`SET NULL`) and a denormalised
+`"name <email>"` string, for the same reason the action rows do it: the record has to name
+them after the account is gone. There is no soft delete. An upgrade can be deleted outright
+only while no action row carries its id; after that it is part of the record and the way out
+is marking it done.
+
+`oe_environment_upgrade_lines` holds the environment, its solution (denormalised, so the
+visibility join runs on the line's own `project_id`), who is to check it, and the check itself -
+who ticked it, when, and a short note ("posting OK, reports OK", at most 500 characters).
+Unticking clears the who and the when and keeps the note. A line can be taken off while nothing
+has been done to that environment from this upgrade.
+
+`oe_environment_upgrade_actions` gains a nullable `upgrade_id`. An action run from an upgrade
+carries it; an ad hoc one from the fleet table or an environment's page keeps null. An action
+may only claim an upgrade that is open and has that environment on it. The history reads the
+upgrade's name through it, so an entry can say which wave it belonged to.
+
+**One open upgrade per environment.** Two open waves both claiming the same customer is the
+confusion the feature exists to remove. The rule is about the *parent* being open, and a
+Postgres index cannot filter on another table's column, so the line carries a copy of that
+fact - `is_open`, set false when the upgrade is marked done and true again on reopen - and a
+unique index on `environment_id` filtered on it holds the rule. The service checks first so a
+refusal can name the other upgrade; the index is what holds when two people race. A second,
+unfiltered index on `environment_id` covers the foreign key's cascade, which the filtered one
+would not (see CLAUDE.md on zero-scan indexes). Adding is judged per environment, like the
+fleet actions: one that cannot go on does not cost the others.
+
+**The grant, and the join.** Anyone in the organisation may create an upgrade and edit its
+name, target, slot and note; the header holds no customer data. Everything that touches a line
+needs the environment-updates grant on that line's solution - adding, taking off, assigning,
+checking - and the moves that change every line at once (marking done, reopening, starting
+the leftovers, deleting) need it on every solution the upgrade touches. Lines are read only
+through `VisibleProjectPredicate`, as the fleet is: a line from a solution the viewer cannot
+see is left out of the upgrade and out of its counts, not shown blank.
+
+**The derived states.** A line's state is never stored. `EnvironmentUpgradeLineState.Derive`
+works it out from the fleet row (the mirror) and the action rows carrying this upgrade's id,
+and the first rule that matches wins:
+
+1. **Checked** - somebody ticked it. A person's word outranks the mirror.
+2. **Running** - Business Central is busy with the environment: its state is busy, or its next
+   update says it is running. The same test the page's watch after Start update uses (#982).
+3. **Updated** - the environment is on the target release or a later one, Major.Minor compared
+   numerically per segment.
+4. **Failed** - the latest action from this upgrade failed, or the environment is in one of
+   Business Central's `*Failed` states. The mirror keeps no separate "the last update failed"
+   fact, so an update that ran and left the environment running on the old version reads cold
+   as not started; only the page's watch, having seen it busy, can call that a failure.
+5. **Booked** - a Start update from this upgrade is waiting for its slot, or the latest action
+   is a Start update Business Central accepted and has not picked up yet.
+6. **Date moved** - the latest action this upgrade sent was a date move that worked.
+7. Otherwise **Planned** - which is also where a cancelled booking lands.
+
+The upgrade's own status follows from its lines: **Done** once marked done, whatever the lines
+say; **In progress** while anything is booked or running, or while the wave is part way
+through; **Updated** once every line is updated, failed or checked, waiting for somebody to
+call it done; **Planned** while nothing has gone further than a moved date. The list counts
+each open upgrade's lines by state, so the morning after reads from the list.
+
+**Done, reopen, and the leftovers.** Marking an upgrade done stamps who and when, releases its
+environments for another open upgrade, and says how many lines were still unchecked so the
+page can ask first. Done upgrades are the archive, searchable by name and target release and
+read-only apart from reopening. Reopening is refused when any of its environments has
+meanwhile gone on another open upgrade, naming them. **New upgrade from the leftovers** makes
+an open upgrade with the same target and note whose lines are the ones that failed or were
+never started (Failed, Planned, Date moved). It needs the source done first: while the source
+is open it still holds those environments, and taking them off it quietly would rewrite a wave
+somebody is still working.
+
 ## The page
 
 One table, one row per non-missing environment of every project the viewer can see: the
@@ -839,9 +923,16 @@ Where it differs from the sheet, and why:
   and Refresh stored, each fact with the time it was read. Sessions and Business
   Central's own operations log stay web-only - they are live reads made with the
   customer's credentials. See `.design/saas-delivery.md`, "MCP parity".
-- **No per-batch job table.** `oe_environment_upgrade_actions` plus the on-page results are the
-  whole record of a sweep. Revisit only if losing a batch to a disconnect mid-run turns out to
-  bite.
+- **A per-batch table after all, for a different reason (#984).** This bullet used to say there
+  was none: the action rows plus the on-page results were the whole record of a sweep, to be
+  revisited only if losing a batch to a disconnect mid-run turned out to bite. It never did.
+  What changed was the other half of the job: the batch is the unit the team *plans and checks*
+  by, not only the unit that runs, and a hundred flat rows gave the morning after nothing to
+  hold on to. So there is now a header-and-lines pair (see "Planned upgrades: a header with
+  lines"). It is still not a job table: nothing queues on it and nothing fires from it. The
+  actions stay one row each in `oe_environment_upgrade_actions`, now carrying the upgrade they
+  came from, and a run over an upgrade's lines is still the page's own loop with per-row
+  results.
 - **No "move the date back" cancel.** Cancel stops one of *our* pending actions before it is
   sent. Once Business Central has the new date, changing it again is another action, not an undo —
   and once an update has actually started, Microsoft owns it.
