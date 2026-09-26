@@ -2186,6 +2186,25 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .ToListAsync(ct);
         foreach (var action in actions) action.EnvironmentId = survivor.Id;
 
+        // Its places on planned upgrades (#984) come across too, or the delete below would
+        // cascade them away. A place the survivor already holds - on the same upgrade, or
+        // on an open one when this one is open as well - is dropped rather than moved, since
+        // the unique indexes allow the environment one of each.
+        var lines = await _db.OeEnvironmentUpgradeLines
+            .Where(l => l.EnvironmentId == stale.Id || l.EnvironmentId == survivor.Id)
+            .ToListAsync(ct);
+        var held = lines.Where(l => l.EnvironmentId == survivor.Id).ToList();
+        foreach (var line in lines.Where(l => l.EnvironmentId == stale.Id))
+        {
+            if (held.Any(h => h.UpgradeId == line.UpgradeId || (h.IsOpen && line.IsOpen)))
+            {
+                _db.OeEnvironmentUpgradeLines.Remove(line);
+                continue;
+            }
+            line.EnvironmentId = survivor.Id;
+            held.Add(line);
+        }
+
         if (survivor.UpdateWindowStart is null && survivor.UpdateWindowEnd is null)
         {
             survivor.UpdateWindowStart = stale.UpdateWindowStart;

@@ -68,6 +68,18 @@ internal sealed class EnvironmentUpgradeActionConfiguration : IEntityTypeConfigu
             .HasForeignKey(e => e.CancelledByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // The planned upgrade the action was run from (#984); null for an ad hoc action.
+        // SetNull so the history outlives the upgrade, though an upgrade that has sent
+        // anything cannot be deleted in the first place.
+        entity.Property(e => e.UpgradeId).HasColumnName("upgrade_id");
+        entity.HasOne(e => e.Upgrade)
+            .WithMany()
+            .HasForeignKey(e => e.UpgradeId)
+            .OnDelete(DeleteBehavior.SetNull);
+        // Read by every derived line state, and the index behind the SetNull.
+        entity.HasIndex(e => e.UpgradeId)
+            .HasDatabaseName("ix_oe_env_upgrade_actions_upgrade");
+
         // The activity feed: one environment's actions, newest first.
         entity.HasIndex(e => new { e.EnvironmentId, e.RequestedAt })
             .HasDatabaseName("ix_oe_env_upgrade_actions_env_requested");

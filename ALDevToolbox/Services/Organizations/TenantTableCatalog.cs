@@ -80,6 +80,10 @@ internal static class TenantTableCatalog
         "oe_repository_branch_heads",
         "oe_repository_merged_pull_requests",
         "oe_project_environments",
+        // Planned upgrades (#984): the header before its lines and before the actions
+        // that name it, so the restore inserts parents first.
+        "oe_environment_upgrades",
+        "oe_environment_upgrade_lines",
         "oe_environment_upgrade_actions",
         "oe_pipelines",
         "oe_release_pipelines",

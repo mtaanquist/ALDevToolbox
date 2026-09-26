@@ -85,6 +85,16 @@ internal sealed class UpgradeActionTestFixture : IDisposable
             NullLogger<UpgradeActionService>.Instance);
     }
 
+    /// <summary>The planned-upgrade service (#984), over the real fleet read.</summary>
+    public EnvironmentUpgradeService Upgrades(AppDbContext ctx)
+    {
+        var access = new ProjectAccess(ctx, Db.OrgContext);
+        var fleet = new UpgradeFleetService(ctx, Db.OrgContext, access, new EnvironmentRefreshQueue(),
+            NullLogger<UpgradeFleetService>.Instance);
+        return new EnvironmentUpgradeService(ctx, Db.OrgContext, access, fleet, Clock,
+            NullLogger<EnvironmentUpgradeService>.Instance);
+    }
+
     private ProjectConnectionService Connections(AppDbContext ctx, ProjectAccess access) => new(
         ctx, Db.OrgContext, access, TokenOk(), Admin, new UnusedAppManagementClient(),
         Db.DataProtectionProvider,

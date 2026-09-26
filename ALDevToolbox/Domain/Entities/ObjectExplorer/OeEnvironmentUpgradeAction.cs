@@ -44,6 +44,15 @@ public class OeEnvironmentUpgradeAction
     /// </summary>
     public string? TargetVersion { get; set; }
 
+    /// <summary>
+    /// The planned upgrade this action was run from, or null for an ad hoc action from the
+    /// fleet table or an environment's page. <c>ON DELETE SET NULL</c>, though an upgrade
+    /// that has sent anything cannot be deleted; the null is for the organisation going.
+    /// The derived line states read only the actions carrying their upgrade's id. Issue #984.
+    /// </summary>
+    public int? UpgradeId { get; set; }
+    public OeEnvironmentUpgrade? Upgrade { get; set; }
+
     /// <summary>Where the action has got to. See <see cref="UpgradeActionStatus"/>.</summary>
     public UpgradeActionStatus Status { get; set; } = UpgradeActionStatus.Pending;
 

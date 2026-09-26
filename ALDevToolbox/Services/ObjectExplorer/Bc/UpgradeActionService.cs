@@ -83,13 +83,20 @@ public sealed class UpgradeActionService
     /// (e.g. <c>29.2</c>). Required for that kind and refused for every other, which act
     /// on the update already chosen.
     /// </param>
+    /// <param name="upgradeId">
+    /// The planned upgrade the action is run from (issue #984), or null for an ad hoc
+    /// action. When given, the upgrade must be open and have this environment on it; the id
+    /// is stored on the row, which is what the upgrade's derived line states read and what
+    /// lets the environment's history say which wave an action belonged to.
+    /// </param>
     public async Task<UpgradeActionRow> ScheduleUpgradeActionAsync(
         int projectId,
         int environmentId,
         UpgradeActionKind kind,
         DateTimeOffset? executeAt,
         CancellationToken ct = default,
-        string? targetVersion = null)
+        string? targetVersion = null,
+        int? upgradeId = null)
     {
         var orgId = RequireOrganizationId();
         targetVersion = ValidateKind(kind, targetVersion);
@@ -108,6 +115,23 @@ public sealed class UpgradeActionService
             });
         }
 
+        if (upgradeId is { } fromUpgrade)
+        {
+            // An action run from an upgrade must be for one of its lines, and the upgrade
+            // must still be open: a closed one is the record of a finished wave, and
+            // crediting it with a new action would rewrite that record.
+            var onOpenUpgrade = await _db.OeEnvironmentUpgradeLines.AsNoTracking()
+                .AnyAsync(l => l.UpgradeId == fromUpgrade && l.EnvironmentId == environmentId
+                               && l.Upgrade!.ClosedAt == null, ct).ConfigureAwait(false);
+            if (!onOpenUpgrade)
+            {
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["Upgrade"] = "This environment isn't on that upgrade any more, or the upgrade has been marked done. Reload the upgrade and try again.",
+                });
+            }
+        }
+
         var now = _clock.GetUtcNow().UtcDateTime;
         var requestedBy = await AuditActor.ResolveAsync(_db, _orgContext.CurrentUserId, ct).ConfigureAwait(false);
 
@@ -118,6 +142,7 @@ public sealed class UpgradeActionService
             EnvironmentId = environmentId,
             Kind = kind,
             TargetVersion = targetVersion,
+            UpgradeId = upgradeId,
             RequestedByUserId = _orgContext.CurrentUserId,
             RequestedBy = requestedBy,
             RequestedAt = now,
@@ -140,8 +165,8 @@ public sealed class UpgradeActionService
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             _logger.LogInformation(
-                "User {UserId} scheduled a {Kind} on environment {EnvironmentId} (project {ProjectId}) for {ExecuteAfter}.",
-                _orgContext.CurrentUserId, kind, environmentId, projectId, slotUtc);
+                "User {UserId} scheduled a {Kind} on environment {EnvironmentId} (project {ProjectId}, upgrade {UpgradeId}) for {ExecuteAfter}.",
+                _orgContext.CurrentUserId, kind, environmentId, projectId, upgradeId, slotUtc);
             return UpgradeActionRow.From(action);
         }
 
@@ -249,7 +274,8 @@ public sealed class UpgradeActionService
             .Select(a => new UpgradeActionRow(
                 a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
                 a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
-                a.CancelledBy, a.CancelledAt, a.TargetVersion))
+                a.CancelledBy, a.CancelledAt, a.TargetVersion,
+                a.UpgradeId, a.Upgrade != null ? a.Upgrade.Name : null))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
@@ -272,7 +298,8 @@ public sealed class UpgradeActionService
             .Select(a => new UpgradeActionRow(
                 a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
                 a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
-                a.CancelledBy, a.CancelledAt, a.TargetVersion))
+                a.CancelledBy, a.CancelledAt, a.TargetVersion,
+                a.UpgradeId, a.Upgrade != null ? a.Upgrade.Name : null))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
@@ -414,6 +441,8 @@ public sealed class UpgradeActionService
 /// One entry in an environment's activity feed: what was asked for, by whom, when it is
 /// due or was sent, and how it went.
 /// </summary>
+/// <param name="UpgradeId">The planned upgrade the action was run from; null for an ad hoc one (issue #984).</param>
+/// <param name="UpgradeName">That upgrade's name ("28.5 in November 2026"), so the history can say which wave; null with it.</param>
 public sealed record UpgradeActionRow(
     int Id,
     int ProjectId,
@@ -427,7 +456,9 @@ public sealed record UpgradeActionRow(
     string? Outcome,
     string? CancelledBy,
     DateTime? CancelledAt,
-    string? TargetVersion = null)
+    string? TargetVersion = null,
+    int? UpgradeId = null,
+    string? UpgradeName = null)
 {
     /// <summary>True while the action is still waiting for its slot — the only state with a Cancel.</summary>
     public bool IsPending => Status == UpgradeActionStatus.Pending;
@@ -476,5 +507,5 @@ public sealed record UpgradeActionRow(
     internal static UpgradeActionRow From(OeEnvironmentUpgradeAction a) => new(
         a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,
         a.RequestedBy, a.RequestedAt, a.ExecuteAfter, a.SentAt, a.Outcome,
-        a.CancelledBy, a.CancelledAt, a.TargetVersion);
+        a.CancelledBy, a.CancelledAt, a.TargetVersion, a.UpgradeId, a.Upgrade?.Name);
 }
