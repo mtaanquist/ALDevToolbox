@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Workbench - page sheet - Upgrades (issue #984, prompt 2 of 3)</p>
+    <h1 class="doc__title">Upgrade</h1>
+    <p class="doc__sub">One planned upgrade at <code>/upgrades/{id}</code>, on the entity-detail archetype (<code>PageDetail</code>): crumbs, name with its state pill, a meta row, then the lines. The lines are the check list the morning after is worked from. Drawn as of Friday 13 November, 08:30, the morning after the wave. Desktop frames are 1440px shells scaled down; phone frames are 390px at 1:1.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">In progress - desktop</span><h2 class="arch__t">The morning after</h2></div><span class="arch__use">Eight lines: three checked, two updated and waiting for a check, one failed, one running again, one moved to next week. Dark shows two lines selected, with the selection commands in the bar.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="open" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Dark, 2 selected</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="open" body-selected="{{ two }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Done - desktop</span><h2 class="arch__t">What the wave ran over</h2></div><span class="arch__use">Read-only: no primary, no selection, no checkboxes, no row menus. A tick or a cross stands where the checkbox was. Reopen and "New upgrade from the leftovers" stay in the overflow.</span></div>
+      <div class="themes themes--wide">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Light</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="done" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Dark</div>
+          <div class="shell-scale shell-scale--tall"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="done" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Empty, loading, not found - desktop</span><h2 class="arch__t">A fresh upgrade, and the edges</h2></div><span class="arch__use">A fresh upgrade: "Add environments..." is the primary in both the head and the empty state. The actions that need lines are disabled.</span></div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: var(--space-5)">
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - light</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="empty" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - dark</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="empty" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="light">
+          <div class="panel__label"><span class="panel__dot"></span>Loading - light</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="loading" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+        <section class="panel" data-theme="dark">
+          <div class="panel__label"><span class="panel__dot"></span>Not found - dark</div>
+          <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="notfound" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Phone, 390px</span><h2 class="arch__t">State and Checked survive</h2></div><span class="arch__use">Each line: solution, then environment, type and Now in the sub-line, with the State pill on the right. Last action and assignee share one muted line. Below them, the Checked tick and a Call button, both 44px. The head keeps only the primary; the three outline actions move to the top of the overflow menu.</span></div>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start">
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>In progress - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="open" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>In progress - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="open" body-compact="{{ yes }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Done - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="done" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Empty - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="empty" body-compact="{{ yes }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="light" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Loading - light</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="loading" body-compact="{{ yes }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+        <section class="panel" data-theme="dark" style="flex: none">
+          <div class="panel__label"><span class="panel__dot"></span>Not found - dark</div>
+          <div class="shell-frame" style="width: 390px; height: 844px"><div class="shell-root"><dc-import name="ShellFrame" body="upgrade" body-kind="notfound" body-compact="{{ yes }}" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">"Mark done" confirm</span><h2 class="arch__t">When lines are still unchecked</h2></div><span class="arch__use">Drawn later the same day, when five of eight are checked. Names the three unchecked lines so marking done is never a blind click. If every line is checked, the confirm is one sentence and the same two buttons.</span></div>
+      <div class="themes">
+        <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+          <section class="panel" data-theme="{{ th.id }}">
+            <div class="panel__label"><span class="panel__dot"></span>{{ th.label }}</div>
+            <div style="position: relative; display: grid; place-items: center; padding: var(--space-6) var(--space-3); border-radius: var(--r); overflow: hidden">
+              <div class="modal-backdrop"></div>
+              <div class="confirm-dialog confirm-dialog--wide" role="dialog" aria-modal="true" aria-label="Mark done">
+                <div class="confirm-dialog__head">
+                  <span class="confirm-dialog__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span>
+                  <h3 class="confirm-dialog__title" style="padding-top: 5px">3 of 8 are not checked yet. Mark done anyway?</h3>
+                </div>
+                <div class="confirm-dialog__body" style="display: grid; gap: var(--space-3)">
+                  <p style="margin: 0; text-wrap: pretty">"28.5 in November 2026" moves to the Archive and becomes read-only. The unchecked lines stay unchecked in the record.</p>
+                  <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-control)">
+                    <sc-for list="{{ unchecked }}" as="x" hint-placeholder-count="3">
+                      <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border)"><span class="cell-stack" style="padding: 0"><span class="cell-stack__main" style="font-size: var(--text-sm); font-weight: var(--fw-medium)">{{ x.sol }}</span><span class="cell-stack__sub">{{ x.env }}</span></span><span class="status-pill {{ x.pill }}">{{ x.st }}</span></div>
+                    </sc-for>
+                  </div>
+                  <p style="margin: 0; font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty">You can start a new upgrade with these three from the overflow menu afterwards: "New upgrade from the leftovers".</p>
+                </div>
+                <div class="confirm-dialog__actions"><button class="btn" type="button">Cancel</button><button class="btn btn--primary" type="button">Mark done</button></div>
+              </div>
+            </div>
+          </section>
+        </sc-for>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Head</h3>
+        <ul>
+          <li>Crumbs "Upgrades &gt; {name}". State pill uses the same tones as the Open view: Planned queued, In progress running, Updated warn, Done succeeded.</li>
+          <li>Meta row: Target, Planned, Environments, Progress ("5 of 8 updated, 3 checked": checked lines count as updated), Created, and Closed on a done upgrade.</li>
+          <li>Ribbon: one primary that follows the state, then outline Add environments..., Move dates..., Start update..., Change the next version..., then the overflow. No lines: Add environments... is primary and the others are disabled. Planned or In progress: Start update... is primary and runs over the lines not yet sent. Updated or every line checked: Mark done... is primary. Done: no ribbon, only Reopen and "New upgrade from the leftovers" in the overflow.</li>
+          <li>The four ribbon actions open the fleet table's existing dialogs (preview, typed confirmation, per-row results), filled in from the header's target version and slot. No new dialog is drawn for them.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Lines</h3>
+        <ul>
+          <li>Two columns, Now and State, as the brief proposes: Now is the live Business Central mirror, State is the upgrade's own word. State tones: Planned queued, Date moved muted, Booked info, Running running (pulse), Updated warn (a check is owed), Failed failed, Checked succeeded. Failed and Checked are the only red and green pills, so they read from across the table.</li>
+          <li>Checked: one tick plus a short note, stamped with who and when. The tick is enabled once a line is Updated or Failed; before that it is disabled with "After the update". The note sits under the stamp, so a short fixed list of checks can go there later.</li>
+          <li>Assignee: blank shows a quiet "Assign" button that opens a people menu. Set shows avatar and name, and clicking it reopens the menu.</li>
+          <li>Contact: name, with the phone as a <code>tel:</code> link. The Solutions list rail's contact markup is not in this project yet (#906 addendum), so this is a stand-in to swap for the rail's rendering.</li>
+          <li>Command bar: search, Mine switch, state filter. With a selection it adds Move dates..., Start update..., and More (Change the next version..., Assign to..., Remove from upgrade). Remove is disabled while anything in the selection has been sent.</li>
+          <li>Done: controls are removed, not dimmed, so the record reads at full contrast.</li>
+        </ul>
+        <h3>Files</h3>
+        <ul>
+          <li><code>UpgradeBody.dc.html</code>, props <code>kind</code> (open | done | empty | loading | notfound), <code>compact</code>, <code>selected</code>. <code>ShellFrame</code> <code>body="upgrade"</code>, <code>bodySelected</code>; Upgrades stays current.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      yes: true, two: 2,
+      themes: [{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }],
+      unchecked: [
+        { sol: 'Contoso Logistics', env: 'Production - Production', st: 'Failed', pill: 'status-pill--failed' },
+        { sol: 'Contoso Retail', env: 'Sandbox - Sandbox', st: 'Updated', pill: 'status-pill--warn' },
+        { sol: 'Contoso Retail', env: 'Test - Sandbox', st: 'Date moved', pill: 'status-pill--muted' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

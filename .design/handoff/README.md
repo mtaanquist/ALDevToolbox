@@ -63,6 +63,24 @@ the transcript by script, as above. They are the versions after the design agent
 through `briefs/2026-09-release-pipelines-review.md`, which lists what the sheets first
 drew that the product cannot do and what they now draw from data not recorded yet.
 
+`PageUpgradesList.dc.html` / `UpgradesListBody.dc.html`, `PageUpgrade.dc.html` /
+`UpgradeBody.dc.html` and `PageUpgradePicker.dc.html` / `UpgradePicker.dc.html` were pulled
+on 2026-09-26 for the planned-upgrades tool (issue #984: an upgrade header with lines, the
+Open / Archive / Fleet views, the environment picker and the "Add to upgrade..." dialog),
+with the `ShellFrame.dc.html` bodies that mount the two pages, the `embedded` variant of
+`PageUpgrades.dc.html` that the Fleet view hosts, and a vocabulary fix to
+`PageDashboard.dc.html` (projects to solutions). Extracted from the transcript by script, as
+above; `components.css` and `pages.css` were compared the same way and found identical.
+They are the versions after the design agent worked through
+`briefs/2026-09-planned-upgrades.md` and the four review corrections that followed: the
+Open-upgrades dashboard tile is parked (drawn on the picker sheet, placed nowhere, because
+the Admin dashboard is Admin-only and the upgrade team is not), the note survives on a done
+upgrade, Production is semibold rather than red, and the picker cannot offer deleted
+environments. Three notes for the port were left with the sheets: the open upgrade's
+overflow shows Reopen disabled where the app should hide it, the loading text says it reads
+from Business Central where the app reads the mirror, and the picker's 1000px dialog is a
+size `components.css` does not have yet.
+
 **What shipped without a sheet** is listed in the design project's
 `briefs/2026-09-shipped-without-a-sheet.md` (pushed 2026-09-21): the environment page's
 five tabs with the Operations and Sessions lists, the storage bar and the Deleted view on
